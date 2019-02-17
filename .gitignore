@@ -1,0 +1,8 @@
+cmake-build*/
+.idea/
+*.exe
+*.dll
+
+data/
+openslide/
+*.tiff
