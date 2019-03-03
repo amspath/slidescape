@@ -3,7 +3,8 @@
 #include "common.h"
 
 
-
+extern int g_argc;
+extern char** g_argv;
 
 // Platform specific function prototypes
 

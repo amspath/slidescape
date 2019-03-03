@@ -100,5 +100,6 @@ typedef struct {
 
 // viewer.c
 
+void first();
 void viewer_update_and_render(surface_t* surface, viewer_t* viewer, input_t* input);
 void on_file_dragged(char* filename);

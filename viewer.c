@@ -51,7 +51,6 @@ entity_t entities[1024];
 static image_t images[1024];
 u32 image_count;
 
-static bool32 viewer_initialized;
 static v2i camera_pos;
 
 void add_image_entity(image_t* image, v2i pos) {
@@ -91,37 +90,39 @@ bool32 load_image(image_t* image, const char* filename) {
 	return false;
 }
 
+
+
+typedef struct {
+	bool32 is_loaded;
+	u32* pixels;
+} wsi_tile_t;
+
 typedef struct {
 	i64 width;
 	i64 height;
 	u32* data;
+	i32 num_tiles;
+	wsi_tile_t* tiles;
 } wsi_level_t;
 
+#define WSI_MAX_LEVELS 16
+
 typedef struct {
+	i64 width;
+	i64 height;
+	i64 width_pow2;
+	i64 height_pow2;
 	i32 num_levels;
 	openslide_t* osr;
+	wsi_level_t levels[WSI_MAX_LEVELS];
 } wsi_t;
 
+#define TILE_DIM 512
 
-i64 total_wsi_size;
-wsi_level_t wsi_levels[64];
-i64 wsi_offsets[64];
 u32* wsi_memory;
-i32 level_count;
 openslide_t* global_osr;
 i32 current_level;
 
-void load_wsi(char* filename) {
-	if (global_osr) {
-		openslide.openslide_close(global_osr);
-		global_osr = NULL;
-		if (wsi_memory){
-			free(wsi_memory);
-		}
-	}
-
-	global_osr = openslide.openslide_open(filename);
-}
 
 void load_wsi_level(openslide_t* osr, i32 level) {
 	i32 loaded_level = CLAMP(level, 0, openslide.openslide_get_level_count(osr)-1);
@@ -140,24 +141,57 @@ void load_wsi_level(openslide_t* osr, i32 level) {
 	current_level = loaded_level;
 }
 
-void on_file_dragged(char* filename) {
-#if 0
-	current_image = loaded_images;
-	load_image(&loaded_images[0], filename);
-#else
 
-	load_wsi(filename);
+void load_wsi(char* filename) {
+	if (global_osr) {
+		openslide.openslide_close(global_osr);
+		global_osr = NULL;
+		if (wsi_memory){
+			free(wsi_memory);
+		}
+	}
+
+	global_osr = openslide.openslide_open(filename);
 	openslide_t* osr = global_osr;
 	if (osr) {
+		printf("Openslide: opened %s\n", filename);
+
 		if (wsi_memory) {
 			free(wsi_memory);
 		}
-		total_wsi_size = 0;
-		memset(wsi_offsets, 0, sizeof(wsi_offsets));
 
-		printf("Openslide: opened %s\n", filename);
-		i32 num_levels = openslide.openslide_get_level_count(osr);
-		printf("Openslide: WSI has %d levels\n", num_levels);
+		wsi_t wsi_;
+		wsi_t* wsi = &wsi_;
+
+		openslide.openslide_get_level0_dimensions(osr, &wsi->width, &wsi->height);
+		ASSERT(wsi->width > 0);
+		ASSERT(wsi->height > 0);
+
+		wsi->width_pow2 = next_pow2((u64)wsi->width);
+		wsi->height_pow2 = next_pow2((u64)wsi->height);
+
+		wsi->num_levels = openslide.openslide_get_level_count(osr);
+		printf("Openslide: WSI has %d levels\n", wsi->num_levels);
+		if (wsi->num_levels > WSI_MAX_LEVELS) {
+			panic();
+		}
+
+		for (i32 i = 0; i < wsi->num_levels; ++i) {
+			wsi_level_t* level = wsi->levels + i;
+
+			openslide.openslide_get_level_dimensions(osr, i, &level->width, &level->height);
+			ASSERT(level->width > 0);
+			ASSERT(level->height > 0);
+			i64 partial_block_x = level->width % TILE_DIM;
+			i64 partial_block_y = level->height % TILE_DIM;
+			i32 num_tiles_x = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
+			i32 num_tiles_y = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
+			i32 num_tiles = num_tiles_x * num_tiles_y;
+			level->tiles = calloc(1, num_tiles * sizeof(wsi_tile_t));
+		}
+
+
+
 
 		const char* const* wsi_properties = openslide.openslide_get_property_names(osr);
 		if (wsi_properties) {
@@ -170,24 +204,21 @@ void on_file_dragged(char* filename) {
 			}
 		}
 
-
-
-		for (i32 i = 0; i < num_levels; ++i) {
-			i64 w = 0;
-			i64 h = 0;
-			openslide.openslide_get_level_dimensions(osr, i, &w, &h);
-			i64 level_size = w * h * 4;
-			total_wsi_size += level_size;
-			wsi_offsets[i+1] = total_wsi_size;
-			wsi_levels[i].width = w;
-			wsi_levels[i].height= h;
-
-			printf("level %d: w=%d, h=%d\n", i, w, h);
-		}
-
-		load_wsi_level(osr, num_levels-1);
+		load_wsi_level(osr, wsi->num_levels-1);
 
 	}
+
+}
+
+
+void on_file_dragged(char* filename) {
+#if 0
+	current_image = loaded_images;
+	load_image(&loaded_images[0], filename);
+#else
+
+	load_wsi(filename);
+
 #endif
 
 }
@@ -221,11 +252,14 @@ void clear_surface(surface_t* surface, v4f* color) {
 	}
 }
 
-void viewer_update_and_render(surface_t* surface, viewer_t* viewer, input_t* input) {
-	if (!viewer_initialized) {
-		viewer_initialized = true;
-//		load_image(&loaded_images, "data/evg.jpg");
+void first() {
+	if (g_argc > 1) {
+		char* filename = g_argv[1];
+		on_file_dragged(filename);
 	}
+}
+
+void viewer_update_and_render(surface_t* surface, viewer_t* viewer, input_t* input) {
 
 	if (input->mouse_z != 0) {
 //		printf("mouse_z = %d\n", input->mouse_z);

@@ -865,14 +865,6 @@ void win32_process_input() {
 
 }
 
-
-
-void first() {
-//	void simulation_main();
-//	simulation_main();
-}
-
-
 typedef struct work_queue_entry_t {
 	void* data;
 	bool32 is_valid;
@@ -1002,7 +994,6 @@ int main(int argc, char** argv) {
 	g_cmdline = GetCommandLine();
 	g_argc = argc;
 	g_argv = argv;
-	first();
 
 	win32_init_multithreading();
 	win32_init_timer();
@@ -1012,6 +1003,7 @@ int main(int argc, char** argv) {
 	win32_init_openslide();
 
 	is_program_running = true;
+	first();
 	while (is_program_running) {
 
 		win32_process_input();
