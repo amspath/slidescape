@@ -79,8 +79,11 @@ typedef struct {
 
 typedef struct {
 	button_state_t mouse_buttons[5];
-	i32 mouse_x, mouse_y, mouse_z;
-	i32 delta_mouse_x, delta_mouse_y;
+	i32 mouse_z;
+	v2i dmouse_xy;
+	v2i drag_start_xy;
+	v2i drag_vector;
+	v2i mouse_xy;
 	float delta_t;
 	union {
 		controller_input_t abstract_controllers[5];
@@ -92,8 +95,10 @@ typedef struct {
 
 } input_t;
 
+typedef struct {
+} viewer_t;
 
 // viewer.c
 
-void viewer_update_and_render(surface_t* surface, input_t* input);
+void viewer_update_and_render(surface_t* surface, viewer_t* viewer, input_t* input);
 void on_file_dragged(char* filename);

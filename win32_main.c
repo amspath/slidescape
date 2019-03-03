@@ -12,6 +12,8 @@
 #include <xinput.h>
 
 #include <GL/gl.h>
+#include <GL/glext.h>
+#include <GL/wglext.h>
 
 #include "platform.h"
 
@@ -40,6 +42,7 @@ WNDCLASSA main_window_class;
 HWND main_window;
 bool32 is_main_window_initialized;
 
+viewer_t viewer;
 input_t inputs[2];
 input_t *old_input;
 input_t *curr_input;
@@ -371,15 +374,17 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			if (raw->header.dwType == RIM_TYPEMOUSE)
 			{
 				if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-					curr_input->delta_mouse_x = 0;
-					curr_input->delta_mouse_y = 0;
+					curr_input->drag_vector = (v2i){};
+					curr_input->drag_start_xy = curr_input->mouse_xy;
 				}
 
 				// We want relative mouse movement
 				if (!(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
 					if (curr_input->mouse_buttons[0].down) {
-						curr_input->delta_mouse_x += raw->data.mouse.lLastX;
-						curr_input->delta_mouse_y += raw->data.mouse.lLastY;
+						curr_input->drag_vector.x += raw->data.mouse.lLastX;
+						curr_input->dmouse_xy.x += raw->data.mouse.lLastX;
+						curr_input->drag_vector.y += raw->data.mouse.lLastY;
+						curr_input->dmouse_xy.y += raw->data.mouse.lLastY;
 //						printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
 					}
 				}
@@ -443,8 +448,27 @@ void toggle_fullscreen(HWND window) {
 	}
 }
 
+bool32 cursor_hidden;
+POINT stored_mouse_pos;
 
-void win32_process_pending_messages(controller_input_t* keyboard_input) {
+void mouse_hide() {
+	if (!cursor_hidden) {
+		GetCursorPos(&stored_mouse_pos);
+		ShowCursor(0);
+		cursor_hidden = true;
+	}
+}
+
+void mouse_show() {
+	if (cursor_hidden) {
+//		SetCursorPos(stored_mouse_pos.x, stored_mouse_pos.y);
+		ShowCursor(1);
+		cursor_hidden = false;
+	}
+}
+
+void win32_process_pending_messages(input_t* input) {
+	controller_input_t* keyboard_input = &input->keyboard;
 	MSG message;
 	while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
 		if (message.message == WM_QUIT) {
@@ -462,6 +486,12 @@ void win32_process_pending_messages(controller_input_t* keyboard_input) {
 				is_program_running = false;
 			}
 				break;
+
+			case WM_MOUSEWHEEL: {
+				u32 par = (u32)message.wParam;
+				i32 z_delta = GET_WHEEL_DELTA_WPARAM(message.wParam);
+				input->mouse_z = z_delta;
+			} break;
 
 			case WM_KEYDOWN:
 			case WM_KEYUP:
@@ -681,6 +711,35 @@ void win32_process_xinput_controllers() {
 	}
 }
 
+// https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
+bool win32_wgl_extension_supported(const char *extension_name)
+{
+	// this is pointer to function which returns pointer to string with list of all wgl extensions
+	PFNWGLGETEXTENSIONSSTRINGEXTPROC _wglGetExtensionsStringEXT = NULL;
+
+	// determine pointer to wglGetExtensionsStringEXT function
+	_wglGetExtensionsStringEXT = (PFNWGLGETEXTENSIONSSTRINGEXTPROC) wglGetProcAddress("wglGetExtensionsStringEXT");
+
+	if (strstr(_wglGetExtensionsStringEXT(), extension_name) == NULL)
+	{
+		// string was not found
+		return false;
+	}
+
+	// extension is supported
+	return true;
+}
+
+PFNWGLSWAPINTERVALEXTPROC       wglSwapIntervalEXT = NULL;
+PFNWGLGETSWAPINTERVALEXTPROC    wglGetSwapIntervalEXT = NULL;
+int swap_interval;
+
+void win32_gl_swap_interval(int interval) {
+	if (wglSwapIntervalEXT) {
+		wglSwapIntervalEXT(interval);
+	}
+}
+
 void win32_init_opengl(HWND window) {
 	HDC window_dc = GetDC(window);
 
@@ -702,6 +761,14 @@ void win32_init_opengl(HWND window) {
 	HGLRC opengl_rc = wglCreateContext(window_dc);
 	if (wglMakeCurrent(window_dc, opengl_rc)) {
 		// Success
+		if (win32_wgl_extension_supported("WGL_EXT_swap_control"))
+		{
+			// Extension is supported, init pointers.
+			wglSwapIntervalEXT = (PFNWGLSWAPINTERVALEXTPROC) wglGetProcAddress("wglSwapIntervalEXT");
+
+			// this is another function from WGL_EXT_swap_control extension
+			wglGetSwapIntervalEXT = (PFNWGLGETSWAPINTERVALEXTPROC) wglGetProcAddress("wglGetSwapIntervalEXT");
+		}
 	} else {
 		panic();
 		// TODO: diagnostic
@@ -752,6 +819,7 @@ void win32_init_main_window() {
 	}
 
 	win32_init_opengl(main_window);
+	win32_gl_swap_interval(1);
 
 	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
 	is_main_window_initialized = true; // prevent WM_SIZE messages calling win32_resize_DIB_section() too early!
@@ -781,8 +849,7 @@ void win32_process_input() {
 	POINT cursor_pos;
 	GetCursorPos(&cursor_pos);
 	ScreenToClient(main_window, &cursor_pos);
-	curr_input->mouse_x = cursor_pos.x;
-	curr_input->mouse_y = cursor_pos.y;
+	curr_input->mouse_xy = (v2i){ cursor_pos.x, cursor_pos.y };
 	curr_input->mouse_z = 0; // TODO: support mousewheel
 
 	win32_process_keyboard_event(&curr_input->mouse_buttons[0], GetKeyState(VK_LBUTTON) & (1<<15));
@@ -793,7 +860,7 @@ void win32_process_input() {
 
 
 
-	win32_process_pending_messages(&curr_input->keyboard);
+	win32_process_pending_messages(curr_input);
 	win32_process_xinput_controllers();
 
 }
@@ -949,7 +1016,7 @@ int main(int argc, char** argv) {
 
 		win32_process_input();
 
-		viewer_update_and_render(&backbuffer, curr_input);
+		viewer_update_and_render(&backbuffer, &viewer, curr_input);
 
 		// NOTE: Display the frame (AFTER the clock)!
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
