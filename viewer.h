@@ -18,6 +18,7 @@ typedef struct rect2i {
 typedef struct v2i {
 	i32 x, y;
 } v2i;
+#define V2i(x, y) (v2i){(x), (y)}
 
 typedef struct v2f {
 	float x, y;
@@ -95,11 +96,58 @@ typedef struct {
 
 } input_t;
 
+#define TILE_DIM 512
+#define BYTES_PER_PIXEL 4
+#define TILE_PITCH (TILE_DIM * BYTES_PER_PIXEL)
+#define WSI_BLOCK_SIZE (TILE_DIM * TILE_DIM * BYTES_PER_PIXEL)
+
 typedef struct {
+	i64 capacity;
+	u32 capacity_in_blocks;
+	u32 blocks_in_use;
+	u8* data;
+} slide_memory_t;
+
+typedef struct {
+	slide_memory_t slide_memory;
 } viewer_t;
+
+typedef struct {
+	u32 block;
+} wsi_tile_t;
+
+typedef struct {
+	i64 width;
+	i64 height;
+	i64 width_in_tiles;
+	i64 height_in_tiles;
+	i32 num_tiles;
+	wsi_tile_t* tiles;
+} wsi_level_t;
+
+#define WSI_MAX_LEVELS 16
+
+typedef struct {
+	i64 width;
+	i64 height;
+	i64 width_pow2;
+	i64 height_pow2;
+	i32 num_levels;
+	openslide_t* osr;
+	wsi_level_t levels[WSI_MAX_LEVELS];
+} wsi_t;
+
+
+
+typedef struct {
+	bool32 active;
+	i32 type;
+	v2i pos;
+	image_t* image;
+} entity_t;
 
 // viewer.c
 
 void first();
-void viewer_update_and_render(surface_t* surface, viewer_t* viewer, input_t* input);
+void viewer_update_and_render(surface_t* surface, input_t* input);
 void on_file_dragged(char* filename);

@@ -2,6 +2,7 @@
 #define WINVER 0x0600
 
 #include "common.h"
+#include "openslide_api.h"
 #include "viewer.h"
 
 #include <stdio.h>
@@ -18,8 +19,6 @@
 #include "platform.h"
 
 #include "win32_main.h"
-
-#include "openslide_api.h"
 
 int g_argc;
 char** g_argv;
@@ -42,7 +41,6 @@ WNDCLASSA main_window_class;
 HWND main_window;
 bool32 is_main_window_initialized;
 
-viewer_t viewer;
 input_t inputs[2];
 input_t *old_input;
 input_t *curr_input;
@@ -93,6 +91,14 @@ void win32_diagnostic(const char* prefix) {
 	LocalFree(message_buffer);
 }
 
+
+u8* platform_alloc(size_t size) {
+	u8* result = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	if (!result) {
+		printf("Error: memory allocation failed!\n");
+		panic();
+	}
+}
 
 // Timer-related procedures
 
@@ -1002,13 +1008,14 @@ int main(int argc, char** argv) {
 	win32_init_input();
 	win32_init_openslide();
 
+
 	is_program_running = true;
 	first();
 	while (is_program_running) {
 
 		win32_process_input();
 
-		viewer_update_and_render(&backbuffer, &viewer, curr_input);
+		viewer_update_and_render(&backbuffer, curr_input);
 
 		// NOTE: Display the frame (AFTER the clock)!
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);

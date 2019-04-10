@@ -64,6 +64,8 @@ typedef int8_t bool8;
 #define COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define LOWERBOUND(a, b) MAX(a, b)
+#define UPPERBOUND(a, b) MIN(a, b)
 
 #define LERP(t,a,b)               ( (a) + (t) * (float) ((b)-(a)) )
 #define UNLERP(t,a,b)             ( ((t) - (a)) / (float) ((b) - (a)) )
@@ -74,6 +76,11 @@ typedef int8_t bool8;
 #define SQUARE(x) ((x)*(x))
 
 #define memset_zero(x) memset((x), 0, sizeof(*x))
+
+#define KILOBYTES(n) (1024LL*(n))
+#define MEGABYTES(n) (1024LL*KILOBYTES(n))
+#define GIGABYTES(n) (1024LL*MEGABYTES(n))
+#define TERABYTES(n) (1024LL*GIGABYTES(n))
 
 
 #if defined(SOURCE_PATH_SIZE) && !defined(__FILENAME__)
