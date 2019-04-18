@@ -1,18 +1,20 @@
 #include "common.h"
 
-#include "win32_main.h"
+//#include "win32_main.h"
 #include "platform.h"
 
 #include "openslide_api.h"
+#include <glad/glad.h>
+#include <linmath.h>
+
+#include "arena.h"
+#include "arena.c"
 
 #include "viewer.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
-#include "arena.h"
-#include "arena.c"
 
 #include "render_group.h"
 #include "render_group.c"
@@ -25,12 +27,11 @@ entity_t entities[MAX_ENTITIES];
 static image_t images[MAX_ENTITIES];
 u32 image_count;
 
-v2i camera_pos;
+v2f camera_pos;
 
 
 viewer_t global_viewer;
 
-u32* wsi_memory;
 wsi_t global_wsi;
 i32 current_level;
 
@@ -71,11 +72,6 @@ void add_tile_entity(image_t* image, v2i pos) {
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
 #define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
 
-/*void init_image(image_t* image, void* data, i32 width, i32 height) {
-	if (image->data != NULL) free(image->data);
-	*image = (image_t) { .data = data, .width = width, .height = height, .pitch = width * 4, };
-}*/
-
 void fill_image(image_t* image, void* data, i32 width, i32 height) {
 	*image = (image_t) { .data = data, .width = width, .height = height, .pitch = width * 4, };
 }
@@ -98,29 +94,39 @@ bool32 load_image(image_t* image, const char* filename) {
 	}
 	return false;
 }
+bool32 load_texture_from_file(texture_t* texture, const char* filename) {
+	bool32 result = false;
+	i32 channels_in_file = 0;
+	u8* pixels = stbi_load(filename, &texture->width, &texture->height, &channels_in_file, 4);
+	if (pixels) {
+		glGenTextures(1, &texture->texture);
+		glBindTexture(GL_TEXTURE_2D, texture->texture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		GLenum format = GL_RGBA;
+		glTexImage2D(GL_TEXTURE_2D, 0, format, texture->width, texture->height, 0, format, GL_UNSIGNED_BYTE, pixels);
+
+		result = true;
+		stbi_image_free(pixels);
+	}
+	return result;
+}
 
 
+u32 load_texture(void* pixels, i32 width, i32 height) {
+	u32 texture = 0;
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-
-
-
-/*void load_wsi_level(openslide_t* osr, i32 level) {
-	i32 loaded_level = CLAMP(level, 0, openslide.openslide_get_level_count(osr)-1);
-	i64 w = 0, h = 0;
-	openslide.openslide_get_level_dimensions(osr, loaded_level, &w, &h);
-	u32* buf = calloc(1, w * h * 4);
-	openslide.openslide_read_region(osr, buf, 0, 0, loaded_level, w, h);
-
-	image_count = 1;
-	image_t* image = images; // TODO: just keep reusing the same image for now. fix this later.
-	init_image(image, buf, w, h);
-
-	entity_count = 0;
-	add_image_entity(image, (v2i){0, 0});
-
-	current_level = loaded_level;
-
-}*/
+	GLenum format = GL_RGBA;
+	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, pixels);
+}
 
 u32 alloc_wsi_block(slide_memory_t* slide_memory) {
 	if (slide_memory->blocks_in_use == slide_memory->capacity_in_blocks) {
@@ -140,48 +146,49 @@ v2i wsi_tile_world_position(wsi_level_t* wsi_level, u32 tile_x, u32 tile_y) {
 	return result;
 }
 
+i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
+	wsi_level_t* wsi_level = wsi->levels + level;
+
+	i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
+	ASSERT(tile_index >= 0 && tile_index < wsi_level->num_tiles);
+	wsi_tile_t* tile = wsi_level->tiles + tile_index;
+
+	if (tile->block != 0) {
+		// Yay, this tile is already loaded
+		return 0;
+	} else {
+		tile->block = alloc_wsi_block(&global_viewer.slide_memory);
+
+		u32* pixel_data = get_wsi_block(&global_viewer.slide_memory, tile->block);
+		ASSERT(pixel_data);
+
+		// OpenSlide still counts the coordinates of downsampled images as if they're the full level 0 image.
+		i64 x = (tile_x * TILE_DIM) << level;
+		i64 y = (tile_y * TILE_DIM) << level;
+		openslide.openslide_read_region(wsi->osr, pixel_data, x, y, level, TILE_DIM, TILE_DIM);
+
+		tile->texture = load_texture(pixel_data, TILE_DIM, TILE_DIM);
+		return 1;
+	}
+}
+
 void wsi_load_blocks_in_region(wsi_t* wsi, i32 level, v2i xy_tile_min, v2i xy_tile_max) {
 
-
-//	v2i image_origin = { -wsi_level->width/2, -wsi_level->height/2 };
-
-
-	wsi_level_t* wsi_level = global_wsi.levels + level;
+	i32 debug_tiles_loaded = 0;
+	i64 debug_start = get_clock();
 
 	for (i32 tile_y = xy_tile_min.y; tile_y <= xy_tile_max.y; ++tile_y) {
 		for (i32 tile_x = xy_tile_min.x; tile_x <= xy_tile_max.x; ++tile_x) {
-			i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
-			ASSERT(tile_index >= 0 && tile_index < wsi_level->num_tiles);
-			wsi_tile_t* tile = wsi_level->tiles + tile_index;
-
-			if (tile->block != 0) {
-				// Yay, this tile is already loaded
-
-			} else {
-				tile->block = alloc_wsi_block(&global_viewer.slide_memory);
-
-				u32* pixel_data = get_wsi_block(&global_viewer.slide_memory, tile->block);
-				ASSERT(pixel_data);
-
-				i64 x = (tile_x * TILE_DIM) << level;
-				i64 y = (tile_y * TILE_DIM) << level;
-				openslide.openslide_read_region(wsi->osr, pixel_data, x, y, level, TILE_DIM, TILE_DIM);
-
-				/*const char* error = openslide.openslide_get_error(wsi->osr);
-				if (error) {
-					printf("%s\n", error);
-				}*/
-
-//				image_t* image = images + image_count++;
-//				fill_image(image, pixel_data, TILE_DIM, TILE_DIM);
-
-//				 TODO: world coorinates vs image coordinates
-//				v2i xy_world = {0,0};//V2i(image_origin.x + tile_x * TILE_DIM, image_origin.y + tile_y * TILE_DIM);
-//				add_tile_entity(image, xy_world);
+			debug_tiles_loaded += wsi_load_tile(wsi, level, tile_x, tile_y);
+			if (debug_tiles_loaded > 1) {
+				return;
 			}
 		}
 	}
 
+	if (debug_tiles_loaded > 0) {
+		printf("Level %d: loaded %d tiles in %g seconds.\n", level, debug_tiles_loaded, get_seconds_elapsed(debug_start, get_clock()));
+	}
 
 }
 
@@ -241,6 +248,28 @@ void load_wsi(wsi_t* wsi, char* filename) {
 			}
 		}
 
+		wsi->mpp_x = 0.25f; // microns per pixel (default)
+		wsi->mpp_y = 0.25f; // microns per pixel (default)
+		const char* mpp_x_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-x");
+		const char* mpp_y_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-y");
+		if (mpp_x_string) {
+			float mpp = atof(mpp_x_string);
+			if (mpp > 0.0f) {
+				wsi->mpp_x = mpp;
+			}
+		}
+		if (mpp_y_string) {
+			float mpp = atof(mpp_y_string);
+			if (mpp > 0.0f) {
+				wsi->mpp_y = mpp;
+			}
+		}
+
+		const char* barcode = openslide.openslide_get_property_value(wsi->osr, "philips.PIM_DP_UFS_BARCODE");
+		if (barcode) {
+			wsi->barcode = barcode;
+		}
+
 		const char* const* wsi_associated_image_names = openslide.openslide_get_associated_image_names(wsi->osr);
 		if (wsi_associated_image_names) {
 			i32 name_index = 0;
@@ -294,14 +323,9 @@ void render_weird_gradient(surface_t *surface, int x_offset, int y_offset) {
 }
 #endif
 
-void clear_surface(surface_t* surface, v4f* color) {
-	u32 pixel_value = TO_BGRA(FLOAT_TO_BYTE(color->r), FLOAT_TO_BYTE(color->g), FLOAT_TO_BYTE(color->b), FLOAT_TO_BYTE(color->a));
-	u32* pixel = (u32*) surface->memory;
-	i32 num_pixels = surface->width * surface->height;
-	for (int i = 0; i < num_pixels; ++i) {
-		*pixel++ = pixel_value;
-	}
-}
+
+image_t debug_image;
+texture_t debug_texture;
 
 void first() {
 	i64 wsi_memory_size = GIGABYTES(1);
@@ -310,6 +334,19 @@ void first() {
 	global_viewer.slide_memory.capacity_in_blocks = wsi_memory_size / WSI_BLOCK_SIZE;
 	global_viewer.slide_memory.blocks_in_use = 1;
 
+/*	size_t transient_storage_size = MEGABYTES(8);
+	global_viewer.transient_arena = (arena_t) {
+		.base = platform_alloc(transient_storage_size),
+		.size = transient_storage_size,
+	};*/
+
+	init_opengl_stuff();
+
+	//debug
+//	if (!load_texture_from_file(&debug_texture, "data/transparent_cat.png")) {
+//		panic();
+//	}
+
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
 		char* filename = g_argv[1];
@@ -317,9 +354,14 @@ void first() {
 	}
 }
 
+float um_per_screen_pixel(float mpp, i32 level) {
+	float result = (float)(1 << level) * mpp;
+	return result;
+}
+
 i32 debug_current_image_index = 1;
 
-void viewer_update_and_render(surface_t* surface, input_t* input) {
+void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height) {
 
 	bool32 control_back = false;
 	bool32 control_forward = false;
@@ -350,21 +392,14 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 		}
 	}
 
+	float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
+	float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
+
 	if (input->mouse_buttons[0].down) {
 		// do the drag
-#if 0
-		for (u32 entity_id = 0; entity_id < entity_count; ++entity_id) {
-			entity_t* entity = entities + entity_id;
-			if (!entity->active) continue;
-			entity->pos.x += input->drag_vector.x;
-			entity->pos.y -= input->drag_vector.y;
-			input->drag_vector = (v2i){};
-		}
-#else
-		camera_pos.x -= input->drag_vector.x;
-		camera_pos.y += input->drag_vector.y;
+		camera_pos.x -= input->drag_vector.x * um_per_pixel_x;
+		camera_pos.y += input->drag_vector.y * um_per_pixel_y;
 		input->drag_vector = (v2i){};
-#endif
 		mouse_hide();
 	} else {
 		mouse_show();
@@ -374,15 +409,58 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 	}
 
 
+#if 1
 
-	v4f clear_color = {0.85f, 0.85f, 0.85f, 85.0f};
+
+	if (global_wsi.osr) {
+		wsi_load_tile(&global_wsi, current_level, 0, 0);
+	}
+
+
+
+	glClearColor(0.85f, 0.85f, 0.85f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	mat4x4 projection = {};
+	{
+		float r_minus_l = um_per_pixel_x * (float)client_width;
+		float t_minus_b = um_per_pixel_y * (float)client_height;
+
+		float l = -0.5f*r_minus_l;
+		float r = +0.5f*r_minus_l;
+		float b = -0.5f*t_minus_b;
+		float t = +0.5f*t_minus_b;
+		float n = 100.0f;
+		float f = -100.0f;
+		mat4x4_ortho(projection, l, r, b, t, n, f);
+	}
+
+	mat4x4 M, V, I, T, S;
+	mat4x4_identity(I);
+	// define model matrix
+	mat4x4_translate(T, 0.0f, 0.0f, 0.0f);
+	mat4x4_scale_aniso(S, I, um_per_pixel_x * (float)TILE_DIM, um_per_pixel_y * (float)TILE_DIM, 1.0f);
+	mat4x4_mul(M, T, S);
+
+	// define view matrix
+	mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
+
+	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
+	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
+	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+
+	draw_rect(0);
+
+
+#elif 0
+	v4f clear_color = {0.85f, 0.85f, 0.85f, 1.0f};
 	clear_surface(surface, &clear_color);
 
-//	rect2i client_rect = {-surface->width/2, -surface->height/2, surface->width, surface->height};
-	rect2i viewport_rect = {camera_pos.x - surface->width/2, camera_pos.y - surface->height/2, surface->width, surface->height};
+//	rect2i client_rect = {-client_width/2, -client_height/2, client_width, client_height};
+	rect2i viewport_rect = {camera_pos.x - client_width/2, camera_pos.y - client_height/2, client_width, client_height};
 
-//	rect2i viewport_rect = {-surface->width/2, -surface->height/2, surface->width, surface->height};
-//	rect2i screen_rect = {0, 0, surface->width, surface->height};
+//	rect2i viewport_rect = {-client_width/2, -client_height/2, client_width, client_height};
+//	rect2i screen_rect = {0, 0, client_width, client_height};
 //	v2i camera_offset = { camer.x - screen_rect.x, viewport_rect.y - screen_rect.y };
 
 
@@ -391,8 +469,8 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 	region.y -= camera_pos.y;
 
 	rect2i clip_space;
-	clip_space.x = LOWERBOUND(region.x, 0);
-	clip_space.y = LOWERBOUND(region.y, 0);
+	clip_space.x = LOWERBOUND(region.x << current_level, 0);
+	clip_space.y = LOWERBOUND(region.y << current_level, 0);
 	clip_space.w = viewport_rect.w << current_level;
 	clip_space.h = viewport_rect.h << current_level;
 
@@ -412,9 +490,8 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 
 	wsi_load_blocks_in_region(&global_wsi, current_level, xy_tile_min, xy_tile_max);
 
-	v2i camera_offset = { camera_pos.x - surface->width/2, camera_pos.y - surface->height/2 };
+	v2i camera_offset = { camera_pos.x - client_width/2, camera_pos.y - client_height/2 };
 
-#if 1
 	for (i32 tile_y = xy_tile_min.y; tile_y <= xy_tile_max.y; ++tile_y) {
 		for (i32 tile_x = xy_tile_min.x; tile_x <= xy_tile_max.x; ++tile_x) {
 			i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
@@ -426,7 +503,7 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 				u32* pixel_data = get_wsi_block(&global_viewer.slide_memory, tile->block);
 				v2i pos = wsi_tile_world_position(wsi_level, tile_x, tile_y);
 
-				rect2i screen_rect = {0, 0, surface->width, surface->height};
+				rect2i screen_rect = {0, 0, client_width, client_height};
 
 				rect2i image_rect = { pos.x - camera_offset.x, pos.y - camera_offset.y, TILE_DIM, TILE_DIM };
 				rect2i clipped_rect = clip_rect(&image_rect, &screen_rect);
@@ -442,7 +519,7 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 
 
 				u8* surface_row = (u8*) surface->memory + (start_y * surface->pitch) + start_x * BYTES_PER_PIXEL;
-				u8* image_row = pixel_data;// + (TILE_DIM - 1) * TILE_PITCH; // start on the last row
+				u8* image_row = (u8*)pixel_data;// + (TILE_DIM - 1) * TILE_PITCH; // start on the last row
 
 				for (int y = start_y; y < end_y; ++y) {
 					u32* surface_pixel = (u32*) surface_row;
@@ -463,8 +540,6 @@ void viewer_update_and_render(surface_t* surface, input_t* input) {
 			}
 		}
 	}
-
-
 #else
 	for (u32 entity_id = 1; entity_id < entity_count; ++entity_id) {
 		entity_t* entity = entities + entity_id;

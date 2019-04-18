@@ -1,7 +1,6 @@
 #pragma once
 #include "common.h"
 
-#include "win32_main.h"
 
 typedef struct image_t {
 	u8* data;
@@ -10,6 +9,12 @@ typedef struct image_t {
 	i32 pitch;
 	i32 bpp;
 } image_t;
+
+typedef struct texture_t {
+	u32 texture;
+	i32 width;
+	i32 height;
+} texture_t;
 
 typedef struct rect2i {
 	i32 x, y, w, h;
@@ -114,6 +119,7 @@ typedef struct {
 
 typedef struct {
 	u32 block;
+	u32 texture;
 } wsi_tile_t;
 
 typedef struct {
@@ -134,6 +140,10 @@ typedef struct {
 	i64 height_pow2;
 	i32 num_levels;
 	openslide_t* osr;
+	const char* barcode;
+	float mpp_x;
+	float mpp_y;
+
 	wsi_level_t levels[WSI_MAX_LEVELS];
 } wsi_t;
 
@@ -146,8 +156,12 @@ typedef struct {
 	image_t* image;
 } entity_t;
 
+// globals
+
+extern viewer_t global_viewer;
+
 // viewer.c
 
 void first();
-void viewer_update_and_render(surface_t* surface, input_t* input);
+void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height);
 void on_file_dragged(char* filename);

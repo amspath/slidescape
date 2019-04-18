@@ -6,15 +6,16 @@
 #include "viewer.h"
 
 #include <stdio.h>
+#include <sys/stat.h>
 
 //#define WIN32_LEAN_AND_MEAN
 //#define VC_EXTRALEAN
 #include <windows.h>
 #include <xinput.h>
 
-#include <GL/gl.h>
-#include <GL/glext.h>
+#include <glad/glad.h>
 #include <GL/wglext.h>
+
 
 #include "platform.h"
 
@@ -50,6 +51,7 @@ static GLuint global_blit_texture_handle;
 openslide_api openslide;
 
 bool32 win32_init_openslide() {
+	i64 debug_start = get_clock();
 	SetDllDirectoryA("openslide");
 	HINSTANCE dll_handle = LoadLibraryA("libopenslide-0.dll");
 	if (dll_handle) {
@@ -73,6 +75,7 @@ bool32 win32_init_openslide() {
 		GET_PROC(openslide_get_version);
 #undef GET_PROC
 
+		printf("Initialized OpenSlide in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 		return true;
 
 	} else failed: {
@@ -80,6 +83,7 @@ bool32 win32_init_openslide() {
 		printf("Could not load libopenslide-0.dll\n");
 		return false;
 	}
+
 }
 
 void win32_diagnostic(const char* prefix) {
@@ -98,6 +102,31 @@ u8* platform_alloc(size_t size) {
 		printf("Error: memory allocation failed!\n");
 		panic();
 	}
+}
+
+file_mem_t* platform_read_entire_file(const char* filename) {
+	file_mem_t* result = NULL;
+	FILE* fp = fopen(filename, "rb");
+	if (fp) {
+		struct stat st;
+		if (fstat(fileno(fp), &st) == 0) {
+			i64 filesize = st.st_size;
+			if (filesize > 0) {
+				size_t allocation_size = filesize + sizeof(result->len) + 1;
+				result = malloc(allocation_size);
+				if (result) {
+					((u8*)result)[allocation_size-1] = '\0';
+					result->len = filesize;
+					size_t bytes_read = fread(result->data, 1, filesize, fp);
+					if (bytes_read != filesize) {
+						panic();
+					}
+				}
+			}
+		}
+		fclose(fp);
+	}
+	return result;
 }
 
 // Timer-related procedures
@@ -251,7 +280,7 @@ void win32_display_buffer(surface_t* buffer, HDC device_context, int client_widt
 		              DIB_RGB_COLORS,
 		              SRCCOPY);
 	}
-#endif
+#elif 0
 	glViewport(0, 0, client_width, client_height);
 	 
 	glBindTexture(GL_TEXTURE_2D, global_blit_texture_handle);
@@ -304,6 +333,18 @@ void win32_display_buffer(surface_t* buffer, HDC device_context, int client_widt
 	glEnd();
 
 	SwapBuffers(device_context);
+#else
+	glViewport(0, 0, client_width, client_height);
+
+	glEnable(GL_TEXTURE_2D);
+
+	glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+
+
+	SwapBuffers(device_context);
+#endif
 }
 
 typedef struct mouse_state_t {
@@ -406,7 +447,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			PAINTSTRUCT paint;
 			HDC device_context = BeginPaint(window, &paint);
 			win32_window_dimension_t dimension = win32_get_window_dimension(window);
-			win32_display_buffer(&backbuffer, device_context, dimension.width, dimension.height);
+//			win32_display_buffer(&backbuffer, device_context, dimension.width, dimension.height);
 			EndPaint(window, &paint);
 		} break;
 
@@ -746,7 +787,23 @@ void win32_gl_swap_interval(int interval) {
 	}
 }
 
+
+
+HMODULE opengl32_dll_handle;
+
+void* gl_get_proc_address(const char *name) {
+	void* proc = GetProcAddress(opengl32_dll_handle, name);
+	if (!proc) {
+		proc = wglGetProcAddress(name);
+		if (!proc) {
+			printf("Error initalizing OpenGL: could not load proc '%s'.\n", name);
+		}
+	}
+	return proc;
+}
+
 void win32_init_opengl(HWND window) {
+	i64 debug_start = get_clock();
 	HDC window_dc = GetDC(window);
 
 	PIXELFORMATDESCRIPTOR desired_pixel_format = {
@@ -779,6 +836,18 @@ void win32_init_opengl(HWND window) {
 		panic();
 		// TODO: diagnostic
 	}
+
+	opengl32_dll_handle = LoadLibraryA("opengl32.dll");
+	if (!opengl32_dll_handle) {
+		printf("Error initializing OpenGL: failed to load opengl32.dll.\n");
+	}
+
+	if (!gladLoadGLLoader((GLADloadproc) gl_get_proc_address)) {
+		printf("Error initializing OpenGL: failed to initialize GLAD.\n");
+		panic();
+	}
+	// debug
+	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 
 
 	glGenTextures(1, &global_blit_texture_handle);
@@ -1015,12 +1084,14 @@ int main(int argc, char** argv) {
 
 		win32_process_input();
 
-		viewer_update_and_render(&backbuffer, curr_input);
-
-		// NOTE: Display the frame (AFTER the clock)!
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+		glViewport(0, 0, dimension.width, dimension.height);
+
+		viewer_update_and_render(curr_input, dimension.width, dimension.height);
+
 		HDC hdc = GetDC(main_window);
-		win32_display_buffer(&backbuffer, hdc, dimension.width, dimension.height);
+		SwapBuffers(hdc);
+//		win32_display_buffer(&backbuffer, hdc, dimension.width, dimension.height);
 		ReleaseDC(main_window, hdc);
 
 

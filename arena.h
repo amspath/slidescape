@@ -10,7 +10,7 @@ typedef struct arena_t {
 typedef struct temporary_memory_t {
 	arena_t* arena;
 	size_t used;
-} temporary_memory_t;
+} temp_memory_t;
 
 static void init_arena(arena_t* arena, size_t size, void* base) {
 	*arena = (arena_t) {
@@ -31,11 +31,15 @@ static void* push_size_(arena_t* arena, size_t size) {
 	return result;
 }
 
-static temporary_memory_t begin_temporary_memory(arena_t* arena) {
-	temporary_memory_t result = {
+static temp_memory_t begin_temp_memory(arena_t* arena) {
+	temp_memory_t result = {
 			.arena = arena,
 			.used = arena->used
 	};
 	++arena->temp_count;
 	return result;
+}
+
+static void end_temp_memory(temp_memory_t* temp) {
+	temp->arena->temp_count--;
 }
