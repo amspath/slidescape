@@ -70,13 +70,13 @@ void init_draw_rect() {
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_rect);
 
 	static float vertices[] = {
-			-0.5f, -0.5f, 0.0f, 0.0f, 1.0f, // x, y, z,  u, v
-			0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
-			-0.5f, 0.5f, 0.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 0.0f, 0.0f, 0.0f, // x, y, z,  u, v
+			1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
 
-			-0.5f, 0.5f, 0.0f, 0.0f, 0.0f,
-			0.5f, -0.5f, 0.0f, 1.0f, 1.0f,
-			0.5f, 0.5f, 0.0f, 1.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+			1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
+			1.0f, 1.0f, 0.0f, 1.0f, 1.0f,
 	};
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
@@ -92,7 +92,8 @@ void init_draw_rect() {
 void draw_rect(u32 texture) {
 	glUseProgram(basic_shader);
 	glBindVertexArray(vao_rect);
-	glUniform1i(glGetUniformLocation(basic_shader, "the_texture"), texture);
+	glUniform1i(glGetUniformLocation(basic_shader, "the_texture"), 0);
+	glBindTexture(GL_TEXTURE_2D, texture);
 	glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
@@ -102,16 +103,14 @@ void init_opengl_stuff() {
 	ASSERT(!opengl_stuff_initialized);
 	opengl_stuff_initialized = true;
 
+	// TODO: don't depend on seperate shader text files in a release build
+	// TODO: look in the executable directory
 	basic_shader = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
+	glEnable(GL_TEXTURE_2D);
 
 	init_draw_rect();
 }
 
-
-typedef struct visible_piece_t {
-	// bitmap
-	v4f color;
-} visible_piece_t;
 
 typedef struct render_group_t {
 	u32 max_pushbuffer_size;

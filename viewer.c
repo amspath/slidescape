@@ -20,12 +20,9 @@
 #include "render_group.c"
 
 
-#define MAX_ENTITIES 4096
-u32 entity_count = 1;
-entity_t entities[MAX_ENTITIES];
-
-static image_t images[MAX_ENTITIES];
-u32 image_count;
+//#define MAX_ENTITIES 4096
+//u32 entity_count = 1;
+//entity_t entities[MAX_ENTITIES];
 
 v2f camera_pos;
 
@@ -36,7 +33,7 @@ wsi_t global_wsi;
 i32 current_level;
 
 
-
+// TODO: remove? do we still need this>
 rect2i clip_rect(rect2i* first, rect2i* second) {
 	i32 x0 = MAX(first->x, second->x);
 	i32 y0 = MAX(first->y, second->y);
@@ -59,19 +56,11 @@ v2i rect2i_center_point(rect2i* rect) {
 	return result;
 }
 
-void add_tile_entity(image_t* image, v2i pos) {
-	entity_t* entity = &entities[entity_count++];
-	*entity = (entity_t) {
-		.active = true,
-		.pos = pos,
-		.image = image,
-	};
-}
-
 #define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
 #define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
 
+#if 0
 void fill_image(image_t* image, void* data, i32 width, i32 height) {
 	*image = (image_t) { .data = data, .width = width, .height = height, .pitch = width * 4, };
 }
@@ -94,6 +83,8 @@ bool32 load_image(image_t* image, const char* filename) {
 	}
 	return false;
 }
+#endif
+
 bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 	bool32 result = false;
 	i32 channels_in_file = 0;
@@ -126,6 +117,7 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 
 	GLenum format = GL_RGBA;
 	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, pixels);
+	return texture;
 }
 
 u32 alloc_wsi_block(slide_memory_t* slide_memory) {
@@ -141,19 +133,18 @@ void* get_wsi_block(slide_memory_t* slide_memory, u32 block_index) {
 	return block;
 }
 
-v2i wsi_tile_world_position(wsi_level_t* wsi_level, u32 tile_x, u32 tile_y) {
-	v2i result = { -wsi_level->width/2 + tile_x * TILE_DIM, -wsi_level->height/2 + tile_y * TILE_DIM };
+wsi_tile_t* get_tile(wsi_level_t* wsi_level, i32 tile_x, i32 tile_y) {
+	i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
+	ASSERT(tile_index >= 0 && tile_index < wsi_level->num_tiles);
+	wsi_tile_t* result = wsi_level->tiles + tile_index;
 	return result;
 }
 
 i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	wsi_level_t* wsi_level = wsi->levels + level;
+	wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
 
-	i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
-	ASSERT(tile_index >= 0 && tile_index < wsi_level->num_tiles);
-	wsi_tile_t* tile = wsi_level->tiles + tile_index;
-
-	if (tile->block != 0) {
+	if (tile->texture != 0) {
 		// Yay, this tile is already loaded
 		return 0;
 	} else {
@@ -168,30 +159,24 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 		openslide.openslide_read_region(wsi->osr, pixel_data, x, y, level, TILE_DIM, TILE_DIM);
 
 		tile->texture = load_texture(pixel_data, TILE_DIM, TILE_DIM);
+
+		// TODO: remove this hack once we have a better strategy for memory management
+		global_viewer.slide_memory.blocks_in_use--; // deallocate
+
+//		printf("Loaded tile: level=%d tile_x=%d tile_y=%d block=%u texture=%u\n", level, tile_x, tile_y, tile->block, tile->texture);
 		return 1;
 	}
 }
 
-void wsi_load_blocks_in_region(wsi_t* wsi, i32 level, v2i xy_tile_min, v2i xy_tile_max) {
+u32 get_texture_for_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
+	wsi_level_t* wsi_level = wsi->levels + level;
 
-	i32 debug_tiles_loaded = 0;
-	i64 debug_start = get_clock();
+	i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
+	ASSERT(tile_index >= 0 && tile_index < wsi_level->num_tiles);
+	wsi_tile_t* tile = wsi_level->tiles + tile_index;
 
-	for (i32 tile_y = xy_tile_min.y; tile_y <= xy_tile_max.y; ++tile_y) {
-		for (i32 tile_x = xy_tile_min.x; tile_x <= xy_tile_max.x; ++tile_x) {
-			debug_tiles_loaded += wsi_load_tile(wsi, level, tile_x, tile_y);
-			if (debug_tiles_loaded > 1) {
-				return;
-			}
-		}
-	}
-
-	if (debug_tiles_loaded > 0) {
-		printf("Level %d: loaded %d tiles in %g seconds.\n", level, debug_tiles_loaded, get_seconds_elapsed(debug_start, get_clock()));
-	}
-
+	return tile->texture;
 }
-
 
 void load_wsi(wsi_t* wsi, char* filename) {
 	if (wsi->osr) {
@@ -200,8 +185,6 @@ void load_wsi(wsi_t* wsi, char* filename) {
 	}
 
 	global_viewer.slide_memory.blocks_in_use = 1;
-	image_count = 0;
-	entity_count = 1;
 
 	wsi->osr = openslide.openslide_open(filename);
 	if (wsi->osr) {
@@ -284,7 +267,9 @@ void load_wsi(wsi_t* wsi, char* filename) {
 		}
 
 		current_level = wsi->num_levels-1;
-//		load_wsi_level(wsi->osr, current_level);
+
+		camera_pos.x = (wsi->width * wsi->mpp_x) / 2.0f;
+		camera_pos.y = (wsi->height * wsi->mpp_y) / 2.0f;
 
 	}
 
@@ -296,56 +281,20 @@ void on_file_dragged(char* filename) {
 	current_image = loaded_images;
 	load_image(&loaded_images[0], filename);
 #else
-
+	// TODO: allow loading either a normal image or a WSI (we should be able to function as a normal image viewer!)
 	load_wsi(&global_wsi, filename);
-
 #endif
-
 }
-
-
-
-#if 0
-void render_weird_gradient(surface_t *surface, int x_offset, int y_offset) {
-	u8* row = (u8*) surface->memory;
-	for (int y = 0; y < surface->height; ++y) {
-		u32* pixel = (u32*) row;
-		for (int x = 0; x < surface->width; ++x) {
-			// little endian: BB GG RR xx
-			u8 blue = (u8) (y + y_offset); // blue channel
-			u8 green = (u8) (-x / 2 + x_offset); // green channel
-			u8 red = (u8) (x + x_offset); // red channel
-			*pixel = (blue << 0 | (green ^ blue) << 8 | red << 16);
-			pixel += 1;
-		}
-		row += surface->pitch;
-	}
-}
-#endif
-
-
-image_t debug_image;
-texture_t debug_texture;
 
 void first() {
+	// TODO: remove or change this.
 	i64 wsi_memory_size = GIGABYTES(1);
 	global_viewer.slide_memory.data = platform_alloc(wsi_memory_size);
 	global_viewer.slide_memory.capacity = wsi_memory_size;
 	global_viewer.slide_memory.capacity_in_blocks = wsi_memory_size / WSI_BLOCK_SIZE;
 	global_viewer.slide_memory.blocks_in_use = 1;
 
-/*	size_t transient_storage_size = MEGABYTES(8);
-	global_viewer.transient_arena = (arena_t) {
-		.base = platform_alloc(transient_storage_size),
-		.size = transient_storage_size,
-	};*/
-
 	init_opengl_stuff();
-
-	//debug
-//	if (!load_texture_from_file(&debug_texture, "data/transparent_cat.png")) {
-//		panic();
-//	}
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
@@ -359,7 +308,34 @@ float um_per_screen_pixel(float mpp, i32 level) {
 	return result;
 }
 
+i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
+	ASSERT(tile_side > 0);
+	float tile_float = (world_pos / tile_side);
+	float tile = (i32)floorf(tile_float);
+	return tile;
+}
+
 i32 debug_current_image_index = 1;
+
+bool32 was_key_pressed(input_t* input, i32 keycode) {
+	u8 key = keycode & 0xFF;
+	if (input->keyboard.keys[key].down && input->keyboard.keys[key].transition_count > 0) {
+		return true;
+	} else {
+		return false;
+	}
+}
+
+bool32 is_key_down(input_t* input, i32 keycode) {
+	u8 key = keycode & 0xFF;
+	// TODO: fix: should return true if key is held down continuously
+	bool32 result = input->keyboard.keys[key].down;
+	return result;
+}
+
+bool32 use_image_adjustments;
+float black_level = (10.0f / 255.0f);
+float white_level = (230.0f / 255.0f);
 
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height) {
 
@@ -375,25 +351,68 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	i32 dlevel = input->mouse_z != 0 ? (input->mouse_z > 0 ? -1 : 1) : 0;
 
 
-//	i32 dimage_index = input->mouse_z != 0 ? (input->mouse_z > 0 ? -1 : 1) : 0;
-	i32 dimage_index = 0;
-	debug_current_image_index = CLAMP(debug_current_image_index + dimage_index, 1, entity_count-1);
-
 	if (dlevel != 0) {
 //		printf("mouse_z = %d\n", input->mouse_z);
 		if (global_wsi.osr) {
 
 			current_level += dlevel;
 			current_level = CLAMP(current_level, 0, global_wsi.num_levels-1);
-
-#if 0
-			load_wsi_level(global_wsi.osr, current_level);
-#endif
 		}
 	}
 
+	if (was_key_pressed(input, 'P')) {
+		use_image_adjustments = !use_image_adjustments;
+	}
+
+	// NOTE(pieter): temporary experimentation with basic image adjustments.
+	if (is_key_down(input, 'J')) {
+		black_level -= 0.1f;
+		black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
+	}
+
+	if (is_key_down(input, 'U')) {
+		black_level += 0.1f;
+		black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
+	}
+
+	if (is_key_down(input, 'L')) {
+		white_level -= 0.1f;
+		white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
+	}
+
+	if (is_key_down(input, 'O')) {
+		white_level += 0.1f;
+		white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
+	}
+
+	wsi_level_t* wsi_level = global_wsi.levels + current_level;
 	float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
 	float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
+
+	float x_tile_side_in_um = um_per_pixel_x * (float)TILE_DIM;
+	float y_tile_side_in_um = um_per_pixel_y * (float)TILE_DIM;
+
+	float r_minus_l = um_per_pixel_x * (float)client_width;
+	float t_minus_b = um_per_pixel_y * (float)client_height;
+
+	float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
+	float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
+	float camera_rect_y1 = camera_pos.y - t_minus_b * 0.5f;
+	float camera_rect_y2 = camera_pos.y + t_minus_b * 0.5f;
+
+	i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, x_tile_side_in_um);
+	i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, x_tile_side_in_um) + 1;
+	i32 camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, y_tile_side_in_um);
+	i32 camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, y_tile_side_in_um) + 1;
+
+	camera_tile_x1 = CLAMP(camera_tile_x1, 0, wsi_level->width_in_tiles);
+	camera_tile_x2 = CLAMP(camera_tile_x2, 0, wsi_level->width_in_tiles);
+	camera_tile_y1 = CLAMP(camera_tile_y1, 0, wsi_level->height_in_tiles);
+	camera_tile_y2 = CLAMP(camera_tile_y2, 0, wsi_level->height_in_tiles);
+
+	if (input->mouse_buttons[1].down) {
+		DUMMY_STATEMENT;
+	}
 
 	if (input->mouse_buttons[0].down) {
 		// do the drag
@@ -409,23 +428,30 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	}
 
 
-#if 1
-
-
+	i32 max_tiles_to_load_at_once = 5;
+	i32 tiles_loaded = 0;
 	if (global_wsi.osr) {
-		wsi_load_tile(&global_wsi, current_level, 0, 0);
+
+
+		for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
+			for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
+				if (tiles_loaded >= max_tiles_to_load_at_once) {
+					// TODO: remove this performance hack after background loading (multithreaded) is implemented.
+					break;
+				} else {
+					tiles_loaded += wsi_load_tile(&global_wsi, current_level, tile_x, tile_y);
+				}
+			}
+		}
 	}
 
-
-
-	glClearColor(0.85f, 0.85f, 0.85f, 1.0f);
+	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+
 
 	mat4x4 projection = {};
 	{
-		float r_minus_l = um_per_pixel_x * (float)client_width;
-		float t_minus_b = um_per_pixel_y * (float)client_height;
-
 		float l = -0.5f*r_minus_l;
 		float r = +0.5f*r_minus_l;
 		float b = -0.5f*t_minus_b;
@@ -437,159 +463,43 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 	mat4x4 M, V, I, T, S;
 	mat4x4_identity(I);
-	// define model matrix
-	mat4x4_translate(T, 0.0f, 0.0f, 0.0f);
-	mat4x4_scale_aniso(S, I, um_per_pixel_x * (float)TILE_DIM, um_per_pixel_y * (float)TILE_DIM, 1.0f);
-	mat4x4_mul(M, T, S);
 
 	// define view matrix
 	mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
 
-	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
 	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
 	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
 
-	draw_rect(0);
 
+	if (use_image_adjustments) {
+		glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
+		glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
+	} else {
+		glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
+		glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
+	}
 
-#elif 0
-	v4f clear_color = {0.85f, 0.85f, 0.85f, 1.0f};
-	clear_surface(surface, &clear_color);
+	for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
+		for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
 
-//	rect2i client_rect = {-client_width/2, -client_height/2, client_width, client_height};
-	rect2i viewport_rect = {camera_pos.x - client_width/2, camera_pos.y - client_height/2, client_width, client_height};
+			wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
+			if (tile->texture) {
+				u32 texture = get_texture_for_tile(&global_wsi, current_level, tile_x, tile_y);
 
-//	rect2i viewport_rect = {-client_width/2, -client_height/2, client_width, client_height};
-//	rect2i screen_rect = {0, 0, client_width, client_height};
-//	v2i camera_offset = { camer.x - screen_rect.x, viewport_rect.y - screen_rect.y };
+				float tile_pos_x = x_tile_side_in_um * tile_x;
+				float tile_pos_y = y_tile_side_in_um * tile_y;
 
+				// define model matrix
+				mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
+				mat4x4_scale_aniso(S, I, x_tile_side_in_um, y_tile_side_in_um, 1.0f);
+				mat4x4_mul(M, T, S);
+				glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
 
-	rect2i region = viewport_rect;
-	region.x -= camera_pos.x;
-	region.y -= camera_pos.y;
-
-	rect2i clip_space;
-	clip_space.x = LOWERBOUND(region.x << current_level, 0);
-	clip_space.y = LOWERBOUND(region.y << current_level, 0);
-	clip_space.w = viewport_rect.w << current_level;
-	clip_space.h = viewport_rect.h << current_level;
-
-	region = clip_rect(&region, &clip_space);
-
-
-	wsi_level_t* wsi_level = global_wsi.levels + current_level;
-
-	v2i xy_tile_min = { region.x / TILE_DIM, region.y / TILE_DIM };
-	v2i xy_tile_max = { (region.x + (clip_space.w - 1) / TILE_DIM),
-	                    (region.y + (clip_space.h - 1) / TILE_DIM) };
-
-	ASSERT(xy_tile_min.x >= 0);
-	ASSERT(xy_tile_min.y >= 0);
-	xy_tile_max.x = UPPERBOUND(xy_tile_max.x, wsi_level->width_in_tiles-1);
-	xy_tile_max.y = UPPERBOUND(xy_tile_max.y, wsi_level->height_in_tiles-1);
-
-	wsi_load_blocks_in_region(&global_wsi, current_level, xy_tile_min, xy_tile_max);
-
-	v2i camera_offset = { camera_pos.x - client_width/2, camera_pos.y - client_height/2 };
-
-	for (i32 tile_y = xy_tile_min.y; tile_y <= xy_tile_max.y; ++tile_y) {
-		for (i32 tile_x = xy_tile_min.x; tile_x <= xy_tile_max.x; ++tile_x) {
-			i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
-			ASSERT(tile_index >= 0 && tile_index < wsi_level->num_tiles);
-			wsi_tile_t* tile = wsi_level->tiles + tile_index;
-
-			if (tile->block != 0) {
-				// memory is allocated
-				u32* pixel_data = get_wsi_block(&global_viewer.slide_memory, tile->block);
-				v2i pos = wsi_tile_world_position(wsi_level, tile_x, tile_y);
-
-				rect2i screen_rect = {0, 0, client_width, client_height};
-
-				rect2i image_rect = { pos.x - camera_offset.x, pos.y - camera_offset.y, TILE_DIM, TILE_DIM };
-				rect2i clipped_rect = clip_rect(&image_rect, &screen_rect);
-				v2i image_offset = { clipped_rect.x - image_rect.x, clipped_rect.y - image_rect.y };
-
-				i32 start_x = clipped_rect.x;
-				i32 start_y = clipped_rect.y;
-				i32 end_x = clipped_rect.x + clipped_rect.w;// - camera_offset.x;
-				i32 end_y = clipped_rect.y + clipped_rect.h;// - camera_offset.y;
-
-
-//			printf("offset: %d %d\n", image_offset.x,image_offset.y);
-
-
-				u8* surface_row = (u8*) surface->memory + (start_y * surface->pitch) + start_x * BYTES_PER_PIXEL;
-				u8* image_row = (u8*)pixel_data;// + (TILE_DIM - 1) * TILE_PITCH; // start on the last row
-
-				for (int y = start_y; y < end_y; ++y) {
-					u32* surface_pixel = (u32*) surface_row;
-					u32* image_pixel = (u32*) image_row + image_offset.y * TILE_DIM + image_offset.x;
-					for (int x = start_x; x < end_x; ++x) {
-						u32 color = *image_pixel++;
-						u8 a = (u8) (color >> 24);
-						u8 b = (u8) (color >> 16);
-						u8 g = (u8) (color >> 8);
-						u8 r = (u8) (color);
-
-						*surface_pixel = (a << 24 | r << 16 | g << 8 | b << 0);
-						surface_pixel += 1;
-					}
-					surface_row += surface->pitch;
-					image_row += TILE_PITCH;
-				}
+				draw_rect(texture);
 			}
+
 		}
 	}
-#else
-	for (u32 entity_id = 1; entity_id < entity_count; ++entity_id) {
-		entity_t* entity = entities + entity_id;
-		if (!entity->active) continue;
-
-		if (entity_id != debug_current_image_index) {
-			continue;
-		}
-
-		image_t* image = entity->image;
-		if (image && image->data) {
-
-
-			rect2i image_rect = {entity->pos.x,
-			                     entity->pos.y,
-			                     image->width, image->height
-			};
-			rect2i clipped_rect = clip_rect(&image_rect, &viewport_rect);
-
-			i32 start_x = clipped_rect.x - camera_offset.x;
-			i32 start_y = clipped_rect.y - camera_offset.y;
-			i32 end_x = clipped_rect.x + clipped_rect.w - camera_offset.x;
-			i32 end_y = clipped_rect.y + clipped_rect.h - camera_offset.y;
-
-			v2i image_offset = { clipped_rect.x - image_rect.x, clipped_rect.y - image_rect.y };
-//			printf("offset: %d %d\n", image_offset.x,image_offset.y);
-
-
-			u8* surface_row = (u8*) surface->memory + (start_y * surface->pitch) + start_x * BYTES_PER_PIXEL;
-			u8* image_row = image->data + (image->height - 1) * image->pitch; // start on the last row
-
-			for (int y = start_y; y < end_y; ++y) {
-				u32* surface_pixel = (u32*) surface_row;
-				u32* image_pixel = (u32*) image_row - image_offset.y * image->width + image_offset.x;
-				for (int x = start_x; x < end_x; ++x) {
-					u32 color = *image_pixel++;
-					u8 a = (u8) (color >> 24);
-					u8 b = (u8) (color >> 16);
-					u8 g = (u8) (color >> 8);
-					u8 r = (u8) (color);
-
-					*surface_pixel = (a << 24 | r << 16 | g << 8 | b << 0);
-					surface_pixel += 1;
-				}
-				surface_row += surface->pitch;
-				image_row -= image->pitch;
-			}
-		}
-	}
-#endif
 
 }
 

@@ -5,10 +5,15 @@ in VS_OUT {
 } fs_in;
 
 uniform sampler2D the_texture;
+uniform float black_level;
+uniform float white_level;
 
 void main() {
     vec4 the_texture_rgba = texture(the_texture, fs_in.tex_coord);
     float opacity = the_texture_rgba.a;
 
-    gl_FragColor = vec4(opacity * the_texture_rgba.rgb + (1.0f-opacity) * vec3(0.85f, 0.85f, 0.85f), opacity);
+    vec3 color = the_texture_rgba.bgr; // NOTE(pieter): Why are the colors inverted here?
+    color = (color - black_level) * (1.0f / (white_level - black_level));
+
+    gl_FragColor = vec4(opacity * color + (1.0f-opacity) * vec3(0.95f, 0.95f, 0.95f), opacity);
 }
