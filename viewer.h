@@ -160,6 +160,7 @@ typedef struct {
 // globals
 
 extern viewer_t global_viewer;
+extern bool32 use_image_adjustments;
 
 // viewer.c
 

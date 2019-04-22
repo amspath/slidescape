@@ -12,7 +12,7 @@ void main() {
     vec4 the_texture_rgba = texture(the_texture, fs_in.tex_coord);
     float opacity = the_texture_rgba.a;
 
-    vec3 color = the_texture_rgba.bgr; // NOTE(pieter): Why are the colors inverted here?
+    vec3 color = the_texture_rgba.bgr; // NOTE: Why are the colors inverted here?
     color = (color - black_level) * (1.0f / (white_level - black_level));
 
     gl_FragColor = vec4(opacity * color + (1.0f-opacity) * vec3(0.95f, 0.95f, 0.95f), opacity);

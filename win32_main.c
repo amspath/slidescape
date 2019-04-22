@@ -252,104 +252,69 @@ void win32_resize_DIB_section(surface_t* buffer, int width, int height) {
 	}
 }
 
-void win32_display_buffer(surface_t* buffer, HDC device_context, int client_width, int client_height) {
 
-#if 0
-	if (client_width == buffer->width * 2 && client_height == buffer->height * 2) {
-		StretchDIBits(device_context,
-		              0, 0, client_width, client_height,
-		              0, 0, buffer->width, buffer->height,
-		              buffer->memory,
-		              &buffer->win32.bitmapinfo,
-		              DIB_RGB_COLORS,
-		              SRCCOPY);
-	} else {
-		int offset_x = 0;
-		int offset_y = 0;
+enum menu_ids {
+	IDM_FILE_OPEN,
+	IDM_FILE_QUIT,
+	IDM_VIEW_FULLSCREEN,
+	IDM_VIEW_USE_IMAGE_ADJUSTMENTS,
+};
+HMENU menubar;
+HMENU file_menu;
+HMENU view_menu;
 
-		PatBlt(device_context, 0, 0, client_width, offset_y, BLACKNESS);
-		PatBlt(device_context, 0, buffer->height + offset_y, client_width, client_height, BLACKNESS);
-		PatBlt(device_context, 0, 0, offset_x, client_height, BLACKNESS);
-		PatBlt(device_context, buffer->width + offset_x, 0, client_width, client_height, BLACKNESS);
+void init_menus(HWND hwnd) {
 
-		StretchDIBits(device_context,
-		              offset_x, offset_y, buffer->width, buffer->height,
-		              0, 0, buffer->width, buffer->height,
-		              buffer->memory,
-		              &buffer->win32.bitmapinfo,
-		              DIB_RGB_COLORS,
-		              SRCCOPY);
-	}
-#elif 0
-	glViewport(0, 0, client_width, client_height);
-	 
-	glBindTexture(GL_TEXTURE_2D, global_blit_texture_handle);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, buffer->width, buffer->height, 0, GL_BGRA_EXT, GL_UNSIGNED_BYTE, buffer->memory);
+	menubar = CreateMenu();
+	file_menu = CreateMenu();
+	view_menu = CreateMenu();
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	AppendMenuA(file_menu, MF_STRING, IDM_FILE_OPEN, "&Open...\tCtrl+O");
+	AppendMenuA(file_menu, MF_SEPARATOR, 0, NULL);
+	AppendMenuA(file_menu, MF_STRING, IDM_FILE_QUIT, "&Quit\tAlt+F4");
 
-	glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+	AppendMenuA(view_menu, MF_STRING | MF_UNCHECKED, IDM_VIEW_FULLSCREEN, "&Fullscreen\tAlt+Enter");
+	AppendMenuA(view_menu, MF_SEPARATOR, 0, NULL);
+	AppendMenuA(view_menu, MF_STRING | MF_UNCHECKED, IDM_VIEW_USE_IMAGE_ADJUSTMENTS, "Use image &adjustments");
 
-	glEnable(GL_TEXTURE_2D);
-
-	glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	glMatrixMode(GL_TEXTURE);
-	glLoadIdentity();
-
-	glMatrixMode(GL_MODELVIEW);
-	glLoadIdentity();
-
-	glMatrixMode(GL_PROJECTION);
-	glLoadIdentity();
-
-	glBegin(GL_TRIANGLES);
-	float p = 1.0f;
-
-	// lower triangle
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex2f(-p,-p);
-
-	glTexCoord2f(1.0f, 0.0f);
-	glVertex2f(p,-p);
-
-	glTexCoord2f(1.0f, 1.0f);
-	glVertex2f(p,p);
-
-	// upper triange
-	glTexCoord2f(0.0f, 0.0f);
-	glVertex2f(-p,-p);
-
-	glTexCoord2f(1.0f, 1.0f);
-	glVertex2f(p,p);
-
-	glTexCoord2f(0.0f, 1.0f);
-	glVertex2f(-p, p);
-
-	glEnd();
-
-	SwapBuffers(device_context);
-#else
-	glViewport(0, 0, client_width, client_height);
-
-	glEnable(GL_TEXTURE_2D);
-
-	glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-
-
-	SwapBuffers(device_context);
-#endif
+	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) file_menu, "&File");
+	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) view_menu, "&View");
+	SetMenu(hwnd, menubar);
 }
 
-typedef struct mouse_state_t {
+bool32 is_fullscreen(HWND window) {
+	LONG style = GetWindowLong(window, GWL_STYLE);
+	bool32 result = style & WS_OVERLAPPEDWINDOW;
+	return result;
+}
 
-} mouse_state_t;
+void toggle_fullscreen(HWND window) {
+	LONG style = GetWindowLong(window, GWL_STYLE);
+	if (style & WS_OVERLAPPEDWINDOW) {
+		MONITORINFO monitor_info = { .cbSize = sizeof(monitor_info) };
+		if (GetWindowPlacement(window, &window_position) &&
+		    GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY), &monitor_info))
+		{
+			SetWindowLong(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+			// See: https://stackoverflow.com/questions/23145217/flickering-when-borderless-window-and-desktop-dimensions-are-the-same
+			// Why????
+			SetWindowPos(window, HWND_TOP, monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
+			             monitor_info.rcMonitor.right - monitor_info.rcMonitor.left + 1,
+			             monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+			             SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+			CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_CHECKED);
+
+		}
+	} else {
+		SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+		SetWindowPlacement(window, &window_position);
+		SetWindowPos(window, 0, 0, 0, 0, 0,
+		             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+		CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_UNCHECKED);
+
+	}
+}
+
 
 LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = 0;
@@ -358,6 +323,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 
 		case WM_CREATE: {
 			DragAcceptFiles(window, true);
+			init_menus(window);
 		} break;
 		case WM_DROPFILES: {
 			HDROP hdrop = (HDROP) wparam;
@@ -367,6 +333,46 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			}
 			DragFinish(hdrop);
 
+		} break;
+		case WM_COMMAND: {
+			switch(LOWORD(wparam)) {
+				case IDM_FILE_OPEN: {
+					// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
+					OPENFILENAME ofn = {};       // common dialog box structure
+					char filename[4096];       // buffer for file name
+					filename[0] = '\0';
+
+					printf("Attempting to open a file\n");
+
+					// Initialize OPENFILENAME
+					ofn.lStructSize = sizeof(ofn);
+					ofn.hwndOwner = window;
+					ofn.lpstrFile = filename;
+					ofn.nMaxFile = sizeof(filename);
+					ofn.lpstrFilter = "All\0*.*\0Text\0*.TXT\0";
+					ofn.nFilterIndex = 1;
+					ofn.lpstrFileTitle = NULL;
+					ofn.nMaxFileTitle = 0;
+					ofn.lpstrInitialDir = NULL;
+					ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+					// Display the Open dialog box.
+					if (GetOpenFileName(&ofn)==TRUE) {
+						on_file_dragged(filename);
+					}
+				} break;
+				case IDM_FILE_QUIT: {
+					SendMessage(window, WM_CLOSE, 0, 0);
+				} break;
+				case IDM_VIEW_FULLSCREEN: {
+					toggle_fullscreen(window);
+				} break;
+				case IDM_VIEW_USE_IMAGE_ADJUSTMENTS: {
+					use_image_adjustments = !use_image_adjustments;
+					u32 new_state = (use_image_adjustments) ? MF_CHECKED : MF_UNCHECKED;
+					CheckMenuItem(view_menu, IDM_VIEW_USE_IMAGE_ADJUSTMENTS, new_state);
+				} break;
+			}
 		} break;
 
 		case WM_SIZE: {
@@ -447,8 +453,10 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			PAINTSTRUCT paint;
 			HDC device_context = BeginPaint(window, &paint);
 			win32_window_dimension_t dimension = win32_get_window_dimension(window);
-//			win32_display_buffer(&backbuffer, device_context, dimension.width, dimension.height);
+			viewer_update_and_render(NULL, dimension.width, dimension.height);
+			SwapBuffers(device_context);
 			EndPaint(window, &paint);
+
 		} break;
 
 		default: {
@@ -472,28 +480,6 @@ void win32_process_keyboard_event(button_state_t* new_state, bool32 down_boolean
 	}
 }
 
-void toggle_fullscreen(HWND window) {
-	LONG style = GetWindowLong(window, GWL_STYLE);
-	if (style & WS_OVERLAPPEDWINDOW) {
-		MONITORINFO monitor_info = { .cbSize = sizeof(monitor_info) };
-		if (GetWindowPlacement(window, &window_position) &&
-		    GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY), &monitor_info))
-		{
-			SetWindowLong(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
-			// See: https://stackoverflow.com/questions/23145217/flickering-when-borderless-window-and-desktop-dimensions-are-the-same
-			// Why????
-			SetWindowPos(window, HWND_TOP, monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
-			             monitor_info.rcMonitor.right - monitor_info.rcMonitor.left + 1,
-			             monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
-			             SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-		}
-	} else {
-		SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
-		SetWindowPlacement(window, &window_position);
-		SetWindowPos(window, 0, 0, 0, 0, 0,
-		             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-	}
-}
 
 bool32 cursor_hidden;
 POINT stored_mouse_pos;
@@ -514,7 +500,7 @@ void mouse_show() {
 	}
 }
 
-void win32_process_pending_messages(input_t* input) {
+void win32_process_pending_messages(input_t* input, HWND window) {
 	controller_input_t* keyboard_input = &input->keyboard;
 	MSG message;
 	while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
@@ -548,6 +534,8 @@ void win32_process_pending_messages(input_t* input) {
 				int repeat_count = message.lParam & 0xFFFF;
 				bool32 was_down = ((message.lParam & (1 << 30)) != 0);
 				bool32 is_down = ((message.lParam & (1 << 31)) == 0);
+				i16 ctrl_state = GetKeyState(VK_CONTROL);
+				bool32 ctrl_down = (ctrl_state < 0); // 'down' determined by high order bit == sign bit
 				if (was_down && is_down) break; // uninteresting: repeated key
 
 				bool32 alt_down = message.lParam & (1 << 29);
@@ -591,31 +579,28 @@ void win32_process_pending_messages(input_t* input) {
 						win32_process_keyboard_event(&keyboard_input->right_shoulder, is_down);
 					}
 						break;
-#if HANDMADE_INTERNAL
-					case 'P': {
-											if (is_down) global_pause = !global_pause;
-										} break;
-										case VK_BACK: {
-											win32_process_keyboard_event(&keyboard_input->start, is_down);
-										} break;
-#endif
 
 					case VK_SPACE: {
 						win32_process_keyboard_event(&keyboard_input->button_a, is_down);
 					}
 						break;
 
-					case VK_ESCAPE: {
+					/*case VK_ESCAPE: {
 						is_program_running = false;
-					}
+					}*/
 						break;
 
 					case VK_F4: {
 						if (is_down && alt_down) {
 							is_program_running = false;
 						}
+					} break;
+
+					case 'O': {
+						if (is_down && ctrl_down) {
+							SendMessage(window, WM_COMMAND, IDM_FILE_OPEN, 0);
+						}
 					}
-						break;
 
 					case VK_RETURN: {
 						if (is_down && !was_down && alt_down && message.hwnd) {
@@ -624,19 +609,6 @@ void win32_process_pending_messages(input_t* input) {
 
 					}
 						break;
-
-/*					case 'L': {
-						if (!is_down) break;
-						if (state->input_playing_index > 0) {
-							win32_end_replay_input(state);
-						} else if (state->input_recording_index == 0) {
-							win32_begin_recording_input(state, 1);
-						} else {
-							win32_end_recording_input(state);
-							win32_begin_replay_input(state, 1);
-						}
-					}
-						break;*/
 				}
 			} break;
 
@@ -866,7 +838,7 @@ void win32_init_main_window() {
 			.lpszClassName = "SlideviewerMainWindow",
 	};
 
-	if (!RegisterClass(&main_window_class)) {
+	if (!RegisterClassA(&main_window_class)) {
 		panic();
 		// TODO: Diagnostic
 	};
@@ -903,7 +875,7 @@ void win32_init_main_window() {
 
 
 
-void win32_process_input() {
+void win32_process_input(HWND window) {
 	// Swap
 	input_t* temp = old_input;
 	old_input = curr_input;
@@ -923,7 +895,7 @@ void win32_process_input() {
 
 	POINT cursor_pos;
 	GetCursorPos(&cursor_pos);
-	ScreenToClient(main_window, &cursor_pos);
+	ScreenToClient(window, &cursor_pos);
 	curr_input->mouse_xy = (v2i){ cursor_pos.x, cursor_pos.y };
 	curr_input->mouse_z = 0; // TODO: support mousewheel
 
@@ -935,7 +907,7 @@ void win32_process_input() {
 
 
 
-	win32_process_pending_messages(curr_input);
+	win32_process_pending_messages(curr_input, window);
 	win32_process_xinput_controllers();
 
 }
@@ -1082,16 +1054,13 @@ int main(int argc, char** argv) {
 	first();
 	while (is_program_running) {
 
-		win32_process_input();
+		win32_process_input(main_window);
 
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-		glViewport(0, 0, dimension.width, dimension.height);
-
 		viewer_update_and_render(curr_input, dimension.width, dimension.height);
 
 		HDC hdc = GetDC(main_window);
 		SwapBuffers(hdc);
-//		win32_display_buffer(&backbuffer, hdc, dimension.width, dimension.height);
 		ReleaseDC(main_window, hdc);
 
 

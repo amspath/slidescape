@@ -92,8 +92,8 @@ bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 	if (pixels) {
 		glGenTextures(1, &texture->texture);
 		glBindTexture(GL_TEXTURE_2D, texture->texture);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		GLenum format = GL_RGBA;
@@ -110,8 +110,8 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	u32 texture = 0;
 	glGenTextures(1, &texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
@@ -338,168 +338,165 @@ float black_level = (10.0f / 255.0f);
 float white_level = (230.0f / 255.0f);
 
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height) {
-
-	bool32 control_back = false;
-	bool32 control_forward = false;
-	if (input->mouse_buttons[4].down && input->mouse_buttons[4].transition_count > 0) {
-		control_back = true;
-	}
-	if (input->mouse_buttons[5].down && input->mouse_buttons[5].transition_count > 0) {
-		control_forward = true;
-	}
-//	i32 dlevel = 0 + control_forward - control_back;
-	i32 dlevel = input->mouse_z != 0 ? (input->mouse_z > 0 ? -1 : 1) : 0;
-
-
-	if (dlevel != 0) {
-//		printf("mouse_z = %d\n", input->mouse_z);
-		if (global_wsi.osr) {
-
-			current_level += dlevel;
-			current_level = CLAMP(current_level, 0, global_wsi.num_levels-1);
-		}
-	}
-
-	if (was_key_pressed(input, 'P')) {
-		use_image_adjustments = !use_image_adjustments;
-	}
-
-	// NOTE(pieter): temporary experimentation with basic image adjustments.
-	if (is_key_down(input, 'J')) {
-		black_level -= 0.1f;
-		black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
-	}
-
-	if (is_key_down(input, 'U')) {
-		black_level += 0.1f;
-		black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
-	}
-
-	if (is_key_down(input, 'L')) {
-		white_level -= 0.1f;
-		white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
-	}
-
-	if (is_key_down(input, 'O')) {
-		white_level += 0.1f;
-		white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
-	}
-
-	wsi_level_t* wsi_level = global_wsi.levels + current_level;
-	float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
-	float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
-
-	float x_tile_side_in_um = um_per_pixel_x * (float)TILE_DIM;
-	float y_tile_side_in_um = um_per_pixel_y * (float)TILE_DIM;
-
-	float r_minus_l = um_per_pixel_x * (float)client_width;
-	float t_minus_b = um_per_pixel_y * (float)client_height;
-
-	float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
-	float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
-	float camera_rect_y1 = camera_pos.y - t_minus_b * 0.5f;
-	float camera_rect_y2 = camera_pos.y + t_minus_b * 0.5f;
-
-	i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, x_tile_side_in_um);
-	i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, x_tile_side_in_um) + 1;
-	i32 camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, y_tile_side_in_um);
-	i32 camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, y_tile_side_in_um) + 1;
-
-	camera_tile_x1 = CLAMP(camera_tile_x1, 0, wsi_level->width_in_tiles);
-	camera_tile_x2 = CLAMP(camera_tile_x2, 0, wsi_level->width_in_tiles);
-	camera_tile_y1 = CLAMP(camera_tile_y1, 0, wsi_level->height_in_tiles);
-	camera_tile_y2 = CLAMP(camera_tile_y2, 0, wsi_level->height_in_tiles);
-
-	if (input->mouse_buttons[1].down) {
-		DUMMY_STATEMENT;
-	}
-
-	if (input->mouse_buttons[0].down) {
-		// do the drag
-		camera_pos.x -= input->drag_vector.x * um_per_pixel_x;
-		camera_pos.y += input->drag_vector.y * um_per_pixel_y;
-		input->drag_vector = (v2i){};
-		mouse_hide();
+	glViewport(0, 0, client_width, client_height);
+	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+	if (!global_wsi.osr) {
+		return;
 	} else {
-		mouse_show();
-		if (input->mouse_buttons[0].transition_count != 0) {
-//			printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
-		}
-	}
+
+		if (input) {
+
+//	        i32 dlevel = 0 + control_forward - control_back;
+			i32 dlevel = input->mouse_z != 0 ? (input->mouse_z > 0 ? -1 : 1) : 0;
 
 
-	i32 max_tiles_to_load_at_once = 5;
-	i32 tiles_loaded = 0;
-	if (global_wsi.osr) {
+			if (dlevel != 0) {
+//		        printf("mouse_z = %d\n", input->mouse_z);
+				if (global_wsi.osr) {
 
-
-		for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
-			for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
-				if (tiles_loaded >= max_tiles_to_load_at_once) {
-					// TODO: remove this performance hack after background loading (multithreaded) is implemented.
-					break;
-				} else {
-					tiles_loaded += wsi_load_tile(&global_wsi, current_level, tile_x, tile_y);
+					current_level += dlevel;
+					current_level = CLAMP(current_level, 0, global_wsi.num_levels-1);
 				}
 			}
 		}
-	}
 
-	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
+		wsi_level_t* wsi_level = global_wsi.levels + current_level;
+		float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
+		float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
 
+		float x_tile_side_in_um = um_per_pixel_x * (float)TILE_DIM;
+		float y_tile_side_in_um = um_per_pixel_y * (float)TILE_DIM;
 
+		float r_minus_l = um_per_pixel_x * (float)client_width;
+		float t_minus_b = um_per_pixel_y * (float)client_height;
 
-	mat4x4 projection = {};
-	{
-		float l = -0.5f*r_minus_l;
-		float r = +0.5f*r_minus_l;
-		float b = -0.5f*t_minus_b;
-		float t = +0.5f*t_minus_b;
-		float n = 100.0f;
-		float f = -100.0f;
-		mat4x4_ortho(projection, l, r, b, t, n, f);
-	}
+		float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
+		float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
+		float camera_rect_y1 = camera_pos.y - t_minus_b * 0.5f;
+		float camera_rect_y2 = camera_pos.y + t_minus_b * 0.5f;
 
-	mat4x4 M, V, I, T, S;
-	mat4x4_identity(I);
+		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, x_tile_side_in_um);
+		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, x_tile_side_in_um) + 1;
+		i32 camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, y_tile_side_in_um);
+		i32 camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, y_tile_side_in_um) + 1;
 
-	// define view matrix
-	mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
+		camera_tile_x1 = CLAMP(camera_tile_x1, 0, wsi_level->width_in_tiles);
+		camera_tile_x2 = CLAMP(camera_tile_x2, 0, wsi_level->width_in_tiles);
+		camera_tile_y1 = CLAMP(camera_tile_y1, 0, wsi_level->height_in_tiles);
+		camera_tile_y2 = CLAMP(camera_tile_y2, 0, wsi_level->height_in_tiles);
 
-	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
-	glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+		if (input) {
 
-
-	if (use_image_adjustments) {
-		glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
-		glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
-	} else {
-		glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
-		glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
-	}
-
-	for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
-		for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
-
-			wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
-			if (tile->texture) {
-				u32 texture = get_texture_for_tile(&global_wsi, current_level, tile_x, tile_y);
-
-				float tile_pos_x = x_tile_side_in_um * tile_x;
-				float tile_pos_y = y_tile_side_in_um * tile_y;
-
-				// define model matrix
-				mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
-				mat4x4_scale_aniso(S, I, x_tile_side_in_um, y_tile_side_in_um, 1.0f);
-				mat4x4_mul(M, T, S);
-				glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
-
-				draw_rect(texture);
+			if (was_key_pressed(input, 'P')) {
+				use_image_adjustments = !use_image_adjustments;
 			}
 
+			// NOTE: temporary experimentation with basic image adjustments.
+			if (is_key_down(input, 'J')) {
+				black_level -= 0.1f;
+				black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
+			}
+
+			if (is_key_down(input, 'U')) {
+				black_level += 0.1f;
+				black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
+			}
+
+			if (is_key_down(input, 'L')) {
+				white_level -= 0.1f;
+				white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
+			}
+
+			if (is_key_down(input, 'O')) {
+				white_level += 0.1f;
+				white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
+			}
+
+			if (input->mouse_buttons[1].down) {
+				DUMMY_STATEMENT;
+			}
+
+			if (input->mouse_buttons[0].down) {
+				// do the drag
+				camera_pos.x -= input->drag_vector.x * um_per_pixel_x;
+				camera_pos.y += input->drag_vector.y * um_per_pixel_y;
+				input->drag_vector = (v2i){};
+				mouse_hide();
+			} else {
+				mouse_show();
+				if (input->mouse_buttons[0].transition_count != 0) {
+//			    printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
+				}
+			}
+
+			i32 max_tiles_to_load_at_once = 5;
+			i32 tiles_loaded = 0;
+			for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
+				for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
+					if (tiles_loaded >= max_tiles_to_load_at_once) {
+						// TODO: remove this performance hack after background loading (multithreaded) is implemented.
+						break;
+					} else {
+						tiles_loaded += wsi_load_tile(&global_wsi, current_level, tile_x, tile_y);
+					}
+				}
+			}
+		}
+
+		mat4x4 projection = {};
+		{
+			float l = -0.5f*r_minus_l;
+			float r = +0.5f*r_minus_l;
+			float b = -0.5f*t_minus_b;
+			float t = +0.5f*t_minus_b;
+			float n = 100.0f;
+			float f = -100.0f;
+			mat4x4_ortho(projection, l, r, b, t, n, f);
+		}
+
+		mat4x4 M, V, I, T, S;
+		mat4x4_identity(I);
+
+		// define view matrix
+		mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
+
+		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+
+
+		if (use_image_adjustments) {
+			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
+			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
+		} else {
+			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
+			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
+		}
+
+		for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
+			for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
+
+				wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
+				if (tile->texture) {
+					u32 texture = get_texture_for_tile(&global_wsi, current_level, tile_x, tile_y);
+
+					float tile_pos_x = x_tile_side_in_um * tile_x;
+					float tile_pos_y = y_tile_side_in_um * tile_y;
+
+					// define model matrix
+					mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
+					mat4x4_scale_aniso(S, I, x_tile_side_in_um, y_tile_side_in_um, 1.0f);
+					mat4x4_mul(M, T, S);
+					glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
+
+					draw_rect(texture);
+				}
+
+			}
 		}
 	}
+
+
 
 }
 
