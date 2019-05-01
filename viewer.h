@@ -117,9 +117,21 @@ typedef struct {
 	slide_memory_t slide_memory;
 } viewer_t;
 
+typedef struct wsi_t wsi_t;
+typedef struct load_tile_task_t load_tile_task_t;
+struct load_tile_task_t {
+	wsi_t* wsi;
+	i32 level;
+	i32 tile_x;
+	i32 tile_y;
+	u32* cached_pixels;
+	load_tile_task_t* next_free;
+};
+
 typedef struct {
 	u32 block;
 	u32 texture;
+	load_tile_task_t* load_task_data;
 } wsi_tile_t;
 
 typedef struct {
@@ -133,7 +145,7 @@ typedef struct {
 
 #define WSI_MAX_LEVELS 16
 
-typedef struct {
+typedef struct wsi_t {
 	i64 width;
 	i64 height;
 	i64 width_pow2;

@@ -2,6 +2,7 @@
 
 //#include "win32_main.h"
 #include "platform.h"
+#include "intrinsics.h"
 
 #include "openslide_api.h"
 #include <glad/glad.h>
@@ -96,8 +97,7 @@ bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		GLenum format = GL_RGBA;
-		glTexImage2D(GL_TEXTURE_2D, 0, format, texture->width, texture->height, 0, format, GL_UNSIGNED_BYTE, pixels);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texture->width, texture->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
 
 		result = true;
 		stbi_image_free(pixels);
@@ -115,8 +115,7 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-	GLenum format = GL_RGBA;
-	glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, pixels);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
 	return texture;
 }
 
@@ -140,6 +139,40 @@ wsi_tile_t* get_tile(wsi_level_t* wsi_level, i32 tile_x, i32 tile_y) {
 	return result;
 }
 
+
+
+void load_tile_func(i32 logical_thread_index, void* userdata) {
+	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
+	wsi_t* wsi = task_data->wsi;
+	i32 level = task_data->level;
+	i32 tile_x = task_data->tile_x;
+	i32 tile_y = task_data->tile_y;
+	wsi_level_t* wsi_level = wsi->levels + level;
+	wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
+
+	u32* temp_memory = malloc(WSI_BLOCK_SIZE);
+	i64 x = (tile_x * TILE_DIM) << level;
+	i64 y = (tile_y * TILE_DIM) << level;
+	openslide.openslide_read_region(wsi->osr, temp_memory, x, y, level, TILE_DIM, TILE_DIM);
+
+//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
+
+	write_barrier;
+	task_data->cached_pixels = temp_memory;
+	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
+}
+
+
+extern work_queue_t work_queue;
+
+void enqueue_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
+	load_tile_task_t* task_data = malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
+	*task_data = (load_tile_task_t){ .wsi = wsi, .level = level, .tile_x = tile_x, .tile_y = tile_y };
+
+	add_work_queue_entry(&work_queue, load_tile_func, task_data);
+
+}
+
 i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	wsi_level_t* wsi_level = wsi->levels + level;
 	wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
@@ -148,20 +181,27 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 		// Yay, this tile is already loaded
 		return 0;
 	} else {
-		tile->block = alloc_wsi_block(&global_viewer.slide_memory);
+		read_barrier;
+		if (tile->load_task_data) {
+			load_tile_task_t* task_data = tile->load_task_data;
+//			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
 
-		u32* pixel_data = get_wsi_block(&global_viewer.slide_memory, tile->block);
-		ASSERT(pixel_data);
+			tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
+			free(task_data->cached_pixels);
+			task_data->cached_pixels = NULL;
+			free(task_data);
+			tile->load_task_data = NULL;
+		} else {
+			enqueue_load_tile(wsi, level, tile_x, tile_y);
 
-		// OpenSlide still counts the coordinates of downsampled images as if they're the full level 0 image.
-		i64 x = (tile_x * TILE_DIM) << level;
-		i64 y = (tile_y * TILE_DIM) << level;
-		openslide.openslide_read_region(wsi->osr, pixel_data, x, y, level, TILE_DIM, TILE_DIM);
+			/*if (is_queue_work_in_progress(&work_queue)) {
+				do_worker_work(&work_queue, -1);
+				do_worker_work(&work_queue, -1);
+				do_worker_work(&work_queue, -1);
+			}*/
 
-		tile->texture = load_texture(pixel_data, TILE_DIM, TILE_DIM);
+		}
 
-		// TODO: remove this hack once we have a better strategy for memory management
-		global_viewer.slide_memory.blocks_in_use--; // deallocate
 
 //		printf("Loaded tile: level=%d tile_x=%d tile_y=%d block=%u texture=%u\n", level, tile_x, tile_y, tile->block, tile->texture);
 		return 1;

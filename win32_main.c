@@ -20,6 +20,7 @@
 #include "platform.h"
 
 #include "win32_main.h"
+#include "intrinsics.h"
 
 int g_argc;
 char** g_argv;
@@ -912,16 +913,12 @@ void win32_process_input(HWND window) {
 
 }
 
-typedef struct work_queue_entry_t {
-	void* data;
-	bool32 is_valid;
-} work_queue_entry_t;
-
 typedef struct work_queue_t {
 	HANDLE semaphore_handle;
-	i32 volatile entry_count;
-	i32 volatile next_entry_to_do;
-	i32 volatile entry_completion_count;
+	i32 volatile next_entry_to_submit;
+	i32 volatile next_entry_to_execute;
+	i32 volatile completion_count;
+	i32 volatile completion_goal;
 	work_queue_entry_t entries[256];
 } work_queue_t;
 
@@ -935,31 +932,28 @@ work_queue_t work_queue;
 win32_thread_info_t infos[3] = {};
 i32 num_threads = COUNT(infos);
 
-#define write_barrier do { _WriteBarrier(); _mm_sfence(); } while (0)
-#define read_barrier _ReadBarrier()
-
-#define interlocked_increment(x) InterlockedIncrement((volatile long*)x)
-#define interlocked_compare_exchange(x) InterlockedCompareExchange((volatile long*)x, )
-
-
-void add_work_queue_entry(work_queue_t* queue, void* ptr) {
-	ASSERT(queue->entry_count < COUNT(queue->entries));
-	queue->entries[queue->entry_count].data = ptr;
-
+void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
+	// Circular FIFO buffer
+	i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
+	ASSERT(new_next_entry_to_submit != queue->next_entry_to_execute);
+	queue->entries[queue->next_entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
+	++queue->completion_goal;
 	write_barrier;
-	++queue->entry_count;
+	queue->next_entry_to_submit = new_next_entry_to_submit;
 	ReleaseSemaphore(queue->semaphore_handle, 1, NULL);
 }
 
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {};
 
-	i32 original_entry_to_do = queue->next_entry_to_do;
-	if (queue->next_entry_to_do < queue->entry_count) {
-		i32 entry_index = InterlockedCompareExchange(
-				(volatile long*) &queue->next_entry_to_do,original_entry_to_do + 1, original_entry_to_do);
-		if (entry_index == original_entry_to_do) {
+	i32 new_next_entry_to_execute = (queue->next_entry_to_execute + 1) % COUNT(queue->entries);
+	i32 original_entry_to_execute = queue->next_entry_to_execute;
+	if (queue->next_entry_to_execute != queue->next_entry_to_submit) {
+		i32 entry_index = interlocked_compare_exchange(&queue->next_entry_to_execute,
+		                                               new_next_entry_to_execute, original_entry_to_execute);
+		if (entry_index == original_entry_to_execute) {
 			result.data = queue->entries[entry_index].data;
+			result.callback = queue->entries[entry_index].callback;
 			result.is_valid = true;
 			read_barrier;
 		}
@@ -967,22 +961,23 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	return result;
 }
 
-void mark_queue_entry_completed(work_queue_t* queue) {
-	interlocked_increment(&queue->entry_completion_count);
+void win32_mark_queue_entry_completed(work_queue_t* queue) {
+	interlocked_increment(&queue->completion_count);
 }
 
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
 	work_queue_entry_t entry = get_next_work_queue_entry(queue);
 	if (entry.is_valid) {
-		printf("thread %d: %s\n", logical_thread_index, (char*) entry.data);
-		mark_queue_entry_completed(queue);
+		if (!entry.callback) panic();
+		entry.callback(logical_thread_index, entry.data);
+		win32_mark_queue_entry_completed(queue);
 	}
 	return entry.is_valid;
 }
 
 
 bool32 is_queue_work_in_progress(work_queue_t* queue) {
-	bool32 result = (queue->entry_count == queue->entry_completion_count);
+	bool32 result = (queue->completion_goal < queue->completion_count);
 	return result;
 }
 
@@ -992,12 +987,19 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	win32_thread_info_t* thread_info = parameter;
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
-			WaitForSingleObjectEx(thread_info->queue->semaphore_handle, INFINITE, FALSE);
+//			Sleep(1);
+			WaitForSingleObjectEx(thread_info->queue->semaphore_handle, 1, FALSE);
 		}
+		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
 	}
 }
 
-
+//#define TEST_THREAD_QUEUE
+#ifdef TEST_THREAD_QUEUE
+void echo_task(int logical_thread_index, void* userdata) {
+	printf("thread %d: %s\n", logical_thread_index, (char*) userdata);
+}
+#endif
 
 void win32_init_multithreading() {
 
@@ -1015,23 +1017,25 @@ void win32_init_multithreading() {
 	}
 
 
-	add_work_queue_entry(&work_queue, "NULL entry");
-	add_work_queue_entry(&work_queue, "string 0");
-	add_work_queue_entry(&work_queue, "string 1");
-	add_work_queue_entry(&work_queue, "string 2");
-	add_work_queue_entry(&work_queue, "string 3");
-	add_work_queue_entry(&work_queue, "string 4");
-	add_work_queue_entry(&work_queue, "string 5");
-	add_work_queue_entry(&work_queue, "string 6");
-	add_work_queue_entry(&work_queue, "string 7");
-	add_work_queue_entry(&work_queue, "string 8");
-	add_work_queue_entry(&work_queue, "string 9");
-	add_work_queue_entry(&work_queue, "string 10");
-	add_work_queue_entry(&work_queue, "string 11");
+#ifdef TEST_THREAD_QUEUE
+	add_work_queue_entry(&work_queue, echo_task, "NULL entry");
+	add_work_queue_entry(&work_queue, echo_task, "string 0");
+	add_work_queue_entry(&work_queue, echo_task, "string 1");
+	add_work_queue_entry(&work_queue, echo_task, "string 2");
+	add_work_queue_entry(&work_queue, echo_task, "string 3");
+	add_work_queue_entry(&work_queue, echo_task, "string 4");
+	add_work_queue_entry(&work_queue, echo_task, "string 5");
+	add_work_queue_entry(&work_queue, echo_task, "string 6");
+	add_work_queue_entry(&work_queue, echo_task, "string 7");
+	add_work_queue_entry(&work_queue, echo_task, "string 8");
+	add_work_queue_entry(&work_queue, echo_task, "string 9");
+	add_work_queue_entry(&work_queue, echo_task, "string 10");
+	add_work_queue_entry(&work_queue, echo_task, "string 11");
 
 	while (is_queue_work_in_progress(&work_queue)) {
 		do_worker_work(&work_queue, num_threads);
 	}
+#endif
 
 
 }
