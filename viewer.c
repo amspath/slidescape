@@ -385,6 +385,10 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		return;
 	} else {
 
+		i32 old_level = current_level;
+		i32 center_offset_x = 0;
+		i32 center_offset_y = 0;
+
 		if (input) {
 
 //	        i32 dlevel = 0 + control_forward - control_back;
@@ -393,17 +397,26 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 			if (dlevel != 0) {
 //		        printf("mouse_z = %d\n", input->mouse_z);
-				if (global_wsi.osr) {
-
-					current_level += dlevel;
-					current_level = CLAMP(current_level, 0, global_wsi.num_levels-1);
-				}
+				current_level = CLAMP(current_level + dlevel, 0, global_wsi.num_levels-1);
 			}
+
+			center_offset_x = input->mouse_xy.x - client_width / 2;
+			center_offset_y = -(input->mouse_xy.y - client_height / 2);
 		}
 
 		wsi_level_t* wsi_level = global_wsi.levels + current_level;
 		float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
 		float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
+
+		if (current_level < old_level) {
+			// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
+			camera_pos.x += center_offset_x * um_per_pixel_x;
+			camera_pos.y += center_offset_y * um_per_pixel_y;
+		} else if (current_level > old_level) {
+			// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
+			camera_pos.x -= center_offset_x * um_per_pixel_x * 0.5f;
+			camera_pos.y -= center_offset_y * um_per_pixel_y * 0.5f;
+		}
 
 		float x_tile_side_in_um = um_per_pixel_x * (float)TILE_DIM;
 		float y_tile_side_in_um = um_per_pixel_y * (float)TILE_DIM;
