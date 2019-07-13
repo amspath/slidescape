@@ -98,8 +98,10 @@ static inline void panic() {
 }
 
 #ifndef NDEBUG
+#define DO_DEBUG 1
 #define ASSERT(expr) if (!(expr)) panic();
 #else
+#define DO_DEBUG 0
 #define ASSERT(expr)
 #endif
 

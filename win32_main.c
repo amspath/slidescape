@@ -901,8 +901,8 @@ void win32_process_input(HWND window) {
 	curr_input->mouse_z = 0; // TODO: support mousewheel
 
 	win32_process_keyboard_event(&curr_input->mouse_buttons[0], GetKeyState(VK_LBUTTON) & (1<<15));
-	win32_process_keyboard_event(&curr_input->mouse_buttons[1], GetKeyState(VK_MBUTTON) & (1<<15));
-	win32_process_keyboard_event(&curr_input->mouse_buttons[2], GetKeyState(VK_RBUTTON) & (1<<15));
+	win32_process_keyboard_event(&curr_input->mouse_buttons[1], GetKeyState(VK_RBUTTON) & (1<<15));
+	win32_process_keyboard_event(&curr_input->mouse_buttons[2], GetKeyState(VK_MBUTTON) & (1<<15));
 	win32_process_keyboard_event(&curr_input->mouse_buttons[3], GetKeyState(VK_XBUTTON1) & (1<<15));
 	win32_process_keyboard_event(&curr_input->mouse_buttons[4], GetKeyState(VK_XBUTTON2) & (1<<15));
 
@@ -946,9 +946,9 @@ void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {};
 
-	i32 new_next_entry_to_execute = (queue->next_entry_to_execute + 1) % COUNT(queue->entries);
 	i32 original_entry_to_execute = queue->next_entry_to_execute;
-	if (queue->next_entry_to_execute != queue->next_entry_to_submit) {
+	i32 new_next_entry_to_execute = (original_entry_to_execute + 1) % COUNT(queue->entries);
+	if (original_entry_to_execute != queue->next_entry_to_submit) {
 		i32 entry_index = interlocked_compare_exchange(&queue->next_entry_to_execute,
 		                                               new_next_entry_to_execute, original_entry_to_execute);
 		if (entry_index == original_entry_to_execute) {

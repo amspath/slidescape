@@ -43,12 +43,12 @@ typedef struct v4f {
 	};
 } v4f;
 
-typedef struct {
+typedef struct button_state_t {
 	bool8 down;
 	u8 transition_count;
 } button_state_t;
 
-typedef struct {
+typedef struct controller_input_t {
 	bool32 is_connected;
 	bool32 is_analog;
 	float x_start, y_start;
@@ -141,6 +141,10 @@ typedef struct {
 	i64 height_in_tiles;
 	i32 num_tiles;
 	wsi_tile_t* tiles;
+	float um_per_pixel_x;
+	float um_per_pixel_y;
+	float x_tile_side_in_um;
+	float y_tile_side_in_um;
 } wsi_level_t;
 
 #define WSI_MAX_LEVELS 16

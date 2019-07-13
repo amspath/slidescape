@@ -112,8 +112,8 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
 	return texture;
@@ -243,19 +243,7 @@ void load_wsi(wsi_t* wsi, char* filename) {
 			panic();
 		}
 
-		for (i32 i = 0; i < wsi->num_levels; ++i) {
-			wsi_level_t* level = wsi->levels + i;
 
-			openslide.openslide_get_level_dimensions(wsi->osr, i, &level->width, &level->height);
-			ASSERT(level->width > 0);
-			ASSERT(level->height > 0);
-			i64 partial_block_x = level->width % TILE_DIM;
-			i64 partial_block_y = level->height % TILE_DIM;
-			level->width_in_tiles = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
-			level->height_in_tiles = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
-			level->num_tiles = level->width_in_tiles * level->height_in_tiles;
-			level->tiles = calloc(1, level->num_tiles * sizeof(wsi_tile_t));
-		}
 
 
 
@@ -286,6 +274,24 @@ void load_wsi(wsi_t* wsi, char* filename) {
 			if (mpp > 0.0f) {
 				wsi->mpp_y = mpp;
 			}
+		}
+
+		for (i32 i = 0; i < wsi->num_levels; ++i) {
+			wsi_level_t* level = wsi->levels + i;
+
+			openslide.openslide_get_level_dimensions(wsi->osr, i, &level->width, &level->height);
+			ASSERT(level->width > 0);
+			ASSERT(level->height > 0);
+			i64 partial_block_x = level->width % TILE_DIM;
+			i64 partial_block_y = level->height % TILE_DIM;
+			level->width_in_tiles = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
+			level->height_in_tiles = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
+			level->um_per_pixel_x = (float)(1 << i) * wsi->mpp_x;
+			level->um_per_pixel_y = (float)(1 << i) * wsi->mpp_y;
+			level->x_tile_side_in_um = level->um_per_pixel_x * (float)TILE_DIM;
+			level->y_tile_side_in_um = level->um_per_pixel_y * (float)TILE_DIM;
+			level->num_tiles = level->width_in_tiles * level->height_in_tiles;
+			level->tiles = calloc(1, level->num_tiles * sizeof(wsi_tile_t));
 		}
 
 		const char* barcode = openslide.openslide_get_property_value(wsi->osr, "philips.PIM_DP_UFS_BARCODE");
@@ -341,11 +347,6 @@ void first() {
 		char* filename = g_argv[1];
 		on_file_dragged(filename);
 	}
-}
-
-float um_per_screen_pixel(float mpp, i32 level) {
-	float result = (float)(1 << level) * mpp;
-	return result;
 }
 
 i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
@@ -405,34 +406,34 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		}
 
 		wsi_level_t* wsi_level = global_wsi.levels + current_level;
-		float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
-		float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
+//		float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
+//		float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
 
 		if (current_level < old_level) {
 			// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
-			camera_pos.x += center_offset_x * um_per_pixel_x;
-			camera_pos.y += center_offset_y * um_per_pixel_y;
+			camera_pos.x += center_offset_x * wsi_level->um_per_pixel_x;
+			camera_pos.y += center_offset_y * wsi_level->um_per_pixel_y;
 		} else if (current_level > old_level) {
 			// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
-			camera_pos.x -= center_offset_x * um_per_pixel_x * 0.5f;
-			camera_pos.y -= center_offset_y * um_per_pixel_y * 0.5f;
+			camera_pos.x -= center_offset_x * wsi_level->um_per_pixel_x * 0.5f;
+			camera_pos.y -= center_offset_y * wsi_level->um_per_pixel_y * 0.5f;
 		}
 
-		float x_tile_side_in_um = um_per_pixel_x * (float)TILE_DIM;
-		float y_tile_side_in_um = um_per_pixel_y * (float)TILE_DIM;
+		float x_tile_side_in_um = wsi_level->um_per_pixel_x * (float)TILE_DIM;
+		float y_tile_side_in_um = wsi_level->um_per_pixel_y * (float)TILE_DIM;
 
-		float r_minus_l = um_per_pixel_x * (float)client_width;
-		float t_minus_b = um_per_pixel_y * (float)client_height;
+		float r_minus_l = wsi_level->um_per_pixel_x * (float)client_width;
+		float t_minus_b = wsi_level->um_per_pixel_y * (float)client_height;
 
 		float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
 		float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
 		float camera_rect_y1 = camera_pos.y - t_minus_b * 0.5f;
 		float camera_rect_y2 = camera_pos.y + t_minus_b * 0.5f;
 
-		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, x_tile_side_in_um);
-		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, x_tile_side_in_um) + 1;
-		i32 camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, y_tile_side_in_um);
-		i32 camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, y_tile_side_in_um) + 1;
+		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, wsi_level->x_tile_side_in_um);
+		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, wsi_level->x_tile_side_in_um) + 1;
+		i32 camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, wsi_level->y_tile_side_in_um);
+		i32 camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, wsi_level->y_tile_side_in_um) + 1;
 
 		camera_tile_x1 = CLAMP(camera_tile_x1, 0, wsi_level->width_in_tiles);
 		camera_tile_x2 = CLAMP(camera_tile_x2, 0, wsi_level->width_in_tiles);
@@ -466,14 +467,42 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
 			}
 
-			if (input->mouse_buttons[1].down) {
+			// Experimental code for exporting regions of the wsi to a raw image file.
+#if 0
+			if (input->mouse_buttons[1].down && input->mouse_buttons[1].transition_count > 0) {
 				DUMMY_STATEMENT;
+				i32 click_x = (camera_rect_x1 + input->mouse_xy.x * wsi_level->um_per_pixel_x) / global_wsi.mpp_x;
+				i32 click_y = (camera_rect_y2 - input->mouse_xy.y * wsi_level->um_per_pixel_y) / global_wsi.mpp_y;
+				printf("Clicked screen x=%d y=%d; image x=%d y=%d\n",
+						input->mouse_xy.x, input->mouse_xy.y, click_x, click_y);
 			}
+
+			{
+				button_state_t* button = &input->keyboard.keys['E'];
+				if (button->down && button->transition_count > 0) {
+					v2i p1 = { 101456, 30736 };
+					v2i p2 = { 134784
+				, 61384 };
+					i64 w = p2.x - p1.x;
+					i64 h = p2.y - p1.y;
+					size_t export_size = w * h * BYTES_PER_PIXEL;
+					u32* temp_memory = malloc(export_size);
+					openslide.openslide_read_region(global_wsi.osr, temp_memory, p1.x, p1.y, 0, w, h);
+					FILE* fp = fopen("export.raw", "wb");
+					fwrite(temp_memory, export_size, 1, fp);
+					fclose(fp);
+					free(temp_memory);
+					printf("Exported region, width %d height %d\n", w, h);
+
+				}
+			}
+#endif
+
 
 			if (input->mouse_buttons[0].down) {
 				// do the drag
-				camera_pos.x -= input->drag_vector.x * um_per_pixel_x;
-				camera_pos.y += input->drag_vector.y * um_per_pixel_y;
+				camera_pos.x -= input->drag_vector.x * wsi_level->um_per_pixel_x;
+				camera_pos.y += input->drag_vector.y * wsi_level->um_per_pixel_y;
 				input->drag_vector = (v2i){};
 				mouse_hide();
 			} else {
@@ -488,7 +517,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
 				for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
 					if (tiles_loaded >= max_tiles_to_load_at_once) {
-						// TODO: remove this performance hack after background loading (multithreaded) is implemented.
+//						 TODO: remove this performance hack after background loading (multithreaded) is implemented.
 						break;
 					} else {
 						tiles_loaded += wsi_load_tile(&global_wsi, current_level, tile_x, tile_y);
@@ -526,27 +555,47 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
 		}
 
-		for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
-			for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
+		i32 num_levels_above_current = global_wsi.num_levels - current_level - 1;
+		ASSERT(num_levels_above_current>=0);
 
-				wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
-				if (tile->texture) {
-					u32 texture = get_texture_for_tile(&global_wsi, current_level, tile_x, tile_y);
+		// Draw all levels within the viewport, up to the current zoom factor
+		for (i32 level = global_wsi.num_levels - 1; level >= current_level; --level) {
+			wsi_level_t* drawn_level = global_wsi.levels + level;
 
-					float tile_pos_x = x_tile_side_in_um * tile_x;
-					float tile_pos_y = y_tile_side_in_um * tile_y;
+			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, drawn_level->x_tile_side_in_um);
+			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, drawn_level->x_tile_side_in_um) + 1;
+			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, drawn_level->y_tile_side_in_um);
+			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, drawn_level->y_tile_side_in_um) + 1;
 
-					// define model matrix
-					mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
-					mat4x4_scale_aniso(S, I, x_tile_side_in_um, y_tile_side_in_um, 1.0f);
-					mat4x4_mul(M, T, S);
-					glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
+			level_camera_tile_x1 = CLAMP(level_camera_tile_x1, 0, drawn_level->width_in_tiles);
+			level_camera_tile_x2 = CLAMP(level_camera_tile_x2, 0, drawn_level->width_in_tiles);
+			level_camera_tile_y1 = CLAMP(level_camera_tile_y1, 0, drawn_level->height_in_tiles);
+			level_camera_tile_y2 = CLAMP(level_camera_tile_y2, 0, drawn_level->height_in_tiles);
 
-					draw_rect(texture);
+			for (i32 tile_y = level_camera_tile_y1; tile_y < level_camera_tile_y2; ++tile_y) {
+				for (i32 tile_x = level_camera_tile_x1; tile_x < level_camera_tile_x2; ++tile_x) {
+
+					wsi_tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
+					if (tile->texture) {
+						u32 texture = get_texture_for_tile(&global_wsi, level, tile_x, tile_y);
+
+						float tile_pos_x = drawn_level->x_tile_side_in_um * tile_x;
+						float tile_pos_y = drawn_level->y_tile_side_in_um * tile_y;
+
+						// define model matrix
+						mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
+						mat4x4_scale_aniso(S, I, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um, 1.0f);
+						mat4x4_mul(M, T, S);
+						glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
+
+						draw_rect(texture);
+					}
+
 				}
-
 			}
+
 		}
+
 	}
 
 
