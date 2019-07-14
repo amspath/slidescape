@@ -888,6 +888,9 @@ void win32_process_input(HWND window) {
 		for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
 			curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
 		}
+		for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
+			curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
+		}
 		memset_zero(&curr_input->mouse_buttons);
 		for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
 			curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;

@@ -32,6 +32,7 @@ viewer_t global_viewer;
 
 wsi_t global_wsi;
 i32 current_level;
+float zoom_position;
 
 
 // TODO: remove? do we still need this>
@@ -313,6 +314,7 @@ void load_wsi(wsi_t* wsi, char* filename) {
 		}
 
 		current_level = wsi->num_levels-1;
+		zoom_position = (float)current_level;
 
 		camera_pos.x = (wsi->width * wsi->mpp_x) / 2.0f;
 		camera_pos.y = (wsi->height * wsi->mpp_y) / 2.0f;
@@ -369,7 +371,6 @@ bool32 was_key_pressed(input_t* input, i32 keycode) {
 
 bool32 is_key_down(input_t* input, i32 keycode) {
 	u8 key = keycode & 0xFF;
-	// TODO: fix: should return true if key is held down continuously
 	bool32 result = input->keyboard.keys[key].down;
 	return result;
 }
@@ -390,10 +391,22 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		i32 center_offset_x = 0;
 		i32 center_offset_y = 0;
 
+		i32 max_level = global_wsi.num_levels - 1;
+
+		// TODO: move all input handling code together
 		if (input) {
 
-//	        i32 dlevel = 0 + control_forward - control_back;
+			// Zoom in or out using the mouse wheel.
 			i32 dlevel = input->mouse_z != 0 ? (input->mouse_z > 0 ? -1 : 1) : 0;
+
+			// Zoom in using Z or /
+			if (was_key_pressed(input, 'Z') || was_key_pressed(input, KEYCODE_OEM_2 /* '/' */)) {
+				dlevel += 1;
+			}
+			// Zoom out using X or .
+			if (was_key_pressed(input, 'X') || was_key_pressed(input, KEYCODE_OEM_PERIOD)) {
+				dlevel -= 1;
+			}
 
 
 			if (dlevel != 0) {
@@ -406,9 +419,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		}
 
 		wsi_level_t* wsi_level = global_wsi.levels + current_level;
-//		float um_per_pixel_x = um_per_screen_pixel(global_wsi.mpp_x, current_level);
-//		float um_per_pixel_y = um_per_screen_pixel(global_wsi.mpp_y, current_level);
 
+#if 0
 		if (current_level < old_level) {
 			// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
 			camera_pos.x += center_offset_x * wsi_level->um_per_pixel_x;
@@ -418,12 +430,27 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			camera_pos.x -= center_offset_x * wsi_level->um_per_pixel_x * 0.5f;
 			camera_pos.y -= center_offset_y * wsi_level->um_per_pixel_y * 0.5f;
 		}
+#endif
 
-		float x_tile_side_in_um = wsi_level->um_per_pixel_x * (float)TILE_DIM;
-		float y_tile_side_in_um = wsi_level->um_per_pixel_y * (float)TILE_DIM;
+		// Spring/bounce effect
+		float d_zoom = (float)current_level - zoom_position;
+		float abs_d_zoom = fabs(d_zoom);
+		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
+		float linear_catch_up_speed = 0.15f;
+		float exponential_catch_up_speed = 0.4f;
+		if (abs_d_zoom > linear_catch_up_speed) {
+			d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed)*exponential_catch_up_speed) * sign_d_zoom;
+		}
+		zoom_position += d_zoom;
 
-		float r_minus_l = wsi_level->um_per_pixel_x * (float)client_width;
-		float t_minus_b = wsi_level->um_per_pixel_y * (float)client_height;
+		float screen_um_per_pixel_x = powf(2.0f, zoom_position) * global_wsi.mpp_x;
+		float screen_um_per_pixel_y = powf(2.0f, zoom_position) * global_wsi.mpp_y;
+
+		float r_minus_l = screen_um_per_pixel_x * (float)client_width;
+		float t_minus_b = screen_um_per_pixel_y * (float)client_height;
+
+//		float r_minus_l = wsi_level->um_per_pixel_x * (float)client_width;
+//		float t_minus_b = wsi_level->um_per_pixel_y * (float)client_height;
 
 		float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
 		float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
@@ -498,11 +525,31 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			}
 #endif
 
+			// Panning should be faster when zoomed in very far.
+			float panning_multiplier = 1.0f + 3.0f * ((float)max_level - zoom_position) / (float)max_level;
+			if (is_key_down(input, KEYCODE_SHIFT)) {
+				panning_multiplier *= 0.25f;
+			}
+
+			// Panning using the arrow or WASD keys.
+			float panning_speed = 20.0f * panning_multiplier;
+			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
+				camera_pos.y -= wsi_level->um_per_pixel_y * panning_speed;
+			}
+			if (input->keyboard.action_up.down  || is_key_down(input, 'W')) {
+				camera_pos.y += wsi_level->um_per_pixel_y * panning_speed;
+			}
+			if (input->keyboard.action_right.down  || is_key_down(input, 'D')) {
+				camera_pos.x += wsi_level->um_per_pixel_x * panning_speed;
+			}
+			if (input->keyboard.action_left.down  || is_key_down(input, 'A')) {
+				camera_pos.x -= wsi_level->um_per_pixel_x * panning_speed;
+			}
 
 			if (input->mouse_buttons[0].down) {
-				// do the drag
-				camera_pos.x -= input->drag_vector.x * wsi_level->um_per_pixel_x;
-				camera_pos.y += input->drag_vector.y * wsi_level->um_per_pixel_y;
+				// Mouse drag.
+				camera_pos.x -= input->drag_vector.x * wsi_level->um_per_pixel_x * panning_multiplier;
+				camera_pos.y += input->drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
 				input->drag_vector = (v2i){};
 				mouse_hide();
 			} else {
@@ -510,6 +557,19 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				if (input->mouse_buttons[0].transition_count != 0) {
 //			    printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 				}
+			}
+
+			if (input->keyboard.action_down.down || input->keyboard.keys['S'].down) {
+				camera_pos.y -= wsi_level->um_per_pixel_y * 4.0f;
+			}
+			if (input->keyboard.action_up.down) {
+				camera_pos.y += wsi_level->um_per_pixel_y * 4.0f;
+			}
+			if (input->keyboard.action_right.down) {
+				camera_pos.x += wsi_level->um_per_pixel_x * 4.0f;
+			}
+			if (input->keyboard.action_left.down) {
+				camera_pos.x -= wsi_level->um_per_pixel_x * 4.0f;
 			}
 
 			i32 max_tiles_to_load_at_once = 5;
