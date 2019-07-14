@@ -378,6 +378,10 @@ bool32 is_key_down(input_t* input, i32 keycode) {
 bool32 use_image_adjustments;
 float black_level = (10.0f / 255.0f);
 float white_level = (230.0f / 255.0f);
+i64 zoom_in_key_hold_down_start_time;
+i64 zoom_in_key_times_zoomed_while_holding;
+i64 zoom_out_key_hold_down_start_time;
+i64 zoom_out_key_times_zoomed_while_holding;
 
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height) {
 	glViewport(0, 0, client_width, client_height);
@@ -392,45 +396,88 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		i32 center_offset_y = 0;
 
 		i32 max_level = global_wsi.num_levels - 1;
+		wsi_level_t* wsi_level = global_wsi.levels + current_level;
 
 		// TODO: move all input handling code together
 		if (input) {
 
-			// Zoom in or out using the mouse wheel.
-			i32 dlevel = input->mouse_z != 0 ? (input->mouse_z > 0 ? -1 : 1) : 0;
+			i32 dlevel = 0;
+			bool32 used_mouse_to_zoom = false;
 
-			// Zoom in using Z or /
-			if (was_key_pressed(input, 'Z') || was_key_pressed(input, KEYCODE_OEM_2 /* '/' */)) {
-				dlevel += 1;
+			// Zoom in or out using the mouse wheel.
+			if (input->mouse_z != 0) {
+				dlevel = (input->mouse_z > 0 ? -1 : 1);
+				used_mouse_to_zoom = true;
 			}
-			// Zoom out using X or .
-			if (was_key_pressed(input, 'X') || was_key_pressed(input, KEYCODE_OEM_PERIOD)) {
-				dlevel -= 1;
+
+			float key_repeat_interval = 0.2f; // in seconds
+
+			// Zoom out using Z or /
+			if (is_key_down(input, 'Z') || is_key_down(input, KEYCODE_OEM_2 /* '/' */)) {
+
+				if (was_key_pressed(input, 'Z') || was_key_pressed(input, KEYCODE_OEM_2 /* '/' */)) {
+					dlevel += 1;
+					zoom_in_key_hold_down_start_time = get_clock();
+					zoom_in_key_times_zoomed_while_holding = 0;
+				} else {
+					float time_elapsed = get_seconds_elapsed(zoom_in_key_hold_down_start_time, get_clock());
+					int zooms = (int) (time_elapsed / key_repeat_interval);
+					if ((zooms - zoom_in_key_times_zoomed_while_holding) == 1) {
+						zoom_in_key_times_zoomed_while_holding = zooms;
+						dlevel += 1;
+					}
+				}
 			}
+
+			// Zoom in using X or .
+			if (is_key_down(input, 'X') || is_key_down(input, KEYCODE_OEM_PERIOD)) {
+
+
+				if (was_key_pressed(input, 'X') || was_key_pressed(input, KEYCODE_OEM_PERIOD)) {
+					dlevel -= 1;
+					zoom_out_key_hold_down_start_time = get_clock();
+					zoom_out_key_times_zoomed_while_holding = 0;
+				} else {
+					float time_elapsed = get_seconds_elapsed(zoom_out_key_hold_down_start_time, get_clock());
+					int zooms = (int) (time_elapsed / key_repeat_interval);
+					if ((zooms - zoom_out_key_times_zoomed_while_holding) == 1) {
+						zoom_out_key_times_zoomed_while_holding = zooms;
+						dlevel -= 1;
+					}
+				}
+			}
+
 
 
 			if (dlevel != 0) {
 //		        printf("mouse_z = %d\n", input->mouse_z);
 				current_level = CLAMP(current_level + dlevel, 0, global_wsi.num_levels-1);
+				wsi_level = global_wsi.levels + current_level;
+
+				if (current_level != old_level && used_mouse_to_zoom) {
+#if 1
+					center_offset_x = input->mouse_xy.x - client_width / 2;
+					center_offset_y = -(input->mouse_xy.y - client_height / 2);
+
+					if (current_level < old_level) {
+						// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
+						camera_pos.x += center_offset_x * wsi_level->um_per_pixel_x;
+						camera_pos.y += center_offset_y * wsi_level->um_per_pixel_y;
+					} else if (current_level > old_level) {
+						// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
+						camera_pos.x -= center_offset_x * wsi_level->um_per_pixel_x * 0.5f;
+						camera_pos.y -= center_offset_y * wsi_level->um_per_pixel_y * 0.5f;
+					}
+#endif
+				}
 			}
 
-			center_offset_x = input->mouse_xy.x - client_width / 2;
-			center_offset_y = -(input->mouse_xy.y - client_height / 2);
+
 		}
 
-		wsi_level_t* wsi_level = global_wsi.levels + current_level;
 
-#if 0
-		if (current_level < old_level) {
-			// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
-			camera_pos.x += center_offset_x * wsi_level->um_per_pixel_x;
-			camera_pos.y += center_offset_y * wsi_level->um_per_pixel_y;
-		} else if (current_level > old_level) {
-			// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
-			camera_pos.x -= center_offset_x * wsi_level->um_per_pixel_x * 0.5f;
-			camera_pos.y -= center_offset_y * wsi_level->um_per_pixel_y * 0.5f;
-		}
-#endif
+
+
 
 		// Spring/bounce effect
 		float d_zoom = (float)current_level - zoom_position;
@@ -448,9 +495,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 		float r_minus_l = screen_um_per_pixel_x * (float)client_width;
 		float t_minus_b = screen_um_per_pixel_y * (float)client_height;
-
-//		float r_minus_l = wsi_level->um_per_pixel_x * (float)client_width;
-//		float t_minus_b = wsi_level->um_per_pixel_y * (float)client_height;
 
 		float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
 		float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
@@ -557,19 +601,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				if (input->mouse_buttons[0].transition_count != 0) {
 //			    printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 				}
-			}
-
-			if (input->keyboard.action_down.down || input->keyboard.keys['S'].down) {
-				camera_pos.y -= wsi_level->um_per_pixel_y * 4.0f;
-			}
-			if (input->keyboard.action_up.down) {
-				camera_pos.y += wsi_level->um_per_pixel_y * 4.0f;
-			}
-			if (input->keyboard.action_right.down) {
-				camera_pos.x += wsi_level->um_per_pixel_x * 4.0f;
-			}
-			if (input->keyboard.action_left.down) {
-				camera_pos.x -= wsi_level->um_per_pixel_x * 4.0f;
 			}
 
 			i32 max_tiles_to_load_at_once = 5;
