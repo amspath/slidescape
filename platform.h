@@ -32,6 +32,8 @@ file_mem_t* platform_read_entire_file(const char* filename);
 void mouse_show();
 void mouse_hide();
 
+void message_box(const char* message);
+
 void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
 bool32 is_queue_work_in_progress(work_queue_t* queue);
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);

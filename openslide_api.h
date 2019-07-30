@@ -33,4 +33,5 @@ typedef struct openslide_api {
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_HEIGHT "openslide.bounds-height"
 
 extern openslide_api openslide;
-bool32 init_openslide();
+extern bool32 is_openslide_available;
+extern bool32 is_openslide_loading_done;

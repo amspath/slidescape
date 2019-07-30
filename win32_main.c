@@ -95,12 +95,20 @@ bool32 win32_init_openslide() {
 
 }
 
+bool32 is_openslide_available;
+bool32 is_openslide_loading_done;
+
+void load_openslide_task(int logical_thread_index, void* userdata) {
+	is_openslide_available = win32_init_openslide();
+	is_openslide_loading_done = true;
+}
+
 void win32_diagnostic(const char* prefix) {
 	DWORD error_id = GetLastError();
 	char* message_buffer;
 	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 	                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
-	printf("%s: [%08x] %s\n", prefix, (u32)error_id, message_buffer);
+	printf("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
 	LocalFree(message_buffer);
 }
 
@@ -159,7 +167,9 @@ float get_seconds_elapsed(i64 start, i64 end) {
 	return (float)(end - start) / (float)performance_counter_frequency;
 }
 
-
+void message_box(const char* message) {
+	MessageBoxA(main_window, message, "Slideviewer", MB_ICONERROR);
+}
 
 
 // Window related procecures
@@ -1188,8 +1198,9 @@ int main(int argc, char** argv) {
 	win32_init_cursor();
 	win32_init_main_window();
 	win32_init_multithreading();
+	// Load OpenSlide in the background, we might not need it immediately.
+	add_work_queue_entry(&work_queue, load_openslide_task, NULL);
 	win32_init_input();
-	win32_init_openslide();
 
 
 	is_program_running = true;

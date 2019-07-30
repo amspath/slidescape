@@ -245,6 +245,22 @@ u32 get_texture_for_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 }
 
 void load_wsi(wsi_t* wsi, char* filename) {
+	if (!is_openslide_loading_done) {
+		// TODO: hack! queue abused, may cause conflicts
+		printf("Waiting for OpenSlide to finish loading...\n");
+		while (is_queue_work_in_progress(&work_queue)) {
+			do_worker_work(&work_queue, 0);
+		}
+	}
+
+	if (!is_openslide_available) {
+		char message[4096];
+		snprintf(message, sizeof(message), "Could not open \"%s\":\nlibopenslide-0.dll is missing or broken.\n", filename);
+		message_box(message);
+		return;
+	}
+
+
 	if (wsi->osr) {
 		openslide.openslide_close(wsi->osr);
 		wsi->osr = NULL;
@@ -447,7 +463,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				used_mouse_to_zoom = true;
 			}
 
-			float key_repeat_interval = 0.15f; // in seconds
+			float key_repeat_interval = 0.2f; // in seconds
 
 			// Zoom out using Z or /
 			if (is_key_down(input, 'Z') || is_key_down(input, KEYCODE_OEM_2 /* '/' */)) {
@@ -553,6 +569,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			if (was_key_pressed(input, 'P')) {
 				use_image_adjustments = !use_image_adjustments;
 			}
+#if 0
 
 			// NOTE: temporary experimentation with basic image adjustments.
 			if (is_key_down(input, 'J')) {
@@ -576,7 +593,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			}
 
 			// Experimental code for exporting regions of the wsi to a raw image file.
-#if 0
 			if (input->mouse_buttons[1].down && input->mouse_buttons[1].transition_count > 0) {
 				DUMMY_STATEMENT;
 				i32 click_x = (camera_rect_x1 + input->mouse_xy.x * wsi_level->um_per_pixel_x) / global_wsi.mpp_x;
