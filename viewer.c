@@ -34,6 +34,13 @@ wsi_t global_wsi;
 i32 current_level;
 float zoom_position;
 
+void gl_diagnostic(const char* prefix) {
+	GLenum err = glGetError();
+	if (err != GL_NO_ERROR) {
+		printf("%s: failed with error code 0x%x\n", prefix, err);
+	}
+}
+
 
 // TODO: remove? do we still need this>
 rect2i clip_rect(rect2i* first, rect2i* second) {
@@ -87,12 +94,14 @@ bool32 load_image(image_t* image, const char* filename) {
 }
 #endif
 
+
 bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 	bool32 result = false;
 	i32 channels_in_file = 0;
 	u8* pixels = stbi_load(filename, &texture->width, &texture->height, &channels_in_file, 4);
 	if (pixels) {
 		glGenTextures(1, &texture->texture);
+//		texture->texture = gl_gen_texture();
 		glBindTexture(GL_TEXTURE_2D, texture->texture);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -107,9 +116,11 @@ bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 }
 
 
+
 u32 load_texture(void* pixels, i32 width, i32 height) {
-	u32 texture = 0;
+	u32 texture = 0; //gl_gen_texture();
 	glGenTextures(1, &texture);
+//	printf("Generated texture %d\n", texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -117,6 +128,7 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+	gl_diagnostic("glTexImage2D");
 	return texture;
 }
 
@@ -161,6 +173,16 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	write_barrier;
 	task_data->cached_pixels = temp_memory;
 	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
+
+#if 0
+	// do the submitting directly
+	tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
+	free(task_data->cached_pixels);
+	task_data->cached_pixels = NULL;
+	free(task_data);
+//	tile->load_task_data = NULL;
+#endif
+
 }
 
 
@@ -184,6 +206,7 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	} else {
 		read_barrier;
 		if (tile->load_task_data) {
+#if 1
 			load_tile_task_t* task_data = tile->load_task_data;
 //			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
 
@@ -192,7 +215,9 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 			task_data->cached_pixels = NULL;
 			free(task_data);
 			tile->load_task_data = NULL;
+#endif
 		} else {
+			tile->is_submitted_for_loading = true;
 			enqueue_load_tile(wsi, level, tile_x, tile_y);
 
 			/*if (is_queue_work_in_progress(&work_queue)) {
@@ -320,6 +345,23 @@ void load_wsi(wsi_t* wsi, char* filename) {
 
 }
 
+void unload_texture(u32 texture) {
+	glDeleteTextures(1, &texture);
+}
+
+void unload_wsi(wsi_t* wsi) {
+	if (wsi->osr) {
+		openslide.openslide_close(wsi->osr);
+		wsi->osr = NULL;
+	}
+
+	global_viewer.slide_memory.blocks_in_use = 1;
+
+//	for (int i = 0; i < texture_count; ++i) {
+//		unload_texture();
+//	}
+}
+
 
 void on_file_dragged(char* filename) {
 #if 0
@@ -405,7 +447,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				used_mouse_to_zoom = true;
 			}
 
-			float key_repeat_interval = 0.2f; // in seconds
+			float key_repeat_interval = 0.15f; // in seconds
 
 			// Zoom out using Z or /
 			if (is_key_down(input, 'Z') || is_key_down(input, KEYCODE_OEM_2 /* '/' */)) {

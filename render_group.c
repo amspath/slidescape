@@ -94,7 +94,9 @@ void draw_rect(u32 texture) {
 	glBindVertexArray(vao_rect);
 	glUniform1i(glGetUniformLocation(basic_shader, "the_texture"), 0);
 	glBindTexture(GL_TEXTURE_2D, texture);
+	gl_diagnostic("glBindTexture");
 	glDrawArrays(GL_TRIANGLES, 0, 6);
+	gl_diagnostic("glDrawArrays");
 }
 
 

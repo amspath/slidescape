@@ -130,6 +130,7 @@ struct load_tile_task_t {
 typedef struct {
 	u32 texture;
 	load_tile_task_t* load_task_data;
+	bool32 is_submitted_for_loading;
 } wsi_tile_t;
 
 typedef struct {
@@ -178,6 +179,7 @@ extern bool32 use_image_adjustments;
 
 // viewer.c
 
+void gl_diagnostic(const char* prefix);
 void first();
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height);
 void on_file_dragged(char* filename);
