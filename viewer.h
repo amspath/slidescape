@@ -125,11 +125,9 @@ struct load_tile_task_t {
 	i32 tile_x;
 	i32 tile_y;
 	u32* cached_pixels;
-	load_tile_task_t* next_free;
 };
 
 typedef struct {
-	u32 block;
 	u32 texture;
 	load_tile_task_t* load_task_data;
 } wsi_tile_t;

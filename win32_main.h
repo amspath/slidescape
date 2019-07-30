@@ -25,5 +25,23 @@ typedef struct {
 } win32_window_dimension_t;
 
 
+typedef struct work_queue_t {
+	HANDLE semaphore_handle;
+	i32 volatile next_entry_to_submit;
+	i32 volatile next_entry_to_execute;
+	i32 volatile completion_count;
+	i32 volatile completion_goal;
+	work_queue_entry_t entries[256];
+} work_queue_t;
+
+
+typedef struct win32_thread_info_t {
+	i32 logical_thread_index;
+	work_queue_t* queue;
+} win32_thread_info_t;
+
+#define MAX_THREAD_COUNT 16
+
+
 
 #endif

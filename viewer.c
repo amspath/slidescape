@@ -246,9 +246,6 @@ void load_wsi(wsi_t* wsi, char* filename) {
 
 
 
-
-
-
 		const char* const* wsi_properties = openslide.openslide_get_property_names(wsi->osr);
 		if (wsi_properties) {
 			i32 property_index = 0;
@@ -357,8 +354,6 @@ i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
 	float tile = (i32)floorf(tile_float);
 	return tile;
 }
-
-i32 debug_current_image_index = 1;
 
 bool32 was_key_pressed(input_t* input, i32 keycode) {
 	u8 key = keycode & 0xFF;
@@ -484,7 +479,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		float abs_d_zoom = fabs(d_zoom);
 		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
 		float linear_catch_up_speed = 0.15f;
-		float exponential_catch_up_speed = 0.4f;
+		float exponential_catch_up_speed = 0.3f;
 		if (abs_d_zoom > linear_catch_up_speed) {
 			d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed)*exponential_catch_up_speed) * sign_d_zoom;
 		}
@@ -576,7 +571,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			}
 
 			// Panning using the arrow or WASD keys.
-			float panning_speed = 20.0f * panning_multiplier;
+			float panning_speed = 15.0f * panning_multiplier;
 			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
 				camera_pos.y -= wsi_level->um_per_pixel_y * panning_speed;
 			}

@@ -43,10 +43,18 @@ WNDCLASSA main_window_class;
 HWND main_window;
 bool32 is_main_window_initialized;
 
+work_queue_t work_queue;
+win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
+HGLRC glrcs[MAX_THREAD_COUNT];
+
+i32 total_thread_count;
+i32 logical_cpu_count;
+
 input_t inputs[2];
 input_t *old_input;
 input_t *curr_input;
 
+// for software renderer only; remove this??
 static GLuint global_blit_texture_handle;
 
 openslide_api openslide;
@@ -92,7 +100,7 @@ void win32_diagnostic(const char* prefix) {
 	char* message_buffer;
 	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 	                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
-	printf("%s: %s\n", prefix, message_buffer);
+	printf("%s: [%08x] %s\n", prefix, (u32)error_id, message_buffer);
 	LocalFree(message_buffer);
 }
 
@@ -731,6 +739,9 @@ void win32_process_xinput_controllers() {
 	}
 }
 
+
+const char* wgl_extensions_string;
+
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
 bool win32_wgl_extension_supported(const char *extension_name)
 {
@@ -740,7 +751,9 @@ bool win32_wgl_extension_supported(const char *extension_name)
 	// determine pointer to wglGetExtensionsStringEXT function
 	_wglGetExtensionsStringEXT = (PFNWGLGETEXTENSIONSSTRINGEXTPROC) wglGetProcAddress("wglGetExtensionsStringEXT");
 
-	if (strstr(_wglGetExtensionsStringEXT(), extension_name) == NULL)
+	wgl_extensions_string = _wglGetExtensionsStringEXT();
+//	puts(wgl_extensions_string);
+	if (strstr(wgl_extensions_string, extension_name) == NULL)
 	{
 		// string was not found
 		return false;
@@ -777,7 +790,7 @@ void* gl_get_proc_address(const char *name) {
 
 void win32_init_opengl(HWND window) {
 	i64 debug_start = get_clock();
-	HDC window_dc = GetDC(window);
+	HDC dc = GetDC(window);
 
 	PIXELFORMATDESCRIPTOR desired_pixel_format = {
 			.nSize = sizeof(desired_pixel_format),
@@ -789,13 +802,26 @@ void win32_init_opengl(HWND window) {
 			.iLayerType = PFD_MAIN_PLANE,
 	};
 
-	int suggested_pixel_format_index = ChoosePixelFormat(window_dc, &desired_pixel_format);
+	int suggested_pixel_format_index = ChoosePixelFormat(dc, &desired_pixel_format);
 	PIXELFORMATDESCRIPTOR suggested_pixel_format;
-	DescribePixelFormat(window_dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
-	SetPixelFormat(window_dc, suggested_pixel_format_index, &suggested_pixel_format);
+	DescribePixelFormat(dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
+	SetPixelFormat(dc, suggested_pixel_format_index, &suggested_pixel_format);
 
-	HGLRC opengl_rc = wglCreateContext(window_dc);
-	if (wglMakeCurrent(window_dc, opengl_rc)) {
+	// Create the OpenGL context for the main thread.
+	glrcs[0] = wglCreateContext(dc);
+
+	// Create separate OpenGL contexts for each worker thread, so that they can load textures (etc.) on the fly
+	ASSERT(logical_cpu_count > 0);
+	for (i32 thread_index = 1; thread_index < total_thread_count; ++thread_index) {
+		HGLRC glrc = wglCreateContext(dc);
+		if (!wglShareLists(glrcs[0], glrc)) {
+			win32_diagnostic("wglShareLists");
+			panic();
+		}
+		glrcs[thread_index] = glrc;
+	}
+
+	if (wglMakeCurrent(dc, glrcs[0])) {
 		// Success
 		if (win32_wgl_extension_supported("WGL_EXT_swap_control"))
 		{
@@ -806,14 +832,23 @@ void win32_init_opengl(HWND window) {
 			wglGetSwapIntervalEXT = (PFNWGLGETSWAPINTERVALEXTPROC) wglGetProcAddress("wglGetSwapIntervalEXT");
 		}
 	} else {
+		win32_diagnostic("wglMakeCurrent");
 		panic();
-		// TODO: diagnostic
 	}
 
 	opengl32_dll_handle = LoadLibraryA("opengl32.dll");
 	if (!opengl32_dll_handle) {
+		win32_diagnostic("LoadLibraryA");
 		printf("Error initializing OpenGL: failed to load opengl32.dll.\n");
 	}
+
+	PFNGLGETSTRINGPROC temp_glGetString = (PFNGLGETSTRINGPROC) gl_get_proc_address("glGetString");
+	if (temp_glGetString == NULL) {
+		panic();
+	}
+	char* version_string = (char*)temp_glGetString(GL_VERSION);
+	printf("OpenGL version: %s\n", version_string);
+
 
 	if (!gladLoadGLLoader((GLADloadproc) gl_get_proc_address)) {
 		printf("Error initializing OpenGL: failed to initialize GLAD.\n");
@@ -822,58 +857,11 @@ void win32_init_opengl(HWND window) {
 	// debug
 	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 
-
+	// for software renderer only; remove this??
 	glGenTextures(1, &global_blit_texture_handle);
 
-	ReleaseDC(window, window_dc);
+	ReleaseDC(window, dc);
 }
-
-
-void win32_init_main_window() {
-	main_window_class = (WNDCLASSA){
-			.style = CS_HREDRAW|CS_VREDRAW,
-			.lpfnWndProc = main_window_callback,
-			.hInstance = g_instance,
-			.hCursor = the_cursor,
-//			.hIcon = ,
-			.lpszClassName = "SlideviewerMainWindow",
-	};
-
-	if (!RegisterClassA(&main_window_class)) {
-		panic();
-		// TODO: Diagnostic
-	};
-
-	int desired_width = 1260;
-	int desired_height = 740;
-
-	RECT desired_window_rect = {};
-	desired_window_rect.right = desired_width;
-	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
-	AdjustWindowRect(&desired_window_rect, window_style, 0);
-	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
-	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
-
-
-	main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
-	                              main_window_class.lpszClassName, "Slideviewer",
-	                              window_style,
-	                              CW_USEDEFAULT, CW_USEDEFAULT, initial_window_width, initial_window_height,
-	                              0, 0, g_instance, 0);
-	if (!main_window) {
-		panic();
-		// TODO: logging
-	}
-
-	win32_init_opengl(main_window);
-	win32_gl_swap_interval(1);
-
-	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
-	is_main_window_initialized = true; // prevent WM_SIZE messages calling win32_resize_DIB_section() too early!
-
-}
-
 
 
 void win32_process_input(HWND window) {
@@ -901,7 +889,7 @@ void win32_process_input(HWND window) {
 	GetCursorPos(&cursor_pos);
 	ScreenToClient(window, &cursor_pos);
 	curr_input->mouse_xy = (v2i){ cursor_pos.x, cursor_pos.y };
-	curr_input->mouse_z = 0; // TODO: support mousewheel
+	curr_input->mouse_z = 0;
 
 	win32_process_keyboard_event(&curr_input->mouse_buttons[0], GetKeyState(VK_LBUTTON) & (1<<15));
 	win32_process_keyboard_event(&curr_input->mouse_buttons[1], GetKeyState(VK_RBUTTON) & (1<<15));
@@ -909,31 +897,12 @@ void win32_process_input(HWND window) {
 	win32_process_keyboard_event(&curr_input->mouse_buttons[3], GetKeyState(VK_XBUTTON1) & (1<<15));
 	win32_process_keyboard_event(&curr_input->mouse_buttons[4], GetKeyState(VK_XBUTTON2) & (1<<15));
 
-
-
 	win32_process_pending_messages(curr_input, window);
 	win32_process_xinput_controllers();
 
 }
 
-typedef struct work_queue_t {
-	HANDLE semaphore_handle;
-	i32 volatile next_entry_to_submit;
-	i32 volatile next_entry_to_execute;
-	i32 volatile completion_count;
-	i32 volatile completion_goal;
-	work_queue_entry_t entries[256];
-} work_queue_t;
 
-
-typedef struct win32_thread_info_t {
-	i32 logical_thread_index;
-	work_queue_t* queue;
-} win32_thread_info_t;
-
-work_queue_t work_queue;
-win32_thread_info_t infos[3] = {};
-i32 num_threads = COUNT(infos);
 
 void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
 	// Circular FIFO buffer
@@ -988,6 +957,26 @@ bool32 is_queue_work_in_progress(work_queue_t* queue) {
 
 DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	win32_thread_info_t* thread_info = parameter;
+//	i64 init_start_time = get_clock();
+
+	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
+	ASSERT(main_window);
+	HDC dc = 0;
+	for (;;) {
+		dc = GetDC(main_window);
+		if (dc) break; else {
+			Sleep(1);
+		}
+	}
+	HGLRC glrc = glrcs[thread_info->logical_thread_index];
+	ASSERT(glrc);
+	if (!wglMakeCurrent(dc, glrc)) {
+		win32_diagnostic("wglMakeCurrent");
+	}
+	ReleaseDC(main_window, dc);
+
+//	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
+
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
 //			Sleep(1);
@@ -1005,16 +994,16 @@ void echo_task(int logical_thread_index, void* userdata) {
 #endif
 
 void win32_init_multithreading() {
-
 	i32 semaphore_initial_count = 0;
+	i32 worker_thread_count = total_thread_count - 1;
+	work_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
 
-	work_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, num_threads, 0, 0, SEMAPHORE_ALL_ACCESS);
-
-	for (i32 i = 0; i < num_threads; ++i) {
-		infos[i] = (win32_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
+	// NOTE: the main thread is considered thread 0.
+	for (i32 i = 1; i < total_thread_count; ++i) {
+		thread_infos[i] = (win32_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
 
 		DWORD thread_id;
-		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, infos + i, 0, &thread_id);
+		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
 		CloseHandle(thread_handle);
 
 	}
@@ -1036,12 +1025,58 @@ void win32_init_multithreading() {
 	add_work_queue_entry(&work_queue, echo_task, "string 11");
 
 	while (is_queue_work_in_progress(&work_queue)) {
-		do_worker_work(&work_queue, num_threads);
+		do_worker_work(&work_queue, total_thread_count);
 	}
 #endif
 
 
 }
+
+void win32_init_main_window() {
+	main_window_class = (WNDCLASSA){
+			.style = CS_HREDRAW|CS_VREDRAW,
+			.lpfnWndProc = main_window_callback,
+			.hInstance = g_instance,
+			.hCursor = the_cursor,
+//			.hIcon = ,
+			.lpszClassName = "SlideviewerMainWindow",
+	};
+
+	if (!RegisterClassA(&main_window_class)) {
+		win32_diagnostic("RegisterClassA");
+		panic();
+	};
+
+	int desired_width = 1260;
+	int desired_height = 740;
+
+	RECT desired_window_rect = {};
+	desired_window_rect.right = desired_width;
+	desired_window_rect.bottom = desired_height;
+	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
+	AdjustWindowRect(&desired_window_rect, window_style, 0);
+	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
+	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
+
+
+	main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
+	                              main_window_class.lpszClassName, "Slideviewer",
+	                              window_style,
+	                              CW_USEDEFAULT, CW_USEDEFAULT, initial_window_width, initial_window_height,
+	                              0, 0, g_instance, 0);
+	if (!main_window) {
+		win32_diagnostic("CreateWindowExA");
+		panic();
+	}
+
+	win32_init_opengl(main_window);
+	win32_gl_swap_interval(1);
+
+	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
+	is_main_window_initialized = true; // prevent WM_SIZE messages calling win32_resize_DIB_section() too early!
+
+}
+
 
 int main(int argc, char** argv) {
 	g_instance = GetModuleHandle(NULL);
@@ -1049,10 +1084,15 @@ int main(int argc, char** argv) {
 	g_argc = argc;
 	g_argv = argv;
 
-	win32_init_multithreading();
+	SYSTEM_INFO sysinfo = {};
+	GetSystemInfo(&sysinfo);
+	logical_cpu_count = sysinfo.dwNumberOfProcessors;
+	total_thread_count = logical_cpu_count;
+
 	win32_init_timer();
 	win32_init_cursor();
 	win32_init_main_window();
+	win32_init_multithreading();
 	win32_init_input();
 	win32_init_openslide();
 
