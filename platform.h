@@ -29,6 +29,8 @@ float get_seconds_elapsed(i64 start, i64 end);
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
 file_mem_t* platform_read_entire_file(const char* filename);
 
+void platform_wait_for_boolean_true(volatile bool32* value_ptr);
+
 void mouse_show();
 void mouse_hide();
 

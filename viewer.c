@@ -17,6 +17,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "shader.c"
+
 #include "render_group.h"
 #include "render_group.c"
 
@@ -95,6 +97,7 @@ bool32 load_image(image_t* image, const char* filename) {
 #endif
 
 
+/*
 bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 	bool32 result = false;
 	i32 channels_in_file = 0;
@@ -114,6 +117,7 @@ bool32 load_texture_from_file(texture_t* texture, const char* filename) {
 	}
 	return result;
 }
+*/
 
 
 
@@ -170,21 +174,18 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 //	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 
-	write_barrier;
 	task_data->cached_pixels = temp_memory;
-	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
 
-#if 0
 	// do the submitting directly
 	tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
+	glFinish();
 	free(task_data->cached_pixels);
 	task_data->cached_pixels = NULL;
 	free(task_data);
-//	tile->load_task_data = NULL;
-#endif
+	write_barrier;
+	tile->is_loading_complete = true;
 
 }
-
 
 extern work_queue_t work_queue;
 
@@ -205,8 +206,9 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 		return 0;
 	} else {
 		read_barrier;
-		if (tile->load_task_data) {
-#if 1
+		if (tile->is_submitted_for_loading) {
+			DUMMY_STATEMENT;
+#if 0
 			load_tile_task_t* task_data = tile->load_task_data;
 //			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
 
@@ -219,12 +221,6 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 		} else {
 			tile->is_submitted_for_loading = true;
 			enqueue_load_tile(wsi, level, tile_x, tile_y);
-
-			/*if (is_queue_work_in_progress(&work_queue)) {
-				do_worker_work(&work_queue, -1);
-				do_worker_work(&work_queue, -1);
-				do_worker_work(&work_queue, -1);
-			}*/
 
 		}
 
@@ -246,13 +242,11 @@ u32 get_texture_for_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 
 void load_wsi(wsi_t* wsi, char* filename) {
 	if (!is_openslide_loading_done) {
-		// TODO: hack! queue abused, may cause conflicts
 		printf("Waiting for OpenSlide to finish loading...\n");
-		while (is_queue_work_in_progress(&work_queue)) {
-			do_worker_work(&work_queue, 0);
-		}
+		platform_wait_for_boolean_true(&is_openslide_loading_done);
 	}
 
+	read_barrier;
 	if (!is_openslide_available) {
 		char message[4096];
 		snprintf(message, sizeof(message), "Could not open \"%s\":\nlibopenslide-0.dll is missing or broken.\n", filename);
@@ -661,7 +655,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
 				for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
 					if (tiles_loaded >= max_tiles_to_load_at_once) {
-//						 TODO: remove this performance hack after background loading (multithreaded) is implemented.
+//						 TODO: implement queue reprioritization and remove this performance hack.
 						break;
 					} else {
 						tiles_loaded += wsi_load_tile(&global_wsi, current_level, tile_x, tile_y);
@@ -720,7 +714,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				for (i32 tile_x = level_camera_tile_x1; tile_x < level_camera_tile_x2; ++tile_x) {
 
 					wsi_tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
-					if (tile->texture) {
+					// TODO: better synchronization between worker threads and main thread!!
+					read_barrier;
+					if (tile->is_loading_complete) {
 						u32 texture = get_texture_for_tile(&global_wsi, level, tile_x, tile_y);
 
 						float tile_pos_x = drawn_level->x_tile_side_in_um * tile_x;

@@ -41,7 +41,6 @@ surface_t backbuffer;
 
 WNDCLASSA main_window_class;
 HWND main_window;
-bool32 is_main_window_initialized;
 
 work_queue_t work_queue;
 win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
@@ -95,11 +94,12 @@ bool32 win32_init_openslide() {
 
 }
 
-bool32 is_openslide_available;
-bool32 is_openslide_loading_done;
+volatile bool32 is_openslide_available;
+volatile bool32 is_openslide_loading_done;
 
 void load_openslide_task(int logical_thread_index, void* userdata) {
 	is_openslide_available = win32_init_openslide();
+	write_barrier;
 	is_openslide_loading_done = true;
 }
 
@@ -231,47 +231,6 @@ win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
 }
 
-void win32_resize_DIB_section(surface_t* buffer, int width, int height) {
-
-	ASSERT(width >= 0);
-	ASSERT(height >= 0);
-
-	buffer->width = width;
-	buffer->height = height;
-	buffer->pitch = width * BYTES_PER_PIXEL;
-
-	// NOTE: When the biHeight field is negative, this is the clue to
-	// Windows to treat this bitmap as top-down, not bottom-up, meaning that
-	// the first byte of the image is the top-left pixel.
-	buffer->win32.bitmapinfo.bmiHeader = (BITMAPINFOHEADER){
-			.biSize = sizeof(BITMAPINFOHEADER),
-			.biWidth = width,
-			.biHeight = -height,
-			.biPlanes = 1,
-			.biBitCount = 32,
-			.biCompression = BI_RGB,
-	};
-
-	size_t memory_needed = (size_t) BYTES_PER_PIXEL * width * height;
-
-	if (buffer->memory != NULL) {
-		// If enough memory already allocated, just reuse. Otherwise, we need to reallocate.
-		if (buffer->memory_size < memory_needed) {
-			VirtualFree(buffer->memory, 0, MEM_RELEASE);
-			buffer->memory = NULL;
-		} else {
-			memset(buffer->memory, 0, buffer->memory_size);
-		}
-	}
-
-	if (buffer->memory == NULL) {
-		buffer->memory = VirtualAlloc(0, memory_needed, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-		if (!buffer->memory) panic();
-		buffer->memory_size = memory_needed;
-	}
-}
-
-
 enum menu_ids {
 	IDM_FILE_OPEN,
 	IDM_FILE_QUIT,
@@ -395,10 +354,10 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		} break;
 
 		case WM_SIZE: {
-			if (is_main_window_initialized) {
-				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-				win32_resize_DIB_section(&backbuffer, dimension.width, dimension.height);
-			}
+//			if (is_main_window_initialized) {
+//				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+//				win32_resize_DIB_section(&backbuffer, dimension.width, dimension.height);
+//			}
 		} break;
 
 		case WM_CLOSE: {
@@ -767,14 +726,6 @@ bool win32_wgl_extension_supported(const char *extension_name) {
 }
 
 
-void win32_gl_swap_interval(int interval) {
-	if (wglSwapIntervalEXT) {
-		wglSwapIntervalEXT(interval);
-	}
-}
-
-
-
 HMODULE opengl32_dll_handle;
 
 void* gl_get_proc_address(const char *name) {
@@ -788,7 +739,42 @@ void* gl_get_proc_address(const char *name) {
 	return proc;
 }
 
-void win32_init_opengl(HWND window) {
+void win32_init_main_window_and_opengl() {
+	main_window_class = (WNDCLASSA){
+			.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
+			.lpfnWndProc = main_window_callback,
+			.hInstance = g_instance,
+			.hCursor = the_cursor,
+//			.hIcon = ,
+			.lpszClassName = "SlideviewerMainWindow",
+	};
+
+	if (!RegisterClassA(&main_window_class)) {
+		win32_diagnostic("RegisterClassA");
+		panic();
+	};
+
+	int desired_width = 1260;
+	int desired_height = 740;
+
+	RECT desired_window_rect = {};
+	desired_window_rect.right = desired_width;
+	desired_window_rect.bottom = desired_height;
+	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
+	AdjustWindowRect(&desired_window_rect, window_style, TRUE);
+	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
+	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
+
+	main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
+	                              main_window_class.lpszClassName, "Slideviewer",
+	                              window_style,
+	                              CW_USEDEFAULT, CW_USEDEFAULT, initial_window_width, initial_window_height,
+	                              0, 0, g_instance, 0);
+	if (!main_window) {
+		win32_diagnostic("CreateWindowExA");
+		panic();
+	}
+
 	i64 debug_start = get_clock();
 
 	opengl32_dll_handle = LoadLibraryA("opengl32.dll");
@@ -806,8 +792,14 @@ void win32_init_opengl(HWND window) {
 
 	// Set up a 'dummy' window, because Win32 requires a device context (DC) coupled to a window for creating
 	// OpenGL contexts.
+
+	RECT windowrect = {};
+	GetWindowRect(main_window, &windowrect);
 	HWND dummy_window = CreateWindowExA(0, main_window_class.lpszClassName, "dummy window",
-			                            0/*WS_DISABLED*/, 0, 0, 640, 480, NULL, NULL, g_instance, 0);
+			                            WS_DISABLED, 0, 0,
+			                            windowrect.right - windowrect.left,
+			                            windowrect.bottom - windowrect.top,
+			                            NULL, NULL, g_instance, 0);
 	HDC dummy_dc = GetDC(dummy_window);
 
 	PIXELFORMATDESCRIPTOR desired_pixel_format = {
@@ -840,6 +832,12 @@ void win32_init_opengl(HWND window) {
 	}
 	char* version_string = (char*)temp_glGetString(GL_VERSION);
 	printf("OpenGL supported version: %s\n", version_string);
+
+	if (strncmp(version_string, "1.1", 3) == 0) {
+		printf("warning: no modern OpenGL available.\n");
+		// TODO: implement a software renderer
+		exit(1);
+	}
 
 	// Now try to load the extensions we will need.
 
@@ -895,7 +893,7 @@ void win32_init_opengl(HWND window) {
 			0
 	};
 
-	HDC dc = GetDC(window);
+	HDC dc = GetDC(main_window);
 
 	u32 num_formats = 0;
 	suggested_pixel_format_index = 0;
@@ -950,7 +948,7 @@ void win32_init_opengl(HWND window) {
 		win32_diagnostic("wglMakeCurrent");
 		panic();
 	}
-	ReleaseDC(window, dc);
+	ReleaseDC(main_window, dc);
 
 	// Now, get the OpenGL proc addresses using GLAD.
 
@@ -965,6 +963,10 @@ void win32_init_opengl(HWND window) {
 	// for software renderer only; remove this??
 //	glGenTextures(1, &global_blit_texture_handle);
 
+	// Enable VSync
+	if (wglSwapIntervalEXT) {
+		wglSwapIntervalEXT(1);
+	}
 
 }
 
@@ -1026,8 +1028,8 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	i32 original_entry_to_execute = queue->next_entry_to_execute;
 	i32 new_next_entry_to_execute = (original_entry_to_execute + 1) % COUNT(queue->entries);
 	if (original_entry_to_execute != queue->next_entry_to_submit) {
-		i32 entry_index = interlocked_compare_exchange(&queue->next_entry_to_execute,
-		                                               new_next_entry_to_execute, original_entry_to_execute);
+		i32 entry_index = InterlockedCompareExchange((volatile long*) &queue->next_entry_to_execute,
+		                                             new_next_entry_to_execute, original_entry_to_execute);
 		if (entry_index == original_entry_to_execute) {
 			result.data = queue->entries[entry_index].data;
 			result.callback = queue->entries[entry_index].callback;
@@ -1039,7 +1041,7 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 }
 
 void win32_mark_queue_entry_completed(work_queue_t* queue) {
-	interlocked_increment(&queue->completion_count);
+	InterlockedIncrement((volatile long*) &queue->completion_count);
 }
 
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
@@ -1098,6 +1100,15 @@ void echo_task(int logical_thread_index, void* userdata) {
 }
 #endif
 
+void platform_wait_for_boolean_true(volatile bool32* value_ptr) {
+	i32 value;
+	for (;;) {
+		value = InterlockedCompareExchange((volatile long*)value_ptr, 0, 0);
+		if (value) return;
+		Sleep(1);
+	}
+}
+
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
 	i32 worker_thread_count = total_thread_count - 1;
@@ -1137,51 +1148,6 @@ void win32_init_multithreading() {
 
 }
 
-void win32_init_main_window() {
-	main_window_class = (WNDCLASSA){
-			.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-			.lpfnWndProc = main_window_callback,
-			.hInstance = g_instance,
-			.hCursor = the_cursor,
-//			.hIcon = ,
-			.lpszClassName = "SlideviewerMainWindow",
-	};
-
-	if (!RegisterClassA(&main_window_class)) {
-		win32_diagnostic("RegisterClassA");
-		panic();
-	};
-
-	int desired_width = 1260;
-	int desired_height = 740;
-
-	RECT desired_window_rect = {};
-	desired_window_rect.right = desired_width;
-	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
-	AdjustWindowRect(&desired_window_rect, window_style, 0);
-	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
-	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
-
-
-	main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
-	                              main_window_class.lpszClassName, "Slideviewer",
-	                              window_style,
-	                              CW_USEDEFAULT, CW_USEDEFAULT, initial_window_width, initial_window_height,
-	                              0, 0, g_instance, 0);
-	if (!main_window) {
-		win32_diagnostic("CreateWindowExA");
-		panic();
-	}
-
-	win32_init_opengl(main_window);
-	win32_gl_swap_interval(1);
-
-	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
-	is_main_window_initialized = true; // prevent WM_SIZE messages calling win32_resize_DIB_section() too early!
-
-}
-
 
 int main(int argc, char** argv) {
 	g_instance = GetModuleHandle(NULL);
@@ -1196,7 +1162,7 @@ int main(int argc, char** argv) {
 
 	win32_init_timer();
 	win32_init_cursor();
-	win32_init_main_window();
+	win32_init_main_window_and_opengl();
 	win32_init_multithreading();
 	// Load OpenSlide in the background, we might not need it immediately.
 	add_work_queue_entry(&work_queue, load_openslide_task, NULL);

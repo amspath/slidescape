@@ -128,9 +128,9 @@ struct load_tile_task_t {
 };
 
 typedef struct {
-	u32 texture;
-	load_tile_task_t* load_task_data;
-	bool32 is_submitted_for_loading;
+	u32 volatile texture;
+	bool32 volatile is_submitted_for_loading;
+	bool32 volatile is_loading_complete;
 } wsi_tile_t;
 
 typedef struct {
