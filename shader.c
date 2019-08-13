@@ -1,5 +1,9 @@
-#pragma once
+#define USE_MINIMAL_SYSTEM_HEADER
+#include "common.h"
+#include "platform.h"
 
+#include <glad/glad.h>
+#include <stdio.h>
 
 #include "stringified_shaders.c"
 
@@ -193,3 +197,18 @@ u32 load_basic_shader_program(const char* vert_filename, const char* frag_filena
 
 	return shader_program;
 }
+
+i32 get_attrib(i32 program, const char *name) {
+	i32 attribute = glGetAttribLocation(program, name);
+	if(attribute == -1)
+		fprintf(stderr, "Could not bind attribute %s\n", name);
+	return attribute;
+}
+
+i32 get_uniform(i32 program, const char *name) {
+	i32 uniform = glGetUniformLocation(program, name);
+	if(uniform == -1)
+		fprintf(stderr, "Could not bind uniform %s\n", name);
+	return uniform;
+}
+

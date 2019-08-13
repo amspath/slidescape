@@ -2,7 +2,7 @@
 
 #include "common.h"
 
-#include "intrin.h"
+#include <intrin.h>
 
 #if WINDOWS
 #define write_barrier do { _WriteBarrier(); _mm_sfence(); } while (0)

@@ -14,8 +14,14 @@
 #define WINDOWS 1
 #define _WIN32_WINNT 0x0600
 #define WINVER 0x0600
+#define APIENTRY __stdcall
+#ifdef USE_MINIMAL_SYSTEM_HEADER
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #else
 #define WINDOWS 0
+#define APIENTRY
 #endif
 
 // Compiler detection

@@ -5,13 +5,28 @@
 
 static u32 vbo_rect;
 static u32 vao_rect;
-static bool32 rect_initialized;
-static u32 basic_shader;
-static bool32 opengl_stuff_initialized;
+//static u32 basic_shader;
+//static u32 text_shader;
+volatile bool32 is_opengl_initialized;
+
+typedef struct basic_shader_t {
+	u32 program;
+	i32 uniform_model;
+	i32 uniform_view;
+	i32 uniform_projection;
+	i32 uniform_tex;
+	i32 uniform_black_level;
+	i32 uniform_white_level;
+} basic_shader_t;
+
+basic_shader_t basic_shader;
+
+
 
 void init_draw_rect() {
-	ASSERT(!rect_initialized);
-	rect_initialized = true;
+	static bool32 initialized;
+	ASSERT(!initialized);
+	initialized = true;
 
 	glGenVertexArrays(1, &vao_rect);
 	glBindVertexArray(vao_rect);
@@ -40,39 +55,44 @@ void init_draw_rect() {
 }
 
 void draw_rect(u32 texture) {
-	glUseProgram(basic_shader);
+	glDisable(GL_BLEND);
+	glUseProgram(basic_shader.program);
 	glBindVertexArray(vao_rect);
-	glUniform1i(glGetUniformLocation(basic_shader, "the_texture"), 0);
+	glUniform1i(basic_shader.uniform_tex, 0);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	GLenum err = glGetError();
-	switch (err) {
-		case GL_NO_ERROR: break;
-		case GL_INVALID_OPERATION:
-			printf("Warning: glBindTexture() returned GL_INVALID_OPERATION. (This can *probably* be safely ignored "
-			       "if it happens only once.)\n");
-			break; // Assume the texture loading failed because of a synchronization error
-		default: gl_diagnostic("glBindTexture"); return;
-	}
 	glDrawArrays(GL_TRIANGLES, 0, 6);
-//	gl_diagnostic("glDrawArrays");
 }
 
 
 
 void init_opengl_stuff() {
-	ASSERT(!opengl_stuff_initialized);
-	opengl_stuff_initialized = true;
+	ASSERT(!is_opengl_initialized);
 
-	// TODO: don't depend on seperate shader text files in a release build
-	// TODO: look in the executable directory
-	basic_shader = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
+	basic_shader.program = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
+	if (!basic_shader.program) {
+		printf("Error: could not load basic shader\n");
+		panic();
+	}
+
+	basic_shader.uniform_model = get_uniform(basic_shader.program, "model");
+	basic_shader.uniform_view = get_uniform(basic_shader.program, "view");
+	basic_shader.uniform_projection = get_uniform(basic_shader.program, "projection");
+	basic_shader.uniform_tex = get_uniform(basic_shader.program, "tex");
+	basic_shader.uniform_black_level = get_uniform(basic_shader.program, "black_level");
+	basic_shader.uniform_white_level = get_uniform(basic_shader.program, "white_level");
+
+#if DO_DEBUG
+	init_font_test_text_shader();
+#endif
 
 #ifdef STRINGIFY_SHADERS
 	write_stringified_shaders();
 #endif
-	glEnable(GL_TEXTURE_2D);
 
 	init_draw_rect();
+
+	write_barrier;
+	is_opengl_initialized = true;
 }
 
 

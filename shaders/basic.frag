@@ -4,12 +4,12 @@ in VS_OUT {
     vec2 tex_coord;
 } fs_in;
 
-uniform sampler2D the_texture;
+uniform sampler2D tex;
 uniform float black_level;
 uniform float white_level;
 
 void main() {
-    vec4 the_texture_rgba = texture(the_texture, fs_in.tex_coord);
+    vec4 the_texture_rgba = texture(tex, fs_in.tex_coord);
 
     float opacity = the_texture_rgba.a;
     vec3 color = the_texture_rgba.rgb;

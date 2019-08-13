@@ -1,37 +1,45 @@
-#define _WIN32_WINNT 0x0600
-#define WINVER 0x0600
-
+//#define USE_MINIMAL_SYSTEM_HEADER
 #include "common.h"
+#include "platform.h"
+#include "win32_platform.h"
+#include "win32_multithreading.h"
 #include "openslide_api.h"
 #include "viewer.h"
+#include "font_test.h"
 
 #include <stdio.h>
 #include <sys/stat.h>
-
-//#define WIN32_LEAN_AND_MEAN
-//#define VC_EXTRALEAN
-#include <windows.h>
 #include <xinput.h>
 
 #include <glad/glad.h>
 #include <GL/wglext.h>
 
-
-#include "platform.h"
-
-#include "win32_main.h"
 #include "intrinsics.h"
 
-int g_argc;
-char** g_argv;
+#define BYTES_PER_PIXEL 4
+
+typedef struct {
+	union {
+		struct {
+			BITMAPINFO bitmapinfo;
+		} win32;
+	};
+	void* memory;
+	size_t memory_size;
+	int width;
+	int height;
+	int pitch;
+} surface_t;
+
+typedef struct {
+	i32 client_width;
+	i32 client_height;
+} window_dimension_t;
 
 HINSTANCE g_instance;
 HINSTANCE g_prev_instance;
 LPSTR g_cmdline;
 int g_cmdshow;
-
-i64 performance_counter_frequency;
-bool32 is_sleep_granular;
 
 bool32 is_program_running;
 bool32 show_cursor;
@@ -43,7 +51,7 @@ WNDCLASSA main_window_class;
 HWND main_window;
 
 work_queue_t work_queue;
-win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
+thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
 
 i32 total_thread_count;
@@ -56,116 +64,13 @@ input_t *curr_input;
 // for software renderer only; remove this??
 static GLuint global_blit_texture_handle;
 
-openslide_api openslide;
-
-bool32 win32_init_openslide() {
-	i64 debug_start = get_clock();
-	SetDllDirectoryA("openslide");
-	HINSTANCE dll_handle = LoadLibraryA("libopenslide-0.dll");
-	if (dll_handle) {
-
-#define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(dll_handle, #proc))) goto failed;
-		GET_PROC(openslide_detect_vendor);
-		GET_PROC(openslide_open);
-		GET_PROC(openslide_get_level_count);
-		GET_PROC(openslide_get_level0_dimensions);
-		GET_PROC(openslide_get_level_dimensions);
-		GET_PROC(openslide_get_level_downsample);
-		GET_PROC(openslide_get_best_level_for_downsample);
-		GET_PROC(openslide_read_region);
-		GET_PROC(openslide_close);
-		GET_PROC(openslide_get_error);
-		GET_PROC(openslide_get_property_names);
-		GET_PROC(openslide_get_property_value);
-		GET_PROC(openslide_get_associated_image_names);
-		GET_PROC(openslide_get_associated_image_dimensions);
-		GET_PROC(openslide_read_associated_image);
-		GET_PROC(openslide_get_version);
-#undef GET_PROC
-
-		printf("Initialized OpenSlide in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
-		return true;
-
-	} else failed: {
-		//TODO: diagnostic
-		printf("Could not load libopenslide-0.dll\n");
-		return false;
-	}
-
-}
-
-volatile bool32 is_openslide_available;
-volatile bool32 is_openslide_loading_done;
-
 void load_openslide_task(int logical_thread_index, void* userdata) {
-	is_openslide_available = win32_init_openslide();
+	is_openslide_available = init_openslide();
 	write_barrier;
 	is_openslide_loading_done = true;
 }
 
-void win32_diagnostic(const char* prefix) {
-	DWORD error_id = GetLastError();
-	char* message_buffer;
-	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-	                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
-	printf("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
-	LocalFree(message_buffer);
-}
 
-
-u8* platform_alloc(size_t size) {
-	u8* result = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-	if (!result) {
-		printf("Error: memory allocation failed!\n");
-		panic();
-	}
-}
-
-file_mem_t* platform_read_entire_file(const char* filename) {
-	file_mem_t* result = NULL;
-	FILE* fp = fopen(filename, "rb");
-	if (fp) {
-		struct stat st;
-		if (fstat(fileno(fp), &st) == 0) {
-			i64 filesize = st.st_size;
-			if (filesize > 0) {
-				size_t allocation_size = filesize + sizeof(result->len) + 1;
-				result = malloc(allocation_size);
-				if (result) {
-					((u8*)result)[allocation_size-1] = '\0';
-					result->len = filesize;
-					size_t bytes_read = fread(result->data, 1, filesize, fp);
-					if (bytes_read != filesize) {
-						panic();
-					}
-				}
-			}
-		}
-		fclose(fp);
-	}
-	return result;
-}
-
-// Timer-related procedures
-
-void win32_init_timer() {
-	LARGE_INTEGER perf_counter_frequency_result;
-	QueryPerformanceFrequency(&perf_counter_frequency_result);
-	performance_counter_frequency = perf_counter_frequency_result.QuadPart;
-	// Make Sleep() more granular
-	UINT desired_scheduler_granularity_ms = 1;
-	is_sleep_granular = (timeBeginPeriod(desired_scheduler_granularity_ms) == TIMERR_NOERROR);
-}
-
-i64 get_clock() {
-	LARGE_INTEGER result;
-	QueryPerformanceCounter(&result);
-	return result.QuadPart;
-}
-
-float get_seconds_elapsed(i64 start, i64 end) {
-	return (float)(end - start) / (float)performance_counter_frequency;
-}
 
 void message_box(const char* message) {
 	MessageBoxA(main_window, message, "Slideviewer", MB_ICONERROR);
@@ -215,7 +120,7 @@ void win32_init_input() {
 	Rid[0].dwFlags = 0;//RIDEV_NOLEGACY;   // adds HID mouse and also ignores legacy mouse messages
 	Rid[0].hwndTarget = 0;
 	if (RegisterRawInputDevices(Rid, 1, sizeof(Rid[0])) == FALSE) {
-		win32_diagnostic("Registering raw input devices failed");
+		win32_diagnostic("RegisterRawInputDevices");
 		panic();
 	}
 
@@ -225,10 +130,15 @@ void win32_init_input() {
 	curr_input = &inputs[1];
 }
 
-win32_window_dimension_t win32_get_window_dimension(HWND window) {
-	RECT rect;
-	GetClientRect(window, &rect);
-	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
+window_dimension_t win32_get_window_dimension(HWND window) {
+	RECT client_rect;
+	GetClientRect(window, &client_rect);
+
+	window_dimension_t result = {
+			.client_width = client_rect.right - client_rect.left,
+			.client_height = client_rect.bottom - client_rect.top,
+	};
+	return result;
 }
 
 enum menu_ids {
@@ -240,6 +150,16 @@ enum menu_ids {
 HMENU menubar;
 HMENU file_menu;
 HMENU view_menu;
+
+// Changes to the window style for testing and debugging (no menu, no window decorations)
+#if DO_DEBUG
+bool32 want_menu = false;
+LONG windowed_window_style = WS_POPUP;
+#else
+bool32 want_menu = true;
+LONG windowed_window_style = WS_OVERLAPPEDWINDOW;
+
+#endif
 
 void init_menus(HWND hwnd) {
 
@@ -257,7 +177,9 @@ void init_menus(HWND hwnd) {
 
 	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) file_menu, "&File");
 	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) view_menu, "&View");
-	SetMenu(hwnd, menubar);
+	if (want_menu) {
+		SetMenu(hwnd, menubar);
+	}
 }
 
 bool32 is_fullscreen(HWND window) {
@@ -268,12 +190,12 @@ bool32 is_fullscreen(HWND window) {
 
 void toggle_fullscreen(HWND window) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
-	if (style & WS_OVERLAPPEDWINDOW) {
+	if (style & windowed_window_style) {
 		MONITORINFO monitor_info = { .cbSize = sizeof(monitor_info) };
 		if (GetWindowPlacement(window, &window_position) &&
 		    GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY), &monitor_info))
 		{
-			SetWindowLong(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+			SetWindowLong(window, GWL_STYLE, style & ~windowed_window_style);
 			// See: https://stackoverflow.com/questions/23145217/flickering-when-borderless-window-and-desktop-dimensions-are-the-same
 			// Why????
 			SetWindowPos(window, HWND_TOP, monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
@@ -284,7 +206,7 @@ void toggle_fullscreen(HWND window) {
 
 		}
 	} else {
-		SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+		SetWindowLong(window, GWL_STYLE, style | windowed_window_style);
 		SetWindowPlacement(window, &window_position);
 		SetWindowPos(window, 0, 0, 0, 0, 0,
 		             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
@@ -354,10 +276,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		} break;
 
 		case WM_SIZE: {
-//			if (is_main_window_initialized) {
-//				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-//				win32_resize_DIB_section(&backbuffer, dimension.width, dimension.height);
-//			}
+			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
 
 		case WM_CLOSE: {
@@ -430,8 +349,8 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_PAINT: {
 			PAINTSTRUCT paint;
 			HDC device_context = BeginPaint(window, &paint);
-			win32_window_dimension_t dimension = win32_get_window_dimension(window);
-			viewer_update_and_render(NULL, dimension.width, dimension.height);
+			window_dimension_t dimension = win32_get_window_dimension(window);
+			viewer_update_and_render(NULL, dimension.client_width, dimension.client_height);
 			SwapBuffers(device_context);
 			EndPaint(window, &paint);
 
@@ -709,6 +628,51 @@ void win32_process_xinput_controllers() {
 }
 
 
+typedef struct opengl_info_t {
+	bool32 GL_ARB_debug_output;
+} opengl_info_t;
+
+opengl_info_t glinfo;
+
+
+// GL_KHR_debug
+//void DebugMessageCallback(DEBUGPROC callback,
+//                          const void* userParam);
+
+
+//  GL_ARB_debug_output
+typedef void (APIENTRY  *GLDEBUGPROCARB)(GLenum source,GLenum type,GLuint id,GLenum severity,GLsizei length,const GLchar *message,const void *userParam);
+#define GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB   0x8242
+#define GL_DEBUG_NEXT_LOGGED_MESSAGE_LENGTH_ARB 0x8243
+#define GL_DEBUG_CALLBACK_FUNCTION_ARB    0x8244
+#define GL_DEBUG_CALLBACK_USER_PARAM_ARB  0x8245
+#define GL_DEBUG_SOURCE_API_ARB           0x8246
+#define GL_DEBUG_SOURCE_WINDOW_SYSTEM_ARB 0x8247
+#define GL_DEBUG_SOURCE_SHADER_COMPILER_ARB 0x8248
+#define GL_DEBUG_SOURCE_THIRD_PARTY_ARB   0x8249
+#define GL_DEBUG_SOURCE_APPLICATION_ARB   0x824A
+#define GL_DEBUG_SOURCE_OTHER_ARB         0x824B
+#define GL_DEBUG_TYPE_ERROR_ARB           0x824C
+#define GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR_ARB 0x824D
+#define GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR_ARB 0x824E
+#define GL_DEBUG_TYPE_PORTABILITY_ARB     0x824F
+#define GL_DEBUG_TYPE_PERFORMANCE_ARB     0x8250
+#define GL_DEBUG_TYPE_OTHER_ARB           0x8251
+#define GL_MAX_DEBUG_MESSAGE_LENGTH_ARB   0x9143
+#define GL_MAX_DEBUG_LOGGED_MESSAGES_ARB  0x9144
+#define GL_DEBUG_LOGGED_MESSAGES_ARB      0x9145
+#define GL_DEBUG_SEVERITY_HIGH_ARB        0x9146
+#define GL_DEBUG_SEVERITY_MEDIUM_ARB      0x9147
+#define GL_DEBUG_SEVERITY_LOW_ARB         0x9148
+typedef void (APIENTRYP PFNGLDEBUGMESSAGECONTROLARBPROC) (GLenum source, GLenum type, GLenum severity, GLsizei count, const GLuint *ids, GLboolean enabled);
+typedef void (APIENTRYP PFNGLDEBUGMESSAGEINSERTARBPROC) (GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *buf);
+typedef void (APIENTRYP PFNGLDEBUGMESSAGECALLBACKARBPROC) (GLDEBUGPROCARB callback, const void *userParam);
+typedef GLuint (APIENTRYP PFNGLGETDEBUGMESSAGELOGARBPROC) (GLuint count, GLsizei bufSize, GLenum *sources, GLenum *types, GLuint *ids, GLenum *severities, GLsizei *lengths, GLchar *messageLog);
+PFNGLDEBUGMESSAGECONTROLARBPROC glDebugMessageControlARB;
+PFNGLDEBUGMESSAGEINSERTARBPROC glDebugMessageInsertARB;
+PFNGLDEBUGMESSAGECALLBACKARBPROC glDebugMessageCallbackARB;
+PFNGLGETDEBUGMESSAGELOGARBPROC glGetDebugMessageLogARB;
+
 const char* wgl_extensions_string;
 
 PFNWGLSWAPINTERVALEXTPROC       wglSwapIntervalEXT = NULL;
@@ -719,7 +683,7 @@ PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = NULL;
 
 
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
-bool win32_wgl_extension_supported(const char *extension_name) {
+bool32 win32_wgl_extension_supported(const char *extension_name) {
 	ASSERT(wgl_extensions_string);
 	bool32 supported = (strstr(wgl_extensions_string, extension_name) != NULL);
 	return supported;
@@ -739,9 +703,19 @@ void* gl_get_proc_address(const char *name) {
 	return proc;
 }
 
+
+void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
+		                      const char* message, const void* user_param)
+{
+	printf("GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+	         ( type == GL_DEBUG_TYPE_ERROR_ARB ? "** GL ERROR **" : "" ),
+	         type, severity, message );
+}
+
+
 void win32_init_main_window_and_opengl() {
 	main_window_class = (WNDCLASSA){
-			.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
+			.style = CS_HREDRAW | CS_VREDRAW /*| CS_OWNDC*/,
 			.lpfnWndProc = main_window_callback,
 			.hInstance = g_instance,
 			.hCursor = the_cursor,
@@ -755,13 +729,14 @@ void win32_init_main_window_and_opengl() {
 	};
 
 	int desired_width = 1260;
-	int desired_height = 740;
+	int desired_height = 720;
 
 	RECT desired_window_rect = {};
 	desired_window_rect.right = desired_width;
 	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
-	AdjustWindowRect(&desired_window_rect, window_style, TRUE);
+	DWORD window_style = windowed_window_style|WS_VISIBLE|WS_EX_ACCEPTFILES;
+//	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
+	AdjustWindowRect(&desired_window_rect, window_style, want_menu);
 	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
 
@@ -908,10 +883,16 @@ void win32_init_main_window_and_opengl() {
 		win32_diagnostic("SetPixelFormat");
 	}
 
-	int context_attribs[] = {
+	i32 context_flags = 0;
+#if DO_DEBUG
+	context_flags |= WGL_CONTEXT_DEBUG_BIT_ARB; // Ask for an OpenGL debug context
+#endif
+
+	i32 context_attribs[] = {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 0,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+			WGL_CONTEXT_FLAGS_ARB, context_flags,
 			0
 	};
 
@@ -930,11 +911,6 @@ void win32_init_main_window_and_opengl() {
 			printf("Thread %d: wglCreateContextAttribsARB() failed.", thread_index);
 			panic();
 		}
-/*		if (!wglShareLists(glrcs[0], glrc)) {
-			printf("Thread %d: ", thread_index);
-			win32_diagnostic("wglShareLists");
-			panic();
-		}*/
 		glrcs[thread_index] = glrc;
 	}
 
@@ -957,17 +933,39 @@ void win32_init_main_window_and_opengl() {
 		printf("Error initializing OpenGL: failed to initialize GLAD.\n");
 		panic();
 	}
-	// debug
-	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 
-	// for software renderer only; remove this??
-//	glGenTextures(1, &global_blit_texture_handle);
+	// Get additional GL extensions
+	i32 extension_count;
+	glGetIntegerv(GL_NUM_EXTENSIONS, &extension_count);
+	for (i32 i = 0; i < extension_count; i++) {
+		const char* ext = (const char*) glGetStringi(GL_EXTENSIONS, i);
+
+//		printf("%s\n", ext);
+		if (strcmp(ext, "GL_KHR_debug") == 0) {
+			glinfo.GL_ARB_debug_output = true;
+			glDebugMessageControlARB = gl_get_proc_address("glDebugMessageControlARB");
+			glDebugMessageInsertARB = gl_get_proc_address("glDebugMessageInsertARB");
+			glDebugMessageCallbackARB = gl_get_proc_address("glDebugMessageCallbackARB");
+			glGetDebugMessageLogARB = gl_get_proc_address("glGetDebugMessageLogARB");
+
+			// Enable debug output
+			glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB);
+			glDebugMessageCallbackARB(opengl_debug_message_callback, 0);
+		}
+	}
 
 	// Enable VSync
 	if (wglSwapIntervalEXT) {
 		wglSwapIntervalEXT(1);
 	}
 
+
+
+	// for software renderer only; remove this??
+//	glGenTextures(1, &global_blit_texture_handle);
+
+	// debug
+	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 }
 
 
@@ -1011,59 +1009,9 @@ void win32_process_input(HWND window) {
 
 
 
-void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
-	// Circular FIFO buffer
-	i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
-	ASSERT(new_next_entry_to_submit != queue->next_entry_to_execute);
-	queue->entries[queue->next_entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
-	++queue->completion_goal;
-	write_barrier;
-	queue->next_entry_to_submit = new_next_entry_to_submit;
-	ReleaseSemaphore(queue->semaphore_handle, 1, NULL);
-}
-
-work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
-	work_queue_entry_t result = {};
-
-	i32 original_entry_to_execute = queue->next_entry_to_execute;
-	i32 new_next_entry_to_execute = (original_entry_to_execute + 1) % COUNT(queue->entries);
-	if (original_entry_to_execute != queue->next_entry_to_submit) {
-		i32 entry_index = InterlockedCompareExchange((volatile long*) &queue->next_entry_to_execute,
-		                                             new_next_entry_to_execute, original_entry_to_execute);
-		if (entry_index == original_entry_to_execute) {
-			result.data = queue->entries[entry_index].data;
-			result.callback = queue->entries[entry_index].callback;
-			result.is_valid = true;
-			read_barrier;
-		}
-	}
-	return result;
-}
-
-void win32_mark_queue_entry_completed(work_queue_t* queue) {
-	InterlockedIncrement((volatile long*) &queue->completion_count);
-}
-
-bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
-	work_queue_entry_t entry = get_next_work_queue_entry(queue);
-	if (entry.is_valid) {
-		if (!entry.callback) panic();
-		entry.callback(logical_thread_index, entry.data);
-		win32_mark_queue_entry_completed(queue);
-	}
-	return entry.is_valid;
-}
-
-
-bool32 is_queue_work_in_progress(work_queue_t* queue) {
-	bool32 result = (queue->completion_goal < queue->completion_count);
-	return result;
-}
-
-
 
 DWORD WINAPI _Noreturn thread_proc(void* parameter) {
-	win32_thread_info_t* thread_info = parameter;
+	thread_info_t* thread_info = parameter;
 	i64 init_start_time = get_clock();
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
@@ -1079,6 +1027,7 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	ASSERT(glrc);
 	if (!wglMakeCurrent(dc, glrc)) {
 		win32_diagnostic("wglMakeCurrent");
+		panic();
 	}
 	ReleaseDC(main_window, dc);
 
@@ -1100,14 +1049,6 @@ void echo_task(int logical_thread_index, void* userdata) {
 }
 #endif
 
-void platform_wait_for_boolean_true(volatile bool32* value_ptr) {
-	i32 value;
-	for (;;) {
-		value = InterlockedCompareExchange((volatile long*)value_ptr, 0, 0);
-		if (value) return;
-		Sleep(1);
-	}
-}
 
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
@@ -1116,7 +1057,7 @@ void win32_init_multithreading() {
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
-		thread_infos[i] = (win32_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
+		thread_infos[i] = (thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
 
 		DWORD thread_id;
 		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
@@ -1160,14 +1101,16 @@ int main(int argc, char** argv) {
 	logical_cpu_count = sysinfo.dwNumberOfProcessors;
 	total_thread_count = logical_cpu_count;
 
-	win32_init_timer();
+	init_timer();
 	win32_init_cursor();
 	win32_init_main_window_and_opengl();
 	win32_init_multithreading();
 	// Load OpenSlide in the background, we might not need it immediately.
 	add_work_queue_entry(&work_queue, load_openslide_task, NULL);
 	win32_init_input();
-
+#if DO_DEBUG
+	win32_init_font(); // for experimental text rendering test
+#endif
 
 	is_program_running = true;
 	first();
@@ -1175,8 +1118,8 @@ int main(int argc, char** argv) {
 
 		win32_process_input(main_window);
 
-		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-		viewer_update_and_render(curr_input, dimension.width, dimension.height);
+		window_dimension_t dimension = win32_get_window_dimension(main_window);
+		viewer_update_and_render(curr_input, dimension.client_width, dimension.client_height);
 
 		HDC hdc = GetDC(main_window);
 		SwapBuffers(hdc);

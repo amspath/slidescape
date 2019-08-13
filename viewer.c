@@ -1,7 +1,8 @@
+#define USE_MINIMAL_SYSTEM_HEADER
 #include "common.h"
 
-//#include "win32_main.h"
 #include "platform.h"
+#include "win32_multithreading.h"
 #include "intrinsics.h"
 
 #include "openslide_api.h"
@@ -12,36 +13,24 @@
 #include "arena.c"
 
 #include "viewer.h"
+#include "wsi.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-#include "shader.c"
+#include "shader.h"
+
+#include "font_test.h"
 
 #include "render_group.h"
 #include "render_group.c"
 
-
-//#define MAX_ENTITIES 4096
-//u32 entity_count = 1;
-//entity_t entities[MAX_ENTITIES];
-
 v2f camera_pos;
-
-
-viewer_t global_viewer;
 
 wsi_t global_wsi;
 i32 current_level;
 float zoom_position;
-
-void gl_diagnostic(const char* prefix) {
-	GLenum err = glGetError();
-	if (err != GL_NO_ERROR) {
-		printf("%s: failed with error code 0x%x\n", prefix, err);
-	}
-}
 
 
 // TODO: remove? do we still need this>
@@ -132,7 +121,6 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
-	gl_diagnostic("glTexImage2D");
 	return texture;
 }
 
@@ -240,136 +228,8 @@ u32 get_texture_for_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	return tile->texture;
 }
 
-void load_wsi(wsi_t* wsi, char* filename) {
-	if (!is_openslide_loading_done) {
-		printf("Waiting for OpenSlide to finish loading...\n");
-		platform_wait_for_boolean_true(&is_openslide_loading_done);
-	}
-
-	read_barrier;
-	if (!is_openslide_available) {
-		char message[4096];
-		snprintf(message, sizeof(message), "Could not open \"%s\":\nlibopenslide-0.dll is missing or broken.\n", filename);
-		message_box(message);
-		return;
-	}
-
-
-	if (wsi->osr) {
-		openslide.openslide_close(wsi->osr);
-		wsi->osr = NULL;
-	}
-
-	global_viewer.slide_memory.blocks_in_use = 1;
-
-	wsi->osr = openslide.openslide_open(filename);
-	if (wsi->osr) {
-		printf("Openslide: opened %s\n", filename);
-
-		openslide.openslide_get_level0_dimensions(wsi->osr, &wsi->width, &wsi->height);
-		ASSERT(wsi->width > 0);
-		ASSERT(wsi->height > 0);
-
-		wsi->width_pow2 = next_pow2((u64)wsi->width);
-		wsi->height_pow2 = next_pow2((u64)wsi->height);
-
-		wsi->num_levels = openslide.openslide_get_level_count(wsi->osr);
-		printf("Openslide: WSI has %d levels\n", wsi->num_levels);
-		if (wsi->num_levels > WSI_MAX_LEVELS) {
-			panic();
-		}
-
-
-
-		const char* const* wsi_properties = openslide.openslide_get_property_names(wsi->osr);
-		if (wsi_properties) {
-			i32 property_index = 0;
-			const char* property = wsi_properties[0];
-			for (; property != NULL; property = wsi_properties[++property_index]) {
-				const char* property_value = openslide.openslide_get_property_value(wsi->osr, property);
-				printf("%s = %s\n", property, property_value);
-
-			}
-		}
-
-		wsi->mpp_x = 0.25f; // microns per pixel (default)
-		wsi->mpp_y = 0.25f; // microns per pixel (default)
-		const char* mpp_x_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-x");
-		const char* mpp_y_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-y");
-		if (mpp_x_string) {
-			float mpp = atof(mpp_x_string);
-			if (mpp > 0.0f) {
-				wsi->mpp_x = mpp;
-			}
-		}
-		if (mpp_y_string) {
-			float mpp = atof(mpp_y_string);
-			if (mpp > 0.0f) {
-				wsi->mpp_y = mpp;
-			}
-		}
-
-		for (i32 i = 0; i < wsi->num_levels; ++i) {
-			wsi_level_t* level = wsi->levels + i;
-
-			openslide.openslide_get_level_dimensions(wsi->osr, i, &level->width, &level->height);
-			ASSERT(level->width > 0);
-			ASSERT(level->height > 0);
-			i64 partial_block_x = level->width % TILE_DIM;
-			i64 partial_block_y = level->height % TILE_DIM;
-			level->width_in_tiles = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
-			level->height_in_tiles = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
-			level->um_per_pixel_x = (float)(1 << i) * wsi->mpp_x;
-			level->um_per_pixel_y = (float)(1 << i) * wsi->mpp_y;
-			level->x_tile_side_in_um = level->um_per_pixel_x * (float)TILE_DIM;
-			level->y_tile_side_in_um = level->um_per_pixel_y * (float)TILE_DIM;
-			level->num_tiles = level->width_in_tiles * level->height_in_tiles;
-			level->tiles = calloc(1, level->num_tiles * sizeof(wsi_tile_t));
-		}
-
-		const char* barcode = openslide.openslide_get_property_value(wsi->osr, "philips.PIM_DP_UFS_BARCODE");
-		if (barcode) {
-			wsi->barcode = barcode;
-		}
-
-		const char* const* wsi_associated_image_names = openslide.openslide_get_associated_image_names(wsi->osr);
-		if (wsi_associated_image_names) {
-			i32 name_index = 0;
-			const char* name = wsi_associated_image_names[0];
-			for (; name != NULL; name = wsi_associated_image_names[++name_index]) {
-				i64 w = 0;
-				i64 h = 0;
-				openslide.openslide_get_associated_image_dimensions(wsi->osr, name, &w, &h);
-				printf("%s : w=%d h=%d\n", name, w, h);
-
-			}
-		}
-
-		current_level = wsi->num_levels-1;
-		zoom_position = (float)current_level;
-
-		camera_pos.x = (wsi->width * wsi->mpp_x) / 2.0f;
-		camera_pos.y = (wsi->height * wsi->mpp_y) / 2.0f;
-
-	}
-
-}
-
 void unload_texture(u32 texture) {
 	glDeleteTextures(1, &texture);
-}
-
-void unload_wsi(wsi_t* wsi) {
-	if (wsi->osr) {
-		openslide.openslide_close(wsi->osr);
-		wsi->osr = NULL;
-	}
-
-	global_viewer.slide_memory.blocks_in_use = 1;
-
-//	for (int i = 0; i < texture_count; ++i) {
-//		unload_texture();
-//	}
 }
 
 
@@ -380,16 +240,16 @@ void on_file_dragged(char* filename) {
 #else
 	// TODO: allow loading either a normal image or a WSI (we should be able to function as a normal image viewer!)
 	load_wsi(&global_wsi, filename);
+
+	current_level = global_wsi.num_levels-1;
+	zoom_position = (float)current_level;
+
+	camera_pos.x = (global_wsi.width * global_wsi.mpp_x) / 2.0f;
+	camera_pos.y = (global_wsi.height * global_wsi.mpp_y) / 2.0f;
 #endif
 }
 
 void first() {
-	// TODO: remove or change this.
-	i64 wsi_memory_size = GIGABYTES(1);
-	global_viewer.slide_memory.data = platform_alloc(wsi_memory_size);
-	global_viewer.slide_memory.capacity = wsi_memory_size;
-	global_viewer.slide_memory.capacity_in_blocks = wsi_memory_size / WSI_BLOCK_SIZE;
-	global_viewer.slide_memory.blocks_in_use = 1;
 
 	init_opengl_stuff();
 
@@ -435,6 +295,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 	if (!global_wsi.osr) {
+#if DO_DEBUG
+		text_test(client_width, client_height);
+#endif
 		return;
 	} else {
 
@@ -681,16 +544,18 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		// define view matrix
 		mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
 
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+		glUseProgram(basic_shader.program);
+
+		glUniformMatrix4fv(basic_shader.uniform_view, 1, GL_FALSE, &V[0][0]);
+		glUniformMatrix4fv(basic_shader.uniform_projection, 1, GL_FALSE, &projection[0][0]);
 
 
 		if (use_image_adjustments) {
-			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
-			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
+			glUniform1f(basic_shader.uniform_black_level, black_level);
+			glUniform1f(basic_shader.uniform_white_level, white_level);
 		} else {
-			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
-			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
+			glUniform1f(basic_shader.uniform_black_level, 0.0f);
+			glUniform1f(basic_shader.uniform_white_level, 1.0f);
 		}
 
 		i32 num_levels_above_current = global_wsi.num_levels - current_level - 1;
@@ -726,7 +591,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 						mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
 						mat4x4_scale_aniso(S, I, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um, 1.0f);
 						mat4x4_mul(M, T, S);
-						glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
+						glUniformMatrix4fv(basic_shader.uniform_model, 1, GL_FALSE, &M[0][0]);
 
 						draw_rect(texture);
 					}
