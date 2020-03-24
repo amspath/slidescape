@@ -977,9 +977,7 @@ void win32_init_opengl(HWND window) {
 		glrcs[thread_index] = glrc;
 	}
 
-
-
-	// Try to enable debug output.
+	// Try to enable debug output on the main thread.
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
@@ -1107,7 +1105,7 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	HGLRC glrc = glrcs[thread_info->logical_thread_index];
 	ASSERT(glrc);
 	while (!wglMakeCurrent(dc, glrc)) {
-		win32_diagnostic("wglMakeCurrent");
+		win32_diagnostic("wglMakeCurrent"); // for some reason, this can fail, but with error code 0, retrying seems harmless??
 		Sleep(1000);
 	}
 	ReleaseDC(main_window, dc);

@@ -46,6 +46,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <string.h>
 #include <stdlib.h>
 
 #include <stretchy_buffer.h> // https://github.com/nothings/stb/blob/master/stretchy_buffer.h

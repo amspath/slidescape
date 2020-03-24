@@ -12,5 +12,6 @@ add_executable(slideviewer
         viewer.c
         glad.c
         stringutils.c
+        shader.c
 )
 target_link_libraries(slideviewer user32 gdi32 winmm opengl32)
