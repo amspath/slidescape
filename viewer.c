@@ -687,9 +687,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		// define view matrix
 		mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
 
+		glUseProgram(basic_shader);
 		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
 		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
-
 
 		if (use_image_adjustments) {
 			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);

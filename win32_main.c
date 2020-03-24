@@ -790,6 +790,14 @@ void* gl_get_proc_address(const char *name) {
 	return proc;
 }
 
+void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
+                                              const char* message, const void* user_param)
+{
+	printf("GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
+	       ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
+	       type, severity, message );
+}
+
 void win32_init_opengl(HWND window) {
 	i64 debug_start = get_clock();
 
@@ -913,15 +921,34 @@ void win32_init_opengl(HWND window) {
 	}
 
 	int context_attribs[] = {
-			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 0,
-			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+			WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 5,
+			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+			WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB, // Ask for a debug context
 			0
 	};
 
 	glrcs[0] = wglCreateContextAttribsARB(dc, NULL, context_attribs);
 	if (glrcs[0] == NULL) {
 		printf("wglCreateContextAttribsARB() failed.");
+		panic();
+	}
+
+
+	// Delete the dummy context and start using the real one.
+	wglMakeCurrent(NULL, NULL);
+	wglDeleteContext(dummy_glrc);
+	ReleaseDC(dummy_window, dummy_dc);
+	DestroyWindow(dummy_window);
+	if (!wglMakeCurrent(dc, glrcs[0])) {
+		win32_diagnostic("wglMakeCurrent");
+		panic();
+	}
+	ReleaseDC(window, dc);
+
+	// Now, get the OpenGL proc addresses using GLAD.
+	if (!gladLoadGLLoader((GLADloadproc) gl_get_proc_address)) {
+		printf("Error initializing OpenGL: failed to initialize GLAD.\n");
 		panic();
 	}
 
@@ -943,24 +970,18 @@ void win32_init_opengl(HWND window) {
 	}
 
 
-	// Delete the dummy context and start using the real one.
-	wglMakeCurrent(NULL, NULL);
-	wglDeleteContext(dummy_glrc);
-	ReleaseDC(dummy_window, dummy_dc);
-	DestroyWindow(dummy_window);
-	if (!wglMakeCurrent(dc, glrcs[0])) {
-		win32_diagnostic("wglMakeCurrent");
-		panic();
+
+	// Try to enable debug output.
+	i32 gl_context_flags;
+	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
+	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
+//		printf("enabling debug output for thread %d...\n", 0);
+		glEnable(GL_DEBUG_OUTPUT);
+		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+		glDebugMessageCallback(opengl_debug_message_callback, 0);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, true);
 	}
-	ReleaseDC(window, dc);
 
-	// Now, get the OpenGL proc addresses using GLAD.
-
-
-	if (!gladLoadGLLoader((GLADloadproc) gl_get_proc_address)) {
-		printf("Error initializing OpenGL: failed to initialize GLAD.\n");
-		panic();
-	}
 	// debug
 	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 
@@ -1077,10 +1098,21 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	}
 	HGLRC glrc = glrcs[thread_info->logical_thread_index];
 	ASSERT(glrc);
-	if (!wglMakeCurrent(dc, glrc)) {
+	while (!wglMakeCurrent(dc, glrc)) {
 		win32_diagnostic("wglMakeCurrent");
+		Sleep(1000);
 	}
 	ReleaseDC(main_window, dc);
+
+	i32 gl_context_flags;
+	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
+	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
+//		printf("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
+		glEnable(GL_DEBUG_OUTPUT);
+		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+		glDebugMessageCallback(opengl_debug_message_callback, 0);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, true);
+	}
 
 //	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
