@@ -1,6 +1,7 @@
 #pragma once
 #include "common.h"
 #include "viewer.h"
+#include "stringutils.h"
 
 #include "stringified_shaders.c"
 
@@ -12,32 +13,6 @@
 i32 shader_count = 0;
 bool32 are_any_shader_sources_missing;
 #define MAX_SHADER_FILENAME 64
-
-void dots_to_underscores(char* s, i32 max) {
-	for (char* pos = s; pos < s + max; ++pos) {
-		char c = *pos;
-		if (c == '\0') break;
-		if (c == '.') *pos = '_';
-	}
-}
-
-const char* one_past_last_slash(const char* s, i32 max) {
-	i32 len = strnlen(s, max - 1);
-	i32 stripped_len = 0;
-	const char* pos = s + len - 1;
-	for (; pos >= s; --pos) {
-		char c = *pos;
-		if (c == '/')  {
-			pos += 1; // gone back one too far
-			break;
-		} else {
-			++stripped_len;
-		}
-	}
-	const char* result = pos;
-	ASSERT(stripped_len > 0 && stripped_len <= len);
-	return result;
-}
 
 #ifdef STRINGIFY_SHADERS
 

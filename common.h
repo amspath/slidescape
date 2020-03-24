@@ -46,6 +46,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <stdlib.h>
+
+#include <stretchy_buffer.h> // https://github.com/nothings/stb/blob/master/stretchy_buffer.h
+
 // Typedef choices for numerical types
 typedef int8_t i8;
 typedef int16_t i16;

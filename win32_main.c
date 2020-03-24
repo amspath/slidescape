@@ -233,6 +233,7 @@ win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
 }
 
+#if 0
 void win32_resize_DIB_section(surface_t* buffer, int width, int height) {
 
 	ASSERT(width >= 0);
@@ -272,7 +273,7 @@ void win32_resize_DIB_section(surface_t* buffer, int width, int height) {
 		buffer->memory_size = memory_needed;
 	}
 }
-
+#endif
 
 enum menu_ids {
 	IDM_FILE_OPEN,
@@ -396,12 +397,17 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			}
 		} break;
 
+#if 0
 		case WM_SIZE: {
 			if (is_main_window_initialized) {
+				glDrawBuffer(GL_BACK);
 				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-				win32_resize_DIB_section(&backbuffer, dimension.width, dimension.height);
+				viewer_update_and_render(curr_input, dimension.width, dimension.height);
+				SwapBuffers(wglGetCurrentDC());
 			}
+			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
+#endif
 
 		case WM_CLOSE: {
 			// TODO: Handle this as a message to the user?
@@ -470,15 +476,17 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 
 		} break;
 
+#if 0
 		case WM_PAINT: {
-			PAINTSTRUCT paint;
-			HDC device_context = BeginPaint(window, &paint);
-			win32_window_dimension_t dimension = win32_get_window_dimension(window);
-			viewer_update_and_render(NULL, dimension.width, dimension.height);
-			SwapBuffers(device_context);
-			EndPaint(window, &paint);
-
+			if (is_main_window_initialized) {
+				glDrawBuffer(GL_BACK);
+				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+				viewer_update_and_render(curr_input, dimension.width, dimension.height);
+				SwapBuffers(wglGetCurrentDC());
+			}
+			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
+#endif
 
 		default: {
 			result = DefWindowProcA(window, message, wparam, lparam);
@@ -1179,6 +1187,7 @@ void win32_init_main_window() {
 			.hCursor = the_cursor,
 //			.hIcon = ,
 			.lpszClassName = "SlideviewerMainWindow",
+			.hbrBackground = NULL,
 	};
 
 	if (!RegisterClassA(&main_window_class)) {
@@ -1211,8 +1220,8 @@ void win32_init_main_window() {
 	win32_init_opengl(main_window);
 	win32_gl_swap_interval(1);
 
-	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
-	is_main_window_initialized = true; // prevent WM_SIZE messages calling win32_resize_DIB_section() too early!
+//	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
+	is_main_window_initialized = true; // prevent trying to redraw while resizing too early!
 
 }
 
@@ -1247,12 +1256,13 @@ int main(int argc, char** argv) {
 
 		win32_process_input(main_window);
 
+		glDrawBuffer(GL_BACK);
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 		viewer_update_and_render(curr_input, dimension.width, dimension.height);
 
-		HDC hdc = GetDC(main_window);
-		SwapBuffers(hdc);
-		ReleaseDC(main_window, hdc);
+//		HDC hdc = GetDC(main_window);
+		SwapBuffers(wglGetCurrentDC());
+//		ReleaseDC(main_window, hdc);
 
 
 	}

@@ -1,15 +1,6 @@
 #pragma once
 #include "common.h"
 
-#if 0
-typedef struct image_t {
-	u8* data;
-	i32 width;
-	i32 height;
-	i32 pitch;
-	i32 bpp;
-} image_t;
-#endif
 
 typedef struct texture_t {
 	u32 texture;
@@ -162,6 +153,32 @@ typedef struct wsi_t {
 	wsi_level_t levels[WSI_MAX_LEVELS];
 } wsi_t;
 
+typedef enum {
+	IMAGE_TYPE_STBI_COMPATIBLE,
+	IMAGE_TYPE_TIFF_GENERIC,
+	IMAGE_TYPE_WSI,
+} image_type_enum;
+
+typedef struct {
+	image_type_enum type;
+	union {
+		struct {
+			i32 channels_in_file;
+			i32 channels;
+			i32 width;
+			i32 height;
+			u8* pixels;
+			bool32 texture_initialized;
+			u32 texture;
+		} stbi;
+		struct {
+			i32 stub;
+		} tiff;
+		struct {
+			wsi_t wsi;
+		} wsi;
+	};
+} image_t;
 
 #if 0
 typedef struct {
@@ -183,6 +200,7 @@ void gl_diagnostic(const char* prefix);
 void first();
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height);
 void on_file_dragged(char* filename);
+void load_wsi(wsi_t* wsi, const char* filename);
 
 // virtual keycodes
 #define KEYCODE_LBUTTON 0x01

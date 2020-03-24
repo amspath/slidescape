@@ -3,6 +3,7 @@
 //#include "win32_main.h"
 #include "platform.h"
 #include "intrinsics.h"
+#include "stringutils.h"
 
 #include "openslide_api.h"
 #include <glad/glad.h>
@@ -25,12 +26,13 @@
 //u32 entity_count = 1;
 //entity_t entities[MAX_ENTITIES];
 
+image_t* loaded_images; // sb
+
 v2f camera_pos;
 
 
 viewer_t global_viewer;
 
-wsi_t global_wsi;
 i32 current_level;
 float zoom_position;
 
@@ -95,25 +97,43 @@ bool32 load_image(image_t* image, const char* filename) {
 #endif
 
 
-bool32 load_texture_from_file(texture_t* texture, const char* filename) {
+bool32 load_image_from_file(image_t* image, const char* filename) {
 	bool32 result = false;
-	i32 channels_in_file = 0;
-	u8* pixels = stbi_load(filename, &texture->width, &texture->height, &channels_in_file, 4);
-	if (pixels) {
-		glGenTextures(1, &texture->texture);
-//		texture->texture = gl_gen_texture();
-		glBindTexture(GL_TEXTURE_2D, texture->texture);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texture->width, texture->height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
 
-		result = true;
-		stbi_image_free(pixels);
+	const char* ext = get_file_extension(filename);
+
+	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0) {
+		// Load using stb_image
+		image->type = IMAGE_TYPE_STBI_COMPATIBLE;
+		image->stbi.channels = 4; // desired: RGBA
+		image->stbi.pixels = stbi_load(filename, &image->stbi.width, &image->stbi.height, &image->stbi.channels_in_file, 4);
+		if (image->stbi.pixels) {
+			glEnable(GL_TEXTURE_2D);
+			glGenTextures(1, &image->stbi.texture);
+			//glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, image->stbi.texture);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->stbi.width, image->stbi.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, image->stbi.pixels);
+
+			result = true;
+			image->stbi.texture_initialized = true;
+			//stbi_image_free(image->stbi.pixels);
+		}
+		return result;
+	} else {
+		image->type = IMAGE_TYPE_WSI;
+		wsi_t* wsi = &image->wsi.wsi;
+		load_wsi(wsi, filename);
+		result = wsi->osr != NULL;
+
+		return result;
 	}
-	return result;
+
 }
+
 
 
 
@@ -244,7 +264,7 @@ u32 get_texture_for_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	return tile->texture;
 }
 
-void load_wsi(wsi_t* wsi, char* filename) {
+void load_wsi(wsi_t* wsi, const char* filename) {
 	if (!is_openslide_loading_done) {
 		// TODO: hack! queue abused, may cause conflicts
 		printf("Waiting for OpenSlide to finish loading...\n");
@@ -380,13 +400,11 @@ void unload_wsi(wsi_t* wsi) {
 
 
 void on_file_dragged(char* filename) {
-#if 0
-	current_image = loaded_images;
-	load_image(&loaded_images[0], filename);
-#else
-	// TODO: allow loading either a normal image or a WSI (we should be able to function as a normal image viewer!)
-	load_wsi(&global_wsi, filename);
-#endif
+	image_t new_image = {0};
+
+	if (load_image_from_file(&new_image, filename)) {
+		sb_push(loaded_images, new_image);
+	}
 }
 
 void first() {
@@ -440,16 +458,87 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
-	if (!global_wsi.osr) {
-		return;
-	} else {
+	// Determine the image to view;
+	i32 displayed_image = 0;
+	image_t* image = loaded_images + displayed_image;
+
+	if (!image) {
+		return; // nothing to draw
+	}
+
+	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
+		// Display a basic image
+
+
+		float points_per_pixel_x = powf(2.0f, zoom_position) * 1;//wsi->mpp_x;
+		float points_per_pixel_y = powf(2.0f, zoom_position) * 1;//wsi->mpp_y;
+
+		float r_minus_l = points_per_pixel_x * (float)client_width;
+		float t_minus_b = points_per_pixel_y * (float)client_height;
+
+		mat4x4 projection = {0};
+		{
+			float l = -0.5f*r_minus_l;
+			float r = +0.5f*r_minus_l;
+			float b = -0.5f*t_minus_b;
+			float t = +0.5f*t_minus_b;
+			float n = 100.0f;
+			float f = -100.0f;
+			mat4x4_ortho(projection, l, r, b, t, n, f);
+		}
+
+		mat4x4 M, V, I, T, S;
+		mat4x4_identity(I);
+
+		// define view matrix
+		mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
+
+		glUseProgram(basic_shader);
+		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &I[0][0]);
+		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &I[0][0]);
+
+
+		if (use_image_adjustments) {
+			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
+			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
+		} else {
+			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
+			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
+		}
+
+		// define model matrix
+		mat4x4_translate(T, 0, 0, 0);
+		mat4x4_scale_aniso(S, I, points_per_pixel_x, points_per_pixel_y, 1.0f);
+		mat4x4_mul(M, T, S);
+
+		glViewport(0, 0, client_width, client_height);
+
+		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &I[0][0]);
+
+		draw_rect(image->stbi.texture);
+
+
+
+
+	}
+	else if (image->type == IMAGE_TYPE_TIFF_GENERIC) {
+		// stub
+	}
+	else if (image->type == IMAGE_TYPE_WSI) {
+		wsi_t* wsi = &image->wsi.wsi;
+
+		if (!wsi->osr) {
+			printf("Error: tried to draw a WSI that hasn't been loaded.\n");
+			return;
+		}
+
 
 		i32 old_level = current_level;
 		i32 center_offset_x = 0;
 		i32 center_offset_y = 0;
 
-		i32 max_level = global_wsi.num_levels - 1;
-		wsi_level_t* wsi_level = global_wsi.levels + current_level;
+		i32 max_level = wsi->num_levels - 1;
+		wsi_level_t* wsi_level = wsi->levels + current_level;
 
 		// TODO: move all input handling code together
 		if (input) {
@@ -504,8 +593,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 			if (dlevel != 0) {
 //		        printf("mouse_z = %d\n", input->mouse_z);
-				current_level = CLAMP(current_level + dlevel, 0, global_wsi.num_levels-1);
-				wsi_level = global_wsi.levels + current_level;
+				current_level = CLAMP(current_level + dlevel, 0, wsi->num_levels-1);
+				wsi_level = wsi->levels + current_level;
 
 				if (current_level != old_level && used_mouse_to_zoom) {
 #if 1
@@ -543,8 +632,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		}
 		zoom_position += d_zoom;
 
-		float screen_um_per_pixel_x = powf(2.0f, zoom_position) * global_wsi.mpp_x;
-		float screen_um_per_pixel_y = powf(2.0f, zoom_position) * global_wsi.mpp_y;
+		float screen_um_per_pixel_x = powf(2.0f, zoom_position) * wsi->mpp_x;
+		float screen_um_per_pixel_y = powf(2.0f, zoom_position) * wsi->mpp_y;
 
 		float r_minus_l = screen_um_per_pixel_x * (float)client_width;
 		float t_minus_b = screen_um_per_pixel_y * (float)client_height;
@@ -595,8 +684,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			// Experimental code for exporting regions of the wsi to a raw image file.
 			if (input->mouse_buttons[1].down && input->mouse_buttons[1].transition_count > 0) {
 				DUMMY_STATEMENT;
-				i32 click_x = (camera_rect_x1 + input->mouse_xy.x * wsi_level->um_per_pixel_x) / global_wsi.mpp_x;
-				i32 click_y = (camera_rect_y2 - input->mouse_xy.y * wsi_level->um_per_pixel_y) / global_wsi.mpp_y;
+				i32 click_x = (camera_rect_x1 + input->mouse_xy.x * wsi_level->um_per_pixel_x) / wsi->mpp_x;
+				i32 click_y = (camera_rect_y2 - input->mouse_xy.y * wsi_level->um_per_pixel_y) / wsi->mpp_y;
 				printf("Clicked screen x=%d y=%d; image x=%d y=%d\n",
 						input->mouse_xy.x, input->mouse_xy.y, click_x, click_y);
 			}
@@ -611,7 +700,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 					i64 h = p2.y - p1.y;
 					size_t export_size = w * h * BYTES_PER_PIXEL;
 					u32* temp_memory = malloc(export_size);
-					openslide.openslide_read_region(global_wsi.osr, temp_memory, p1.x, p1.y, 0, w, h);
+					openslide.openslide_read_region(wsi->osr, temp_memory, p1.x, p1.y, 0, w, h);
 					FILE* fp = fopen("export.raw", "wb");
 					fwrite(temp_memory, export_size, 1, fp);
 					fclose(fp);
@@ -664,7 +753,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 //						 TODO: remove this performance hack after background loading (multithreaded) is implemented.
 						break;
 					} else {
-						tiles_loaded += wsi_load_tile(&global_wsi, current_level, tile_x, tile_y);
+						tiles_loaded += wsi_load_tile(wsi, current_level, tile_x, tile_y);
 					}
 				}
 			}
@@ -699,12 +788,12 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
 		}
 
-		i32 num_levels_above_current = global_wsi.num_levels - current_level - 1;
+		i32 num_levels_above_current = wsi->num_levels - current_level - 1;
 		ASSERT(num_levels_above_current>=0);
 
 		// Draw all levels within the viewport, up to the current zoom factor
-		for (i32 level = global_wsi.num_levels - 1; level >= current_level; --level) {
-			wsi_level_t* drawn_level = global_wsi.levels + level;
+		for (i32 level = wsi->num_levels - 1; level >= current_level; --level) {
+			wsi_level_t* drawn_level = wsi->levels + level;
 
 			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, drawn_level->x_tile_side_in_um);
 			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, drawn_level->x_tile_side_in_um) + 1;
@@ -721,7 +810,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 					wsi_tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
 					if (tile->texture) {
-						u32 texture = get_texture_for_tile(&global_wsi, level, tile_x, tile_y);
+						u32 texture = get_texture_for_tile(wsi, level, tile_x, tile_y);
 
 						float tile_pos_x = drawn_level->x_tile_side_in_um * tile_x;
 						float tile_pos_y = drawn_level->y_tile_side_in_um * tile_y;
