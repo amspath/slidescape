@@ -40,7 +40,7 @@ typedef struct win32_thread_info_t {
 	work_queue_t* queue;
 } win32_thread_info_t;
 
-#define MAX_THREAD_COUNT 16
+#define MAX_THREAD_COUNT 128
 
 
 

@@ -59,6 +59,16 @@ static GLuint global_blit_texture_handle;
 
 openslide_api openslide;
 
+void win32_diagnostic(const char* prefix) {
+    DWORD error_id = GetLastError();
+    char* message_buffer;
+    /*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                                     NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
+    printf("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
+    LocalFree(message_buffer);
+}
+
+
 bool32 win32_init_openslide() {
 	i64 debug_start = get_clock();
 	SetDllDirectoryA("openslide");
@@ -88,7 +98,7 @@ bool32 win32_init_openslide() {
 		return true;
 
 	} else failed: {
-		//TODO: diagnostic
+		win32_diagnostic("LoadLibraryA");
 		printf("Could not load libopenslide-0.dll\n");
 		return false;
 	}
@@ -103,14 +113,6 @@ void load_openslide_task(int logical_thread_index, void* userdata) {
 	is_openslide_loading_done = true;
 }
 
-void win32_diagnostic(const char* prefix) {
-	DWORD error_id = GetLastError();
-	char* message_buffer;
-	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-	                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
-	printf("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
-	LocalFree(message_buffer);
-}
 
 
 u8* platform_alloc(size_t size) {
@@ -1192,14 +1194,18 @@ int main(int argc, char** argv) {
 	SYSTEM_INFO sysinfo = {};
 	GetSystemInfo(&sysinfo);
 	logical_cpu_count = sysinfo.dwNumberOfProcessors;
-	total_thread_count = logical_cpu_count;
+	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 
 	win32_init_timer();
 	win32_init_cursor();
 	win32_init_main_window();
 	win32_init_multithreading();
 	// Load OpenSlide in the background, we might not need it immediately.
+#if 1
 	add_work_queue_entry(&work_queue, load_openslide_task, NULL);
+#else
+    load_openslide_task(0, NULL);
+#endif
 	win32_init_input();
 
 
