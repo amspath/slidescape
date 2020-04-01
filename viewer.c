@@ -459,7 +459,7 @@ typedef struct {
 layer_t basic_image_layer;
 
 
-void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height) {
+void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t) {
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
@@ -474,7 +474,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
 		// Display a basic image
 
-//		render_ui(&g_draw_data, image);
+		render_ui(&g_draw_data, image);
 //		return;
 		float display_pos_x = 0.0f;
 		float display_pos_y = 0.0f;
@@ -491,6 +491,14 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 						{ (R+L)/(L-R),  (T+B)/(B-T),  0.0f,   1.0f },
 				};
 
+		// Set up model matrix: scale and translate to the correct world position
+		v2f obj_pos = {500, 90};
+		mat4x4 model_matrix;
+		mat4x4_identity(model_matrix);
+		mat4x4_translate_in_place(model_matrix, obj_pos.x, obj_pos.y, 0.0f);
+		mat4x4_scale_aniso(model_matrix, model_matrix, image->stbi.width * 2, image->stbi.height * 2, 1.0f);
+
+
 		glUseProgram(basic_shader);
 
 		if (use_image_adjustments) {
@@ -501,14 +509,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			glUniform1f(basic_shader_u_white_level, 1.0f);
 		}
 
-		// Set up model matrix: scale and translate to the correct world position
-		v2f obj_pos = {50, 90};
-		mat4x4 model_matrix;
-		mat4x4_identity(model_matrix);
-		mat4x4_translate_in_place(model_matrix, obj_pos.x, obj_pos.y, 0.0f);
-		mat4x4_scale_aniso(model_matrix, model_matrix, image->stbi.width * 2, image->stbi.height * 2, 1.0f);
-
-
 		glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
 		v2f* view_pos = &basic_image_layer.view_pos;
@@ -516,6 +516,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		mat4x4 view_matrix;
 		mat4x4_identity(view_matrix);
 		mat4x4_translate_in_place(view_matrix, -view_pos->x, -view_pos->y, 0.0f);
+		mat4x4_scale_aniso(view_matrix, view_matrix, 0.5f, 0.5f, 1.0f);
 
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, ortho_projection, view_matrix);
@@ -629,13 +630,13 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 
 
-
+		// TODO: fix/rewrite
 		// Spring/bounce effect
 		float d_zoom = (float)current_level - zoom_position;
 		float abs_d_zoom = fabs(d_zoom);
 		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-		float linear_catch_up_speed = 0.15f;
-		float exponential_catch_up_speed = 0.3f;
+		float linear_catch_up_speed = 10.0f * delta_t;
+		float exponential_catch_up_speed = 18.0f * delta_t;
 		if (abs_d_zoom > linear_catch_up_speed) {
 			d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed)*exponential_catch_up_speed) * sign_d_zoom;
 		}
@@ -727,7 +728,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			}
 
 			// Panning using the arrow or WASD keys.
-			float panning_speed = 15.0f * panning_multiplier;
+			float panning_speed = 900.0f * delta_t * panning_multiplier;
 			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
 				camera_pos.y -= wsi_level->um_per_pixel_y * panning_speed;
 			}
@@ -769,7 +770,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		}
 
 		mat4x4 projection = {};
-		mat4x4 model_matrix, I, T, S;
 		{
 			float l = -0.5f*r_minus_l;
 			float r = +0.5f*r_minus_l;
@@ -780,6 +780,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			mat4x4_ortho(projection, l, r, b, t, n, f);
 		}
 
+		mat4x4 I;
 		mat4x4_identity(I);
 
 		// define view matrix
@@ -828,9 +829,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 						float tile_pos_y = drawn_level->y_tile_side_in_um * tile_y;
 
 						// define model matrix
-						mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
-						mat4x4_scale_aniso(S, I, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um, 1.0f);
-						mat4x4_mul(model_matrix, T, S);
+						mat4x4 model_matrix;
+						mat4x4_translate(model_matrix, tile_pos_x, tile_pos_y, 0.0f);
+						mat4x4_scale_aniso(model_matrix, model_matrix, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um, 1.0f);
 						glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
 						draw_rect(texture);

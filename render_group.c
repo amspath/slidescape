@@ -93,9 +93,9 @@ void opengl_setup_render_state(draw_data_t* draw_data, int fb_width, int fb_heig
 	// Our visible imgui space lies from draw_data->DisplayPos (top left) to draw_data->DisplayPos+data_data->DisplaySize (bottom right). DisplayPos is (0,0) for single viewport apps.
 	glViewport(0, 0, (GLsizei)fb_width, (GLsizei)fb_height);
 	float L = draw_data->DisplayPos.x;
-	float R = draw_data->DisplayPos.x + 1;// draw_data->DisplaySize.x;
+	float R = draw_data->DisplayPos.x + draw_data->DisplaySize.x;
 	float T = draw_data->DisplayPos.y;
-	float B = draw_data->DisplayPos.y + 1;//draw_data->DisplaySize.y;
+	float B = draw_data->DisplayPos.y + draw_data->DisplaySize.y;
 	const float ortho_projection[4][4] =
 			{
 					{ 2.0f/(R-L),   0.0f,         0.0f,   0.0f },
@@ -308,9 +308,9 @@ void render_ui(draw_data_t* draw_data, image_t* image) {
 	idx_write_ptr[5] = idx+3;
 	draw_vertex_t* vertex_write_ptr = sb_add(draw_list->VtxBuffer, 4);
 	vertex_write_ptr[0] = (draw_vertex_t){.pos = a, .uv = uv_a, .col = color};
-	vertex_write_ptr[1] = (draw_vertex_t){.pos = a, .uv = uv_b, .col = color};
-	vertex_write_ptr[2] = (draw_vertex_t){.pos = a, .uv = uv_c, .col = color};
-	vertex_write_ptr[3] = (draw_vertex_t){.pos = a, .uv = uv_d, .col = color};
+	vertex_write_ptr[1] = (draw_vertex_t){.pos = b, .uv = uv_b, .col = color};
+	vertex_write_ptr[2] = (draw_vertex_t){.pos = c, .uv = uv_c, .col = color};
+	vertex_write_ptr[3] = (draw_vertex_t){.pos = d, .uv = uv_d, .col = color};
 
 	opengl_render_draw_data(draw_data);
 

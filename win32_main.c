@@ -994,6 +994,7 @@ void win32_init_opengl(HWND window) {
 	// for software renderer only; remove this??
 //	glGenTextures(1, &global_blit_texture_handle);
 
+	glDrawBuffer(GL_BACK);
 
 }
 
@@ -1253,19 +1254,19 @@ int main(int argc, char** argv) {
 	win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 	first(dimension.width, dimension.height);
 
+	i64 last_clock = get_clock();
 	while (is_program_running) {
+
+		i64 current_clock = get_clock();
+		float delta_t = (float)(current_clock - last_clock) / (float)performance_counter_frequency;
+		last_clock = current_clock;
 
 		win32_process_input(main_window);
 
-		glDrawBuffer(GL_BACK);
-		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-		viewer_update_and_render(curr_input, dimension.width, dimension.height);
+		dimension = win32_get_window_dimension(main_window);
+		viewer_update_and_render(curr_input, dimension.width, dimension.height, delta_t);
 
-//		HDC hdc = GetDC(main_window);
 		SwapBuffers(wglGetCurrentDC());
-//		ReleaseDC(main_window, hdc);
-
-
 	}
 
 	return 0;
