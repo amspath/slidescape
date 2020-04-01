@@ -116,7 +116,7 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->stbi.width, image->stbi.height, 0, GL_BGRA, GL_UNSIGNED_BYTE, image->stbi.pixels);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->stbi.width, image->stbi.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->stbi.pixels);
 
 			result = true;
 			image->stbi.texture_initialized = true;
@@ -131,10 +131,7 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 
 		return result;
 	}
-
 }
-
-
 
 
 u32 load_texture(void* pixels, i32 width, i32 height) {
@@ -407,7 +404,7 @@ void on_file_dragged(char* filename) {
 	}
 }
 
-void first() {
+void first(i32 client_width, i32 client_height) {
 	// TODO: remove or change this.
 	i64 wsi_memory_size = GIGABYTES(1);
 	global_viewer.slide_memory.data = platform_alloc(wsi_memory_size);
@@ -415,7 +412,7 @@ void first() {
 	global_viewer.slide_memory.capacity_in_blocks = wsi_memory_size / WSI_BLOCK_SIZE;
 	global_viewer.slide_memory.blocks_in_use = 1;
 
-	init_opengl_stuff();
+	init_opengl_stuff(client_width, client_height);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
@@ -454,6 +451,14 @@ i64 zoom_in_key_times_zoomed_while_holding;
 i64 zoom_out_key_hold_down_start_time;
 i64 zoom_out_key_times_zoomed_while_holding;
 
+// a 'frame of reference' and coordinate system for drawing 2d objects and making sense of the world
+typedef struct {
+	v2f view_pos; // camera position (at top left corner of the screen)
+} layer_t;
+
+layer_t basic_image_layer;
+
+
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height) {
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
@@ -469,51 +474,55 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
 		// Display a basic image
 
+//		render_ui(&g_draw_data, image);
+//		return;
+		float display_pos_x = 0.0f;
+		float display_pos_y = 0.0f;
 
-		float points_per_pixel_x = powf(2.0f, zoom_position) * 1;//wsi->mpp_x;
-		float points_per_pixel_y = powf(2.0f, zoom_position) * 1;//wsi->mpp_y;
-
-		float r_minus_l = points_per_pixel_x * (float)client_width;
-		float t_minus_b = points_per_pixel_y * (float)client_height;
-
-		mat4x4 projection = {0};
-		{
-			float l = -0.5f*r_minus_l;
-			float r = +0.5f*r_minus_l;
-			float b = -0.5f*t_minus_b;
-			float t = +0.5f*t_minus_b;
-			float n = 100.0f;
-			float f = -100.0f;
-			mat4x4_ortho(projection, l, r, b, t, n, f);
-		}
-
-		mat4x4 M, V, I, T, S;
-		mat4x4_identity(I);
-
-		// define view matrix
-		mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
+		float L = display_pos_x;
+		float R = display_pos_x + client_width;
+		float T = display_pos_y;
+		float B = display_pos_y + client_height;
+		mat4x4 ortho_projection =
+				{
+						{ 2.0f/(R-L),   0.0f,         0.0f,   0.0f },
+						{ 0.0f,         2.0f/(T-B),   0.0f,   0.0f },
+						{ 0.0f,         0.0f,        -1.0f,   0.0f },
+						{ (R+L)/(L-R),  (T+B)/(B-T),  0.0f,   1.0f },
+				};
 
 		glUseProgram(basic_shader);
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &I[0][0]);
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &I[0][0]);
-
 
 		if (use_image_adjustments) {
-			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
-			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
+			glUniform1f(basic_shader_u_black_level, black_level);
+			glUniform1f(basic_shader_u_white_level, white_level);
 		} else {
-			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
-			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
+			glUniform1f(basic_shader_u_black_level, 0.0f);
+			glUniform1f(basic_shader_u_white_level, 1.0f);
 		}
 
-		// define model matrix
-		mat4x4_translate(T, 0, 0, 0);
-		mat4x4_scale_aniso(S, I, points_per_pixel_x, points_per_pixel_y, 1.0f);
-		mat4x4_mul(M, T, S);
+		// Set up model matrix: scale and translate to the correct world position
+		v2f obj_pos = {50, 90};
+		mat4x4 model_matrix;
+		mat4x4_identity(model_matrix);
+		mat4x4_translate_in_place(model_matrix, obj_pos.x, obj_pos.y, 0.0f);
+		mat4x4_scale_aniso(model_matrix, model_matrix, image->stbi.width * 2, image->stbi.height * 2, 1.0f);
 
-		glViewport(0, 0, client_width, client_height);
 
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &I[0][0]);
+		glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+
+		v2f* view_pos = &basic_image_layer.view_pos;
+
+		mat4x4 view_matrix;
+		mat4x4_identity(view_matrix);
+		mat4x4_translate_in_place(view_matrix, -view_pos->x, -view_pos->y, 0.0f);
+
+		mat4x4 projection_view_matrix;
+		mat4x4_mul(projection_view_matrix, ortho_projection, view_matrix);
+
+		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
+
+		// todo: bunch up vertex and index uploads
 
 		draw_rect(image->stbi.texture);
 
@@ -760,6 +769,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		}
 
 		mat4x4 projection = {};
+		mat4x4 model_matrix, I, T, S;
 		{
 			float l = -0.5f*r_minus_l;
 			float r = +0.5f*r_minus_l;
@@ -770,22 +780,24 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			mat4x4_ortho(projection, l, r, b, t, n, f);
 		}
 
-		mat4x4 M, V, I, T, S;
 		mat4x4_identity(I);
 
 		// define view matrix
-		mat4x4_translate(V, -camera_pos.x, -camera_pos.y, 0.0f);
+		mat4x4 view_matrix;
+		mat4x4_translate(view_matrix, -camera_pos.x, -camera_pos.y, 0.0f);
+
+		mat4x4 projection_view_matrix;
+		mat4x4_mul(projection_view_matrix, projection, view_matrix);
 
 		glUseProgram(basic_shader);
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "view"), 1, GL_FALSE, &V[0][0]);
-		glUniformMatrix4fv(glGetUniformLocation(basic_shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
 		if (use_image_adjustments) {
-			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), black_level);
-			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), white_level);
+			glUniform1f(basic_shader_u_black_level, black_level);
+			glUniform1f(basic_shader_u_white_level, white_level);
 		} else {
-			glUniform1f(glGetUniformLocation(basic_shader, "black_level"), 0.0f);
-			glUniform1f(glGetUniformLocation(basic_shader, "white_level"), 1.0f);
+			glUniform1f(basic_shader_u_black_level, 0.0f);
+			glUniform1f(basic_shader_u_white_level, 1.0f);
 		}
 
 		i32 num_levels_above_current = wsi->num_levels - current_level - 1;
@@ -818,8 +830,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 						// define model matrix
 						mat4x4_translate(T, tile_pos_x, tile_pos_y, 0.0f);
 						mat4x4_scale_aniso(S, I, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um, 1.0f);
-						mat4x4_mul(M, T, S);
-						glUniformMatrix4fv(glGetUniformLocation(basic_shader, "model"), 1, GL_FALSE, &M[0][0]);
+						mat4x4_mul(model_matrix, T, S);
+						glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
 						draw_rect(texture);
 					}

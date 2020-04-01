@@ -197,7 +197,7 @@ extern bool32 use_image_adjustments;
 // viewer.c
 
 void gl_diagnostic(const char* prefix);
-void first();
+void first(i32 client_width, i32 client_height);
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height);
 void on_file_dragged(char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);

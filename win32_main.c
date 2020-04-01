@@ -1249,7 +1249,10 @@ int main(int argc, char** argv) {
 
 
 	is_program_running = true;
-	first();
+
+	win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+	first(dimension.width, dimension.height);
+
 	while (is_program_running) {
 
 		win32_process_input(main_window);
