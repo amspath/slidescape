@@ -5,12 +5,11 @@
 #include <glad/glad.h>
 #include <stdio.h>
 
+#include "stringutils.h"
 #include "stringified_shaders.c"
-
 
 #if DO_DEBUG
 #define STRINGIFY_SHADERS
-#include "stringutils.h"
 #endif
 
 i32 shader_count = 0;
