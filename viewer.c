@@ -400,6 +400,7 @@ void on_file_dragged(char* filename) {
 	image_t new_image = {0};
 
 	if (load_image_from_file(&new_image, filename)) {
+		new_image.is_freshly_loaded = true;
 		sb_push(loaded_images, new_image);
 	}
 }
@@ -467,6 +468,11 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 	if (!image) {
 		return; // nothing to draw
+	}
+
+	if (image->is_freshly_loaded) {
+		input->drag_vector = (v2i){}; // when loading a file by dragging on top of the window, don't pan!
+		image->is_freshly_loaded = false;
 	}
 
 	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {

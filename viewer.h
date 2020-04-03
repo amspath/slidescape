@@ -165,6 +165,7 @@ typedef enum {
 
 typedef struct {
 	image_type_enum type;
+	bool32 is_freshly_loaded;
 	union {
 		struct {
 			i32 channels_in_file;

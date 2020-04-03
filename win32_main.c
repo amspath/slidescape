@@ -686,7 +686,7 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 					}
 
 					case VK_F11: {
-						if (is_down && !was_down && message.hwnd) {
+						if (is_down && message.hwnd) {
 							win32_toggle_fullscreen(message.hwnd);
 						}
 
