@@ -2,7 +2,10 @@
 #define WINVER 0x0600
 
 #include "common.h"
+
+#define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
+
 #include "viewer.h"
 
 #include <stdio.h>
@@ -19,8 +22,11 @@
 
 #include "platform.h"
 
+#define WIN32_MAIN_IMPL
 #include "win32_main.h"
 #include "intrinsics.h"
+
+#include "gui.h"
 
 int g_argc;
 char** g_argv;
@@ -33,14 +39,12 @@ int g_cmdshow;
 i64 performance_counter_frequency;
 bool32 is_sleep_granular;
 
-bool32 is_program_running;
 bool32 show_cursor;
 HCURSOR the_cursor;
 WINDOWPLACEMENT window_position = { sizeof(window_position) };
 surface_t backbuffer;
 
 WNDCLASSA main_window_class;
-HWND main_window;
 bool32 is_main_window_initialized;
 
 work_queue_t work_queue;
@@ -275,6 +279,7 @@ void win32_resize_DIB_section(surface_t* buffer, int width, int height) {
 }
 #endif
 
+#if 0
 enum menu_ids {
 	IDM_FILE_OPEN,
 	IDM_FILE_QUIT,
@@ -303,14 +308,15 @@ void init_menus(HWND hwnd) {
 	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) view_menu, "&View");
 	SetMenu(hwnd, menubar);
 }
+#endif
 
-bool32 is_fullscreen(HWND window) {
+bool32 win32_is_fullscreen(HWND window) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
-	bool32 result = style & WS_OVERLAPPEDWINDOW;
+	bool32 result = !(style & WS_OVERLAPPEDWINDOW);
 	return result;
 }
 
-void toggle_fullscreen(HWND window) {
+void win32_toggle_fullscreen(HWND window) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
 	if (style & WS_OVERLAPPEDWINDOW) {
 		MONITORINFO monitor_info = { .cbSize = sizeof(monitor_info) };
@@ -324,7 +330,7 @@ void toggle_fullscreen(HWND window) {
 			             monitor_info.rcMonitor.right - monitor_info.rcMonitor.left + 1,
 			             monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
 			             SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-			CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_CHECKED);
+//			CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_CHECKED);
 
 		}
 	} else {
@@ -332,20 +338,47 @@ void toggle_fullscreen(HWND window) {
 		SetWindowPlacement(window, &window_position);
 		SetWindowPos(window, 0, 0, 0, 0, 0,
 		             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-		CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_UNCHECKED);
+//		CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_UNCHECKED);
 
+	}
+}
+
+void win32_open_file_dialog(HWND window) {
+	// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
+	OPENFILENAME ofn = {};       // common dialog box structure
+	char filename[4096];       // buffer for file name
+	filename[0] = '\0';
+
+	printf("Attempting to open a file\n");
+
+	// Initialize OPENFILENAME
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = window;
+	ofn.lpstrFile = filename;
+	ofn.nMaxFile = sizeof(filename);
+	ofn.lpstrFilter = "All\0*.*\0Text\0*.TXT\0";
+	ofn.nFilterIndex = 1;
+	ofn.lpstrFileTitle = NULL;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = NULL;
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+	// Display the Open dialog box.
+	if (GetOpenFileName(&ofn)==TRUE) {
+		on_file_dragged(filename);
 	}
 }
 
 
 LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
-	LRESULT result = 0;
+	LRESULT result = ImGui_ImplWin32_WndProcHandler(window, message, wparam, lparam);
+//	return result;
 
 	switch(message) {
 
 		case WM_CREATE: {
 			DragAcceptFiles(window, true);
-			init_menus(window);
+//			init_menus(window);
 		} break;
 		case WM_DROPFILES: {
 			HDROP hdrop = (HDROP) wparam;
@@ -356,6 +389,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			DragFinish(hdrop);
 
 		} break;
+#if 0
 		case WM_COMMAND: {
 			switch(LOWORD(wparam)) {
 				case IDM_FILE_OPEN: {
@@ -396,6 +430,8 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 				} break;
 			}
 		} break;
+
+#endif
 
 #if 0
 		case WM_SIZE: {
@@ -442,10 +478,16 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_KEYUP:
 		case WM_SYSKEYDOWN:
 		case WM_SYSKEYUP: {
+			if (gui_want_capture_keyboard) {
+				break;
+			}
 			ASSERT(!"Keyboard messages should not be dispatched!");
 		} break;
 
 		case WM_INPUT: {
+			if (gui_want_capture_mouse) {
+				break;
+			}
 			u32 size;
 			GetRawInputData((HRAWINPUT) lparam, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
 			RAWINPUT* raw = alloca(size);
@@ -559,6 +601,11 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 			case WM_KEYUP:
 			case WM_SYSKEYDOWN:
 			case WM_SYSKEYUP: {
+				if (gui_want_capture_keyboard) {
+					TranslateMessage(&message);
+					DispatchMessageA(&message);
+					break;
+				}
 				u32 vk_code = (u32) message.wParam;
 				int repeat_count = message.lParam & 0xFFFF;
 				bool32 was_down = ((message.lParam & (1 << 30)) != 0);
@@ -619,6 +666,12 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 					}*/
 						break;
 
+					case VK_F1: {
+						if (is_down) {
+							show_demo_window = !show_demo_window;
+						}
+					}
+
 					case VK_F4: {
 						if (is_down && alt_down) {
 							is_program_running = false;
@@ -627,13 +680,14 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 
 					case 'O': {
 						if (is_down && ctrl_down) {
-							SendMessage(window, WM_COMMAND, IDM_FILE_OPEN, 0);
+							win32_open_file_dialog(window);
+//							SendMessage(window, WM_COMMAND, IDM_FILE_OPEN, 0);
 						}
 					}
 
-					case VK_RETURN: {
-						if (is_down && !was_down && alt_down && message.hwnd) {
-							toggle_fullscreen(message.hwnd);
+					case VK_F11: {
+						if (is_down && !was_down && message.hwnd) {
+							win32_toggle_fullscreen(message.hwnd);
 						}
 
 					}
@@ -1194,8 +1248,8 @@ void win32_init_main_window() {
 		panic();
 	};
 
-	int desired_width = 1260;
-	int desired_height = 740;
+	int desired_width = 1600;
+	int desired_height = 900;
 
 	RECT desired_window_rect = {};
 	desired_window_rect.right = desired_width;
@@ -1209,7 +1263,7 @@ void win32_init_main_window() {
 	main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
 	                              main_window_class.lpszClassName, "Slideviewer",
 	                              window_style,
-	                              CW_USEDEFAULT, CW_USEDEFAULT, initial_window_width, initial_window_height,
+	                              0/*CW_USEDEFAULT*/, 0/*CW_USEDEFAULT*/, initial_window_width, initial_window_height,
 	                              0, 0, g_instance, 0);
 	if (!main_window) {
 		win32_diagnostic("CreateWindowExA");
@@ -1254,6 +1308,8 @@ int main(int argc, char** argv) {
 	win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 	first(dimension.width, dimension.height);
 
+	win32_init_gui(main_window);
+
 	i64 last_clock = get_clock();
 	while (is_program_running) {
 
@@ -1265,6 +1321,8 @@ int main(int argc, char** argv) {
 
 		dimension = win32_get_window_dimension(main_window);
 		viewer_update_and_render(curr_input, dimension.width, dimension.height, delta_t);
+
+		do_gui(dimension.width, dimension.height);
 
 		SwapBuffers(wglGetCurrentDC());
 	}

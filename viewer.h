@@ -1,6 +1,10 @@
 #pragma once
 #include "common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 typedef struct texture_t {
 	u32 texture;
@@ -189,18 +193,7 @@ typedef struct {
 } entity_t;
 #endif
 
-// globals
 
-extern viewer_t global_viewer;
-extern bool32 use_image_adjustments;
-
-// viewer.c
-
-void gl_diagnostic(const char* prefix);
-void first(i32 client_width, i32 client_height);
-void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);
-void on_file_dragged(char* filename);
-void load_wsi(wsi_t* wsi, const char* filename);
 
 // virtual keycodes
 #define KEYCODE_LBUTTON 0x01
@@ -363,3 +356,36 @@ void load_wsi(wsi_t* wsi, const char* filename);
 #define KEYCODE_NONAME 0xFC
 #define KEYCODE_PA1 0xFD
 #define KEYCODE_OEM_CLEAR 0xFE
+
+
+//  prototypes
+void gl_diagnostic(const char* prefix);
+void first(i32 client_width, i32 client_height);
+void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);
+void on_file_dragged(char* filename);
+void load_wsi(wsi_t* wsi, const char* filename);
+
+
+// globals
+#if defined(VIEWER_IMPL)
+#define INIT(...) __VA_ARGS__
+#define extern
+#else
+#define INIT(...)
+#undef extern
+#endif
+
+extern viewer_t global_viewer;
+extern bool use_image_adjustments;
+extern float black_level INIT(= 0.3f);
+extern float white_level INIT(= 0.9f);
+extern v4f clear_color INIT(= {0.95f, 0.95f, 0.95f, 1.00f});
+
+#undef INIT
+#undef extern
+
+
+#ifdef __cplusplus
+};
+#endif
+

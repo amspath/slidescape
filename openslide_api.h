@@ -1,5 +1,10 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 typedef struct _openslide openslide_t;
 typedef struct openslide_api {
 	const char*  (__stdcall *openslide_detect_vendor)(const char *filename);
@@ -32,6 +37,26 @@ typedef struct openslide_api {
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_WIDTH "openslide.bounds-width"
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_HEIGHT "openslide.bounds-height"
 
+
+
+// globals
+#if defined(OPENSLIDE_API_IMPL)
+#define INIT(...) __VA_ARGS__
+#define extern
+#else
+#define INIT(...)
+#undef extern
+#endif
+
 extern openslide_api openslide;
 extern bool32 is_openslide_available;
 extern bool32 is_openslide_loading_done;
+
+#undef INIT
+#undef extern
+
+
+#ifdef __cplusplus
+};
+#endif
+

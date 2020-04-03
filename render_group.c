@@ -17,6 +17,7 @@ i32 basic_shader_u_model_matrix;
 i32 basic_shader_u_tex;
 i32 basic_shader_u_black_level;
 i32 basic_shader_u_white_level;
+i32 basic_shader_u_background_color;
 
 u32 ui_shader;
 i32 ui_shader_u_texture;
@@ -344,6 +345,7 @@ void init_opengl_stuff(i32 client_width, i32 client_height) {
 	basic_shader_u_tex = get_uniform(basic_shader, "the_texture");
 	basic_shader_u_black_level = get_uniform(basic_shader, "black_level");
 	basic_shader_u_white_level = get_uniform(basic_shader, "white_level");
+	basic_shader_u_background_color = get_uniform(basic_shader, "bg_color");
 
 	ui_shader = load_basic_shader_program("shaders/ui.vert", "shaders/ui.frag");
 	ui_shader_u_texture = get_uniform(ui_shader, "Texture");

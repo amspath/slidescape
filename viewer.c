@@ -12,6 +12,7 @@
 #include "arena.h"
 #include "arena.c"
 
+#define VIEWER_IMPL
 #include "viewer.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
@@ -31,7 +32,6 @@ image_t* loaded_images; // sb
 v2f camera_pos;
 
 
-viewer_t global_viewer;
 
 i32 current_level;
 float zoom_position;
@@ -443,9 +443,7 @@ bool32 is_key_down(input_t* input, i32 keycode) {
 	return result;
 }
 
-bool32 use_image_adjustments;
-float black_level = (10.0f / 255.0f);
-float white_level = (230.0f / 255.0f);
+
 i64 zoom_in_key_hold_down_start_time;
 i64 zoom_in_key_times_zoomed_while_holding;
 i64 zoom_out_key_hold_down_start_time;
@@ -461,7 +459,7 @@ layer_t basic_image_layer;
 
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t) {
 	glViewport(0, 0, client_width, client_height);
-	glClearColor(0.95f, 0.95f, 0.95f, 1.0f);
+	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 	// Determine the image to view;
 	i32 displayed_image = 0;
@@ -793,6 +791,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		glUseProgram(basic_shader);
 		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
+		glUniform3fv(basic_shader_u_background_color, 1, (GLfloat*)&clear_color);
 		if (use_image_adjustments) {
 			glUniform1f(basic_shader_u_black_level, black_level);
 			glUniform1f(basic_shader_u_white_level, white_level);

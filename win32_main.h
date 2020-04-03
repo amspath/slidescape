@@ -4,6 +4,10 @@
 // todo: fix this (make opaque structure?)
 #include "windows.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define BYTES_PER_PIXEL 4
 
 typedef struct {
@@ -42,6 +46,28 @@ typedef struct win32_thread_info_t {
 
 #define MAX_THREAD_COUNT 128
 
+void win32_open_file_dialog(HWND window);
+void win32_toggle_fullscreen(HWND window);
+bool32 win32_is_fullscreen(HWND window);
+
+
+// globals
+#if defined(WIN32_MAIN_IMPL)
+#define INIT(...) __VA_ARGS__
+#define extern
+#else
+#define INIT(...)
+#undef extern
+#endif
+
+extern HWND main_window;
+
+#undef INIT
+#undef extern
+
+#ifdef __cplusplus
+};
+#endif
 
 
 #endif
