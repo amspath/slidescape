@@ -2,6 +2,12 @@
 
 #include "common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define MAX_THREAD_COUNT 128
+
 typedef struct {
 	size_t len;
 	u8 data[0];
@@ -18,8 +24,7 @@ typedef struct work_queue_entry_t {
 typedef struct work_queue_t work_queue_t;
 
 
-extern int g_argc;
-extern char** g_argv;
+
 
 // Platform specific function prototypes
 
@@ -37,3 +42,25 @@ void message_box(const char* message);
 void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
 bool32 is_queue_work_in_progress(work_queue_t* queue);
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);
+
+// globals
+#if defined(WIN32_MAIN_IMPL)
+#define INIT(...) __VA_ARGS__
+#define extern
+#else
+#define INIT(...)
+#undef extern
+#endif
+
+extern int g_argc;
+extern char** g_argv;
+void* thread_local_storage[MAX_THREAD_COUNT];
+
+
+#undef INIT
+#undef extern
+
+#ifdef __cplusplus
+};
+#endif
+

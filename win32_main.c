@@ -1143,10 +1143,12 @@ bool32 is_queue_work_in_progress(work_queue_t* queue) {
 }
 
 
-
 DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	win32_thread_info_t* thread_info = parameter;
 	i64 init_start_time = get_clock();
+
+	// Allocate a private memory buffer (used for WSI loading)
+	thread_local_storage[thread_info->logical_thread_index] = platform_alloc(MEGABYTES(16)); // how much actually needed?
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
 	ASSERT(main_window);

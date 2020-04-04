@@ -101,17 +101,6 @@ typedef struct {
 #define TILE_PITCH (TILE_DIM * BYTES_PER_PIXEL)
 #define WSI_BLOCK_SIZE (TILE_DIM * TILE_DIM * BYTES_PER_PIXEL)
 
-typedef struct {
-	i64 capacity;
-	u32 capacity_in_blocks;
-	u32 blocks_in_use;
-	u8* data;
-} slide_memory_t;
-
-typedef struct {
-	slide_memory_t slide_memory;
-} viewer_t;
-
 typedef struct wsi_t wsi_t;
 typedef struct load_tile_task_t load_tile_task_t;
 struct load_tile_task_t {
@@ -365,7 +354,7 @@ void first(i32 client_width, i32 client_height);
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);
 void on_file_dragged(char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
-
+void unload_wsi(wsi_t* wsi);
 
 // globals
 #if defined(VIEWER_IMPL)
@@ -375,8 +364,11 @@ void load_wsi(wsi_t* wsi, const char* filename);
 #define INIT(...)
 #undef extern
 #endif
-
-extern viewer_t global_viewer;
+extern image_t* loaded_images; // sb
+extern i32 current_level;
+extern float zoom_position;
+extern i32 displayed_image;
+extern v2f camera_pos;
 extern bool use_image_adjustments;
 extern float black_level INIT(= 0.3f);
 extern float white_level INIT(= 0.9f);

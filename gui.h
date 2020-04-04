@@ -28,6 +28,7 @@ extern bool is_fullscreen;
 extern bool is_program_running;
 extern bool show_demo_window;
 extern bool show_image_adjustments_window INIT(= false);
+extern bool show_display_options_window;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 

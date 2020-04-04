@@ -23,19 +23,6 @@
 #include "render_group.c"
 
 
-//#define MAX_ENTITIES 4096
-//u32 entity_count = 1;
-//entity_t entities[MAX_ENTITIES];
-
-image_t* loaded_images; // sb
-
-v2f camera_pos;
-
-
-
-i32 current_level;
-float zoom_position;
-
 void gl_diagnostic(const char* prefix) {
 	GLenum err = glGetError();
 	if (err != GL_NO_ERROR) {
@@ -149,18 +136,6 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	return texture;
 }
 
-u32 alloc_wsi_block(slide_memory_t* slide_memory) {
-	if (slide_memory->blocks_in_use == slide_memory->capacity_in_blocks) {
-		panic(); // TODO: Need to free some stuff, we ran out of memory
-	}
-	u32 result = slide_memory->blocks_in_use++;
-	return result;
-}
-
-void* get_wsi_block(slide_memory_t* slide_memory, u32 block_index) {
-	u8* block = slide_memory->data + (block_index * WSI_BLOCK_SIZE);
-	return block;
-}
 
 wsi_tile_t* get_tile(wsi_level_t* wsi_level, i32 tile_x, i32 tile_y) {
 	i32 tile_index = tile_y * wsi_level->width_in_tiles + tile_x;
@@ -180,7 +155,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	wsi_level_t* wsi_level = wsi->levels + level;
 	wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
 
-	u32* temp_memory = malloc(WSI_BLOCK_SIZE);
+	u32* temp_memory = thread_local_storage[logical_thread_index] ; //malloc(WSI_BLOCK_SIZE);
 	i64 x = (tile_x * TILE_DIM) << level;
 	i64 y = (tile_y * TILE_DIM) << level;
 	openslide.openslide_read_region(wsi->osr, temp_memory, x, y, level, TILE_DIM, TILE_DIM);
@@ -191,11 +166,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	task_data->cached_pixels = temp_memory;
 	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
 
-#if 0
+#if 1
 	// do the submitting directly
 	tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
-	free(task_data->cached_pixels);
-	task_data->cached_pixels = NULL;
+//	free(task_data->cached_pixels);
+//	task_data->cached_pixels = NULL;
 	free(task_data);
 //	tile->load_task_data = NULL;
 #endif
@@ -223,7 +198,7 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	} else {
 		read_barrier;
 		if (tile->load_task_data) {
-#if 1
+#if 0
 			load_tile_task_t* task_data = tile->load_task_data;
 //			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
 
@@ -278,12 +253,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 	}
 
 
-	if (wsi->osr) {
-		openslide.openslide_close(wsi->osr);
-		wsi->osr = NULL;
-	}
-
-	global_viewer.slide_memory.blocks_in_use = 1;
+	unload_wsi(wsi);
 
 	wsi->osr = openslide.openslide_open(filename);
 	if (wsi->osr) {
@@ -388,15 +358,47 @@ void unload_wsi(wsi_t* wsi) {
 		wsi->osr = NULL;
 	}
 
-	global_viewer.slide_memory.blocks_in_use = 1;
-
-//	for (int i = 0; i < texture_count; ++i) {
-//		unload_texture();
-//	}
+	for (i32 i = 0; i < COUNT(wsi->levels); ++i) {
+		wsi_level_t* level = wsi->levels + i;
+		if (level->tiles) {
+			for (i32 j = 0; j < level->num_tiles; ++j) {
+				wsi_tile_t* tile = level->tiles + i;
+				if (tile->texture != 0) {
+					unload_texture(tile->texture);
+				}
+			}
+		}
+		free(level->tiles);
+	}
 }
 
+void unload_image(image_t* image) {
+	if (image) {
+		if (image->type == IMAGE_TYPE_WSI) {
+			unload_wsi(&image->wsi.wsi);
+		} else if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
+			if (image->stbi.pixels) {
+				stbi_image_free(image->stbi.pixels);
+			}
+			if (image->stbi.texture != 0) {
+				unload_texture(image->stbi.texture);
+			}
+		}
+	}
+}
 
 void on_file_dragged(char* filename) {
+	i32 current_image_count = sb_count(loaded_images);
+	if (current_image_count > 0) {
+		ASSERT(loaded_images);
+		for (i32 i = 0; i < current_image_count; ++i) {
+			image_t* old_image = loaded_images + i;
+			unload_image(old_image);
+		}
+		sb_free(loaded_images);
+		loaded_images = NULL;
+	}
+
 	image_t new_image = {0};
 
 	if (load_image_from_file(&new_image, filename)) {
@@ -406,13 +408,6 @@ void on_file_dragged(char* filename) {
 }
 
 void first(i32 client_width, i32 client_height) {
-	// TODO: remove or change this.
-	i64 wsi_memory_size = GIGABYTES(1);
-	global_viewer.slide_memory.data = platform_alloc(wsi_memory_size);
-	global_viewer.slide_memory.capacity = wsi_memory_size;
-	global_viewer.slide_memory.capacity_in_blocks = wsi_memory_size / WSI_BLOCK_SIZE;
-	global_viewer.slide_memory.blocks_in_use = 1;
-
 	init_opengl_stuff(client_width, client_height);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
@@ -463,7 +458,12 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 	// Determine the image to view;
-	i32 displayed_image = 0;
+	for (i32 i = 0; i < 9; ++i) {
+		if (input->keyboard.keys['1' + i].down) {
+			displayed_image = MIN(sb_count(loaded_images)-1, i);
+		}
+	}
+
 	image_t* image = loaded_images + displayed_image;
 
 	if (!image) {

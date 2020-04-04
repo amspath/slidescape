@@ -36,8 +36,6 @@ void do_gui(i32 client_width, i32 client_height) {
 		static struct {
 			bool open_file;
 			bool exit_program;
-			bool colors_light;
-			bool colors_dark;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -55,12 +53,9 @@ void do_gui(i32 client_width, i32 client_height) {
 			prev_fullscreen = is_fullscreen = win32_is_fullscreen(main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
-			if (ImGui::BeginMenu("Interface colors")) {
-				if (ImGui::MenuItem("Light", NULL, &menu_items_clicked.colors_light)) {}
-				if (ImGui::MenuItem("Dark", NULL, &menu_items_clicked.colors_dark)) {}
-				ImGui::EndMenu();
-			}
 			ImGui::Separator();
+
+			if (ImGui::MenuItem("Options...", NULL, &show_display_options_window)) {}
 			if (ImGui::BeginMenu("Debug"))
 			{
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
@@ -75,10 +70,6 @@ void do_gui(i32 client_width, i32 client_height) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
 			win32_open_file_dialog(main_window);
-		} else if (menu_items_clicked.colors_light) {
-			ImGui::StyleColorsLight();
-		} else if (menu_items_clicked.colors_dark) {
-			ImGui::StyleColorsDark();
 		}
 		else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);
@@ -97,6 +88,9 @@ void do_gui(i32 client_width, i32 client_height) {
 	if (show_image_adjustments_window) {
 		static int counter = 0;
 
+		ImGui::SetNextWindowPos(ImVec2(25, 50), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(360, 200), ImGuiCond_FirstUseEver);
+
 		ImGui::Begin("Image adjustments", &show_image_adjustments_window);                          // Create a window called "Hello, world!" and append into it.
 
 //		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
@@ -104,7 +98,9 @@ void do_gui(i32 client_width, i32 client_height) {
 
 		ImGui::SliderFloat("black level", &black_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 		ImGui::SliderFloat("white level", &white_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-		ImGui::ColorEdit3("background color", (float*)&clear_color); // Edit 3 floats representing a color
+
+		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
+		ImGui::ColorEdit3("color", (float*)&clear_color); // Edit 3 floats representing a color
 
 //		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
 //			counter++;
@@ -112,9 +108,34 @@ void do_gui(i32 client_width, i32 client_height) {
 //		ImGui::Text("counter = %d", counter);
 //
 //		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-//		ImGui::End();
+		ImGui::End();
 	}
 
+	if (show_display_options_window) {
+
+		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Display options", &show_display_options_window);
+
+
+
+		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
+		static int style_color = 1;
+		int old_style_color = style_color;
+		ImGui::RadioButton("Light", &style_color, 0); ImGui::SameLine();
+		ImGui::RadioButton("Dark", &style_color, 1);
+
+		if (style_color != old_style_color) {
+			if (style_color == 0) {
+				ImGui::StyleColorsLight();
+			} else if (style_color == 1) {
+				ImGui::StyleColorsDark();
+			}
+		}
+
+		ImGui::End();
+	}
 
 
 	// Rendering
@@ -138,8 +159,8 @@ void win32_init_gui(HWND hwnd) {
 	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
 	// Setup Dear ImGui style
-//	ImGui::StyleColorsDark();
-	ImGui::StyleColorsLight();
+	ImGui::StyleColorsDark();
+//	ImGui::StyleColorsLight();
 //	ImGui::StyleColorsClassic();
 
 	ImGuiStyle& style = ImGui::GetStyle();
