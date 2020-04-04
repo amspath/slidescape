@@ -478,13 +478,32 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		return; // nothing to draw
 	}
 
-	// todo: remove/don't need anymore?
-#if 0
-	if (image->is_freshly_loaded) {
-		input->drag_vector = (v2i){}; // when loading a file by dragging on top of the window, don't pan!
-		image->is_freshly_loaded = false;
+	// todo: process even more of the mouse/keyboard input here?
+	v2i current_drag_vector = {};
+	if (input) {
+		if (input->mouse_buttons[0].down) {
+			// Mouse drag.
+			if (input->mouse_buttons[0].transition_count != 0) {
+				// Don't start dragging if clicked outside the window
+				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
+				if (is_point_inside_rect(valid_drag_start_rect, input->mouse_xy)) {
+					is_dragging = true; // drag start
+//						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+				}
+			} else if (is_dragging) {
+				// already started dragging on a previous frame
+				current_drag_vector = input->drag_vector;
+			}
+			input->drag_vector = (v2i){};
+			mouse_hide();
+		} else {
+			mouse_show();
+			if (input->mouse_buttons[0].transition_count != 0) {
+				is_dragging = false;
+//			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
+			}
+		}
 	}
-#endif
 
 	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
 		// Display a basic image
@@ -507,7 +526,17 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				};
 
 		// Set up model matrix: scale and translate to the correct world position
-		v2f obj_pos = {500, 90};
+		static v2f obj_pos;
+		if (image->is_freshly_loaded) {
+			obj_pos = (v2f) {50, 100};
+			image->is_freshly_loaded = false;
+		}
+		float pan_multiplier = 2.0f;
+		if (is_dragging) {
+			obj_pos.x += current_drag_vector.x * pan_multiplier;
+			obj_pos.y += current_drag_vector.y * pan_multiplier;
+		}
+
 		mat4x4 model_matrix;
 		mat4x4_identity(model_matrix);
 		mat4x4_translate_in_place(model_matrix, obj_pos.x, obj_pos.y, 0.0f);
@@ -736,29 +765,12 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				camera_pos.x -= wsi_level->um_per_pixel_x * panning_speed;
 			}
 
-			if (input->mouse_buttons[0].down) {
-				// Mouse drag.
-				if (input->mouse_buttons[0].transition_count != 0) {
-					// Don't start dragging if clicked outside the window
-					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
-					if (is_point_inside_rect(valid_drag_start_rect, input->mouse_xy)) {
-						is_dragging = true; // drag start
-//						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
-					}
-				} else if (is_dragging) {
-					// already started dragging on a previous frame
-					camera_pos.x -= input->drag_vector.x * wsi_level->um_per_pixel_x * panning_multiplier;
-					camera_pos.y += input->drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
-				}
-				input->drag_vector = (v2i){};
-				mouse_hide();
-			} else {
-				mouse_show();
-				if (input->mouse_buttons[0].transition_count != 0) {
-					is_dragging = false;
-//			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
-				}
+			if (is_dragging) {
+				camera_pos.x -= current_drag_vector.x * wsi_level->um_per_pixel_x * panning_multiplier;
+				camera_pos.y += current_drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
 			}
+
+
 
 			i32 max_tiles_to_load_at_once = 10;
 			i32 tiles_loaded = 0;
