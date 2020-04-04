@@ -321,7 +321,6 @@ void render_ui(draw_data_t* draw_data, image_t* image) {
 	sb_free(draw_list->IdxBuffer);
 }
 
-// todo: integrate ImGui
 void init_draw_data(draw_data_t* draw_data, i32 client_width, i32 client_height) {
 	draw_list_t** lists = sb_add(draw_data->CmdLists, 1);
 	lists[0] = &g_draw_list;

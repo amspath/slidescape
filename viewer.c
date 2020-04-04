@@ -46,6 +46,14 @@ rect2i clip_rect(rect2i* first, rect2i* second) {
 	return result;
 }
 
+bool is_point_inside_rect(rect2i rect, v2i point) {
+	bool result = true;
+	if (point.x < rect.x || point.x >= (rect.x + rect.w) || point.y < rect.y || point.y >= (rect.y + rect.h)) {
+		result = false;
+	}
+	return result;
+}
+
 v2i rect2i_center_point(rect2i* rect) {
 	v2i result = {
 			.x = rect->x + rect->w / 2,
@@ -470,15 +478,18 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		return; // nothing to draw
 	}
 
+	// todo: remove/don't need anymore?
+#if 0
 	if (image->is_freshly_loaded) {
 		input->drag_vector = (v2i){}; // when loading a file by dragging on top of the window, don't pan!
 		image->is_freshly_loaded = false;
 	}
+#endif
 
 	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
 		// Display a basic image
 
-		render_ui(&g_draw_data, image);
+//		render_ui(&g_draw_data, image);
 //		return;
 		float display_pos_x = 0.0f;
 		float display_pos_y = 0.0f;
@@ -674,27 +685,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			}
 #if 0
 
-			// NOTE: temporary experimentation with basic image adjustments.
-			if (is_key_down(input, 'J')) {
-				black_level -= 0.1f;
-				black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
-			}
-
-			if (is_key_down(input, 'U')) {
-				black_level += 0.1f;
-				black_level = CLAMP(black_level, 0.0f, white_level - 0.1f);
-			}
-
-			if (is_key_down(input, 'L')) {
-				white_level -= 0.1f;
-				white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
-			}
-
-			if (is_key_down(input, 'O')) {
-				white_level += 0.1f;
-				white_level = CLAMP(white_level, black_level + 0.1f, 1.0f);
-			}
-
 			// Experimental code for exporting regions of the wsi to a raw image file.
 			if (input->mouse_buttons[1].down && input->mouse_buttons[1].transition_count > 0) {
 				DUMMY_STATEMENT;
@@ -748,18 +738,29 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 			if (input->mouse_buttons[0].down) {
 				// Mouse drag.
-				camera_pos.x -= input->drag_vector.x * wsi_level->um_per_pixel_x * panning_multiplier;
-				camera_pos.y += input->drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
+				if (input->mouse_buttons[0].transition_count != 0) {
+					// Don't start dragging if clicked outside the window
+					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
+					if (is_point_inside_rect(valid_drag_start_rect, input->mouse_xy)) {
+						is_dragging = true; // drag start
+//						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+					}
+				} else if (is_dragging) {
+					// already started dragging on a previous frame
+					camera_pos.x -= input->drag_vector.x * wsi_level->um_per_pixel_x * panning_multiplier;
+					camera_pos.y += input->drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
+				}
 				input->drag_vector = (v2i){};
 				mouse_hide();
 			} else {
 				mouse_show();
 				if (input->mouse_buttons[0].transition_count != 0) {
-//			    printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
+					is_dragging = false;
+//			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 				}
 			}
 
-			i32 max_tiles_to_load_at_once = 5;
+			i32 max_tiles_to_load_at_once = 10;
 			i32 tiles_loaded = 0;
 			for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
 				for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {

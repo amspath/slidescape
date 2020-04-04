@@ -364,6 +364,9 @@ void unload_wsi(wsi_t* wsi);
 #define INIT(...)
 #undef extern
 #endif
+
+extern bool is_dragging;
+
 extern image_t* loaded_images; // sb
 extern i32 current_level;
 extern float zoom_position;
