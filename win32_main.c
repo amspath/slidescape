@@ -681,9 +681,8 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 					case 'O': {
 						if (is_down && ctrl_down) {
 							win32_open_file_dialog(window);
-//							SendMessage(window, WM_COMMAND, IDM_FILE_OPEN, 0);
 						}
-					}
+					} break;
 
 					case VK_F11: {
 						if (is_down && message.hwnd) {

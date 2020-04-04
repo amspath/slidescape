@@ -22,6 +22,7 @@
 #include "render_group.h"
 #include "render_group.c"
 
+#define UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS 0
 
 void gl_diagnostic(const char* prefix) {
 	GLenum err = glGetError();
@@ -163,7 +164,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	wsi_level_t* wsi_level = wsi->levels + level;
 	wsi_tile_t* tile = get_tile(wsi_level, tile_x, tile_y);
 
+#if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
 	u32* temp_memory = thread_local_storage[logical_thread_index] ; //malloc(WSI_BLOCK_SIZE);
+#else
+	u32* temp_memory = malloc(WSI_BLOCK_SIZE);
+#endif
 	i64 x = (tile_x * TILE_DIM) << level;
 	i64 y = (tile_y * TILE_DIM) << level;
 	openslide.openslide_read_region(wsi->osr, temp_memory, x, y, level, TILE_DIM, TILE_DIM);
@@ -174,13 +179,18 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	task_data->cached_pixels = temp_memory;
 	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
 
-#if 1
+	// Note (Pieter, 4-4-20):
+	// For some reason I can load textures on a separate thread perfectly fine on
+	// my desktop system (with an AMD gpu), while this fails on my laptop (integrated Intel + dedicated Nvidia).
+	// Why??
+	// For now, reverting to the crappy method of uploading everything to the GPU on the main thread.
+#if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
 	// do the submitting directly
 	tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
 //	free(task_data->cached_pixels);
-//	task_data->cached_pixels = NULL;
+	task_data->cached_pixels = NULL;
 	free(task_data);
-//	tile->load_task_data = NULL;
+	tile->load_task_data = NULL;
 #endif
 
 }
@@ -206,7 +216,7 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	} else {
 		read_barrier;
 		if (tile->load_task_data) {
-#if 0
+#if !UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
 			load_tile_task_t* task_data = tile->load_task_data;
 //			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
 
