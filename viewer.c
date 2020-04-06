@@ -22,6 +22,8 @@
 #include "render_group.h"
 #include "render_group.c"
 
+#include "tiff.h"
+
 #define UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS 0
 
 void gl_diagnostic(const char* prefix) {
@@ -119,6 +121,11 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			//stbi_image_free(image->stbi.pixels);
 		}
 		return result;
+#if 0 // TODO: The TIFF code is work in progress
+	} else if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0) {
+		tiff_t tiff = {};
+		open_tiff_file(&tiff, filename);
+#endif
 	} else {
 		image->type = IMAGE_TYPE_WSI;
 		wsi_t* wsi = &image->wsi.wsi;

@@ -17,6 +17,7 @@ add_executable(slideviewer
         glad.c
         stringutils.c
         shader.c
+        tiff.c
         imgui.cpp
         imgui_demo.cpp
         imgui_draw.cpp
