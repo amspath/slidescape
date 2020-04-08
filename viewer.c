@@ -121,7 +121,7 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			//stbi_image_free(image->stbi.pixels);
 		}
 		return result;
-#if 0 // TODO: The TIFF code is work in progress
+#if DO_DEBUG && 1 // TODO: The TIFF code is work in progress
 	} else if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0) {
 		tiff_t tiff = {};
 		open_tiff_file(&tiff, filename);

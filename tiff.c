@@ -67,6 +67,69 @@ const char* get_tiff_tag_name(u32 tag) {
 	return result;
 }
 
+u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
+	fpos_t prev_read_pos = 0;
+	int ret = fgetpos64(fp, &prev_read_pos); // for restoring the file position later
+	ASSERT(ret == 0); (void)ret;
+
+	fseeko64(fp, offset, SEEK_SET);
+	u64 result = fread(dest, num_bytes, 1, fp);
+
+	ret = fsetpos64(fp, &prev_read_pos); // restore previous file position
+	ASSERT(ret == 0); (void)ret;
+
+	return result;
+}
+
+char* tiff_read_field_ascii(tiff_t* tiff, tiff_tag_t* tag) {
+	size_t description_length = tag->data_count;
+	char* result = calloc(description_length + 1, 1);
+	if (tag->data_is_offset) {
+		file_read_at_offset(result, tiff->fp, tag->offset, tag->data_count);
+	} else {
+		strncpy(result, (void*)tag->data, description_length);
+	}
+	return result;
+}
+
+u64* tiff_read_field_offsets(tiff_t* tiff, tiff_tag_t* tag) {
+	u64* offsets = NULL;
+	if (tag->data_is_offset) {
+		void* temp_offsets = calloc(tiff->bytesize_of_offsets, tag->data_count);
+		if (file_read_at_offset(temp_offsets, tiff->fp, tag->offset, tag->data_count * tiff->bytesize_of_offsets) != 1) {
+//		if (fread(temp_offsets, tag->data_count * tiff->bytesize_of_offsets, 1, tiff->fp) != 1) {
+			free(temp_offsets);
+			return NULL; // failed
+		}
+
+		if (tiff->is_bigtiff) {
+			// offsets are already 64-bit, no need to widen
+			offsets = (u64*) temp_offsets;
+			if (tiff->is_big_endian) {
+				for (i32 i = 0; i < tag->data_count; ++i) {
+					offsets[i] = _byteswap_uint64(offsets[i]);
+				}
+			}
+		} else {
+			// offsets are 32-bit -> widen to 64-bit offsets
+			offsets = malloc(tag->data_count * sizeof(u64));
+			for (i32 i = 0; i < tag->data_count; ++i) {
+				offsets[i] = maybe_swap_32(((u32*) temp_offsets)[i], tiff->is_big_endian);
+			}
+			free(temp_offsets);
+		}
+		// all done!
+
+	} else {
+		// data is inlined
+		ASSERT(tag->data_count <= 1);
+		offsets = malloc(sizeof(u64));
+		offsets[0] = tag->data_u64;
+	}
+
+	return offsets;
+}
+
 bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	bool32 is_bigtiff = tiff->is_bigtiff;
 	bool32 is_big_endian = tiff->is_big_endian;
@@ -140,9 +203,8 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	// Read and interpret the entries in the IFD
 	for (i32 tag_index = 0; tag_index < tag_count; ++tag_index) {
 		tiff_tag_t* tag = tags + tag_index;
-		printf("tag %d:\n", tag_index);
-		printf(" code=%d, count=%llu, offset=%llu\n   %s\n",
-		       tag->code, tag->data_count, tag->offset, get_tiff_tag_name(tag->code));
+		printf("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
+		       tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
 		switch(tag->code) {
 			// Note: the data type of many tags (E.g. ImageWidth) can actually be either SHORT or LONG,
 			// but because we already converted the byte order to native (=little-endian) with enough
@@ -153,6 +215,11 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_IMAGE_LENGTH: {
 				ifd->image_height = tag->data_u32;
 			} break;
+			case TIFF_TAG_IMAGE_DESCRIPTION: {
+				ifd->image_description = tiff_read_field_ascii(tiff, tag);
+				ifd->image_description_length = tag->data_count;
+				printf("%.500s\n", ifd->image_description);
+			} break;
 			case TIFF_TAG_TILE_WIDTH: {
 				ifd->tile_width = tag->data_u32;
 			} break;
@@ -160,51 +227,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->tile_height = tag->data_u32;
 			} break;
 			case TIFF_TAG_TILE_OFFSETS: {
-				// TODO: need check PlanarConfiguration to check how to interpret the data count?
+				// TODO: to be sure, need check PlanarConfiguration==1 to check how to interpret the data count?
 				ifd->tile_count = tag->data_count;
-				if (ifd->tile_count == 0) {
-					printf("Error: TIFF file has a TileOffsets tag, but it has zero tiles referenced\n");
-					return false; // failed
-				} else if (ifd->tile_count == 1) {
-					// tag data is small enough to be inlined
-					ASSERT(!tag->data_is_offset);
-					ifd->tile_offsets = malloc(1 * sizeof(u64));
-					ifd->tile_offsets[0] = tag->data_u64;
-				} else {
-					// tag data is not inlined (referenced elsewhere in the file)
-					ASSERT(tag->data_is_offset);
-
-					fpos_t prev_read_pos = 0;
-					int ret = fgetpos64(tiff->fp, &prev_read_pos); // for restoring the file position later
-					ASSERT(ret == 0); (void)ret;
-
-					void* temp_offsets = calloc(tiff->bytesize_of_offsets, ifd->tile_count);
-					if (fread(temp_offsets, ifd->tile_count * tiff->bytesize_of_offsets, 1, tiff->fp) != 1) {
-						free(temp_offsets);
-						return false; // failed
-					}
-
-					if (is_bigtiff) {
-						// offsets are already 64-bit, no need to widen
-						ifd->tile_offsets = (u64*) temp_offsets;
-						if (is_big_endian) {
-							for (i32 i = 0; i < tag->data_count; ++i) {
-								ifd->tile_offsets[i] = _byteswap_uint64(ifd->tile_offsets[i]);
-							}
-						}
-					} else {
-						// offsets are 32-bit -> widen to 64-bit offsets
-						ifd->tile_offsets = malloc(tag->data_count * sizeof(u64));
-						for (i32 i = 0; i < tag->data_count; ++i) {
-							ifd->tile_offsets[i] = maybe_swap_32(((u32*) temp_offsets)[i], is_big_endian);
-						}
-						free(temp_offsets);
-					}
-
-					ret = fsetpos64(tiff->fp, &prev_read_pos); // restore previous file position
-					ASSERT(ret == 0); (void)ret;
-				}
-
+				ifd->tile_offsets = tiff_read_field_offsets(tiff, tag);
+				if (ifd->tile_offsets == NULL) return false; // failed
 			} break;
 			case TIFF_TAG_TILE_BYTE_COUNTS: {
 			} break;
@@ -215,10 +241,9 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 		}
 
 
-
-
-//					putc('\n', stdout);
 	}
+
+	free(tags);
 
 	// Read the next IFD
 	if (fread(next_ifd_offset, tiff->bytesize_of_offsets, 1, tiff->fp) != 1) return false;
@@ -290,4 +315,13 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		// could not open file
 	}
 	return success;
+}
+
+void tiff_destroy(tiff_t* tiff) {
+	for (i32 i = 0; i < tiff->ifd_count; ++i) {
+		tiff_ifd_t* ifd = tiff->ifds + i;
+		free(ifd->tile_offsets);
+		free(ifd->image_description);
+
+	}
 }

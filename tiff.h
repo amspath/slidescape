@@ -104,6 +104,19 @@ typedef struct {
 	bool8 data_is_offset;
 } tiff_tag_t;
 
+// https://www.awaresystems.be/imaging/tiff/tifftags/compression.html
+enum tiff_compression_enum {
+	TIFF_COMPRESSION_NONE = 1,
+	TIFF_COMPRESSION_CCCITTRLE = 2,
+	TIFF_COMPRESSION_CCITTFAX3 = 3,
+	TIFF_COMPRESSION_CCITTFAX4 = 4,
+	TIFF_COMPRESSION_LZW = 5,
+	TIFF_COMPRESSION_OJPEG = 6, // old-style JPEG -> ignore
+	TIFF_COMPRESSION_JPEG = 7,
+	TIFF_COMPRESSION_ADOBE_DEFLATE = 8,
+	TIFF_COMPRESSION_JP2000 = 34712,
+};
+
 typedef struct {
 	u32 image_width;
 	u32 image_height;
@@ -112,14 +125,22 @@ typedef struct {
 	u64* tile_offsets;
 	u64 tile_count;
 	u64 tile_byte_counts;
+	char* image_description;
+	u64 image_description_length;
+	u16 compression; // 7 = JPEG
 } tiff_ifd_t;
 
 typedef struct {
 	FILE* fp;
 	i64 filesize;
+	u32 bytesize_of_offsets;
 	u64 ifd_count;
 	tiff_ifd_t* ifds; // sb
-	u32 bytesize_of_offsets;
+	tiff_ifd_t* main_image; // level 0 of the WSI; in Philips TIFF it's typically the first IFD
+	tiff_ifd_t* macro_image; // in Philips TIFF: typically the second-to-last IFD
+	tiff_ifd_t* label_image; // in Philips TIFF: typically the last IFD
+	u64 level_count;
+	tiff_ifd_t* level_images; // sb
 	bool8 is_bigtiff;
 	bool8 is_big_endian;
 } tiff_t;
