@@ -83,51 +83,75 @@ u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
 
 char* tiff_read_field_ascii(tiff_t* tiff, tiff_tag_t* tag) {
 	size_t description_length = tag->data_count;
-	char* result = calloc(description_length + 1, 1);
+	char* result = calloc(MAX(8, description_length + 1), 1);
 	if (tag->data_is_offset) {
 		file_read_at_offset(result, tiff->fp, tag->offset, tag->data_count);
 	} else {
-		strncpy(result, (void*)tag->data, description_length);
+		memcpy(result, tag->data, description_length);
 	}
 	return result;
 }
 
-u64* tiff_read_field_offsets(tiff_t* tiff, tiff_tag_t* tag) {
-	u64* offsets = NULL;
+static inline void* tiff_read_field_undefined(tiff_t* tiff, tiff_tag_t* tag) {
+	return (void*) tiff_read_field_ascii(tiff, tag);
+}
+
+// Read integer values in a TIFF tag (either 8, 16, 32, or 64 bits wide) + convert them to little-endian u64 if needed
+u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
+	u64* integers = NULL;
+
 	if (tag->data_is_offset) {
-		void* temp_offsets = calloc(tiff->bytesize_of_offsets, tag->data_count);
-		if (file_read_at_offset(temp_offsets, tiff->fp, tag->offset, tag->data_count * tiff->bytesize_of_offsets) != 1) {
-//		if (fread(temp_offsets, tag->data_count * tiff->bytesize_of_offsets, 1, tiff->fp) != 1) {
-			free(temp_offsets);
+		u64 bytesize = get_tiff_field_size(tag->data_type);
+		void* temp_integers = calloc(bytesize, tag->data_count);
+		if (file_read_at_offset(temp_integers, tiff->fp, tag->offset, tag->data_count * bytesize) != 1) {
+			free(temp_integers);
 			return NULL; // failed
 		}
 
-		if (tiff->is_bigtiff) {
-			// offsets are already 64-bit, no need to widen
-			offsets = (u64*) temp_offsets;
+		if (bytesize == 8) {
+			// the numbers are already 64-bit, no need to widen
+			integers = (u64*) temp_integers;
 			if (tiff->is_big_endian) {
 				for (i32 i = 0; i < tag->data_count; ++i) {
-					offsets[i] = _byteswap_uint64(offsets[i]);
+					integers[i] = _byteswap_uint64(integers[i]);
 				}
 			}
 		} else {
-			// offsets are 32-bit -> widen to 64-bit offsets
-			offsets = malloc(tag->data_count * sizeof(u64));
-			for (i32 i = 0; i < tag->data_count; ++i) {
-				offsets[i] = maybe_swap_32(((u32*) temp_offsets)[i], tiff->is_big_endian);
+			// offsets are 32-bit or less -> widen to 64-bit offsets
+			integers = malloc(tag->data_count * sizeof(u64));
+			switch(bytesize) {
+				case 4: {
+					for (i32 i = 0; i < tag->data_count; ++i) {
+						integers[i] = maybe_swap_32(((u32*) temp_integers)[i], tiff->is_big_endian);
+					}
+				} break;
+				case 2: {
+					for (i32 i = 0; i < tag->data_count; ++i) {
+						integers[i] = maybe_swap_16(((u16*) temp_integers)[i], tiff->is_big_endian);
+					}
+				} break;
+				case 1: {
+					for (i32 i = 0; i < tag->data_count; ++i) {
+						integers[i] = ((u8*) temp_integers)[i];
+					}
+				} break;
+				default: {
+					free(temp_integers);
+					free(integers);
+					return NULL; // failed (other bytesizes than the above shouldn't exist)
+				}
 			}
-			free(temp_offsets);
+			free(temp_integers);
 		}
 		// all done!
 
 	} else {
 		// data is inlined
-		ASSERT(tag->data_count <= 1);
-		offsets = malloc(sizeof(u64));
-		offsets[0] = tag->data_u64;
+		integers = malloc(sizeof(u64));
+		integers[0] = tag->data_u64;
 	}
 
-	return offsets;
+	return integers;
 }
 
 bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
@@ -215,10 +239,20 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_IMAGE_LENGTH: {
 				ifd->image_height = tag->data_u32;
 			} break;
+			case TIFF_TAG_COMPRESSION: {
+				ifd->compression = tag->data_u16;
+			} break;
 			case TIFF_TAG_IMAGE_DESCRIPTION: {
 				ifd->image_description = tiff_read_field_ascii(tiff, tag);
 				ifd->image_description_length = tag->data_count;
 				printf("%.500s\n", ifd->image_description);
+				if (strncmp(ifd->image_description, "Macro", 5) == 0) {
+					tiff->macro_image = ifd;
+				} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
+					tiff->label_image = ifd;
+				} else if (strncmp(ifd->image_description, "level", 5) == 0) {
+					tiff->label_image = ifd;
+				}
 			} break;
 			case TIFF_TAG_TILE_WIDTH: {
 				ifd->tile_width = tag->data_u32;
@@ -229,12 +263,29 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_TILE_OFFSETS: {
 				// TODO: to be sure, need check PlanarConfiguration==1 to check how to interpret the data count?
 				ifd->tile_count = tag->data_count;
-				ifd->tile_offsets = tiff_read_field_offsets(tiff, tag);
-				if (ifd->tile_offsets == NULL) return false; // failed
+				ifd->tile_offsets = tiff_read_field_integers(tiff, tag);
+				if (ifd->tile_offsets == NULL) {
+					free(tags);
+					return false; // failed
+				}
 			} break;
 			case TIFF_TAG_TILE_BYTE_COUNTS: {
+				// Note: is it OK to assume that the TileByteCounts will always come after the TileOffsets?
+				if (tag->data_count != ifd->tile_count) {
+					ASSERT(tag->data_count != 0);
+					printf("Error: mismatch in the TIFF tile count reported by TileByteCounts and TileOffsets tags\n");
+					free(tags);
+					return false; // failed;
+				}
+				ifd->tile_byte_counts = tiff_read_field_integers(tiff, tag);
+				if (ifd->tile_byte_counts == NULL) {
+					free(tags);
+					return false; // failed
+				}
 			} break;
 			case TIFF_TAG_JPEG_TABLES: {
+				ifd->jpeg_tables = tiff_read_field_undefined(tiff, tag);
+				ifd->jpeg_tables_length = tag->data_count;
 			} break;
 			default: {
 			} break;
@@ -320,8 +371,12 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 void tiff_destroy(tiff_t* tiff) {
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
-		free(ifd->tile_offsets);
-		free(ifd->image_description);
+		if (ifd->tile_offsets) free(ifd->tile_offsets);
+		if (ifd->tile_byte_counts) free(ifd->tile_byte_counts);
+		if (ifd->image_description) free(ifd->image_description);
+		if (ifd->jpeg_tables) free(ifd->jpeg_tables);
+
 
 	}
+	sb_free(tiff->ifds);
 }

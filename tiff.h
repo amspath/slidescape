@@ -124,10 +124,14 @@ typedef struct {
 	u32 tile_height;
 	u64* tile_offsets;
 	u64 tile_count;
-	u64 tile_byte_counts;
+	u64* tile_byte_counts;
 	char* image_description;
 	u64 image_description_length;
+	u8* jpeg_tables;
+	u64 jpeg_tables_length;
 	u16 compression; // 7 = JPEG
+	bool8 is_level_image;
+	float level_magnification;
 } tiff_ifd_t;
 
 typedef struct {
