@@ -251,7 +251,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
 					tiff->label_image = ifd;
 				} else if (strncmp(ifd->image_description, "level", 5) == 0) {
-					tiff->label_image = ifd;
+					ifd->is_level_image = true;
 				}
 			} break;
 			case TIFF_TAG_TILE_WIDTH: {
@@ -346,6 +346,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				ASSERT((bytesize_of_offsets == 4 && !is_bigtiff) || (bytesize_of_offsets == 8 && is_bigtiff));
 				tiff->bytesize_of_offsets = bytesize_of_offsets;
 
+				// Read and process the IFDs
 				while (next_ifd_offset != 0) {
 					printf("Reading IFD #%llu\n", tiff->ifd_count);
 					tiff_ifd_t ifd = {};
@@ -354,11 +355,50 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					tiff->ifd_count += 1;
 				}
 
+				// TODO: make more robust
+				// Assume the first IFD is the main image, and also level 0
+				tiff->main_image = tiff->ifds;
+				tiff->level_images = tiff->main_image;
+
+				// TODO: make more robust
+				u64 level_counter = 1; // begin at 1 because we are also counting level 0 (= the first IFD)
+				for (i32 i = 1; i < tiff->ifd_count; ++i) {
+					tiff_ifd_t* ifd = tiff->ifds + i;
+					if (ifd->is_level_image) ++level_counter;
+				}
+				tiff->level_count = level_counter;
+
+				// TODO: make more robust
+				tiff->mpp_x = tiff->mpp_y = 0.25f;
+				float um_per_pixel = 0.25f;
+				for (i32 i = 0; i < tiff->level_count; ++i) {
+					tiff_ifd_t* level = tiff->level_images + i;
+					// TODO: allow other tile sizes?
+					ASSERT(level->tile_width == 512);
+					ASSERT(level->tile_height == 512);
+					ASSERT(level->image_width % level->tile_width == 0);
+					ASSERT(level->image_height % level->tile_height == 0);
+					level->width_in_tiles = level->image_width / level->tile_width;
+					level->height_in_tiles = level->image_height / level->tile_height;
+					level->um_per_pixel_x = um_per_pixel;
+					level->um_per_pixel_y = um_per_pixel;
+					level->x_tile_side_in_um = level->um_per_pixel_x * (float)level->tile_width;
+					level->y_tile_side_in_um = level->um_per_pixel_y * (float)level->tile_height;
+					level->tiles = calloc(1, level->tile_count * sizeof(tiff_tile_t));
+					um_per_pixel *= 2.0f; // downsample, so at higher levels there are more pixels per micrometer
+				}
+
+
+				success = true;
+
 			}
 
 		}
-		fail:
-		fclose(fp);
+		// TODO: better error handling than this crap
+		if (0) {
+			fail:
+			fclose(fp);
+		}
 
 
 	}
@@ -369,6 +409,10 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 }
 
 void tiff_destroy(tiff_t* tiff) {
+	if (tiff->fp) {
+		fclose(tiff->fp);
+		tiff->fp = NULL;
+	}
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
 		if (ifd->tile_offsets) free(ifd->tile_offsets);

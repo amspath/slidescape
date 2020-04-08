@@ -117,7 +117,22 @@ enum tiff_compression_enum {
 	TIFF_COMPRESSION_JP2000 = 34712,
 };
 
-typedef struct {
+typedef struct tiff_t tiff_t;
+typedef struct tiff_load_tile_task_t {
+	tiff_t* tiff;
+	i32 level;
+	i32 tile_x;
+	i32 tile_y;
+	u8* cached_pixels;
+} tiff_load_tile_task_t;
+
+typedef struct tiff_tile_t {
+	u32 texture;
+	tiff_load_tile_task_t* load_task_data;
+	bool32 is_submitted_for_loading;
+} tiff_tile_t;
+
+typedef struct tiff_ifd_t {
 	u32 image_width;
 	u32 image_height;
 	u32 tile_width;
@@ -132,9 +147,16 @@ typedef struct {
 	u16 compression; // 7 = JPEG
 	bool8 is_level_image;
 	float level_magnification;
+	u32 width_in_tiles;
+	u32 height_in_tiles;
+	float um_per_pixel_x;
+	float um_per_pixel_y;
+	float x_tile_side_in_um;
+	float y_tile_side_in_um;
+	tiff_tile_t* tiles;
 } tiff_ifd_t;
 
-typedef struct {
+struct tiff_t {
 	FILE* fp;
 	i64 filesize;
 	u32 bytesize_of_offsets;
@@ -144,10 +166,12 @@ typedef struct {
 	tiff_ifd_t* macro_image; // in Philips TIFF: typically the second-to-last IFD
 	tiff_ifd_t* label_image; // in Philips TIFF: typically the last IFD
 	u64 level_count;
-	tiff_ifd_t* level_images; // sb
+	tiff_ifd_t* level_images;
 	bool8 is_bigtiff;
 	bool8 is_big_endian;
-} tiff_t;
+	float mpp_x;
+	float mpp_y;
+};
 
 static inline u16 maybe_swap_16(u16 x, bool32 is_big_endian) {
 	return is_big_endian ? _byteswap_ushort(x) : x;
@@ -161,4 +185,6 @@ static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
 	return is_big_endian ? _byteswap_uint64(x) : x;
 }
 
+u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 bool32 open_tiff_file(tiff_t* tiff, const char* filename);
+void tiff_destroy(tiff_t* tiff);

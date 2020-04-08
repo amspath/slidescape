@@ -1,6 +1,8 @@
 #pragma once
 #include "common.h"
 
+#include "tiff.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -166,7 +168,7 @@ typedef struct {
 			u32 texture;
 		} stbi;
 		struct {
-			i32 stub;
+			tiff_t tiff;
 		} tiff;
 		struct {
 			wsi_t wsi;

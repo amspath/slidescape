@@ -173,6 +173,10 @@ float get_seconds_elapsed(i64 start, i64 end) {
 	return (float)(end - start) / (float)performance_counter_frequency;
 }
 
+void platform_sleep(u32 ms) {
+	Sleep(ms);
+}
+
 void message_box(const char* message) {
 	MessageBoxA(main_window, message, "Slideviewer", MB_ICONERROR);
 }
