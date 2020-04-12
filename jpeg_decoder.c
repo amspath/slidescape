@@ -105,6 +105,7 @@ boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_pt
 			source_offset = i * 3;
 			target_offset = i * 4;
 
+			// TODO: convert YcbCr to RGB if necessary
 			// TODO: what to do here, BGRA or RGBA?
 			output_ptr[target_offset + 0] = buffer[0][source_offset + 2];
 			output_ptr[target_offset + 1] = buffer[0][source_offset + 1];

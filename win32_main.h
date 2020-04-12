@@ -2,7 +2,8 @@
 #define WIN32_MAIN
 
 // todo: fix this (make opaque structure?)
-#include "windows.h"
+#include <windows.h>
+#include "platform.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,11 +45,19 @@ typedef struct win32_thread_info_t {
 	work_queue_t* queue;
 } win32_thread_info_t;
 
+typedef struct {
+	HANDLE async_io_event;
+	OVERLAPPED overlapped;
+	u64 thread_memory_raw_size;
+	u64 thread_memory_usable_size; // free space from aligned_rest_of_thread_memory onward
+	void* aligned_rest_of_thread_memory;
+} thread_memory_t;
+
 
 void win32_open_file_dialog(HWND window);
 void win32_toggle_fullscreen(HWND window);
 bool32 win32_is_fullscreen(HWND window);
-
+void win32_diagnostic(const char* prefix);
 
 // globals
 #if defined(WIN32_MAIN_IMPL)
@@ -60,6 +69,10 @@ bool32 win32_is_fullscreen(HWND window);
 #endif
 
 extern HWND main_window;
+extern SYSTEM_INFO system_info;
+extern u32 os_page_size;
+extern i32 total_thread_count;
+extern i32 logical_cpu_count;
 
 #undef INIT
 #undef extern

@@ -3,6 +3,8 @@
 #include "common.h"
 #include "stdio.h"
 
+#include "win32_main.h"
+
 #define TIFF_LITTLE_ENDIAN 0x4949
 #define TIFF_BIG_ENDIAN 0x4D4D
 
@@ -158,6 +160,9 @@ typedef struct tiff_ifd_t {
 
 struct tiff_t {
 	FILE* fp;
+#ifdef _WIN32
+	HANDLE win32_file_handle;
+#endif
 	i64 filesize;
 	u32 bytesize_of_offsets;
 	u64 ifd_count;

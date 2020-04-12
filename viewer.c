@@ -1,6 +1,6 @@
 #include "common.h"
 
-//#include "win32_main.h"
+#include "win32_main.h"
 #include "platform.h"
 #include "intrinsics.h"
 #include "stringutils.h"
@@ -122,7 +122,7 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			//stbi_image_free(image->stbi.pixels);
 		}
 		return result;
-#if DO_DEBUG && 0 // TODO: The TIFF code is work in progress
+#if DO_DEBUG && 1 // TODO: The TIFF code is work in progress
 	} else if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0) {
 		tiff_t tiff = {};
 		if (open_tiff_file(&tiff, filename)) {
@@ -141,51 +141,6 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			result = false;
 		}
 
-
-		// testing code for loading a single TIFF tile ( -> remove)
-#if 0
-
-		tiff_ifd_t* main_image = tiff.main_image;
-		i32 tile_index = 14486;
-		u64 tile_offset = main_image->tile_offsets[tile_index];
-		u64 compressed_tile_size_in_bytes = main_image->tile_byte_counts[tile_index];
-		u8* jpeg_tables = main_image->jpeg_tables;
-		u64 jpeg_tables_length = main_image->jpeg_tables_length;
-
-		u8* compressed_tile_data = malloc(compressed_tile_size_in_bytes);
-		file_read_at_offset(compressed_tile_data, tiff.fp, tile_offset, compressed_tile_size_in_bytes);
-
-		u8* pixels = malloc(WSI_BLOCK_SIZE);
-		if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes, pixels)) {
-			//printf("yaaay!!\n");
-
-
-#if 0
-			FILE* test_output = fopen("test_output.raw", "wb");
-			fwrite(pixels, WSI_BLOCK_SIZE, 1, test_output);
-
-			fclose(test_output);
-#endif
-
-			image->type = IMAGE_TYPE_STBI_COMPATIBLE;
-			image->stbi.channels = 4; // desired: RGBA
-			image->stbi.width = 512;
-			image->stbi.height = 512;
-
-			glEnable(GL_TEXTURE_2D);
-			glGenTextures(1, &image->stbi.texture);
-			//glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, image->stbi.texture);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 512, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-
-			result = true;
-			image->stbi.texture_initialized = true;
-		}
-#endif
 		return result;
 
 #endif
@@ -279,45 +234,75 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	tiff_ifd_t* level_image = tiff->level_images + level;
 	tiff_tile_t* tile = tiff_get_tile(level_image, tile_x, tile_y);
 
+	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
+	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
+	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
 #if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
-	u8* temp_memory = thread_local_storage[logical_thread_index] ; //malloc(WSI_BLOCK_SIZE);
+	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
 #else
 	u8* temp_memory = calloc(WSI_BLOCK_SIZE, 1);
+	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory;
 #endif
 
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
 	u64 tile_offset = level_image->tile_offsets[tile_index];
 	u64 compressed_tile_size_in_bytes = level_image->tile_byte_counts[tile_index];
+	// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
+	// We need to check for this situation and chicken out if this is the case.
+	if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
+		//printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+		goto finish_up;
+	}
 	u8* jpeg_tables = level_image->jpeg_tables;
 	u64 jpeg_tables_length = level_image->jpeg_tables_length;
 
-	u8* compressed_tile_data = calloc(compressed_tile_size_in_bytes, 1);
+	// TODO: make async I/O code platform agnostic
 
-	// TODO: fix the multithreaded IO shenanigans
-	int ret = file_read_at_offset(compressed_tile_data, tiff->fp, tile_offset, compressed_tile_size_in_bytes);
-	if (ret != 1) {
-		printf("thread %d: fread failed for level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
-	} else {
-		if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
-			// JPEG stream is empty
-			memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
-		} else {
-			if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes, temp_memory)) {
-//		    printf("thread %d: successfully decoded level%d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-			} else {
-				printf("thread %d: failed to decode level%d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-			}
+	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
+	// offset in the file where we want to do the read operation
+	LARGE_INTEGER offset = {.QuadPart = tile_offset};
+	thread_memory->overlapped = (OVERLAPPED) {
+		.Offset = offset.LowPart,
+		.OffsetHigh = offset.HighPart,
+		.hEvent = thread_memory->async_io_event
+	};
+	ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
+
+	if (!ReadFile(tiff->win32_file_handle, compressed_tile_data,
+			compressed_tile_size_in_bytes, NULL, &thread_memory->overlapped)) {
+		DWORD error = GetLastError();
+		if (error != ERROR_IO_PENDING) {
+			win32_diagnostic("ReadFile");
 		}
 	}
 
+	// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
+	DWORD bytes_read = 0;
+	if (!GetOverlappedResult(tiff->win32_file_handle, &thread_memory->overlapped, &bytes_read, TRUE)) {
+		win32_diagnostic("GetOverlappedResult");
+	}
+	// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
+	if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
+		win32_diagnostic("WaitForSingleObject");
+	}
 
 
-
-	free(compressed_tile_data);
+	if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
+		// JPEG stream is empty
+		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+	} else {
+		if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes, temp_memory)) {
+//		    printf("thread %d: successfully decoded level%d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		} else {
+			printf("thread %d: failed to decode level%d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		}
+	}
 
 //	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 
+	finish_up:
 	write_barrier;
 	task_data->cached_pixels = temp_memory;
 	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
@@ -581,7 +566,7 @@ void unload_wsi(wsi_t* wsi) {
 		wsi_level_t* level = wsi->levels + i;
 		if (level->tiles) {
 			for (i32 j = 0; j < level->num_tiles; ++j) {
-				wsi_tile_t* tile = level->tiles + i;
+				wsi_tile_t* tile = level->tiles + j;
 				if (tile->texture != 0) {
 					unload_texture(tile->texture);
 				}
@@ -602,6 +587,8 @@ void unload_image(image_t* image) {
 			if (image->stbi.texture != 0) {
 				unload_texture(image->stbi.texture);
 			}
+		} else if (image->type == IMAGE_TYPE_TIFF_GENERIC) {
+			tiff_destroy(&image->tiff.tiff);
 		}
 	}
 }

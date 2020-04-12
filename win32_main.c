@@ -3,6 +3,9 @@
 
 #include "common.h"
 
+#define WIN32_MAIN_IMPL
+#include "win32_main.h"
+
 #define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
 
@@ -22,8 +25,7 @@
 
 #include "platform.h"
 
-#define WIN32_MAIN_IMPL
-#include "win32_main.h"
+
 #include "intrinsics.h"
 
 #include "gui.h"
@@ -50,9 +52,6 @@ bool32 is_main_window_initialized;
 work_queue_t work_queue;
 win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
-
-i32 total_thread_count;
-i32 logical_cpu_count;
 
 input_t inputs[2];
 input_t *old_input;
@@ -1145,13 +1144,25 @@ bool32 is_queue_work_in_progress(work_queue_t* queue) {
 	return result;
 }
 
-
 DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	win32_thread_info_t* thread_info = parameter;
 	i64 init_start_time = get_clock();
 
-	// Allocate a private memory buffer (used for WSI loading)
-	thread_local_storage[thread_info->logical_thread_index] = platform_alloc(MEGABYTES(16)); // how much actually needed?
+	// Allocate a private memory buffer
+	u64 thread_memory_size = MEGABYTES(16);
+	thread_local_storage[thread_info->logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
+	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[thread_info->logical_thread_index];
+	memset(thread_memory, 0, sizeof(thread_memory_t));
+
+	thread_memory->async_io_event = CreateEventA(NULL, TRUE, FALSE, NULL);
+	if (!thread_memory->async_io_event) {
+		win32_diagnostic("CreateEvent");
+	}
+	thread_memory->thread_memory_raw_size = thread_memory_size;
+
+	thread_memory->aligned_rest_of_thread_memory = (void*)
+			((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
+	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
 	ASSERT(main_window);
@@ -1290,9 +1301,9 @@ int main(int argc, char** argv) {
 	g_argc = argc;
 	g_argv = argv;
 
-	SYSTEM_INFO sysinfo = {};
-	GetSystemInfo(&sysinfo);
-	logical_cpu_count = sysinfo.dwNumberOfProcessors;
+	GetSystemInfo(&system_info);
+	logical_cpu_count = system_info.dwNumberOfProcessors;
+	os_page_size = system_info.dwPageSize;
 	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 
 	win32_init_timer();

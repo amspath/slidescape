@@ -1,5 +1,7 @@
 #include "common.h"
 
+#include <glad/glad.h>
+
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -396,9 +398,19 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		}
 		// TODO: better error handling than this crap
 		if (0) {
-			fail:
-			fclose(fp);
 		}
+		fail:;
+		// Note: we need async i/o in the worker threads...
+		// so for now we close and reopen the file using platform-native APIs to make that possible.
+		fclose(fp);
+
+		// TODO: make async I/O platform agnostic
+		// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
+		// http://vec3.ca/using-win32-asynchronous-io/
+		tiff->win32_file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+		                                                 FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
+		                                                 /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
+		                                                 NULL);
 
 
 	}
@@ -413,6 +425,21 @@ void tiff_destroy(tiff_t* tiff) {
 		fclose(tiff->fp);
 		tiff->fp = NULL;
 	}
+	if (tiff->win32_file_handle) {
+		CloseHandle(tiff->win32_file_handle);
+	}
+	for (i32 i = 0; i < tiff->level_count; ++i) {
+		tiff_ifd_t* level_image = tiff->level_images + i;
+		if (level_image->tiles) {
+			for (i32 j = 0; j < level_image->tile_count; ++j) {
+				tiff_tile_t* tile = level_image->tiles + j;
+				if (tile->texture != 0) {
+					glDeleteTextures(1, &tile->texture);
+				}
+			}
+			free(level_image->tiles);
+		}
+	}
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
 		if (ifd->tile_offsets) free(ifd->tile_offsets);
@@ -423,4 +450,5 @@ void tiff_destroy(tiff_t* tiff) {
 
 	}
 	sb_free(tiff->ifds);
+	memset(tiff, 0, sizeof(*tiff));
 }
