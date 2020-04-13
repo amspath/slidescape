@@ -39,7 +39,6 @@ add_executable(slideviewer
         deps/jpeg/jdinput.c
         deps/jpeg/jdapistd.c
         deps/jpeg/jdmaster.c
-        deps/jpeg/jmemmgr.c
         deps/jpeg/jmemansi.c
         deps/jpeg/jutils.c
         deps/jpeg/jquant1.c
