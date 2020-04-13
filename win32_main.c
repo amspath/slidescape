@@ -1184,15 +1184,21 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	HGLRC glrc = glrcs[thread_info->logical_thread_index];
 	ASSERT(glrc);
 	while (!wglMakeCurrent(dc, glrc)) {
-		win32_diagnostic("wglMakeCurrent"); // for some reason, this can fail, but with error code 0, retrying seems harmless??
-		Sleep(1000);
+		DWORD error_id = GetLastError();
+		if (error_id == 0) {
+			Sleep(1000);
+			continue; // for some reason, this can fail, but with error code 0, retrying seems harmless??
+		} else {
+			win32_diagnostic("wglMakeCurrent");
+			panic();
+		}
 	}
 	ReleaseDC(main_window, dc);
 
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
-		printf("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
+//		printf("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(opengl_debug_message_callback, 0);

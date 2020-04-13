@@ -642,8 +642,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
 		// Display a basic image
 
-//		render_ui(&g_draw_data, image);
-//		return;
 		float display_pos_x = 0.0f;
 		float display_pos_y = 0.0f;
 
@@ -704,11 +702,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		// todo: bunch up vertex and index uploads
 
 		draw_rect(image->stbi.texture);
-
-
-
-
 	}
+	// TODO: refactor so that this code is TIFF/OpenSlide agnostic
 #if 1
 	else if (image->type == IMAGE_TYPE_TIFF_GENERIC) {
 		tiff_t *tiff = &image->tiff.tiff;

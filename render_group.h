@@ -75,6 +75,4 @@ typedef struct {
 extern draw_data_t g_draw_data;
 extern draw_list_t g_draw_list;
 
-void render_ui(draw_data_t* draw_data, image_t* image);
-
 #include "common.h"
