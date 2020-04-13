@@ -110,12 +110,10 @@ struct load_tile_task_t {
 	i32 level;
 	i32 tile_x;
 	i32 tile_y;
-	u32* cached_pixels;
 };
 
 typedef struct {
 	u32 texture;
-	load_tile_task_t* load_task_data;
 	bool32 is_submitted_for_loading;
 } wsi_tile_t;
 

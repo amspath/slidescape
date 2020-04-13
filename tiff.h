@@ -141,12 +141,10 @@ typedef struct tiff_load_tile_task_t {
 	i32 level;
 	i32 tile_x;
 	i32 tile_y;
-	u8* cached_pixels;
 } tiff_load_tile_task_t;
 
 typedef struct tiff_tile_t {
 	u32 texture;
-	tiff_load_tile_task_t* load_task_data;
 	bool32 is_submitted_for_loading;
 } tiff_tile_t;
 

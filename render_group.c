@@ -36,6 +36,9 @@ void init_draw_rect() {
 	ASSERT(!rect_initialized);
 	rect_initialized = true;
 
+	// suppress NVidia OpenGL driver warnings about 'no defined base level' while no textures are loaded
+	glDisable(GL_TEXTURE_2D);
+
 	glGenVertexArrays(1, &vao_rect);
 	glBindVertexArray(vao_rect);
 

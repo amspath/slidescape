@@ -25,8 +25,6 @@
 #include "tiff.h"
 #include "jpeg_decoder.h"
 
-#define UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS 0
-
 void gl_diagnostic(const char* prefix) {
 	GLenum err = glGetError();
 	if (err != GL_NO_ERROR) {
@@ -111,6 +109,8 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			glGenTextures(1, &image->stbi.texture);
 			//glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_2D, image->stbi.texture);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -122,7 +122,7 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 			//stbi_image_free(image->stbi.pixels);
 		}
 		return result;
-#if DO_DEBUG && 1 // TODO: The TIFF code is work in progress
+#if  1 // TODO: The TIFF code is work in progress
 	} else if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0) {
 		tiff_t tiff = {};
 		if (open_tiff_file(&tiff, filename)) {
@@ -157,9 +157,12 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 
 u32 load_texture(void* pixels, i32 width, i32 height) {
 	u32 texture = 0; //gl_gen_texture();
+	glEnable(GL_TEXTURE_2D);
 	glGenTextures(1, &texture);
 //	printf("Generated texture %d\n", texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -194,11 +197,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	wsi_level_t* wsi_level = wsi->levels + level;
 	wsi_tile_t* tile = wsi_get_tile(wsi_level, tile_x, tile_y);
 
-#if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
 	u32* temp_memory = thread_local_storage[logical_thread_index] ; //malloc(WSI_BLOCK_SIZE);
-#else
-	u32* temp_memory = malloc(WSI_BLOCK_SIZE);
-#endif
 	i64 x = (tile_x * TILE_DIM) << level;
 	i64 y = (tile_y * TILE_DIM) << level;
 	openslide.openslide_read_region(wsi->osr, temp_memory, x, y, level, TILE_DIM, TILE_DIM);
@@ -206,22 +205,12 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 //	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 
 	write_barrier;
-	task_data->cached_pixels = temp_memory;
-	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
 
-	// Note (Pieter, 4-4-20):
-	// For some reason I can load textures on a separate thread perfectly fine on
-	// my desktop system (with an AMD gpu), while this fails on my laptop (integrated Intel + dedicated Nvidia).
-	// Why??
-	// For now, reverting to the crappy method of uploading everything to the GPU on the main thread.
-#if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
 	// do the submitting directly
-	tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
-//	free(task_data->cached_pixels);
-	task_data->cached_pixels = NULL;
+	glEnable(GL_TEXTURE_2D);
+	tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
 	free(task_data);
-	tile->load_task_data = NULL;
-#endif
+	glFinish(); // Block thread execution until all OpenGL operations have finished.
 
 }
 
@@ -237,13 +226,8 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
-#if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
 	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
 	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
-#else
-	u8* temp_memory = calloc(WSI_BLOCK_SIZE, 1);
-	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory;
-#endif
 
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
 	u64 tile_offset = level_image->tile_offsets[tile_index];
@@ -252,6 +236,7 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	// We need to check for this situation and chicken out if this is the case.
 	if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
 		//printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		// TODO: Make one single 'empty' tile texture and simply reuse that
 		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 		goto finish_up;
 	}
@@ -305,22 +290,12 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	finish_up:
 	write_barrier;
-	task_data->cached_pixels = temp_memory;
-	tile->load_task_data = task_data; // leave a trail so that we can free up memory later on the main thread.
 
-	// Note (Pieter, 4-4-20):
-	// For some reason I can load textures on a separate thread perfectly fine on
-	// my desktop system (with an AMD gpu), while this fails on my laptop (integrated Intel + dedicated Nvidia).
-	// Why??
-	// For now, reverting to the crappy method of uploading everything to the GPU on the main thread.
-#if UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
-	// do the submitting directly
-	tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
-//	free(task_data->cached_pixels);
-	task_data->cached_pixels = NULL;
+	// do the submitting directly on the GPU
+	glEnable(GL_TEXTURE_2D);
+	tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
 	free(task_data);
-	tile->load_task_data = NULL;
-#endif
+	glFinish(); // Block thread execution until all OpenGL operations have finished.
 
 }
 
@@ -351,32 +326,13 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 		return 0;
 	} else {
 		read_barrier;
-		if (tile->load_task_data) {
-#if !UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
-			load_tile_task_t* task_data = tile->load_task_data;
-//			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
-
-			tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
-			free(task_data->cached_pixels);
-			task_data->cached_pixels = NULL;
-			free(task_data);
-			tile->load_task_data = NULL;
-#endif
+		if (!tile->is_submitted_for_loading) {
+			tile->is_submitted_for_loading = true;
+			enqueue_load_tile(wsi, level, tile_x, tile_y);
 		} else {
-			if (!tile->is_submitted_for_loading) {
-				tile->is_submitted_for_loading = true;
-				enqueue_load_tile(wsi, level, tile_x, tile_y);
-			}
-			/*if (is_queue_work_in_progress(&work_queue)) {
-				do_worker_work(&work_queue, -1);
-				do_worker_work(&work_queue, -1);
-				do_worker_work(&work_queue, -1);
-			}*/
-
+			// already submitted for loading, there is nothing to do!
 		}
 
-
-//		printf("Loaded tile: level=%d tile_x=%d tile_y=%d block=%u texture=%u\n", level, tile_x, tile_y, tile->block, tile->texture);
 		return 1;
 	}
 }
@@ -390,33 +346,12 @@ i32 tiff_load_tile(tiff_t* tiff, i32 level, i32 tile_x, i32 tile_y) {
 		return 0;
 	} else {
 		read_barrier;
-		if (tile->load_task_data) {
-#if !UPLOAD_TEXTURES_TO_GPU_ON_HELPER_THREADS
-			tiff_load_tile_task_t* task_data = tile->load_task_data;
-//			printf("encountered a pre-cached tile: level=%d tile_x=%d tile_y=%d\n", level, tile_x, tile_y);
-
-			tile->texture = load_texture(task_data->cached_pixels, TILE_DIM, TILE_DIM);
-			free(task_data->cached_pixels);
-			task_data->cached_pixels = NULL;
-			free(task_data);
-			tile->load_task_data = NULL;
-#endif
+		if (!tile->is_submitted_for_loading) {
+			tile->is_submitted_for_loading = true;
+			tiff_enqueue_load_tile(tiff, level, tile_x, tile_y);
 		} else {
-			if (!tile->is_submitted_for_loading) {
-				tile->is_submitted_for_loading = true;
-				tiff_enqueue_load_tile(tiff, level, tile_x, tile_y);
-			}
-
-			/*if (is_queue_work_in_progress(&work_queue)) {
-				do_worker_work(&work_queue, -1);
-				do_worker_work(&work_queue, -1);
-				do_worker_work(&work_queue, -1);
-			}*/
-
+			// already submitted for loading, there is nothing to do!
 		}
-
-
-//		printf("Loaded tile: level=%d tile_x=%d tile_y=%d block=%u texture=%u\n", level, tile_x, tile_y, tile->block, tile->texture);
 		return 1;
 	}
 }

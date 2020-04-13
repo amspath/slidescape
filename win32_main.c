@@ -30,6 +30,14 @@
 
 #include "gui.h"
 
+
+// If both dedicated GPU and integrated graphics are available -> choose dedicated
+// see:
+// https://stackoverflow.com/questions/6036292/select-a-graphic-device-in-windows-opengl
+// https://stackoverflow.com/questions/17458803/amd-equivalent-to-nvoptimusenablement
+__declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+
 int g_argc;
 char** g_argv;
 
@@ -1184,7 +1192,7 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
-//		printf("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
+		printf("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(opengl_debug_message_callback, 0);
