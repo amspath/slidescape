@@ -119,6 +119,22 @@ enum tiff_compression_enum {
 	TIFF_COMPRESSION_JP2000 = 34712,
 };
 
+// https://www.awaresystems.be/imaging/tiff/tifftags/photometricinterpretation.html
+enum tiff_photometric_interpretation_enum {
+	TIFF_PHOTOMETRIC_MINISWHITE = 0,
+	TIFF_PHOTOMETRIC_MINISBLACK = 1,
+	TIFF_PHOTOMETRIC_RGB = 2,
+	TIFF_PHOTOMETRIC_PALETTE = 3,
+	TIFF_PHOTOMETRIC_MASK = 4,
+	TIFF_PHOTOMETRIC_SEPARATED = 5,
+	TIFF_PHOTOMETRIC_YCBCR = 6,
+	TIFF_PHOTOMETRIC_CIELAB = 8,
+	TIFF_PHOTOMETRIC_ICCLAB = 9,
+	TIFF_PHOTOMETRIC_ITULAB = 10,
+	TIFF_PHOTOMETRIC_LOGL = 32844,
+	TIFF_PHOTOMETRIC_LOGLUV = 32845,
+};
+
 typedef struct tiff_t tiff_t;
 typedef struct tiff_load_tile_task_t {
 	tiff_t* tiff;
@@ -147,6 +163,7 @@ typedef struct tiff_ifd_t {
 	u8* jpeg_tables;
 	u64 jpeg_tables_length;
 	u16 compression; // 7 = JPEG
+	u16 color_space;
 	bool8 is_level_image;
 	float level_magnification;
 	u32 width_in_tiles;

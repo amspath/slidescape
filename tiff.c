@@ -160,6 +160,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	bool32 is_bigtiff = tiff->is_bigtiff;
 	bool32 is_big_endian = tiff->is_big_endian;
 
+	// By default, assume RGB color space.
+	// (although TIFF files are always required to specify this in the PhotometricInterpretation tag)
+	ifd->color_space = TIFF_PHOTOMETRIC_RGB;
+
 	// Set the file position to the start of the IFD
 	if (!(next_ifd_offset != NULL && fseeko64(tiff->fp, *next_ifd_offset, SEEK_SET) == 0)) {
 		return false; // failed
@@ -243,6 +247,9 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			} break;
 			case TIFF_TAG_COMPRESSION: {
 				ifd->compression = tag->data_u16;
+			} break;
+			case TIFF_TAG_PHOTOMETRIC_INTERPRETATION: {
+				ifd->color_space = tag->data_u16;
 			} break;
 			case TIFF_TAG_IMAGE_DESCRIPTION: {
 				ifd->image_description = tiff_read_field_ascii(tiff, tag);

@@ -59,7 +59,7 @@ void setup_jpeg_source(j_decompress_ptr cinfo, uint8_t *input_ptr, uint32_t inpu
 }
 
 EMSCRIPTEN_KEEPALIVE
-boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr) {
+boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool32 is_YCbCr) {
 	struct jpeg_decompress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 
@@ -85,7 +85,7 @@ boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_pt
 		return FALSE;
 	}
 
-	cinfo.jpeg_color_space = JCS_RGB;
+	cinfo.jpeg_color_space = is_YCbCr ? JCS_YCbCr : JCS_RGB;
 	cinfo.out_color_space = JCS_RGB;
 
 	jpeg_start_decompress(&cinfo);
@@ -105,7 +105,6 @@ boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_pt
 			source_offset = i * 3;
 			target_offset = i * 4;
 
-			// TODO: convert YcbCr to RGB if necessary
 			// TODO: what to do here, BGRA or RGBA?
 			output_ptr[target_offset + 0] = buffer[0][source_offset + 2];
 			output_ptr[target_offset + 1] = buffer[0][source_offset + 1];
