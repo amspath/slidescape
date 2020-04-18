@@ -85,7 +85,7 @@ u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
 
 char* tiff_read_field_ascii(tiff_t* tiff, tiff_tag_t* tag) {
 	size_t description_length = tag->data_count;
-	char* result = calloc(MAX(8, description_length + 1), 1);
+	char* result = calloc(ATLEAST(8, description_length + 1), 1);
 	if (tag->data_is_offset) {
 		file_read_at_offset(result, tiff->fp, tag->offset, tag->data_count);
 	} else {

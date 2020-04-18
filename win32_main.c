@@ -29,6 +29,7 @@
 #include "intrinsics.h"
 
 #include "gui.h"
+#include "tlsclient.h"
 
 
 // If both dedicated GPU and integrated graphics are available -> choose dedicated
@@ -1308,7 +1309,6 @@ void win32_init_main_window() {
 
 }
 
-
 int main(int argc, char** argv) {
 	g_instance = GetModuleHandle(NULL);
 	g_cmdline = GetCommandLine();
@@ -1331,7 +1331,7 @@ int main(int argc, char** argv) {
     load_openslide_task(0, NULL);
 #endif
 	win32_init_input();
-
+	init_networking();
 
 	is_program_running = true;
 

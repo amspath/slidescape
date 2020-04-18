@@ -14,6 +14,7 @@
 
 #include "openslide_api.h"
 #include "viewer.h"
+#include "tlsclient.h"
 
 #define GUI_IMPL
 #include "gui.h"
@@ -35,6 +36,7 @@ void do_gui(i32 client_width, i32 client_height) {
 	{
 		static struct {
 			bool open_file;
+			bool open_remote;
 			bool exit_program;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
@@ -44,6 +46,7 @@ void do_gui(i32 client_width, i32 client_height) {
 		if (ImGui::BeginMenu("File"))
 		{
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
+			if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -70,6 +73,8 @@ void do_gui(i32 client_width, i32 client_height) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
 			win32_open_file_dialog(main_window);
+		} else if (menu_items_clicked.open_remote) {
+			open_remote_slide("ectopic.tech", 2000, "sample.tiff");
 		}
 		else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);

@@ -67,10 +67,14 @@ typedef int8_t bool8;
 
 // Convenience macros
 #define COUNT(array) (sizeof(array) / sizeof((array)[0]))
+#ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+#ifndef MAX
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
-#define LOWERBOUND(a, b) MAX(a, b)
-#define UPPERBOUND(a, b) MIN(a, b)
+#endif
+#define ATLEAST(a, b) MAX(a, b)
+#define ATMOST(a, b) MIN(a, b)
 
 #define LERP(t,a,b)               ( (a) + (t) * (float) ((b)-(a)) )
 #define UNLERP(t,a,b)             ( ((t) - (a)) / (float) ((b) - (a)) )

@@ -549,6 +549,7 @@ void on_file_dragged(char* filename) {
 	}
 }
 
+
 void first(i32 client_width, i32 client_height) {
 	init_opengl_stuff(client_width, client_height);
 
@@ -898,7 +899,6 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			}
 
 
-			// TODO: fix multithreaded IO problems
 			i32 max_tiles_to_load_at_once = 5;
 			i32 tiles_loaded = 0;
 			for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {

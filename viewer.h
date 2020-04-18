@@ -14,6 +14,7 @@ typedef struct texture_t {
 	i32 height;
 } texture_t;
 
+// TODO: split math primitives out into their own file? e.g. mathutils.c/mathutils.h
 typedef struct rect2i {
 	i32 x, y, w, h;
 } rect2i;
