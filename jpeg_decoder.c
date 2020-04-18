@@ -2,7 +2,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "platform.h"
+#ifdef TARGET_EMSCRIPTEN
+#include <emscripten/emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE
+#endif
 #include "jpeglib.h"
 
 static void on_error(j_common_ptr cinfo) {

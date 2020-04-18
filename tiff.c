@@ -32,9 +32,9 @@ void maybe_swap_tiff_field(void* field, u16 data_type, bool32 is_big_endian) {
 			void* pos = field;
 			for (i32 i = 0; i < sub_count; ++i, pos += field_size) {
 				switch(field_size) {
-					case 2: *(u16*)pos = _byteswap_ushort(*(u16*)pos); break;
-					case 4: *(u32*)pos = _byteswap_ulong(*(u32*)pos); break;
-					case 8: *(u64*)pos = _byteswap_uint64(*(u64*)pos); break;
+					case 2: *(u16*)pos = bswap_16(*(u16*)pos); break;
+					case 4: *(u32*)pos = bswap_32(*(u32*)pos); break;
+					case 8: *(u64*)pos = bswap_64(*(u64*)pos); break;
 					default: ASSERT(!"This field size should not exist");
 				}
 			}
@@ -70,7 +70,7 @@ const char* get_tiff_tag_name(u32 tag) {
 }
 
 u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
-	fpos_t prev_read_pos = 0;
+	fpos_t prev_read_pos = {0}; // NOTE: fpos_t may be a struct!
 	int ret = fgetpos64(fp, &prev_read_pos); // for restoring the file position later
 	ASSERT(ret == 0); (void)ret;
 
@@ -115,7 +115,7 @@ u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 			integers = (u64*) temp_integers;
 			if (tiff->is_big_endian) {
 				for (i32 i = 0; i < tag->data_count; ++i) {
-					integers[i] = _byteswap_uint64(integers[i]);
+					integers[i] = bswap_64(integers[i]);
 				}
 			}
 		} else {
@@ -173,7 +173,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	u64 tag_count_num_bytes = is_bigtiff ? 8 : 2;
 	if (fread(&tag_count, tag_count_num_bytes, 1, tiff->fp) != 1) return false;
 	if (is_big_endian) {
-		tag_count = is_bigtiff ? _byteswap_uint64(tag_count) : _byteswap_ushort(tag_count);
+		tag_count = is_bigtiff ? bswap_64(tag_count) : bswap_16(tag_count);
 	}
 
 	// Read the tags

@@ -14,6 +14,8 @@
     #include <netdb.h> 
 #endif
 #define LTM_DESC
+#define TLS_AMALGAMATION
+#define LTC_NO_ASM
 #include "tlse.c"
 
 #include "tlsclient.h"
@@ -134,11 +136,18 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 	tls_client_connect(tls_context);
 //	printf("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
 	send_pending(sockfd, tls_context);
-	u8 client_message[0xFFFF];
-	i32 read_size;
+
+	u8 receive_buffer[0xFFFF]; // receive in 64K byte chunks
+	i32 receive_size;
 	i32 sent = 0;
-	while ((read_size = recv(sockfd, (char*)client_message, sizeof(client_message) , 0)) > 0) {
-		tls_consume_stream(tls_context, client_message, read_size, validate_certificate);
+
+	i32 read_buffer_size = MEGABYTES(2);
+	u8* read_buffer = calloc(read_buffer_size, 1);
+	u8* read_buffer_pos = read_buffer;
+	i32 total_bytes_read = 0;
+
+	while ((receive_size = recv(sockfd, (char*)receive_buffer, sizeof(receive_buffer), 0)) > 0) {
+		tls_consume_stream(tls_context, receive_buffer, receive_size, validate_certificate);
 		send_pending(sockfd, tls_context);
 		if (tls_established(tls_context)) {
 			if (!sent) {
@@ -161,13 +170,19 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 				sent = 1;
 			}
 
-			unsigned char read_buffer[0xFFFF];
-			int read_size2 = tls_read(tls_context, read_buffer, 0xFFFF - 1);
-			if (read_size2 > 0) {
-				fwrite(read_buffer, read_size2, 1, stdout);
+			i32 read_size = tls_read(tls_context, read_buffer_pos, read_buffer_size - total_bytes_read - 1);
+			if (read_size > 0) {
+//				fwrite(read_buffer, read_size, 1, stdout);
+				read_buffer_pos += read_size;
+				total_bytes_read += read_size;
 			}
+
 		}
 	}
+
+	// now we should have the whole HTTP response
+	printf("HTTP read finished, length = %d\n", total_bytes_read);
+	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
 	tls_destroy_context(tls_context);
 	closesocket(sockfd);

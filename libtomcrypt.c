@@ -1,6 +1,5 @@
 #define CRYPT 0x0117
 #define LTC_NO_ROLC
-#define LTC_NO_ASM
 
 /* LibTomMath, multiple-precision integer library -- Tom St Denis
  *
