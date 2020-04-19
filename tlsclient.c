@@ -20,6 +20,7 @@
 
 #include "tlsclient.h"
 #include "platform.h"
+#include "tiff.h"
 
 void error(char *msg) {
     perror(msg);
@@ -113,7 +114,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 		printf("ERROR opening socket\n");
 		return;
 	}
-	setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, (char*)&optval, sizeof(optval));
+//	setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, (char*)&optval, sizeof(optval));
 	struct hostent* server = gethostbyname(hostname);
 	if (server == NULL) {
 		printf("ERROR, no such host\n");
@@ -132,7 +133,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 	}
 	tls_context = tls_create_context(0, TLS_V13);
 	// the next line is needed only if you want to serialize the connection context or kTLS is used
-	tls_make_exportable(tls_context, 1);
+//	tls_make_exportable(tls_context, 1);
 	tls_client_connect(tls_context);
 //	printf("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
 	send_pending(sockfd, tls_context);
@@ -170,6 +171,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 				sent = 1;
 			}
 
+			// TODO: use realloc to resize read buffer if needed?
 			i32 read_size = tls_read(tls_context, read_buffer_pos, read_buffer_size - total_bytes_read - 1);
 			if (read_size > 0) {
 //				fwrite(read_buffer, read_size, 1, stdout);
@@ -182,7 +184,11 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 
 	// now we should have the whole HTTP response
 	printf("HTTP read finished, length = %d\n", total_bytes_read);
-	fwrite(read_buffer, total_bytes_read, 1, stdout);
+//	fwrite(read_buffer, total_bytes_read, 1, stdout);
+
+	tiff_t tiff = {0};
+	tiff_deserialize(&tiff, read_buffer, total_bytes_read);
+	free(read_buffer);
 
 	tls_destroy_context(tls_context);
 	closesocket(sockfd);

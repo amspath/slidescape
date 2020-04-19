@@ -3,7 +3,10 @@
 #include "common.h"
 #include "stdio.h"
 
+#define IS_SERVER 0
+#if !IS_SERVER
 #include "win32_main.h"
+#endif
 
 #define TIFF_LITTLE_ENDIAN 0x4949
 #define TIFF_BIG_ENDIAN 0x4D4D
@@ -149,6 +152,7 @@ typedef struct tiff_tile_t {
 } tiff_tile_t;
 
 typedef struct tiff_ifd_t {
+	u64 ifd_index;
 	u32 image_width;
 	u32 image_height;
 	u32 tile_width;
@@ -175,7 +179,7 @@ typedef struct tiff_ifd_t {
 
 struct tiff_t {
 	FILE* fp;
-#ifdef _WIN32
+#if !IS_SERVER
 	HANDLE win32_file_handle;
 #endif
 	i64 filesize;
@@ -183,15 +187,86 @@ struct tiff_t {
 	u64 ifd_count;
 	tiff_ifd_t* ifds; // sb
 	tiff_ifd_t* main_image; // level 0 of the WSI; in Philips TIFF it's typically the first IFD
+	u64 main_image_index;
 	tiff_ifd_t* macro_image; // in Philips TIFF: typically the second-to-last IFD
+	u64 macro_image_index;
 	tiff_ifd_t* label_image; // in Philips TIFF: typically the last IFD
+	u64 label_image_index;
 	u64 level_count;
 	tiff_ifd_t* level_images;
+	u64 level_image_index;
 	bool8 is_bigtiff;
 	bool8 is_big_endian;
 	float mpp_x;
 	float mpp_y;
 };
+
+#pragma pack(push, 1)
+typedef struct {
+	i64 filesize;
+	u64 ifd_count;
+	u64 main_image_index; // level 0 of the WSI; in Philips TIFF it's typically the first IFD
+	u64 macro_image_index; // in Philips TIFF: typically the second-to-last IFD
+	u64 label_image_index; // in Philips TIFF: typically the last IFD
+	u64 level_count;
+	u64 level_image_index;
+	u32 bytesize_of_offsets;
+	bool8 is_bigtiff;
+	bool8 is_big_endian;
+	float mpp_x;
+	float mpp_y;
+} tiff_serial_header_t;
+
+typedef struct {
+	u32 image_width;
+	u32 image_height;
+	u32 tile_width;
+	u32 tile_height;
+//	u64* tile_offsets;
+	u64 tile_count;
+//	u64* tile_byte_counts;
+//	char* image_description;
+	u64 image_description_length;
+//	u8* jpeg_tables;
+	u64 jpeg_tables_length;
+	u16 compression; // 7 = JPEG
+	u16 color_space;
+	float level_magnification;
+	u32 width_in_tiles;
+	u32 height_in_tiles;
+	float um_per_pixel_x;
+	float um_per_pixel_y;
+	float x_tile_side_in_um;
+	float y_tile_side_in_um;
+	bool8 is_level_image;
+//	tiff_tile_t* tiles;
+} tiff_serial_ifd_t;
+
+enum serial_block_type_enum {
+	SERIAL_BLOCK_TIFF_HEADER_AND_META = 9001, // using ridiculous numbers to make invalid file structure easier to detect
+	SERIAL_BLOCK_TIFF_IFDS = 9002,
+	SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION = 9003,
+	SERIAL_BLOCK_TIFF_TILE_OFFSETS = 9004,
+	SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS = 9005,
+	SERIAL_BLOCK_TIFF_JPEG_TABLES = 9006,
+	SERIAL_BLOCK_TERMINATOR = 800,
+};
+
+typedef struct {
+	u32 block_type;
+	u32 index; // e.g. which IFD this data block belongs to
+	u64 length;
+} serial_block_t;
+
+#pragma pack(pop)
+
+typedef struct {
+	u8* raw_memory;
+	u8* data;
+	u64 used_size;
+	u64 capacity;
+} push_buffer_t;
+
 
 // see:
 // https://stackoverflow.com/questions/41770887/cross-platform-definition-of-byteswap-uint64-and-byteswap-ulong
@@ -291,6 +366,9 @@ static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
 	return is_big_endian ? bswap_64(x) : x;
 }
 
+
 u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 bool32 open_tiff_file(tiff_t* tiff, const char* filename);
+push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer);
+bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size);
 void tiff_destroy(tiff_t* tiff);

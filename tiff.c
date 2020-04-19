@@ -1,6 +1,10 @@
 #include "common.h"
 
+#ifndef IS_SERVER
 #include <glad/glad.h>
+#endif
+
+#define TIFF_VERBOSE 1
 
 #include <stdio.h>
 #include <sys/stat.h>
@@ -233,8 +237,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	// Read and interpret the entries in the IFD
 	for (i32 tag_index = 0; tag_index < tag_count; ++tag_index) {
 		tiff_tag_t* tag = tags + tag_index;
+#if TIFF_VERBOSE
 		printf("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
 		       tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
+#endif
 		switch(tag->code) {
 			// Note: the data type of many tags (E.g. ImageWidth) can actually be either SHORT or LONG,
 			// but because we already converted the byte order to native (=little-endian) with enough
@@ -254,11 +260,15 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_IMAGE_DESCRIPTION: {
 				ifd->image_description = tiff_read_field_ascii(tiff, tag);
 				ifd->image_description_length = tag->data_count;
+#if TIFF_VERBOSE
 				printf("%.500s\n", ifd->image_description);
+#endif
 				if (strncmp(ifd->image_description, "Macro", 5) == 0) {
 					tiff->macro_image = ifd;
+					tiff->macro_image_index = ifd->ifd_index;
 				} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
 					tiff->label_image = ifd;
+					tiff->label_image_index = ifd->ifd_index;
 				} else if (strncmp(ifd->image_description, "level", 5) == 0) {
 					ifd->is_level_image = true;
 				}
@@ -307,11 +317,11 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 	// Read the next IFD
 	if (fread(next_ifd_offset, tiff->bytesize_of_offsets, 1, tiff->fp) != 1) return false;
-
+#if TIFF_VERBOSE
 	printf("next ifd offset = %lld\n", *next_ifd_offset);
-
+#endif
 	return true; // success
-};
+}
 
 bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 	int ret = 0; (void)ret; // for checking return codes from fgetpos, fsetpos, etc
@@ -357,8 +367,10 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 
 				// Read and process the IFDs
 				while (next_ifd_offset != 0) {
+#if TIFF_VERBOSE
 					printf("Reading IFD #%llu\n", tiff->ifd_count);
-					tiff_ifd_t ifd = {};
+#endif
+					tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
 					if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
 					sb_push(tiff->ifds, ifd);
 					tiff->ifd_count += 1;
@@ -367,7 +379,9 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				// TODO: make more robust
 				// Assume the first IFD is the main image, and also level 0
 				tiff->main_image = tiff->ifds;
+				tiff->main_image_index = 0;
 				tiff->level_images = tiff->main_image;
+				tiff->level_image_index = 0;
 
 				// TODO: make more robust
 				u64 level_counter = 1; // begin at 1 because we are also counting level 0 (= the first IFD)
@@ -411,6 +425,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		// so for now we close and reopen the file using platform-native APIs to make that possible.
 		fclose(fp);
 
+#ifdef IS_SERVER
 		// TODO: make async I/O platform agnostic
 		// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 		// http://vec3.ca/using-win32-asynchronous-io/
@@ -418,6 +433,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		                                                 FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
 		                                                 /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
 		                                                 NULL);
+#endif
 
 
 	}
@@ -427,23 +443,344 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 	return success;
 }
 
+
+
+
+void push_size(push_buffer_t* buffer, u8* data, u64 size) {
+	if (buffer->used_size + size > buffer->capacity) {
+		printf("push_size(): buffer overflow\n");
+		exit(1);
+	}
+	memcpy(buffer->data + buffer->used_size, data, size);
+	buffer->used_size += size;
+}
+
+void push_block(push_buffer_t* buffer, u32 block_type, u32 index, u64 block_length) {
+	serial_block_t block = { .block_type = block_type, .index = index, .length = block_length };
+	push_size(buffer, (u8*)&block, sizeof(block));
+}
+
+#define INCLUDE_IMAGE_DESCRIPTION 1
+
+push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
+
+	u64 total_size = 0;
+
+	// block: general TIFF header / meta
+	total_size += sizeof(serial_block_t);
+	tiff_serial_header_t serial_header = {
+			.filesize = tiff->filesize,
+			.ifd_count = tiff->ifd_count,
+			.main_image_index = tiff->main_image_index,
+			.macro_image_index = tiff->macro_image_index,
+			.level_count = tiff->level_count,
+			.bytesize_of_offsets = tiff->bytesize_of_offsets,
+			.is_bigtiff = tiff->is_bigtiff,
+			.is_big_endian = tiff->is_big_endian,
+			.mpp_x = tiff->mpp_x,
+			.mpp_y = tiff->mpp_y,
+	};
+	total_size += sizeof(serial_header);
+
+	// block: IFD's
+	total_size += sizeof(serial_block_t);
+	u64 serial_ifds_block_size = tiff->ifd_count * sizeof(tiff_serial_ifd_t);
+	tiff_serial_ifd_t* serial_ifds = alloca(serial_ifds_block_size);
+	for (i32 i = 0; i < tiff->ifd_count; ++i) {
+		tiff_ifd_t* ifd = tiff->ifds + i;
+		tiff_serial_ifd_t* serial_ifd = serial_ifds + i;
+		*serial_ifd = (tiff_serial_ifd_t) {
+			.image_width = ifd->image_width,
+			.image_height = ifd->image_height,
+			.tile_width = ifd->tile_width,
+			.tile_height = ifd->tile_height,
+			.tile_count = ifd->tile_count,
+			.image_description_length = ifd->image_description_length,
+			.jpeg_tables_length = ifd->jpeg_tables_length,
+			.compression = ifd->compression,
+			.color_space = ifd->color_space,
+			.level_magnification = ifd->level_magnification,
+			.width_in_tiles = ifd->width_in_tiles,
+			.height_in_tiles = ifd->height_in_tiles,
+			.um_per_pixel_x = ifd->um_per_pixel_x,
+			.um_per_pixel_y = ifd->um_per_pixel_y,
+			.x_tile_side_in_um = ifd->x_tile_side_in_um,
+			.y_tile_side_in_um = ifd->y_tile_side_in_um,
+			.is_level_image = ifd->is_level_image,
+		};
+#if INCLUDE_IMAGE_DESCRIPTION
+		total_size += ifd->image_description_length;
+#endif
+		total_size += ifd->jpeg_tables_length;
+		total_size += ifd->tile_count * sizeof(ifd->tile_offsets[0]);
+		total_size += ifd->tile_count * sizeof(ifd->tile_byte_counts[0]);
+	}
+	total_size += tiff->ifd_count * sizeof(tiff_serial_ifd_t);
+
+	// blocks: need separate blocks for each IFD's image descriptions, tile offsets, tile byte counts, jpeg tables
+#if INCLUDE_IMAGE_DESCRIPTION
+	total_size += tiff->ifd_count * sizeof(serial_block_t);
+#endif
+	total_size += tiff->ifd_count * sizeof(serial_block_t);
+	total_size += tiff->ifd_count * sizeof(serial_block_t);
+	total_size += tiff->ifd_count * sizeof(serial_block_t);
+
+	// block: terminator (end of stream marker)
+	total_size += sizeof(serial_block_t);
+
+	// Now we know the total size of our payload!
+	char http_headers[4096];
+	snprintf(http_headers, sizeof(http_headers),
+	         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %llu\r\n\r\n",
+	         total_size);
+	u64 http_headers_size = strlen(http_headers);
+
+	// Hack: we prepend the HTTP headers to the 'normal' buffer, so that we can immediately send everything
+	// in one go once we are done serializing.
+	buffer->raw_memory = malloc(http_headers_size + total_size);
+	memcpy(buffer->raw_memory, http_headers, http_headers_size);
+//	((char*)buffer->raw_memory)[http_headers_size] = '\0';
+
+	buffer->data = buffer->raw_memory + http_headers_size;
+	buffer->used_size = 0;
+	buffer->capacity = total_size;
+
+	push_block(buffer, SERIAL_BLOCK_TIFF_HEADER_AND_META, 0,  sizeof(serial_block_t));
+	push_size(buffer, (u8*)&serial_header, sizeof(serial_header));
+
+	push_block(buffer, SERIAL_BLOCK_TIFF_IFDS, 0, serial_ifds_block_size);
+	push_size(buffer, (u8*)serial_ifds, serial_ifds_block_size);
+
+	for (i32 i = 0; i < tiff->ifd_count; ++i) {
+		tiff_ifd_t* ifd = tiff->ifds + i;
+#if INCLUDE_IMAGE_DESCRIPTION
+		push_block(buffer, SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION, i, ifd->image_description_length);
+		push_size(buffer, (u8*)ifd->image_description, ifd->image_description_length);
+#endif
+		u64 tile_offsets_size = ifd->tile_count * sizeof(ifd->tile_offsets[0]);
+		push_block(buffer, SERIAL_BLOCK_TIFF_TILE_OFFSETS, i, tile_offsets_size);
+		push_size(buffer, (u8*)ifd->tile_offsets, tile_offsets_size);
+
+		u64 tile_byte_counts_size = ifd->tile_count * sizeof(ifd->tile_byte_counts[0]);
+		push_block(buffer, SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS, i, tile_byte_counts_size);
+		push_size(buffer, (u8*)ifd->tile_byte_counts, tile_byte_counts_size);
+
+		push_block(buffer, SERIAL_BLOCK_TIFF_JPEG_TABLES, i, ifd->jpeg_tables_length);
+		push_size(buffer, ifd->jpeg_tables, ifd->jpeg_tables_length);
+
+	}
+
+	push_block(buffer, SERIAL_BLOCK_TERMINATOR, 0, 0);
+
+//	printf("buffer has %llu used bytes, out of %llu capacity\n", buffer->used_size, buffer->capacity);
+
+	return buffer;
+
+}
+
+u8* pop_from_buffer(u8** pos, i64 size, i64* bytes_left) {
+	if (size > *bytes_left) {
+		printf("pop_from_buffer(): buffer empty\n");
+		return NULL;
+	}
+	u8* old_pos = *pos;
+	*pos += size;
+	*bytes_left -= size;
+	return old_pos;
+}
+
+serial_block_t* pop_block_from_buffer(u8** pos, i64* bytes_left) {
+	return (serial_block_t*) pop_from_buffer(pos, sizeof(serial_block_t), bytes_left);
+}
+
+i64 find_end_of_http_headers(u8* str, u64 len) {
+	static const char crlfcrlf[] = "\r\n\r\n";
+	u32 search_key = *(u32*)crlfcrlf;
+	i64 result = 0;
+	for (i64 offset = 0; offset < len - 4; ++offset) {
+		u8* pos = str + offset;
+		u32 check = *(u32*)pos;
+		if (check == search_key) {
+			result = offset + 4;
+			break;
+		}
+	}
+	return result;
+}
+
+
+
+bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
+	i64 bytes_left = (i64)buffer_size;
+	u8* pos = buffer;
+	u8* data = NULL;
+	serial_block_t* block = NULL;
+
+#define POP_DATA(size) do {if (!(data = pop_from_buffer(&pos, (size), &bytes_left))) return false; } while(0)
+#define POP_BLOCK() do{if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false; } while(0)
+
+
+	i64 content_offset = find_end_of_http_headers(buffer, buffer_size);
+	i64 content_length = buffer_size - content_offset;
+	POP_DATA(content_offset);
+//	if (!(data = pop_from_buffer(&pos, content_offset, &bytes_left))) return false;
+
+	// block: general TIFF header / meta
+	POP_BLOCK();
+//	if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false;
+	if (block->block_type != SERIAL_BLOCK_TIFF_HEADER_AND_META) return false;
+
+	POP_DATA(sizeof(tiff_serial_header_t));
+//	if (!pop_from_buffer(&pos, sizeof(tiff_serial_header_t), &bytes_left)) return false;
+	tiff_serial_header_t* serial_header = (tiff_serial_header_t*) data;
+	*tiff = (tiff_t) {
+			.filesize = serial_header->filesize,
+			.ifd_count = serial_header->ifd_count,
+			.main_image_index = serial_header->main_image_index,
+			.macro_image_index = serial_header->macro_image_index,
+			.level_count = serial_header->level_count,
+			.bytesize_of_offsets = serial_header->bytesize_of_offsets,
+			.is_bigtiff = serial_header->is_bigtiff,
+			.is_big_endian = serial_header->is_big_endian,
+			.mpp_x = serial_header->mpp_x,
+			.mpp_y = serial_header->mpp_y,
+	};
+
+	// block: IFD's
+	POP_BLOCK();
+//	if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false;
+	if (block->block_type != SERIAL_BLOCK_TIFF_IFDS) return false;
+	u64 serial_ifds_block_size = tiff->ifd_count * sizeof(tiff_serial_ifd_t);
+	if (block->length != serial_ifds_block_size) return false;
+
+	POP_DATA(serial_ifds_block_size);
+//	if (!pop_from_buffer(&pos, serial_ifds_block_size, &bytes_left)) return false;
+	tiff_serial_ifd_t* serial_ifds = (tiff_serial_ifd_t*) data;
+
+	// TODO: maybe not use a stretchy_buffer here?
+	tiff->ifds = calloc(1, sizeof(tiff_ifd_t) * tiff->ifd_count); // allocate space for the IFD's
+	memset(tiff->ifds, 0, tiff->ifd_count * sizeof(tiff_ifd_t));
+
+	for (i32 i = 0; i < tiff->ifd_count; ++i) {
+		tiff_ifd_t* ifd = tiff->ifds + i;
+		tiff_serial_ifd_t* serial_ifd = serial_ifds + i;
+		*ifd = (tiff_ifd_t) {
+				.image_width = serial_ifd->image_width,
+				.image_height = serial_ifd->image_height,
+				.tile_width = serial_ifd->tile_width,
+				.tile_height = serial_ifd->tile_height,
+				.tile_count = serial_ifd->tile_count,
+				.image_description_length = serial_ifd->image_description_length,
+				.jpeg_tables_length = serial_ifd->jpeg_tables_length,
+				.compression = serial_ifd->compression,
+				.color_space = serial_ifd->color_space,
+				.level_magnification = serial_ifd->level_magnification,
+				.width_in_tiles = serial_ifd->width_in_tiles,
+				.height_in_tiles = serial_ifd->height_in_tiles,
+				.um_per_pixel_x = serial_ifd->um_per_pixel_x,
+				.um_per_pixel_y = serial_ifd->um_per_pixel_y,
+				.x_tile_side_in_um = serial_ifd->x_tile_side_in_um,
+				.y_tile_side_in_um = serial_ifd->y_tile_side_in_um,
+				.is_level_image = serial_ifd->is_level_image,
+		};
+	}
+
+	int pause = 5; // for placing a debug breakpoint
+
+	// The number of remaining blocks is unspecified.
+	// We are expecting at least byte offsets, tile offsets and JPEG tables for each IFD
+	for (;;) {
+
+		POP_BLOCK();
+//		if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false;
+		if (block->length > 0) {
+			POP_DATA(block->length);
+//			if (!pop_from_buffer(&pos, block->length, &bytes_left)) return false;
+		}
+		u8* block_content = data;
+		// TODO: Need to think about this: are block index's (if present) always referring an IFD index, though? Or are there other use cases?
+		if (block->index >= tiff->ifd_count) {
+			printf("tiff_deserialize(): found block referencing a non-existent IFD\n");
+			return false;
+		}
+		tiff_ifd_t* referenced_ifd = tiff->ifds + block->index;
+
+
+		switch (block->block_type) {
+			case SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION: {
+				if (referenced_ifd->image_description) {
+					printf("tiff_deserialize(): IFD %u already has an image description\n", block->index);
+					return false;
+				}
+				referenced_ifd->image_description = malloc(block->length + 1);
+				memcpy(referenced_ifd->image_description, block_content, block->length);
+				referenced_ifd->image_description[block->length] = '\0';
+				referenced_ifd->image_description_length = block->length;
+			} break;
+			case SERIAL_BLOCK_TIFF_TILE_OFFSETS: {
+				if (referenced_ifd->tile_offsets) {
+					printf("tiff_deserialize(): IFD %u already has tile offsets\n", block->index);
+					return false;
+				}
+				referenced_ifd->tile_offsets = malloc(block->length);
+				memcpy(referenced_ifd->tile_offsets, block_content, block->length);
+			} break;
+			case SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS: {
+				if (referenced_ifd->tile_byte_counts) {
+					printf("tiff_deserialize(): IFD %u already has tile byte counts\n", block->index);
+					return false;
+				}
+				referenced_ifd->tile_byte_counts = malloc(block->length);
+				memcpy(referenced_ifd->tile_byte_counts, block_content, block->length);
+			} break;
+			case SERIAL_BLOCK_TIFF_JPEG_TABLES: {
+				if (referenced_ifd->jpeg_tables) {
+					printf("tiff_deserialize(): IFD %u already has JPEG tables\n", block->index);
+					return false;
+				}
+				referenced_ifd->jpeg_tables = malloc(block->length);
+				memcpy(referenced_ifd->jpeg_tables, block_content, block->length);
+				referenced_ifd->jpeg_tables[block->length] = 0;
+				referenced_ifd->jpeg_tables_length = block->length;
+			} break;
+			case SERIAL_BLOCK_TERMINATOR: {
+				// Reached the end
+				printf("tiff_deserialize(): found a terminator block\n");
+				goto finished;
+			} break;
+		}
+	}
+	finished:
+	printf("tiff_deserialize(): bytes_left = %lld, content length = %lld, buffer size = %llu\n", bytes_left, content_length, buffer_size);
+
+	return true;
+
+#undef POP_DATA
+#undef POP_BLOCK
+
+}
+
 void tiff_destroy(tiff_t* tiff) {
 	if (tiff->fp) {
 		fclose(tiff->fp);
 		tiff->fp = NULL;
 	}
+#if 0
 	if (tiff->win32_file_handle) {
 		CloseHandle(tiff->win32_file_handle);
 	}
+#endif
 	for (i32 i = 0; i < tiff->level_count; ++i) {
 		tiff_ifd_t* level_image = tiff->level_images + i;
 		if (level_image->tiles) {
+#if 0
 			for (i32 j = 0; j < level_image->tile_count; ++j) {
 				tiff_tile_t* tile = level_image->tiles + j;
 				if (tile->texture != 0) {
 					glDeleteTextures(1, &tile->texture);
 				}
 			}
+#endif
 			free(level_image->tiles);
 		}
 	}
