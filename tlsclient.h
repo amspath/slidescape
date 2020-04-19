@@ -9,7 +9,7 @@ extern "C" {
 
 // prototypes
 void init_networking();
-void open_remote_slide(const char* hostname, i32 portno, const char* request_get);
+void open_remote_slide(const char* hostname, i32 portno, const char* filename);
 
 // globals
 #if defined(TLSCLIENT_IMPL)

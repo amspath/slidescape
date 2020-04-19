@@ -177,7 +177,16 @@ typedef struct tiff_ifd_t {
 	tiff_tile_t* tiles;
 } tiff_ifd_t;
 
+
+typedef struct network_location_t {
+	i32 portno;
+	const char* hostname;
+	const char* filename;
+} network_location_t;
+
 struct tiff_t {
+	bool32 is_remote;
+	network_location_t location;
 	FILE* fp;
 #if !IS_SERVER
 	HANDLE win32_file_handle;

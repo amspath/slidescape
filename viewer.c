@@ -94,6 +94,26 @@ bool32 load_image(image_t* image, const char* filename) {
 #endif
 
 
+void reset_scene(image_t* image) {
+	switch(image->type) {
+		case IMAGE_TYPE_STBI_COMPATIBLE: {
+
+		} break;
+		case IMAGE_TYPE_TIFF_GENERIC: {
+			tiff_t* tiff = &image->tiff.tiff;
+			current_level = tiff->level_count-1;
+			zoom_position = (float)current_level;
+
+			camera_pos.x = (tiff->main_image->image_width * tiff->mpp_x) / 2.0f;
+			camera_pos.y = (tiff->main_image->image_height * tiff->mpp_y) / 2.0f;
+		} break;
+		case IMAGE_TYPE_WSI: {
+
+		} break;
+	}
+
+}
+
 bool32 load_image_from_file(image_t* image, const char* filename) {
 	bool32 result = false;
 
@@ -126,14 +146,11 @@ bool32 load_image_from_file(image_t* image, const char* filename) {
 	} else if (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0) {
 		tiff_t tiff = {};
 		if (open_tiff_file(&tiff, filename)) {
+			// TODO: deduplicate/refactor with remote code
 			image->type = IMAGE_TYPE_TIFF_GENERIC;
 			image->tiff.tiff = tiff;
 
-			current_level = tiff.level_count-1;
-			zoom_position = (float)current_level;
-
-			camera_pos.x = (tiff.main_image->image_width * tiff.mpp_x) / 2.0f;
-			camera_pos.y = (tiff.main_image->image_height * tiff.mpp_y) / 2.0f;
+			reset_scene(image);
 
 			result = true;
 		} else {
@@ -245,45 +262,51 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	// TODO: make async I/O code platform agnostic
 
-	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
-	// offset in the file where we want to do the read operation
-	LARGE_INTEGER offset = {.QuadPart = tile_offset};
-	thread_memory->overlapped = (OVERLAPPED) {
-		.Offset = offset.LowPart,
-		.OffsetHigh = offset.HighPart,
-		.hEvent = thread_memory->async_io_event
-	};
-	ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
-
-	if (!ReadFile(tiff->win32_file_handle, compressed_tile_data,
-			compressed_tile_size_in_bytes, NULL, &thread_memory->overlapped)) {
-		DWORD error = GetLastError();
-		if (error != ERROR_IO_PENDING) {
-			win32_diagnostic("ReadFile");
-		}
-	}
-
-	// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
-	DWORD bytes_read = 0;
-	if (!GetOverlappedResult(tiff->win32_file_handle, &thread_memory->overlapped, &bytes_read, TRUE)) {
-		win32_diagnostic("GetOverlappedResult");
-	}
-	// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
-	if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
-		win32_diagnostic("WaitForSingleObject");
-	}
-
-
-	if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
-		// JPEG stream is empty
+	if (tiff->is_remote) {
+		printf("thread %d: remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 	} else {
-		if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
-				temp_memory, (level_image->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		    printf("thread %d: successfully decoded level%d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-		} else {
-			printf("thread %d: failed to decode level%d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
+		// offset in the file where we want to do the read operation
+		LARGE_INTEGER offset = {.QuadPart = tile_offset};
+		thread_memory->overlapped = (OVERLAPPED) {
+				.Offset = offset.LowPart,
+				.OffsetHigh = offset.HighPart,
+				.hEvent = thread_memory->async_io_event
+		};
+		ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
+
+		if (!ReadFile(tiff->win32_file_handle, compressed_tile_data,
+		              compressed_tile_size_in_bytes, NULL, &thread_memory->overlapped)) {
+			DWORD error = GetLastError();
+			if (error != ERROR_IO_PENDING) {
+				win32_diagnostic("ReadFile");
+			}
 		}
+
+		// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
+		DWORD bytes_read = 0;
+		if (!GetOverlappedResult(tiff->win32_file_handle, &thread_memory->overlapped, &bytes_read, TRUE)) {
+			win32_diagnostic("GetOverlappedResult");
+		}
+		// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
+		if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
+			win32_diagnostic("WaitForSingleObject");
+		}
+
+
+		if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
+			// JPEG stream is empty
+			memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+		} else {
+			if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
+			                temp_memory, (level_image->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+//		    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			} else {
+				printf("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			}
+		}
+
 	}
 
 //	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
@@ -529,7 +552,7 @@ void unload_image(image_t* image) {
 	}
 }
 
-void on_file_dragged(char* filename) {
+void unload_all_images() {
 	i32 current_image_count = sb_count(loaded_images);
 	if (current_image_count > 0) {
 		ASSERT(loaded_images);
@@ -540,6 +563,19 @@ void on_file_dragged(char* filename) {
 		sb_free(loaded_images);
 		loaded_images = NULL;
 	}
+}
+
+void add_image_from_tiff(tiff_t tiff) {
+	image_t new_image = {0};
+	new_image.type = IMAGE_TYPE_TIFF_GENERIC;
+	new_image.tiff.tiff = tiff;
+	new_image.is_freshly_loaded = true;
+	reset_scene(&new_image);
+	sb_push(loaded_images, new_image);
+}
+
+void on_file_dragged(char* filename) {
+	unload_all_images();
 
 	image_t new_image = {0};
 

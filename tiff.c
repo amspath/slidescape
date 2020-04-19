@@ -407,7 +407,9 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					level->um_per_pixel_y = um_per_pixel;
 					level->x_tile_side_in_um = level->um_per_pixel_x * (float)level->tile_width;
 					level->y_tile_side_in_um = level->um_per_pixel_y * (float)level->tile_height;
+#if !IS_SERVER
 					level->tiles = calloc(1, level->tile_count * sizeof(tiff_tile_t));
+#endif
 					um_per_pixel *= 2.0f; // downsample, so at higher levels there are more pixels per micrometer
 				}
 
@@ -753,6 +755,19 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	finished:
 	printf("tiff_deserialize(): bytes_left = %lld, content length = %lld, buffer size = %llu\n", bytes_left, content_length, buffer_size);
 
+	// make some remaining assumptions
+	tiff->main_image = 	tiff->ifds + tiff->main_image_index;
+	tiff->macro_image = tiff->ifds + tiff->macro_image_index; // TODO: might not exist??
+	tiff->level_images = tiff->ifds + tiff->level_image_index; // TODO: might not exist??
+
+	// allocate space for the tiles
+	for (i32 i = 0; i < tiff->level_count; ++i) {
+		tiff_ifd_t* ifd = tiff->level_images + i;
+		ifd->tiles = calloc(1, ifd->tile_count * sizeof(tiff_tile_t));
+	}
+
+	// todo: flag empty tiles so they don't need to be loaded
+
 	return true;
 
 #undef POP_DATA
@@ -765,7 +780,7 @@ void tiff_destroy(tiff_t* tiff) {
 		fclose(tiff->fp);
 		tiff->fp = NULL;
 	}
-#if 0
+#if !IS_SERVER
 	if (tiff->win32_file_handle) {
 		CloseHandle(tiff->win32_file_handle);
 	}
@@ -773,7 +788,7 @@ void tiff_destroy(tiff_t* tiff) {
 	for (i32 i = 0; i < tiff->level_count; ++i) {
 		tiff_ifd_t* level_image = tiff->level_images + i;
 		if (level_image->tiles) {
-#if 0
+#if !IS_SERVER
 			for (i32 j = 0; j < level_image->tile_count; ++j) {
 				tiff_tile_t* tile = level_image->tiles + j;
 				if (tile->texture != 0) {

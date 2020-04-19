@@ -21,6 +21,8 @@
 #include "tlsclient.h"
 #include "platform.h"
 #include "tiff.h"
+#include "openslide_api.h" // TODO: remove/refactor, needed because of viewer.h
+#include "viewer.h"
 
 void error(char *msg) {
     perror(msg);
@@ -105,7 +107,7 @@ void init_networking() {
 
 }
 
-void open_remote_slide(const char* hostname, i32 portno, const char* request_get) {
+void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 
 	i64 start = get_clock();
 	i64 sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -152,9 +154,9 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 		send_pending(sockfd, tls_context);
 		if (tls_established(tls_context)) {
 			if (!sent) {
-				static const char requestfmt[] = "GET /%s HTTP/1.1\r\nConnection: close\r\n\r\n\0";
+				static const char requestfmt[] = "GET /slide/%s/header HTTP/1.1\r\nConnection: close\r\n\r\n\0";
 				char request[4096];
-				snprintf(request, sizeof(request), requestfmt, request_get);
+				snprintf(request, sizeof(request), requestfmt, filename);
 				size_t request_len = COUNT(requestfmt) + strlen(request);
 
 				// try kTLS (kernel TLS implementation in linux >= 4.13)
@@ -187,7 +189,18 @@ void open_remote_slide(const char* hostname, i32 portno, const char* request_get
 //	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
 	tiff_t tiff = {0};
-	tiff_deserialize(&tiff, read_buffer, total_bytes_read);
+	if (tiff_deserialize(&tiff, read_buffer, total_bytes_read)) {
+		tiff.is_remote = true;
+		tiff.location = (network_location_t){ .hostname = hostname, .portno = portno, .filename = filename };
+
+		unload_all_images();
+		add_image_from_tiff(tiff);
+	} else {
+		tiff_destroy(&tiff);
+	}
+
+
+
 	free(read_buffer);
 
 	tls_destroy_context(tls_context);

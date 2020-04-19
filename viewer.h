@@ -155,7 +155,7 @@ typedef enum {
 
 typedef struct {
 	image_type_enum type;
-	bool32 is_freshly_loaded;
+	bool32 is_freshly_loaded; // TODO: remove or refactor, is this still needed?
 	union {
 		struct {
 			i32 channels_in_file;
@@ -352,10 +352,13 @@ typedef struct {
 //  prototypes
 void gl_diagnostic(const char* prefix);
 void first(i32 client_width, i32 client_height);
-void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);
+void unload_all_images();
+void reset_scene(image_t* image);
+void add_image_from_tiff(tiff_t tiff);
 void on_file_dragged(char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
+void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);
 
 // globals
 #if defined(VIEWER_IMPL)
