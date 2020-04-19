@@ -1316,7 +1316,7 @@ int main(int argc, char** argv) {
 	g_argv = argv;
 
 	GetSystemInfo(&system_info);
-	logical_cpu_count = system_info.dwNumberOfProcessors;
+	logical_cpu_count = 2;//system_info.dwNumberOfProcessors;
 	os_page_size = system_info.dwPageSize;
 	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 

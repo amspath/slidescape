@@ -76,8 +76,8 @@ void do_gui(i32 client_width, i32 client_height) {
 		} else if (menu_items_clicked.open_remote) {
 //			open_remote_slide("google.com", 443, "/");
 //			open_remote_slide("ectopic.tech", 2000, "");
-//			open_remote_slide("ectopic.tech", 2000, "slide/sample.tiff/header");
-			open_remote_slide("localhost", 2000, "sample.tiff");
+			open_remote_slide("ectopic.tech", 2000, "sample.tiff");
+//			open_remote_slide("localhost", 2000, "sample.tiff");
 		}
 		else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);

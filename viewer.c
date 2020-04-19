@@ -24,6 +24,7 @@
 
 #include "tiff.h"
 #include "jpeg_decoder.h"
+#include "tlsclient.h"
 
 void gl_diagnostic(const char* prefix) {
 	GLenum err = glGetError();
@@ -244,6 +245,7 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
 	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
 
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
@@ -254,7 +256,7 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
 		//printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		// TODO: Make one single 'empty' tile texture and simply reuse that
-		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+//		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 		goto finish_up;
 	}
 	u8* jpeg_tables = level_image->jpeg_tables;
@@ -264,7 +266,35 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	if (tiff->is_remote) {
 		printf("thread %d: remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+
+
+		i32 bytes_read = 0;
+		u8* read_buffer = download_remote_chunk(tiff->location.hostname, tiff->location.portno, tiff->location.filename,
+				tile_offset, compressed_tile_size_in_bytes, &bytes_read);
+		if (read_buffer && bytes_read > 0) {
+			i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
+			i64 content_length = bytes_read - content_offset;
+			u8* content = read_buffer + content_offset;
+
+			// TODO: better way to check the real content length?
+			if (content_length >= compressed_tile_size_in_bytes) {
+				if (content[0] == 0xFF && content[1] == 0xD9) {
+					// JPEG stream is empty
+				} else {
+					if (decode_tile(jpeg_tables, jpeg_tables_length, content, compressed_tile_size_in_bytes,
+					                temp_memory, (level_image->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+//		    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					} else {
+						printf("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					}
+				}
+
+			}
+
+
+
+		}
+		free(read_buffer);
 	} else {
 		// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 		// offset in the file where we want to do the read operation
@@ -297,7 +327,6 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 
 		if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
 			// JPEG stream is empty
-			memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 		} else {
 			if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
 			                temp_memory, (level_image->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
