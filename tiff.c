@@ -808,6 +808,11 @@ void tiff_destroy(tiff_t* tiff) {
 
 
 	}
-	sb_free(tiff->ifds);
+	// TODO: fix this, choose either stretchy_buffer or regular malloc, not both...
+	if (tiff->is_remote) {
+		free(tiff->ifds);
+	} else {
+		sb_free(tiff->ifds);
+	}
 	memset(tiff, 0, sizeof(*tiff));
 }

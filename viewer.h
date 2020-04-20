@@ -377,8 +377,8 @@ extern float zoom_position;
 extern i32 displayed_image;
 extern v2f camera_pos;
 extern bool use_image_adjustments;
-extern float black_level INIT(= 0.3f);
-extern float white_level INIT(= 0.9f);
+extern float black_level INIT(= 0.10f);
+extern float white_level INIT(= 0.95f);
 extern v4f clear_color INIT(= {0.95f, 0.95f, 0.95f, 1.00f});
 
 #undef INIT

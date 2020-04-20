@@ -265,12 +265,12 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	// TODO: make async I/O code platform agnostic
 
 	if (tiff->is_remote) {
-		printf("thread %d: remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		printf("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
 
 		i32 bytes_read = 0;
 		u8* read_buffer = download_remote_chunk(tiff->location.hostname, tiff->location.portno, tiff->location.filename,
-				tile_offset, compressed_tile_size_in_bytes, &bytes_read);
+		                                        tile_offset, compressed_tile_size_in_bytes, &bytes_read, logical_thread_index);
 		if (read_buffer && bytes_read > 0) {
 			i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
 			i64 content_length = bytes_read - content_offset;
@@ -285,7 +285,7 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 					                temp_memory, (level_image->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
 //		    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 					} else {
-						printf("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+						printf("[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 					}
 				}
 

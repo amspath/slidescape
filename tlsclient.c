@@ -80,7 +80,6 @@ int validate_certificate(struct TLSContext *context, struct TLSCertificate **cer
     return no_error;
 }
 
-struct TLSContext* tls_context;
 
 void init_networking() {
 	static bool is_tls_initialized;
@@ -108,18 +107,23 @@ void init_networking() {
 
 }
 
-u8* do_http_request(const char* hostname, i32 portno, const char* uri, i32* bytes_read) {
+// TODO: reduce stdout spam messages
+u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *bytes_read, i32 thread_id) {
 	i64 start = get_clock();
 	i64 sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	u32 optval = 1;
+
 	if (sockfd < 0) {
-		printf("ERROR opening socket\n");
+		printf("[thread %d] ERROR opening socket\n", thread_id);
 		return NULL;
 	}
+	u32 timeout_ms = 5000;
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
+//	u32 optval = 1;
 //	setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, (char*)&optval, sizeof(optval));
 	struct hostent* server = gethostbyname(hostname);
 	if (server == NULL) {
-		printf("ERROR, no such host\n");
+		printf("[thread %d] ERROR, no such host\n", thread_id);
 		closesocket(sockfd);
 		sockfd = 0;
 		return NULL;
@@ -128,17 +132,23 @@ u8* do_http_request(const char* hostname, i32 portno, const char* uri, i32* byte
 	memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
 	serv_addr.sin_port = htons(portno);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-		printf("ERROR connecting\n");
+		printf("[thread %d] ERROR connecting\n", thread_id);
 		closesocket(sockfd);
 		sockfd = 0;
 		return NULL;
 	}
-	tls_context = tls_create_context(0, TLS_V13);
+	struct TLSContext* tls_context = tls_create_context(0, TLS_V13);
 	// the next line is needed only if you want to serialize the connection context or kTLS is used
 //	tls_make_exportable(tls_context, 1);
-	tls_client_connect(tls_context);
+	int ret = tls_client_connect(tls_context);
+	if (ret < 0) {
+		printf("[thread %d] tls_client_connect() failed with error %d\n", thread_id, ret);
+	}
 //	printf("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
-	send_pending(sockfd, tls_context);
+	ret = send_pending(sockfd, tls_context);
+	if (ret < 0) {
+		printf("[thread %d] send_pending() returned error %d\n", thread_id, ret);
+	}
 
 	u8 receive_buffer[0xFFFF]; // receive in 64K byte chunks
 	i32 receive_size;
@@ -149,8 +159,25 @@ u8* do_http_request(const char* hostname, i32 portno, const char* uri, i32* byte
 	u8* read_buffer_pos = read_buffer;
 	i32 total_bytes_read = 0;
 
-	while ((receive_size = recv(sockfd, (char*)receive_buffer, sizeof(receive_buffer), 0)) > 0) {
-		tls_consume_stream(tls_context, receive_buffer, receive_size, validate_certificate);
+	for (;;) {
+		receive_size = recv(sockfd, (char*)receive_buffer, sizeof(receive_buffer), 0);
+		if (receive_size < 0) {
+			int error_id = WSAGetLastError();
+			char* prefix = "do_http_request";
+			char* message_buffer;
+			/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
+			printf("[thread %d] %s: (error code 0x%x) %s\n", thread_id, prefix, (u32)error_id, message_buffer);
+			LocalFree(message_buffer);
+			break;
+		} else if (receive_size == 0) {
+			printf("[thread %d] Gracefully closed\n", thread_id);
+			break;
+		}
+		ret = tls_consume_stream(tls_context, receive_buffer, receive_size, validate_certificate);
+		if (ret < 0) {
+			printf("[thread %d] tls_consume_stream() returned error %d\n", thread_id, ret);
+		}
 		send_pending(sockfd, tls_context);
 		if (tls_established(tls_context)) {
 			if (!sent) {
@@ -186,7 +213,7 @@ u8* do_http_request(const char* hostname, i32 portno, const char* uri, i32* byte
 	*bytes_read = total_bytes_read;
 
 	// now we should have the whole HTTP response
-	printf("HTTP read finished, length = %d\n", total_bytes_read);
+	printf("[thread %d] HTTP read finished, length = %d\n", thread_id, total_bytes_read);
 //	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
 
@@ -194,17 +221,18 @@ u8* do_http_request(const char* hostname, i32 portno, const char* uri, i32* byte
 	closesocket(sockfd);
 
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
-	printf("Open remote took %g seconds\n", seconds_elapsed);
+	printf("[thread %d] Open remote took %g seconds\n", thread_id, seconds_elapsed);
 
 	return read_buffer;
 }
 
 
-u8* download_remote_chunk(const char* hostname, i32 portno, const char* filename, i64 chunk_offset, i64 chunk_size, i32* bytes_read) {
+u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename, i64 chunk_offset, i64 chunk_size,
+                          i32 *bytes_read, i32 thread_id) {
 
 	char uri[2048] = {0};
 	snprintf(uri, sizeof(uri), "/slide/%s/%lld/%lld", filename, chunk_offset, chunk_size);
-	u8* read_buffer = do_http_request(hostname, portno, uri, bytes_read);
+	u8* read_buffer = do_http_request(hostname, portno, uri, bytes_read, thread_id);
 	return read_buffer;
 
 }
@@ -213,12 +241,14 @@ void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 
 	i64 start = get_clock();
 	i64 sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	u32 optval = 1;
 	if (sockfd < 0) {
 		printf("ERROR opening socket\n");
 		return;
 	}
-//	setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, (char*)&optval, sizeof(optval));
+	// Set timeout interval
+	u32 timeout_ms = 2000;
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
 	struct hostent* server = gethostbyname(hostname);
 	if (server == NULL) {
 		printf("ERROR, no such host\n");
@@ -235,7 +265,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 		sockfd = 0;
 		return;
 	}
-	tls_context = tls_create_context(0, TLS_V13);
+	struct TLSContext* tls_context = tls_create_context(0, TLS_V13);
 	// the next line is needed only if you want to serialize the connection context or kTLS is used
 //	tls_make_exportable(tls_context, 1);
 	tls_client_connect(tls_context);

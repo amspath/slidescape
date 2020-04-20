@@ -1210,7 +1210,7 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
-//			Sleep(1);
+			Sleep(1);
 			WaitForSingleObjectEx(thread_info->queue->semaphore_handle, 1, FALSE);
 		}
 		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
@@ -1235,6 +1235,7 @@ void win32_init_multithreading() {
 
 		DWORD thread_id;
 		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
+		SetThreadPriority(thread_handle, THREAD_PRIORITY_BELOW_NORMAL);
 		CloseHandle(thread_handle);
 
 	}
@@ -1315,8 +1316,10 @@ int main(int argc, char** argv) {
 	g_argc = argc;
 	g_argv = argv;
 
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+
 	GetSystemInfo(&system_info);
-	logical_cpu_count = 2;//system_info.dwNumberOfProcessors;
+	logical_cpu_count = system_info.dwNumberOfProcessors;
 	os_page_size = system_info.dwPageSize;
 	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 

@@ -46,7 +46,6 @@ void do_gui(i32 client_width, i32 client_height) {
 		if (ImGui::BeginMenu("File"))
 		{
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
-			if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -62,6 +61,7 @@ void do_gui(i32 client_width, i32 client_height) {
 			if (ImGui::BeginMenu("Debug"))
 			{
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
+				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
