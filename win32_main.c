@@ -267,79 +267,6 @@ win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
 }
 
-#if 0
-void win32_resize_DIB_section(surface_t* buffer, int width, int height) {
-
-	ASSERT(width >= 0);
-	ASSERT(height >= 0);
-
-	buffer->width = width;
-	buffer->height = height;
-	buffer->pitch = width * BYTES_PER_PIXEL;
-
-	// NOTE: When the biHeight field is negative, this is the clue to
-	// Windows to treat this bitmap as top-down, not bottom-up, meaning that
-	// the first byte of the image is the top-left pixel.
-	buffer->win32.bitmapinfo.bmiHeader = (BITMAPINFOHEADER){
-			.biSize = sizeof(BITMAPINFOHEADER),
-			.biWidth = width,
-			.biHeight = -height,
-			.biPlanes = 1,
-			.biBitCount = 32,
-			.biCompression = BI_RGB,
-	};
-
-	size_t memory_needed = (size_t) BYTES_PER_PIXEL * width * height;
-
-	if (buffer->memory != NULL) {
-		// If enough memory already allocated, just reuse. Otherwise, we need to reallocate.
-		if (buffer->memory_size < memory_needed) {
-			VirtualFree(buffer->memory, 0, MEM_RELEASE);
-			buffer->memory = NULL;
-		} else {
-			memset(buffer->memory, 0, buffer->memory_size);
-		}
-	}
-
-	if (buffer->memory == NULL) {
-		buffer->memory = VirtualAlloc(0, memory_needed, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-		if (!buffer->memory) panic();
-		buffer->memory_size = memory_needed;
-	}
-}
-#endif
-
-#if 0
-enum menu_ids {
-	IDM_FILE_OPEN,
-	IDM_FILE_QUIT,
-	IDM_VIEW_FULLSCREEN,
-	IDM_VIEW_USE_IMAGE_ADJUSTMENTS,
-};
-HMENU menubar;
-HMENU file_menu;
-HMENU view_menu;
-
-void init_menus(HWND hwnd) {
-
-	menubar = CreateMenu();
-	file_menu = CreateMenu();
-	view_menu = CreateMenu();
-
-	AppendMenuA(file_menu, MF_STRING, IDM_FILE_OPEN, "&Open...\tCtrl+O");
-	AppendMenuA(file_menu, MF_SEPARATOR, 0, NULL);
-	AppendMenuA(file_menu, MF_STRING, IDM_FILE_QUIT, "&Quit\tAlt+F4");
-
-	AppendMenuA(view_menu, MF_STRING | MF_UNCHECKED, IDM_VIEW_FULLSCREEN, "&Fullscreen\tAlt+Enter");
-	AppendMenuA(view_menu, MF_SEPARATOR, 0, NULL);
-	AppendMenuA(view_menu, MF_STRING | MF_UNCHECKED, IDM_VIEW_USE_IMAGE_ADJUSTMENTS, "Use image &adjustments");
-
-	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) file_menu, "&File");
-	AppendMenuA(menubar, MF_POPUP, (UINT_PTR) view_menu, "&View");
-	SetMenu(hwnd, menubar);
-}
-#endif
-
 bool32 win32_is_fullscreen(HWND window) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
 	bool32 result = !(style & WS_OVERLAPPEDWINDOW);
@@ -360,16 +287,12 @@ void win32_toggle_fullscreen(HWND window) {
 			             monitor_info.rcMonitor.right - monitor_info.rcMonitor.left + 1,
 			             monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
 			             SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-//			CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_CHECKED);
-
 		}
 	} else {
 		SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
 		SetWindowPlacement(window, &window_position);
 		SetWindowPos(window, 0, 0, 0, 0, 0,
 		             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-//		CheckMenuItem(view_menu, IDM_VIEW_FULLSCREEN, MF_UNCHECKED);
-
 	}
 }
 
@@ -408,7 +331,6 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 
 		case WM_CREATE: {
 			DragAcceptFiles(window, true);
-//			init_menus(window);
 		} break;
 		case WM_DROPFILES: {
 			HDROP hdrop = (HDROP) wparam;
@@ -419,49 +341,6 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			DragFinish(hdrop);
 
 		} break;
-#if 0
-		case WM_COMMAND: {
-			switch(LOWORD(wparam)) {
-				case IDM_FILE_OPEN: {
-					// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
-					OPENFILENAME ofn = {};       // common dialog box structure
-					char filename[4096];       // buffer for file name
-					filename[0] = '\0';
-
-					printf("Attempting to open a file\n");
-
-					// Initialize OPENFILENAME
-					ofn.lStructSize = sizeof(ofn);
-					ofn.hwndOwner = window;
-					ofn.lpstrFile = filename;
-					ofn.nMaxFile = sizeof(filename);
-					ofn.lpstrFilter = "All\0*.*\0Text\0*.TXT\0";
-					ofn.nFilterIndex = 1;
-					ofn.lpstrFileTitle = NULL;
-					ofn.nMaxFileTitle = 0;
-					ofn.lpstrInitialDir = NULL;
-					ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-					// Display the Open dialog box.
-					if (GetOpenFileName(&ofn)==TRUE) {
-						on_file_dragged(filename);
-					}
-				} break;
-				case IDM_FILE_QUIT: {
-					SendMessage(window, WM_CLOSE, 0, 0);
-				} break;
-				case IDM_VIEW_FULLSCREEN: {
-					toggle_fullscreen(window);
-				} break;
-				case IDM_VIEW_USE_IMAGE_ADJUSTMENTS: {
-					use_image_adjustments = !use_image_adjustments;
-					u32 new_state = (use_image_adjustments) ? MF_CHECKED : MF_UNCHECKED;
-					CheckMenuItem(view_menu, IDM_VIEW_USE_IMAGE_ADJUSTMENTS, new_state);
-				} break;
-			}
-		} break;
-
-#endif
 
 #if 0
 		case WM_SIZE: {
@@ -492,16 +371,6 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_DESTROY: {
 			// TODO: Handle this as an error - recreate window?
 			is_program_running = false;
-		} break;
-
-		case WM_ACTIVATEAPP: {
-#if 0
-			if (wparam == TRUE) { // app is activated
-				SetLayeredWindowAttributes(window, RGB(0,0,0), 255, LWA_ALPHA);
-			} else {
-				SetLayeredWindowAttributes(window, RGB(0,0,0), 128, LWA_ALPHA);
-			}
-#endif
 		} break;
 
 		case WM_KEYDOWN:
@@ -622,9 +491,14 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 				break;
 
 			case WM_MOUSEWHEEL: {
-				u32 par = (u32)message.wParam;
-				i32 z_delta = GET_WHEEL_DELTA_WPARAM(message.wParam);
-				input->mouse_z = z_delta;
+				if (gui_want_capture_mouse) {
+					TranslateMessage(&message);
+					DispatchMessageA(&message);
+				} else {
+					u32 par = (u32)message.wParam;
+					i32 z_delta = GET_WHEEL_DELTA_WPARAM(message.wParam);
+					input->mouse_z = z_delta;
+				}
 			} break;
 
 			case WM_KEYDOWN:
