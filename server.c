@@ -354,8 +354,19 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 			i64 requested_offset = atoll(call->parameter1);
 			i64 requested_size = atoll(call->parameter2);
 
+			// If the SLIDES_DIR environment variable is set, load slides from there
+			char* path;
+			char path_buffer[2048];
+			char* prefix = getenv("SLIDES_DIR");
+			if (prefix) {
+				snprintf(path_buffer, sizeof(path_buffer), "%s/%s", prefix, filename);
+				path = path_buffer;
+			} else {
+				path = filename;
+			}
+
 			if (requested_offset >= 0 && requested_size > 0) {
-				FILE* fp = fopen64(filename, "rb");
+				FILE* fp = fopen64(path, "rb");
 				bool32 success = false;
 				if (fp) {
 					struct stat st;
