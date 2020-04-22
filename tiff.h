@@ -3,7 +3,9 @@
 #include "common.h"
 #include "stdio.h"
 
+#ifndef IS_SERVER
 #define IS_SERVER 0
+#endif
 #if !IS_SERVER
 #include "win32_main.h"
 #endif

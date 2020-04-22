@@ -4,7 +4,7 @@
 #include <glad/glad.h>
 #endif
 
-#define TIFF_VERBOSE 1
+#define TIFF_VERBOSE 0
 
 #include <stdio.h>
 #include <sys/stat.h>
@@ -427,7 +427,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		// so for now we close and reopen the file using platform-native APIs to make that possible.
 		fclose(fp);
 
-#ifdef IS_SERVER
+#if !IS_SERVER
 		// TODO: make async I/O platform agnostic
 		// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 		// http://vec3.ca/using-win32-asynchronous-io/

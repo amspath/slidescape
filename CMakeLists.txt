@@ -11,26 +11,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
-include_directories("${CMAKE_SOURCE_DIR}/deps/tomcrypt")
 
-add_executable(slideviewer
-        win32_main.c
-        viewer.c
-        glad.c
-        stringutils.c
-        shader.c
-        tiff.c
-        imgui.cpp
-        imgui_demo.cpp
-        imgui_draw.cpp
-        imgui_widgets.cpp
-        imgui_impl_opengl3.cpp
-        imgui_impl_win32.cpp
-        gui.cpp
-        jpeg_decoder.c
-        tlsclient.c
-        # files from the jpeg library:
-        deps/jpeg/jerror.c
+set(JPEG_SOURCE_FILES deps/jpeg/jerror.c
         deps/jpeg/jcapimin.c
         deps/jpeg/jcomapi.c
         deps/jpeg/jdapimin.c
@@ -59,4 +41,40 @@ add_executable(slideviewer
         deps/jpeg/jidctint.c
         deps/jpeg/jaricom.c
 )
+
+# client only supported on Windows x64 for now
+if (WIN32)
+add_executable(slideviewer
+        win32_main.c
+        viewer.c
+        glad.c
+        stringutils.c
+        shader.c
+        tiff.c
+        imgui.cpp
+        imgui_demo.cpp
+        imgui_draw.cpp
+        imgui_widgets.cpp
+        imgui_impl_opengl3.cpp
+        imgui_impl_win32.cpp
+        gui.cpp
+        jpeg_decoder.c
+        tlsclient.c
+        ${JPEG_SOURCE_FILES}
+)
 target_link_libraries(slideviewer user32 gdi32 winmm opengl32 ws2_32)
+endif(WIN32)
+
+add_executable(tlsserver
+        server.c
+        tiff.c
+        jpeg_decoder.c
+        ${JPEG_SOURCE_FILES}
+)
+target_compile_definitions(tlsserver PRIVATE IS_SERVER=1)
+
+if (WIN32)
+    target_link_libraries(tlsserver ws2_32 pthread)
+else()
+    target_link_libraries(tlsserver pthread)
+endif()
