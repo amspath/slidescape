@@ -360,12 +360,15 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		} break;
 
 		case WM_SETCURSOR: {
-			if (show_cursor) {
-//				SetCursor(the_cursor);
-				result = DefWindowProcA(window, message, wparam, lparam);
-			} else {
-				SetCursor(NULL);
+			if (!result) { // only process this message if ImGui hasn't changed the cursor already
+				if (show_cursor) {
+//				    SetCursor(the_cursor);
+					result = DefWindowProcA(window, message, wparam, lparam);
+				} else {
+					SetCursor(NULL); // hide the cursor when dragging
+				}
 			}
+
 		} break;
 
 		case WM_DESTROY: {
@@ -996,15 +999,19 @@ void win32_process_input(HWND window) {
 
 
 
-void add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
+bool32 add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
 	// Circular FIFO buffer
 	i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
-	ASSERT(new_next_entry_to_submit != queue->next_entry_to_execute);
+	if (new_next_entry_to_submit == queue->next_entry_to_execute) {
+		printf("Warning: work queue is overflowing - job is cancelled\n");
+		return false;
+	}
 	queue->entries[queue->next_entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
 	++queue->completion_goal;
 	write_barrier;
 	queue->next_entry_to_submit = new_next_entry_to_submit;
 	ReleaseSemaphore(queue->semaphore_handle, 1, NULL);
+	return true;
 }
 
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {

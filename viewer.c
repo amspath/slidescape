@@ -371,19 +371,19 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 
 extern work_queue_t work_queue;
 
-void enqueue_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
+bool32 enqueue_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	load_tile_task_t* task_data = malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
 	*task_data = (load_tile_task_t){ .wsi = wsi, .level = level, .tile_x = tile_x, .tile_y = tile_y };
 
-	add_work_queue_entry(&work_queue, load_tile_func, task_data);
+	return add_work_queue_entry(&work_queue, load_tile_func, task_data);
 
 }
 
-void tiff_enqueue_load_tile(tiff_t* tiff, i32 level, i32 tile_x, i32 tile_y) {
+bool32 tiff_enqueue_load_tile(tiff_t* tiff, i32 level, i32 tile_x, i32 tile_y) {
 	tiff_load_tile_task_t* task_data = malloc(sizeof(tiff_load_tile_task_t)); // should be freed after uploading the tile to the gpu
 	*task_data = (tiff_load_tile_task_t){ .tiff = tiff, .level = level, .tile_x = tile_x, .tile_y = tile_y };
 
-	add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data);
+	return add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data);
 
 }
 
@@ -397,8 +397,9 @@ i32 wsi_load_tile(wsi_t* wsi, i32 level, i32 tile_x, i32 tile_y) {
 	} else {
 		read_barrier;
 		if (!tile->is_submitted_for_loading) {
-			tile->is_submitted_for_loading = true;
-			enqueue_load_tile(wsi, level, tile_x, tile_y);
+			if (enqueue_load_tile(wsi, level, tile_x, tile_y)) {
+				tile->is_submitted_for_loading = true;
+			}
 		} else {
 			// already submitted for loading, there is nothing to do!
 		}
@@ -417,8 +418,9 @@ i32 tiff_load_tile(tiff_t* tiff, i32 level, i32 tile_x, i32 tile_y) {
 	} else {
 		read_barrier;
 		if (!tile->is_submitted_for_loading) {
-			tile->is_submitted_for_loading = true;
-			tiff_enqueue_load_tile(tiff, level, tile_x, tile_y);
+			if (tiff_enqueue_load_tile(tiff, level, tile_x, tile_y)) {
+				tile->is_submitted_for_loading = true;
+			}
 		} else {
 			// already submitted for loading, there is nothing to do!
 		}

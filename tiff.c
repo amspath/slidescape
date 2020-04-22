@@ -342,6 +342,9 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 }
 
 bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
+#if TIFF_VERBOSE
+	printf("Opening TIFF file %s\n", filename);
+#endif
 	int ret = 0; (void)ret; // for checking return codes from fgetpos, fsetpos, etc
 	FILE* fp = fopen64(filename, "rb");
 	bool32 success = false;

@@ -29,7 +29,7 @@ extern "C" {
 void init_networking();
 u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename, i64 chunk_offset, i64 chunk_size,
                           i32 *bytes_read, i32 thread_id);
-void open_remote_slide(const char* hostname, i32 portno, const char* filename);
+bool32 open_remote_slide(const char* hostname, i32 portno, const char* filename);
 
 // globals
 #if defined(TLSCLIENT_IMPL)

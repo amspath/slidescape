@@ -92,10 +92,12 @@ void do_gui(i32 client_width, i32 client_height) {
 		} else if (menu_items_clicked.open_file) {
 			win32_open_file_dialog(main_window);
 		} else if (menu_items_clicked.open_remote) {
+			show_open_remote_window = true;
 //			open_remote_slide("google.com", 443, "/");
 //			open_remote_slide("ectopic.tech", 2000, "");
 //			open_remote_slide("ectopic.tech", 443, "sample.tiff");
-			open_remote_slide("localhost", 2000, "sample.tiff");
+//			open_remote_slide("localhost", 2000, "sample.tiff");
+//			open_remote_slide("ectopic.tech", 2000, "STU00-001__20191213_102326.tiff");
 		}
 		else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);
@@ -103,6 +105,23 @@ void do_gui(i32 client_width, i32 client_height) {
 				win32_toggle_fullscreen(main_window);
 			}
 		}
+	}
+
+	if (show_open_remote_window) {
+		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(256, 156), ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Open remote", &show_display_options_window);
+
+
+
+		ImGui::InputText("Hostname", remote_hostname, sizeof(remote_hostname));
+		ImGui::InputText("Port", remote_port, sizeof(remote_port));
+		ImGui::InputText("Filename", remote_filename, sizeof(remote_filename));
+		if (ImGui::Button("Connect")) {
+			open_remote_slide(remote_hostname, atoll(remote_port), remote_filename);
+		}
+		ImGui::End();
 	}
 
 

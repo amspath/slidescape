@@ -255,13 +255,15 @@ u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename
 
 }
 
-void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
+bool32 open_remote_slide(const char* hostname, i32 portno, const char* filename) {
+
+	bool32 success = false;
 
 	i64 start = get_clock();
 	i64 sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		printf("ERROR opening socket\n");
-		return;
+		return false;
 	}
 	// Set timeout interval
 	u32 timeout_ms = 2000;
@@ -272,7 +274,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 		printf("ERROR, no such host\n");
 		closesocket(sockfd);
 		sockfd = 0;
-		return;
+		return false;
 	}
 	struct sockaddr_in serv_addr = { .sin_family = AF_INET };
 	memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
@@ -281,7 +283,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 		printf("ERROR connecting\n");
 		closesocket(sockfd);
 		sockfd = 0;
-		return;
+		return false;
 	}
 	struct TLSContext* tls_context = tls_create_context(0, TLS_V13);
 	// the next line is needed only if you want to serialize the connection context or kTLS is used
@@ -345,6 +347,7 @@ void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 
 		unload_all_images();
 		add_image_from_tiff(tiff);
+		success = true;
 	} else {
 		tiff_destroy(&tiff);
 	}
@@ -358,4 +361,5 @@ void open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
 	printf("Open remote took %g seconds\n", seconds_elapsed);
+	return success;
 }
