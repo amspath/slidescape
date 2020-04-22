@@ -315,7 +315,7 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 
 
 		// If the SLIDES_DIR environment variable is set, load slides from there
-		char* filename_full_path = filename;
+		const char* filename_full_path = filename;
 		char path_buffer[2048];
 		if (filename) {
 			char* prefix = getenv("SLIDES_DIR");
@@ -332,34 +332,39 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 		if (parameter1 && strcmp(parameter1, "header") == 0) {
 			if (filename_full_path) {
 				tiff_t tiff = {0};
-				open_tiff_file(&tiff, filename_full_path);
-				push_buffer_t buffer = {0};
-				tiff_serialize(&tiff, &buffer);
+				if (open_tiff_file(&tiff, filename_full_path)) {
+					push_buffer_t buffer = {0};
+					tiff_serialize(&tiff, &buffer);
 
-				u64 send_size = ((u64)buffer.data - (u64)buffer.raw_memory) + buffer.used_size;
-				u8* send_buffer = buffer.raw_memory;
-				u8* send_buffer_pos = send_buffer;
-				u64 send_size_remaining = send_size;
+					u64 send_size = ((u64)buffer.data - (u64)buffer.raw_memory) + buffer.used_size;
+					u8* send_buffer = buffer.raw_memory;
+					u8* send_buffer_pos = send_buffer;
+					u64 send_size_remaining = send_size;
 
-				bool32 sent = false;
-				i32 bytes_written = 0;
-				i32 total_bytes_written = 0;
-				while (!sent) {
-					bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
-					total_bytes_written += bytes_written;
-					send_buffer_pos += bytes_written;
-					send_size_remaining -= bytes_written;
-					if (total_bytes_written >= send_size) {
-						sent = true;
-					} else {
-						send_pending(client_sock, context);
+					bool32 sent = false;
+					i32 bytes_written = 0;
+					i32 total_bytes_written = 0;
+					while (!sent) {
+						bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
+						total_bytes_written += bytes_written;
+						send_buffer_pos += bytes_written;
+						send_size_remaining -= bytes_written;
+						if (total_bytes_written >= send_size) {
+							sent = true;
+						} else {
+							send_pending(client_sock, context);
+						}
 					}
-				}
 //				tls_close_notify(context);
 //				send_pending(client_sock, context);
-				tiff_destroy(&tiff);
-				free(buffer.raw_memory);
-				return true;
+					tiff_destroy(&tiff);
+					free(buffer.raw_memory);
+					return true;
+				} else {
+					fprintf(stderr, "Couldn't open TIFF file %s\n", filename_full_path);
+					return false;
+				}
+
 
 			}
 		}

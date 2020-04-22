@@ -51,7 +51,7 @@ extern bool show_display_options_window;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 extern char remote_hostname[64] INIT(= "ectopic.tech");
-extern char remote_port[64] INIT(= "443");
+extern char remote_port[64] INIT(= "2000");
 extern char remote_filename[128] INIT(= "sample.tiff");
 
 
