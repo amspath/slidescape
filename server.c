@@ -312,13 +312,27 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 	if (!call || !call->command) return false;
 	if (strcmp(call->command, "slide") == 0) {
 		char* filename = call->filename;
+
+
+		// If the SLIDES_DIR environment variable is set, load slides from there
+		char* filename_full_path = filename;
+		char path_buffer[2048];
+		if (filename) {
+			char* prefix = getenv("SLIDES_DIR");
+			if (prefix) {
+				snprintf(path_buffer, sizeof(path_buffer), "%s/%s", prefix, filename);
+				filename_full_path = path_buffer;
+			}
+		}
+
+
 		char* parameter1 = call->parameter1;
 		char* parameter2 = call->parameter2;
 		// is the client requesting TIFF header and metadata?
 		if (parameter1 && strcmp(parameter1, "header") == 0) {
-			if (filename) {
+			if (filename_full_path) {
 				tiff_t tiff = {0};
-				open_tiff_file(&tiff, filename);
+				open_tiff_file(&tiff, filename_full_path);
 				push_buffer_t buffer = {0};
 				tiff_serialize(&tiff, &buffer);
 
@@ -354,19 +368,8 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 			i64 requested_offset = atoll(call->parameter1);
 			i64 requested_size = atoll(call->parameter2);
 
-			// If the SLIDES_DIR environment variable is set, load slides from there
-			char* path;
-			char path_buffer[2048];
-			char* prefix = getenv("SLIDES_DIR");
-			if (prefix) {
-				snprintf(path_buffer, sizeof(path_buffer), "%s/%s", prefix, filename);
-				path = path_buffer;
-			} else {
-				path = filename;
-			}
-
 			if (requested_offset >= 0 && requested_size > 0) {
-				FILE* fp = fopen64(path, "rb");
+				FILE* fp = fopen64(filename_full_path, "rb");
 				bool32 success = false;
 				if (fp) {
 					struct stat st;
