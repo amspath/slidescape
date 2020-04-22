@@ -355,8 +355,8 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 							send_pending(client_sock, context);
 						}
 					}
-//				tls_close_notify(context);
-//				send_pending(client_sock, context);
+//				    tls_close_notify(context);
+//				    send_pending(client_sock, context);
 					tiff_destroy(&tiff);
 					free(buffer.raw_memory);
 					return true;
