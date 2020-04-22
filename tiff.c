@@ -447,6 +447,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		// Note: we need async i/o in the worker threads...
 		// so for now we close and reopen the file using platform-native APIs to make that possible.
 		fclose(fp);
+		tiff->fp = NULL;
 
 #if !IS_SERVER
 		// TODO: make async I/O platform agnostic
