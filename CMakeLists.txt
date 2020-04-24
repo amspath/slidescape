@@ -61,6 +61,7 @@ add_executable(slideviewer
         jpeg_decoder.c
         tlsclient.c
         ${JPEG_SOURCE_FILES}
+        lz4.c
 )
 target_link_libraries(slideviewer user32 gdi32 winmm opengl32 ws2_32)
 endif(WIN32)
@@ -70,6 +71,7 @@ add_executable(tlsserver
         tiff.c
         jpeg_decoder.c
         ${JPEG_SOURCE_FILES}
+        lz4.c
 )
 target_compile_definitions(tlsserver PRIVATE IS_SERVER=1)
 

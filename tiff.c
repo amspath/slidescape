@@ -28,6 +28,8 @@
 #include <sys/stat.h>
 #include <stdlib.h>
 
+#include "lz4.h"
+
 #include "tiff.h"
 
 u32 get_tiff_field_size(u16 data_type) {
@@ -552,10 +554,10 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 	// block: terminator (end of stream marker)
 	total_size += sizeof(serial_block_t);
 
-	// Now we know the total size of our payload!
+	// Now we know the total size of our uncompressed payload (although if compressed we'll need to rewrite the headers)
 	char http_headers[4096];
 	snprintf(http_headers, sizeof(http_headers),
-	         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %llu\r\n\r\n",
+	         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %-16llu\r\n\r\n",
 	         total_size);
 	u64 http_headers_size = strlen(http_headers);
 
@@ -598,6 +600,27 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 
 //	printf("buffer has %llu used bytes, out of %llu capacity\n", buffer->used_size, buffer->capacity);
 
+	// Additional compression step
+#if 1
+	i32 compression_size_bound = LZ4_COMPRESSBOUND(total_size);
+	u8* compression_buffer = malloc(compression_size_bound);
+	ASSERT(buffer->used_size == total_size);
+	i32 compressed_size = LZ4_compress_default((char*)buffer->data, (char*)compression_buffer, buffer->used_size, compression_size_bound);
+	if (compressed_size > 0) {
+		// success! We can replace the buffer contents with the compressed data
+		buffer->used_size = 0;
+		push_block(buffer, SERIAL_BLOCK_LZ4_COMPRESSED_DATA, total_size, compressed_size);
+		push_size(buffer, compression_buffer, compressed_size);
+
+		// rewrite the HTTP headers at the start, the Content-Length now isn't correct
+		snprintf(http_headers, sizeof(http_headers),
+		         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %-16llu\r\n\r\n",
+		         total_size);
+		ASSERT(strlen(http_headers) == http_headers_size); // We should be able to assume this because of the padding spaces for the Content-length header field.
+		memcpy(buffer->raw_memory, http_headers, http_headers_size);
+	}
+#endif
+
 	return buffer;
 
 }
@@ -639,23 +662,46 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	u8* pos = buffer;
 	u8* data = NULL;
 	serial_block_t* block = NULL;
+	bool32 success = false;
+	u8* decompressed_buffer = NULL;
 
-#define POP_DATA(size) do {if (!(data = pop_from_buffer(&pos, (size), &bytes_left))) return false; } while(0)
-#define POP_BLOCK() do{if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false; } while(0)
+
+#define POP_DATA(size) do {if (!(data = pop_from_buffer(&pos, (size), &bytes_left))) goto failed; } while(0)
+#define POP_BLOCK() do{if (!(block = pop_block_from_buffer(&pos, &bytes_left))) goto failed; } while(0)
 
 
 	i64 content_offset = find_end_of_http_headers(buffer, buffer_size);
 	i64 content_length = buffer_size - content_offset;
 	POP_DATA(content_offset);
-//	if (!(data = pop_from_buffer(&pos, content_offset, &bytes_left))) return false;
 
 	// block: general TIFF header / meta
 	POP_BLOCK();
-//	if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false;
-	if (block->block_type != SERIAL_BLOCK_TIFF_HEADER_AND_META) return false;
+
+	if (block->block_type == SERIAL_BLOCK_LZ4_COMPRESSED_DATA) {
+		// compressed LZ4 stream
+		i64 compressed_size = block->length;
+		i64 decompressed_size = block->index; // used as general purpose field here..
+		POP_DATA(compressed_size);
+		decompressed_buffer = malloc(decompressed_size);
+		i32 bytes_decompressed = LZ4_decompress_safe((char*)data, (char*)decompressed_buffer, compressed_size, decompressed_size);
+		if (bytes_decompressed > 0) {
+			if (bytes_decompressed != decompressed_size) {
+				printf("LZ4_decompress_safe() decompressed %d bytes, however the expected size was %d\n", bytes_decompressed, decompressed_size);
+			} else {
+				// success, switch over to the uncompressed buffer!
+				pos = decompressed_buffer;
+				bytes_left = bytes_decompressed;
+				POP_BLOCK(); // now pointing to the uncompressed data stream
+			}
+
+		} else {
+			printf("LZ4_decompress_safe() failed (return value %d)\n", bytes_decompressed);
+		}
+	}
+
+	if (block->block_type != SERIAL_BLOCK_TIFF_HEADER_AND_META) goto failed;
 
 	POP_DATA(sizeof(tiff_serial_header_t));
-//	if (!pop_from_buffer(&pos, sizeof(tiff_serial_header_t), &bytes_left)) return false;
 	tiff_serial_header_t* serial_header = (tiff_serial_header_t*) data;
 	*tiff = (tiff_t) {
 			.filesize = serial_header->filesize,
@@ -672,13 +718,11 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 	// block: IFD's
 	POP_BLOCK();
-//	if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false;
-	if (block->block_type != SERIAL_BLOCK_TIFF_IFDS) return false;
+	if (block->block_type != SERIAL_BLOCK_TIFF_IFDS) goto failed;
 	u64 serial_ifds_block_size = tiff->ifd_count * sizeof(tiff_serial_ifd_t);
-	if (block->length != serial_ifds_block_size) return false;
+	if (block->length != serial_ifds_block_size) goto failed;
 
 	POP_DATA(serial_ifds_block_size);
-//	if (!pop_from_buffer(&pos, serial_ifds_block_size, &bytes_left)) return false;
 	tiff_serial_ifd_t* serial_ifds = (tiff_serial_ifd_t*) data;
 
 	// TODO: maybe not use a stretchy_buffer here?
@@ -716,16 +760,14 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	for (;;) {
 
 		POP_BLOCK();
-//		if (!(block = pop_block_from_buffer(&pos, &bytes_left))) return false;
 		if (block->length > 0) {
 			POP_DATA(block->length);
-//			if (!pop_from_buffer(&pos, block->length, &bytes_left)) return false;
 		}
 		u8* block_content = data;
 		// TODO: Need to think about this: are block index's (if present) always referring an IFD index, though? Or are there other use cases?
 		if (block->index >= tiff->ifd_count) {
 			printf("tiff_deserialize(): found block referencing a non-existent IFD\n");
-			return false;
+			goto failed;
 		}
 		tiff_ifd_t* referenced_ifd = tiff->ifds + block->index;
 
@@ -734,7 +776,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			case SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION: {
 				if (referenced_ifd->image_description) {
 					printf("tiff_deserialize(): IFD %u already has an image description\n", block->index);
-					return false;
+					goto failed;
 				}
 				referenced_ifd->image_description = malloc(block->length + 1);
 				memcpy(referenced_ifd->image_description, block_content, block->length);
@@ -744,7 +786,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			case SERIAL_BLOCK_TIFF_TILE_OFFSETS: {
 				if (referenced_ifd->tile_offsets) {
 					printf("tiff_deserialize(): IFD %u already has tile offsets\n", block->index);
-					return false;
+					goto failed;
 				}
 				referenced_ifd->tile_offsets = malloc(block->length);
 				memcpy(referenced_ifd->tile_offsets, block_content, block->length);
@@ -752,7 +794,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			case SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS: {
 				if (referenced_ifd->tile_byte_counts) {
 					printf("tiff_deserialize(): IFD %u already has tile byte counts\n", block->index);
-					return false;
+					goto failed;
 				}
 				referenced_ifd->tile_byte_counts = malloc(block->length);
 				memcpy(referenced_ifd->tile_byte_counts, block_content, block->length);
@@ -760,7 +802,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			case SERIAL_BLOCK_TIFF_JPEG_TABLES: {
 				if (referenced_ifd->jpeg_tables) {
 					printf("tiff_deserialize(): IFD %u already has JPEG tables\n", block->index);
-					return false;
+					goto failed;
 				}
 				referenced_ifd->jpeg_tables = malloc(block->length);
 				memcpy(referenced_ifd->jpeg_tables, block_content, block->length);
@@ -775,7 +817,12 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 		}
 	}
 	finished:
+	success = true;
 	printf("tiff_deserialize(): bytes_left = %lld, content length = %lld, buffer size = %llu\n", bytes_left, content_length, buffer_size);
+
+	failed: // if failed, do only cleanup
+	if (decompressed_buffer != NULL) free(decompressed_buffer);
+
 
 	// make some remaining assumptions
 	tiff->main_image = 	tiff->ifds + tiff->main_image_index;
@@ -790,7 +837,8 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 	// todo: flag empty tiles so they don't need to be loaded
 
-	return true;
+	return success;
+
 
 #undef POP_DATA
 #undef POP_BLOCK

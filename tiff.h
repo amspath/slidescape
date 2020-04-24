@@ -272,6 +272,7 @@ typedef struct {
 } tiff_serial_ifd_t;
 
 enum serial_block_type_enum {
+	SERIAL_BLOCK_LZ4_COMPRESSED_DATA = 4444,
 	SERIAL_BLOCK_TIFF_HEADER_AND_META = 9001, // using ridiculous numbers to make invalid file structure easier to detect
 	SERIAL_BLOCK_TIFF_IFDS = 9002,
 	SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION = 9003,
