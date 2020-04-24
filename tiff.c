@@ -88,6 +88,8 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_TILE_OFFSETS: result = "TileOffsets"; break;
 		case TIFF_TAG_TILE_BYTE_COUNTS: result = "TileByteCounts"; break;
 		case TIFF_TAG_JPEG_TABLES: result = "JPEGTables"; break;
+		case TIFF_TAG_YCBCRSUBSAMPLING: result = "YCbCrSubSampling"; break;
+		case TIFF_TAG_REFERENCEBLACKWHITE: result = "ReferenceBlackWhite"; break;
 		default: break;
 	}
 	return result;
@@ -271,6 +273,17 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_IMAGE_LENGTH: {
 				ifd->image_height = tag->data_u32;
 			} break;
+			case TIFF_TAG_BITS_PER_SAMPLE: {
+#if TIFF_VERBOSE
+				// TODO: Fix this for regular TIFF
+				if (!tag->data_is_offset) {
+					for (i32 i = 0; i < tag->data_count; ++i) {
+						u16 bits = *(u16*)&tag->data[i*2];
+						printf("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
+					}
+				}
+#endif
+			} break;
 			case TIFF_TAG_COMPRESSION: {
 				ifd->compression = tag->data_u16;
 			} break;
@@ -326,6 +339,18 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->jpeg_tables = tiff_read_field_undefined(tiff, tag);
 				ifd->jpeg_tables_length = tag->data_count;
 			} break;
+			case TIFF_TAG_YCBCRSUBSAMPLING: {
+				// https://www.awaresystems.be/imaging/tiff/tifftags/ycbcrsubsampling.html
+				ifd->chroma_subsampling_horizontal = *(u16*)&tag->data[0];
+				ifd->chroma_subsampling_vertical = *(u16*)&tag->data[2];
+#if TIFF_VERBOSE
+				printf("   YCbCrSubsampleHoriz = %d, YCbCrSubsampleVert = %d\n", ifd->chroma_subsampling_horizontal, ifd->chroma_subsampling_vertical);
+#endif
+
+			} break;
+			case TIFF_TAG_REFERENCEBLACKWHITE: {
+
+			} break;
 			default: {
 			} break;
 		}
@@ -334,6 +359,14 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	}
 
 	free(tags);
+
+	if (ifd->tile_width > 0) {
+		ifd->width_in_tiles = (ifd->image_width + ifd->tile_width - 1) / ifd->tile_width;
+	}
+	if (ifd->tile_height > 0) {
+		ifd->height_in_tiles = (ifd->image_height + ifd->tile_height - 1) / ifd->tile_height;
+	}
+
 
 	// Read the next IFD
 	if (fread(next_ifd_offset, tiff->bytesize_of_offsets, 1, tiff->fp) != 1) return false;
@@ -410,7 +443,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				u64 level_counter = 1; // begin at 1 because we are also counting level 0 (= the first IFD)
 				for (i32 i = 1; i < tiff->ifd_count; ++i) {
 					tiff_ifd_t* ifd = tiff->ifds + i;
-					if (ifd->is_level_image) ++level_counter;
+					if (ifd->is_level_image || ifd->image_description == NULL) ++level_counter;
 				}
 				tiff->level_count = level_counter;
 
@@ -422,10 +455,6 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					// TODO: allow other tile sizes?
 					ASSERT(level->tile_width == 512);
 					ASSERT(level->tile_height == 512);
-					ASSERT(level->image_width % level->tile_width == 0);
-					ASSERT(level->image_height % level->tile_height == 0);
-					level->width_in_tiles = level->image_width / level->tile_width;
-					level->height_in_tiles = level->image_height / level->tile_height;
 					level->um_per_pixel_x = um_per_pixel;
 					level->um_per_pixel_y = um_per_pixel;
 					level->x_tile_side_in_um = level->um_per_pixel_x * (float)level->tile_width;
@@ -679,8 +708,10 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 	if (block->block_type == SERIAL_BLOCK_LZ4_COMPRESSED_DATA) {
 		// compressed LZ4 stream
-		i64 compressed_size = block->length;
-		i64 decompressed_size = block->index; // used as general purpose field here..
+		i32 compressed_size = (i32)block->length;
+		i32 decompressed_size = (i32)block->index; // used as general purpose field here..
+		ASSERT(block->length < INT32_MAX);
+		ASSERT(block->index < INT32_MAX);
 		POP_DATA(compressed_size);
 		decompressed_buffer = malloc(decompressed_size);
 		i32 bytes_decompressed = LZ4_decompress_safe((char*)data, (char*)decompressed_buffer, compressed_size, decompressed_size);

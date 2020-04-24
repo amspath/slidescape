@@ -52,7 +52,9 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_TILE_LENGTH = 323,
 	TIFF_TAG_TILE_OFFSETS = 324,
 	TIFF_TAG_TILE_BYTE_COUNTS = 325,
-	TIFF_TAG_JPEG_TABLES = 347
+	TIFF_TAG_JPEG_TABLES = 347,
+	TIFF_TAG_YCBCRSUBSAMPLING = 530,
+	TIFF_TAG_REFERENCEBLACKWHITE = 532,
 };
 
 enum tiff_data_type_enum {
@@ -195,6 +197,8 @@ typedef struct tiff_ifd_t {
 	float x_tile_side_in_um;
 	float y_tile_side_in_um;
 	tiff_tile_t* tiles;
+	u16 chroma_subsampling_horizontal;
+	u16 chroma_subsampling_vertical;
 } tiff_ifd_t;
 
 

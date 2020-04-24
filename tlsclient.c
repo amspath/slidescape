@@ -363,3 +363,8 @@ bool32 open_remote_slide(const char* hostname, i32 portno, const char* filename)
 	printf("Open remote took %g seconds\n", seconds_elapsed);
 	return success;
 }
+
+bool32 get_remote_directory_listing() {
+	return false;
+}
+
