@@ -171,6 +171,7 @@ typedef struct tiff_load_tile_task_t {
 typedef struct tiff_tile_t {
 	u32 texture;
 	bool32 is_submitted_for_loading;
+	bool32 is_empty;
 } tiff_tile_t;
 
 typedef struct tiff_ifd_t {

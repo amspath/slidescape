@@ -451,16 +451,27 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				tiff->mpp_x = tiff->mpp_y = 0.25f;
 				float um_per_pixel = 0.25f;
 				for (i32 i = 0; i < tiff->level_count; ++i) {
-					tiff_ifd_t* level = tiff->level_images + i;
+					tiff_ifd_t* ifd = tiff->level_images + i;
 					// TODO: allow other tile sizes?
-					ASSERT(level->tile_width == 512);
-					ASSERT(level->tile_height == 512);
-					level->um_per_pixel_x = um_per_pixel;
-					level->um_per_pixel_y = um_per_pixel;
-					level->x_tile_side_in_um = level->um_per_pixel_x * (float)level->tile_width;
-					level->y_tile_side_in_um = level->um_per_pixel_y * (float)level->tile_height;
+					ASSERT(ifd->tile_width == 512);
+					ASSERT(ifd->tile_height == 512);
+					ifd->um_per_pixel_x = um_per_pixel;
+					ifd->um_per_pixel_y = um_per_pixel;
+					ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
+					ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
 #if !IS_SERVER
-					level->tiles = calloc(1, level->tile_count * sizeof(tiff_tile_t));
+					// TODO: fix code duplication with tiff_deserialize()
+					ifd->tiles = calloc(1, ifd->tile_count * sizeof(tiff_tile_t));
+					ASSERT(ifd->tile_byte_counts != NULL);
+					ASSERT(ifd->tile_offsets != NULL);
+					// mark the empty tiles
+					for (i32 j = 0; j < ifd->tile_count; ++j) {
+						tiff_tile_t* tile = ifd->tiles + j;
+						u64 tile_byte_count = ifd->tile_byte_counts[j];
+						if (tile_byte_count == 0) {
+							tile->is_empty = true;
+						}
+					}
 #endif
 					um_per_pixel *= 2.0f; // downsample, so at higher levels there are more pixels per micrometer
 				}
@@ -472,8 +483,6 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 
 		}
 		// TODO: better error handling than this crap
-		if (0) {
-		}
 		fail:;
 		// Note: we need async i/o in the worker threads...
 		// so for now we close and reopen the file using platform-native APIs to make that possible.
@@ -864,6 +873,17 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	for (i32 i = 0; i < tiff->level_count; ++i) {
 		tiff_ifd_t* ifd = tiff->level_images + i;
 		ifd->tiles = calloc(1, ifd->tile_count * sizeof(tiff_tile_t));
+
+		ASSERT(ifd->tile_byte_counts != NULL);
+		ASSERT(ifd->tile_offsets != NULL);
+		// mark the empty tiles
+		for (i32 j = 0; j < ifd->tile_count; ++j) {
+			tiff_tile_t* tile = ifd->tiles + j;
+			u64 tile_byte_count = ifd->tile_byte_counts[j];
+			if (tile_byte_count == 0) {
+				tile->is_empty = true;
+			}
+		}
 	}
 
 	// todo: flag empty tiles so they don't need to be loaded

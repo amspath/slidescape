@@ -80,6 +80,7 @@ void do_gui(i32 client_width, i32 client_height) {
 			{
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
+				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -139,8 +140,6 @@ void do_gui(i32 client_width, i32 client_height) {
 		ImGui::SliderFloat("black level", &black_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 		ImGui::SliderFloat("white level", &white_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 
-		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
-		ImGui::ColorEdit3("color", (float*)&clear_color); // Edit 3 floats representing a color
 
 //		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
 //			counter++;
@@ -159,22 +158,61 @@ void do_gui(i32 client_width, i32 client_height) {
 		ImGui::Begin("Display options", &show_display_options_window);
 
 
-
-		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
-		static int style_color = 1;
+		// General BeginCombo() API, you have full control over your selection data and display type.
+		// (your selection data could be an index, a pointer to the object, an id for the object, a flag stored in the object itself, etc.)
+		const char* items[] = { "Dark", "Light", "Classic" };
+		static i32 style_color = 0;
 		int old_style_color = style_color;
-		ImGui::RadioButton("Light", &style_color, 0); ImGui::SameLine();
-		ImGui::RadioButton("Dark", &style_color, 1);
+		static ImGuiComboFlags flags = 0;
+		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
+		if (ImGui::BeginCombo("##user_interface_colors_combo", items[style_color], flags)) // The second parameter is the label previewed before opening the combo.
+		{
+			for (int n = 0; n < IM_ARRAYSIZE(items); n++)
+			{
+				bool is_selected = (style_color == n);
+				if (ImGui::Selectable(items[n], is_selected))
+					style_color = n;
+				if (style_color)
+					ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
+			}
+			ImGui::EndCombo();
 
-		if (style_color != old_style_color) {
-			if (style_color == 0) {
-				ImGui::StyleColorsLight();
-			} else if (style_color == 1) {
-				ImGui::StyleColorsDark();
+			if (style_color != old_style_color) {
+				if (style_color == 0) {
+					ImGui::StyleColorsDark();
+				} else if (style_color == 1) {
+					ImGui::StyleColorsLight();
+				} else if (style_color == 2) {
+					ImGui::StyleColorsClassic();
+				}
 			}
 		}
 
+		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
+		ImGui::ColorEdit3("color", (float*)&clear_color); // Edit 3 floats representing a color
+
+//		ImGui::Text("\nGlobal Alpha");
+//		ImGui::SliderFloat("##Global Alpha", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.
+
+
+
 		ImGui::End();
+	}
+
+	if (show_slide_list_window) {
+
+		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Select case", &show_slide_list_window);
+
+		// stub
+
+
+		ImGui::End();
+
+
+
 	}
 
 

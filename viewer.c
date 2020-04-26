@@ -272,7 +272,7 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
 	// We need to check for this situation and chicken out if this is the case.
 	if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
-		//printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		// TODO: Make one single 'empty' tile texture and simply reuse that
 //		memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 		goto finish_up;
@@ -412,19 +412,16 @@ i32 tiff_load_tile(tiff_t* tiff, i32 level, i32 tile_x, i32 tile_y) {
 	tiff_ifd_t* tiff_level = tiff->level_images + level;
 	tiff_tile_t* tile = tiff_get_tile(tiff_level, tile_x, tile_y);
 
-	if (tile->texture != 0) {
-		// Yay, this tile is already loaded
+	if (tile->texture != 0 || tile->is_submitted_for_loading || tile->is_empty) {
+		// Yay, this tile is already loaded, being loaded, or empty (nothing to do)
 		return 0;
 	} else {
 		read_barrier;
-		if (!tile->is_submitted_for_loading) {
-			if (tiff_enqueue_load_tile(tiff, level, tile_x, tile_y)) {
-				tile->is_submitted_for_loading = true;
-			}
-		} else {
-			// already submitted for loading, there is nothing to do!
+		if (tiff_enqueue_load_tile(tiff, level, tile_x, tile_y)) {
+			tile->is_submitted_for_loading = true;
 		}
 		return 1;
+
 	}
 }
 
@@ -865,7 +862,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				if (current_level != old_level && used_mouse_to_zoom) {
 #if 1
 					center_offset_x = input->mouse_xy.x - client_width / 2;
-					center_offset_y = -(input->mouse_xy.y - client_height / 2);
+					center_offset_y = (input->mouse_xy.y - client_height / 2);
 
 					if (current_level < old_level) {
 						// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
@@ -980,7 +977,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 			if (is_dragging) {
 				camera_pos.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
-				camera_pos.y += current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
+				camera_pos.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
 			}
 
 
@@ -1002,8 +999,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		{
 			float l = -0.5f * r_minus_l;
 			float r = +0.5f * r_minus_l;
-			float b = -0.5f * t_minus_b;
-			float t = +0.5f * t_minus_b;
+			float b = +0.5f * t_minus_b;
+			float t = -0.5f * t_minus_b;
 			float n = 100.0f;
 			float f = -100.0f;
 			mat4x4_ortho(projection, l, r, b, t, n, f);
@@ -1263,7 +1260,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 			if (is_dragging) {
 				camera_pos.x -= current_drag_vector.x * wsi_level->um_per_pixel_x * panning_multiplier;
-				camera_pos.y += current_drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
+				camera_pos.y -= current_drag_vector.y * wsi_level->um_per_pixel_y * panning_multiplier;
 			}
 
 
