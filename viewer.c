@@ -1040,10 +1040,10 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
 			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
-				camera_pos.y -= level_image->um_per_pixel_y * panning_speed;
+				camera_pos.y += level_image->um_per_pixel_y * panning_speed;
 			}
 			if (input->keyboard.action_up.down || is_key_down(input, 'W')) {
-				camera_pos.y += level_image->um_per_pixel_y * panning_speed;
+				camera_pos.y -= level_image->um_per_pixel_y * panning_speed;
 			}
 			if (input->keyboard.action_right.down || is_key_down(input, 'D')) {
 				camera_pos.x += level_image->um_per_pixel_x * panning_speed;
@@ -1125,14 +1125,14 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 
 			if (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) {
-				// For remote slides, only send out request every so often, instead of every frame.
+				// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
 				// (to reduce load on the server)
 				static u32 intermittent = 0;
 				++intermittent;
 				u32 intermittent_interval = 1;
-				intermittent_interval = 5; // reduce load on remote server
+				intermittent_interval = 5; // reduce load on remote server; can be tweaked
 				if (intermittent % intermittent_interval == 0) {
-					i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 8);
+					i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 3); // can be tweaked
 
 					load_tile_task_batch_t* batch = calloc(1, sizeof(load_tile_task_batch_t));
 					batch->task_count = ATMOST(COUNT(batch->tile_tasks), max_tiles_to_load);
