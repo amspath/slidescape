@@ -122,27 +122,12 @@ typedef struct {
 #define TILE_PITCH (TILE_DIM * BYTES_PER_PIXEL)
 #define WSI_BLOCK_SIZE (TILE_DIM * TILE_DIM * BYTES_PER_PIXEL)
 
-typedef struct wsi_t wsi_t;
-typedef struct load_tile_task_t load_tile_task_t;
-struct load_tile_task_t {
-	wsi_t* wsi;
-	i32 level;
-	i32 tile_x;
-	i32 tile_y;
-};
-
-typedef struct {
-	u32 texture;
-	bool32 is_submitted_for_loading;
-} wsi_tile_t;
-
 typedef struct {
 	i64 width;
 	i64 height;
 	i64 width_in_tiles;
 	i64 height_in_tiles;
-	i32 num_tiles;
-	wsi_tile_t* tiles;
+	i32 tile_count;
 	float um_per_pixel_x;
 	float um_per_pixel_y;
 	float x_tile_side_in_um;
@@ -154,9 +139,7 @@ typedef struct {
 typedef struct wsi_t {
 	i64 width;
 	i64 height;
-	i64 width_pow2;
-	i64 height_pow2;
-	i32 num_levels;
+	i32 level_count;
 	openslide_t* osr;
 	const char* barcode;
 	float mpp_x;
@@ -171,6 +154,24 @@ typedef enum {
 	IMAGE_TYPE_WSI,
 } image_type_enum;
 
+
+typedef struct tile_t {
+	u32 texture;
+	bool32 is_submitted_for_loading;
+	bool32 is_empty;
+} tile_t;
+
+typedef struct {
+	tile_t* tiles;
+	u64 tile_count;
+	u32 width_in_tiles;
+	u32 height_in_tiles;
+	float x_tile_side_in_um;
+	float y_tile_side_in_um;
+	float um_per_pixel_x;
+	float um_per_pixel_y;
+} level_image_t;
+
 typedef struct {
 	image_type_enum type;
 	bool32 is_freshly_loaded; // TODO: remove or refactor, is this still needed?
@@ -181,7 +182,6 @@ typedef struct {
 			i32 width;
 			i32 height;
 			u8* pixels;
-			bool32 texture_initialized;
 			u32 texture;
 		} stbi;
 		struct {
@@ -191,17 +191,18 @@ typedef struct {
 			wsi_t wsi;
 		} wsi;
 	};
+	u64 level_count;
+	level_image_t* level_images;
+	float mpp_x;
+	float mpp_y;
 } image_t;
 
-#if 0
-typedef struct {
-	bool32 active;
-	i32 type;
-	v2i pos;
+typedef struct load_tile_task_t {
 	image_t* image;
-} entity_t;
-#endif
-
+	i32 level;
+	i32 tile_x;
+	i32 tile_y;
+} load_tile_task_t;
 
 
 // virtual keycodes
@@ -369,14 +370,16 @@ typedef struct {
 
 //  prototypes
 void gl_diagnostic(const char* prefix);
-void first(i32 client_width, i32 client_height);
+void init_viewer();
 void unload_all_images();
 void reset_scene(image_t* image);
 void add_image_from_tiff(tiff_t tiff);
-void on_file_dragged(char* filename);
+bool32 load_image_from_file(char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);
+
+void init_opengl_stuff();
 
 // globals
 #if defined(VIEWER_IMPL)
@@ -386,6 +389,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 #define INIT(...)
 #undef extern
 #endif
+
+// If enabled, always revert to OpenSlide when loading TIFF files.
+extern bool use_builtin_tiff_backend INIT(= true);
 
 extern bool is_dragging;
 

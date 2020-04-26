@@ -37,18 +37,6 @@ i32 basic_shader_u_black_level;
 i32 basic_shader_u_white_level;
 i32 basic_shader_u_background_color;
 
-u32 ui_shader;
-i32 ui_shader_u_texture;
-i32 ui_shader_u_projmtx;
-i32 ui_shader_attrib_pos;
-i32 ui_shader_attrib_uv;
-i32 ui_shader_attrib_color;
-u32 ui_vbo_handle;
-u32 ui_elements_handle;
-u32 ui_vao;
-
-
-static bool32 opengl_stuff_initialized;
 
 void init_draw_rect() {
 	ASSERT(!rect_initialized);
@@ -97,12 +85,8 @@ void draw_rect(u32 texture) {
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 }
 
-void init_opengl_stuff(i32 client_width, i32 client_height) {
-	ASSERT(!opengl_stuff_initialized);
-	opengl_stuff_initialized = true;
+void init_opengl_stuff() {
 
-	// TODO: don't depend on seperate shader text files in a release build
-	// TODO: look in the executable directory
 	basic_shader = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
 	basic_shader_u_projection_view_matrix = get_uniform(basic_shader, "projection_view_matrix");
 	basic_shader_u_model_matrix = get_uniform(basic_shader, "model_matrix");

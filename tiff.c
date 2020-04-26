@@ -459,20 +459,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					ifd->um_per_pixel_y = um_per_pixel;
 					ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
 					ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
-#if !IS_SERVER
-					// TODO: fix code duplication with tiff_deserialize()
-					ifd->tiles = calloc(1, ifd->tile_count * sizeof(tiff_tile_t));
-					ASSERT(ifd->tile_byte_counts != NULL);
-					ASSERT(ifd->tile_offsets != NULL);
-					// mark the empty tiles
-					for (i32 j = 0; j < ifd->tile_count; ++j) {
-						tiff_tile_t* tile = ifd->tiles + j;
-						u64 tile_byte_count = ifd->tile_byte_counts[j];
-						if (tile_byte_count == 0) {
-							tile->is_empty = true;
-						}
-					}
-#endif
+
 					um_per_pixel *= 2.0f; // downsample, so at higher levels there are more pixels per micrometer
 				}
 
@@ -570,6 +557,8 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 			.um_per_pixel_y = ifd->um_per_pixel_y,
 			.x_tile_side_in_um = ifd->x_tile_side_in_um,
 			.y_tile_side_in_um = ifd->y_tile_side_in_um,
+			.chroma_subsampling_horizontal = ifd->chroma_subsampling_horizontal,
+			.chroma_subsampling_vertical = ifd->chroma_subsampling_vertical,
 			.is_level_image = ifd->is_level_image,
 		};
 #if INCLUDE_IMAGE_DESCRIPTION
@@ -789,11 +778,13 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 				.um_per_pixel_y = serial_ifd->um_per_pixel_y,
 				.x_tile_side_in_um = serial_ifd->x_tile_side_in_um,
 				.y_tile_side_in_um = serial_ifd->y_tile_side_in_um,
+				.chroma_subsampling_horizontal = serial_ifd->chroma_subsampling_horizontal,
+				.chroma_subsampling_vertical = serial_ifd->chroma_subsampling_vertical,
 				.is_level_image = serial_ifd->is_level_image,
 		};
 	}
 
-	int pause = 5; // for placing a debug breakpoint
+	DUMMY_STATEMENT; // for placing a debug breakpoint
 
 	// The number of remaining blocks is unspecified.
 	// We are expecting at least byte offsets, tile offsets and JPEG tables for each IFD
@@ -869,23 +860,6 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	tiff->macro_image = tiff->ifds + tiff->macro_image_index; // TODO: might not exist??
 	tiff->level_images = tiff->ifds + tiff->level_image_index; // TODO: might not exist??
 
-	// allocate space for the tiles
-	for (i32 i = 0; i < tiff->level_count; ++i) {
-		tiff_ifd_t* ifd = tiff->level_images + i;
-		ifd->tiles = calloc(1, ifd->tile_count * sizeof(tiff_tile_t));
-
-		ASSERT(ifd->tile_byte_counts != NULL);
-		ASSERT(ifd->tile_offsets != NULL);
-		// mark the empty tiles
-		for (i32 j = 0; j < ifd->tile_count; ++j) {
-			tiff_tile_t* tile = ifd->tiles + j;
-			u64 tile_byte_count = ifd->tile_byte_counts[j];
-			if (tile_byte_count == 0) {
-				tile->is_empty = true;
-			}
-		}
-	}
-
 	// todo: flag empty tiles so they don't need to be loaded
 
 	return success;
@@ -906,20 +880,7 @@ void tiff_destroy(tiff_t* tiff) {
 		CloseHandle(tiff->win32_file_handle);
 	}
 #endif
-	for (i32 i = 0; i < tiff->level_count; ++i) {
-		tiff_ifd_t* level_image = tiff->level_images + i;
-		if (level_image->tiles) {
-#if !IS_SERVER
-			for (i32 j = 0; j < level_image->tile_count; ++j) {
-				tiff_tile_t* tile = level_image->tiles + j;
-				if (tile->texture != 0) {
-					glDeleteTextures(1, &tile->texture);
-				}
-			}
-#endif
-			free(level_image->tiles);
-		}
-	}
+
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
 		if (ifd->tile_offsets) free(ifd->tile_offsets);

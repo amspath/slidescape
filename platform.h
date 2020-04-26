@@ -82,8 +82,8 @@ bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);
 
 extern int g_argc;
 extern char** g_argv;
-void* thread_local_storage[MAX_THREAD_COUNT];
-
+extern void* thread_local_storage[MAX_THREAD_COUNT];
+extern work_queue_t work_queue;
 
 #undef INIT
 #undef extern

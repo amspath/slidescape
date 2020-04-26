@@ -141,6 +141,7 @@ void do_gui(i32 client_width, i32 client_height) {
 		ImGui::SliderFloat("white level", &white_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 
 
+
 //		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
 //			counter++;
 //		ImGui::SameLine();
@@ -190,6 +191,24 @@ void do_gui(i32 client_width, i32 client_height) {
 
 		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
 		ImGui::ColorEdit3("color", (float*)&clear_color); // Edit 3 floats representing a color
+
+		ImGui::Text("\nTIFF backend");
+//		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
+		const char* tiff_backends[] = { "Built-in", "OpenSlide" };
+		if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1-use_builtin_tiff_backend], flags)) // The second parameter is the label previewed before opening the combo.
+		{
+			if (ImGui::Selectable(tiff_backends[0], use_builtin_tiff_backend)) {
+				use_builtin_tiff_backend = true;
+			}
+			if (use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+			if (is_openslide_available) {
+				if (ImGui::Selectable(tiff_backends[1], !use_builtin_tiff_backend)) {
+					use_builtin_tiff_backend = false;
+				}
+				if (!use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
 
 //		ImGui::Text("\nGlobal Alpha");
 //		ImGui::SliderFloat("##Global Alpha", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.

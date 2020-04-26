@@ -318,7 +318,7 @@ void win32_open_file_dialog(HWND window) {
 
 	// Display the Open dialog box.
 	if (GetOpenFileName(&ofn)==TRUE) {
-		on_file_dragged(filename);
+		load_image_from_file(filename);
 	}
 }
 
@@ -336,7 +336,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			HDROP hdrop = (HDROP) wparam;
 			char buffer[2048];
 			if (DragQueryFile(hdrop, 0, buffer, sizeof(buffer))) {
-				on_file_dragged(buffer);
+				load_image_from_file(buffer);
 			}
 			DragFinish(hdrop);
 
@@ -1238,9 +1238,8 @@ int main(int argc, char** argv) {
 	is_program_running = true;
 
 	win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-	first(dimension.width, dimension.height);
 
-	win32_init_gui(main_window);
+	init_viewer();
 
 	i64 last_clock = get_clock();
 	while (is_program_running) {

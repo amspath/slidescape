@@ -161,18 +161,9 @@ enum tiff_photometric_interpretation_enum {
 };
 
 typedef struct tiff_t tiff_t;
-typedef struct tiff_load_tile_task_t {
-	tiff_t* tiff;
-	i32 level;
-	i32 tile_x;
-	i32 tile_y;
-} tiff_load_tile_task_t;
 
-typedef struct tiff_tile_t {
-	u32 texture;
-	bool32 is_submitted_for_loading;
-	bool32 is_empty;
-} tiff_tile_t;
+
+
 
 typedef struct tiff_ifd_t {
 	u64 ifd_index;
@@ -197,7 +188,6 @@ typedef struct tiff_ifd_t {
 	float um_per_pixel_y;
 	float x_tile_side_in_um;
 	float y_tile_side_in_um;
-	tiff_tile_t* tiles;
 	u16 chroma_subsampling_horizontal;
 	u16 chroma_subsampling_vertical;
 } tiff_ifd_t;
@@ -272,6 +262,8 @@ typedef struct {
 	float um_per_pixel_y;
 	float x_tile_side_in_um;
 	float y_tile_side_in_um;
+	u16 chroma_subsampling_horizontal;
+	u16 chroma_subsampling_vertical;
 	bool8 is_level_image;
 //	tiff_tile_t* tiles;
 } tiff_serial_ifd_t;
