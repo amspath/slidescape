@@ -202,6 +202,7 @@ typedef struct load_tile_task_t {
 	i32 level;
 	i32 tile_x;
 	i32 tile_y;
+	i32 priority;
 } load_tile_task_t;
 
 

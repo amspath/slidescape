@@ -652,6 +652,10 @@ typedef struct {
 layer_t basic_image_layer;
 
 
+int priority_cmp_func (const void* a, const void* b) {
+	return ( (*(load_tile_task_t*)b).priority - (*(load_tile_task_t*)a).priority );
+}
+
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t) {
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
@@ -945,20 +949,77 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				camera_pos.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
 			}
 
+		}
 
-			i32 max_tiles_to_load_at_once = 5;
-			i32 tiles_loaded = 0;
-			for (i32 tile_y = camera_tile_y1; tile_y < camera_tile_y2; ++tile_y) {
-				for (i32 tile_x = camera_tile_x1; tile_x < camera_tile_x2; ++tile_x) {
-					if (tiles_loaded >= max_tiles_to_load_at_once) {
-//						 TODO: remove this performance/stability hack after better async IO (multithreaded) is implemented.
-						break;
-					} else {
-						tiles_loaded += load_tile(image, current_level, tile_x, tile_y);
+		// Create a 'wishlist' of tiles to request
+		load_tile_task_t tile_wishlist[32];
+		i32 num_tasks_on_wishlist = 0;
+		float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
+
+		for (i32 level = image->level_count - 1; level >= current_level; --level) {
+			level_image_t *drawn_level = image->level_images + level;
+
+			i32 base_priority = level * 100; // highest priority for the most zoomed out levels
+
+			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, drawn_level->x_tile_side_in_um);
+			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, drawn_level->x_tile_side_in_um) + 1;
+			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, drawn_level->y_tile_side_in_um);
+			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, drawn_level->y_tile_side_in_um) + 1;
+
+			level_camera_tile_x1 = CLAMP(level_camera_tile_x1, 0, drawn_level->width_in_tiles);
+			level_camera_tile_x2 = CLAMP(level_camera_tile_x2, 0, drawn_level->width_in_tiles);
+			level_camera_tile_y1 = CLAMP(level_camera_tile_y1, 0, drawn_level->height_in_tiles);
+			level_camera_tile_y2 = CLAMP(level_camera_tile_y2, 0, drawn_level->height_in_tiles);
+
+
+			for (i32 tile_y = level_camera_tile_y1; tile_y < level_camera_tile_y2; ++tile_y) {
+				for (i32 tile_x = level_camera_tile_x1; tile_x < level_camera_tile_x2; ++tile_x) {
+
+
+
+					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
+					if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
+						continue; // nothing needs to be done with this tile
 					}
+
+					float tile_distance_from_center_of_screen_x =
+							(camera_pos.x - ((tile_x + 0.5f) * drawn_level->x_tile_side_in_um)) / drawn_level->um_per_pixel_x;
+					float tile_distance_from_center_of_screen_y =
+							(camera_pos.y - ((tile_y + 0.5f) * drawn_level->y_tile_side_in_um)) / drawn_level->um_per_pixel_y;
+					float tile_distance_from_center_of_screen =
+							sqrtf(SQUARE(tile_distance_from_center_of_screen_x) + SQUARE(tile_distance_from_center_of_screen_y));
+					tile_distance_from_center_of_screen /= screen_radius;
+					// prioritize tiles close to the center of the screen
+					float priority_bonus = (1.0f - tile_distance_from_center_of_screen) * 300.0f; // can be tweaked.
+					i32 tile_priority = base_priority + (i32)priority_bonus;
+
+
+
+					if (num_tasks_on_wishlist >= COUNT(tile_wishlist)) {
+						break;
+					}
+					tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
+							.image = image, .level = level, .tile_x = tile_x, .tile_y = tile_y,
+							.priority = tile_priority,
+					};
+
 				}
 			}
+
 		}
+//		printf("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
+
+		qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
+
+		i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 5);
+		for (i32 i = 0; i < max_tiles_to_load; ++i) {
+			load_tile_task_t* task_data = malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
+			*task_data = tile_wishlist[i];
+			if (add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data)) {
+				// success
+			}
+		}
+
 
 		mat4x4 projection = {};
 		{
