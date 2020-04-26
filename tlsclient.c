@@ -255,6 +255,27 @@ u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename
 
 }
 
+u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename, i64 *chunk_offsets, i64 *chunk_sizes,
+                          i32 batch_size, i32 *bytes_read, i32 thread_id) {
+	ASSERT(batch_size > 0);
+	char uri[4092] = {0};
+	char* pos = uri;
+	i32 bytes_printed = snprintf(uri, sizeof(uri), "/slide/%s", filename);
+	pos += bytes_printed;
+	i32 bytes_left = sizeof(uri) - bytes_printed;
+	for (i32 i = 0; i < batch_size; ++i) {
+		if (bytes_left <= 0) {
+			ASSERT(!"uri became too long");
+			return NULL;
+		}
+		bytes_printed += snprintf(pos, bytes_left, "/%lld/%lld", chunk_offsets[i], chunk_sizes[i]);
+		pos = uri + bytes_printed;
+		bytes_left = sizeof(uri) - bytes_printed;
+	}
+	u8* read_buffer = do_http_request(hostname, portno, uri, bytes_read, thread_id);
+	return read_buffer;
+}
+
 bool32 open_remote_slide(const char* hostname, i32 portno, const char* filename) {
 
 	bool32 success = false;

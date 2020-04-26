@@ -93,7 +93,7 @@ void reset_scene(image_t* image) {
 		case IMAGE_TYPE_STBI_COMPATIBLE: {
 
 		} break;
-		case IMAGE_TYPE_TIFF_GENERIC: {
+		case IMAGE_TYPE_TIFF: {
 			tiff_t* tiff = &image->tiff.tiff;
 			current_level = tiff->level_count-1;
 			zoom_position = (float)current_level;
@@ -133,6 +133,114 @@ tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	return result;
 }
 
+void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
+	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
+	load_tile_task_t* first_task = batch->tile_tasks;
+	image_t* image = first_task->image;
+
+	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
+	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
+	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
+	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
+
+
+	if (image->type == IMAGE_TYPE_TIFF) {
+		tiff_t* tiff = &image->tiff.tiff;
+
+		if (tiff->is_remote) {
+
+			i32 bytes_read = 0;
+			i32 batch_size = batch->task_count;
+			i64 chunk_offsets[TILE_LOAD_BATCH_MAX];
+			i64 chunk_sizes[TILE_LOAD_BATCH_MAX];
+			i64 total_read_size = 0;
+			for (i32 i = 0; i < batch_size; ++i) {
+				load_tile_task_t* task = batch->tile_tasks + i;
+
+				i32 level = task->level;
+				i32 tile_x = task->tile_x;
+				i32 tile_y = task->tile_y;
+				level_image_t* level_image = image->level_images + level;
+				tile_t* tile = task->tile;
+				i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
+				tiff_ifd_t* level_ifd = tiff->level_images + level;
+				u64 tile_offset = level_ifd->tile_offsets[tile_index];
+				u64 chunk_size = level_ifd->tile_byte_counts[tile_index];
+
+				// It doesn't make sense to ask for empty tiles, this should never happen!
+				ASSERT(tile_offset != 0);
+				ASSERT(chunk_size != 0);
+
+				chunk_offsets[i] = tile_offset;
+				chunk_sizes[i] = chunk_size;
+				total_read_size += chunk_size;
+			}
+
+			u8* read_buffer = download_remote_batch(tiff->location.hostname, tiff->location.portno,
+			                                        tiff->location.filename,
+			                                        chunk_offsets, chunk_sizes, batch_size, &bytes_read, logical_thread_index);
+			if (read_buffer && bytes_read > 0) {
+				i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
+				i64 content_length = bytes_read - content_offset;
+				u8* content = read_buffer + content_offset;
+
+				// TODO: better way to check the real content length?
+				if (content_length >= total_read_size) {
+
+					i64 chunk_offset_in_read_buffer = 0;
+					for (i32 i = 0; i < batch_size; ++i) {
+						u8* current_chunk = content + chunk_offset_in_read_buffer;
+						chunk_offset_in_read_buffer += chunk_sizes[i];
+
+						load_tile_task_t* task = batch->tile_tasks + i;
+						tiff_ifd_t* level_ifd = tiff->level_images + task->level;
+						u8* jpeg_tables = level_ifd->jpeg_tables;
+						u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
+
+						if (content[0] == 0xFF && content[1] == 0xD9) {
+							// JPEG stream is empty
+						} else {
+							if (decode_tile(jpeg_tables, jpeg_tables_length, current_chunk, chunk_sizes[i],
+							                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+//		                    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+							} else {
+								printf("[thread %d] failed to decode level %d, tile (%d, %d)\n", logical_thread_index, task->level, task->tile_x, task->tile_y);
+							}
+						}
+
+						// do the submitting directly on the GPU
+						glEnable(GL_TEXTURE_2D);
+						task->tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
+					}
+
+				}
+
+			}
+			free(read_buffer);
+		}
+
+	}
+	glFinish();
+
+
+
+
+
+//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
+/*
+	finish_up:
+	write_barrier;
+
+	// do the submitting directly on the GPU
+	glEnable(GL_TEXTURE_2D);
+	tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
+//	free(batch);
+	glFinish(); // Block thread execution until all OpenGL operations have finished.*/
+
+}
+
 void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
 	i32 level = task_data->level;
@@ -151,7 +259,7 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
 
 
-	if (image->type == IMAGE_TYPE_TIFF_GENERIC) {
+	if (image->type == IMAGE_TYPE_TIFF) {
 		tiff_t* tiff = &image->tiff.tiff;
 		tiff_ifd_t* level_ifd = tiff->level_images + level;
 
@@ -437,7 +545,7 @@ void unload_image(image_t* image) {
 				unload_texture(image->stbi.texture);
 				image->stbi.texture = 0;
 			}
-		} else if (image->type == IMAGE_TYPE_TIFF_GENERIC) {
+		} else if (image->type == IMAGE_TYPE_TIFF) {
 			tiff_destroy(&image->tiff.tiff);
 		}
 
@@ -478,7 +586,7 @@ void unload_all_images() {
 
 void add_image_from_tiff(tiff_t tiff) {
 	image_t new_image = {0};
-	new_image.type = IMAGE_TYPE_TIFF_GENERIC;
+	new_image.type = IMAGE_TYPE_TIFF;
 	new_image.tiff.tiff = tiff;
 	new_image.is_freshly_loaded = true;
 	new_image.mpp_x = tiff.mpp_x;
@@ -764,7 +872,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 		draw_rect(image->stbi.texture);
 	}
-	else if (image->type == IMAGE_TYPE_TIFF_GENERIC || image->type == IMAGE_TYPE_WSI) {
+	else if (image->type == IMAGE_TYPE_TIFF || image->type == IMAGE_TYPE_WSI) {
 
 		i32 old_level = current_level;
 		i32 center_offset_x = 0;
@@ -959,7 +1067,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		for (i32 level = image->level_count - 1; level >= current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 
-			i32 base_priority = level * 100; // highest priority for the most zoomed out levels
+			i32 base_priority = (image->level_count - level) * 100; // highest priority for the most zoomed in levels
 
 			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, drawn_level->x_tile_side_in_um);
 			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, drawn_level->x_tile_side_in_um) + 1;
@@ -977,7 +1085,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 
 
-					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
+					tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
 					if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
 						continue; // nothing needs to be done with this tile
 					}
@@ -999,7 +1107,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 						break;
 					}
 					tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
-							.image = image, .level = level, .tile_x = tile_x, .tile_y = tile_y,
+							.image = image, .tile = tile, .level = level, .tile_x = tile_x, .tile_y = tile_y,
 							.priority = tile_priority,
 					};
 
@@ -1011,14 +1119,51 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 		qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
 
-		i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 5);
-		for (i32 i = 0; i < max_tiles_to_load; ++i) {
-			load_tile_task_t* task_data = malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-			*task_data = tile_wishlist[i];
-			if (add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data)) {
-				// success
+
+
+		if (num_tasks_on_wishlist > 0){
+
+
+			if (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) {
+				// For remote slides, only send out request every so often, instead of every frame.
+				// (to reduce load on the server)
+				static u32 intermittent = 0;
+				++intermittent;
+				u32 intermittent_interval = 1;
+				intermittent_interval = 5; // reduce load on remote server
+				if (intermittent % intermittent_interval == 0) {
+					i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 8);
+
+					load_tile_task_batch_t* batch = calloc(1, sizeof(load_tile_task_batch_t));
+					batch->task_count = ATMOST(COUNT(batch->tile_tasks), max_tiles_to_load);
+					memcpy(batch->tile_tasks, tile_wishlist, batch->task_count * sizeof(load_tile_task_t));
+					if (add_work_queue_entry(&work_queue, tiff_load_tile_batch_func, batch)) {
+						// success
+						for (i32 i = 0; i < batch->task_count; ++i) {
+							load_tile_task_t* task = batch->tile_tasks + i;
+							task->tile->is_submitted_for_loading = true;
+						}
+					}
+				}
+			} else {
+				// regular file loading
+				i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 10);
+				for (i32 i = 0; i < max_tiles_to_load; ++i) {
+					load_tile_task_t *the_task = &tile_wishlist[i];
+					load_tile_task_t *task_data = malloc(
+							sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
+					*task_data = *the_task;
+					if (add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data)) {
+						// success
+						task_data->tile->is_submitted_for_loading = true;
+					}
+				}
 			}
+
+
 		}
+
+
 
 
 		mat4x4 projection = {};

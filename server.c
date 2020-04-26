@@ -272,11 +272,20 @@ http_request_t* parse_http_headers(const char* http_headers, u64 size) {
 	return result;
 }
 
+#define SLIDE_API_MAX_PAR 32
+
 typedef struct slide_api_call_t {
-	char* command;
-	char* filename;
-	char* parameter1;
-	char* parameter2;
+	i32 par_count;
+	union {
+		char* pars[SLIDE_API_MAX_PAR];
+		struct {
+			char *command;
+			char *filename;
+			char *parameter1;
+			char *parameter2;
+		};
+	};
+
 } slide_api_call_t;
 
 slide_api_call_t* interpret_api_request(http_request_t* request) {
@@ -293,15 +302,23 @@ slide_api_call_t* interpret_api_request(http_request_t* request) {
 			char* uri = (void*)result + sizeof(slide_api_call_t);
 			memcpy(uri, request->uri, uri_len);
 			char* root = uri;
+			i32 par_count = 0;
+			char* par = root;
+			do {
+				par = find_next_token(par, '/');
+				result->pars[par_count++] = par;
+			} while (par && (par_count < SLIDE_API_MAX_PAR));
+			strip_character(uri, '/');
+			result->par_count = par_count;
+/*
 			char* command = find_next_token(root, '/');
 			char* filename = find_next_token(command, '/');
 			char* parameter1 = find_next_token(filename, '/');
 			char* parameter2 = find_next_token(parameter1, '/');
-			strip_character(uri, '/');
 			result->command = command;
 			result->filename = filename;
 			result->parameter1 = parameter1;
-			result->parameter2 = parameter2;
+			result->parameter2 = parameter2;*/
 			return result;
 		} break;
 	}
@@ -369,80 +386,80 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 			}
 		}
 		else if (parameter1 && parameter2){
-			// try to interpret as numbers
-			i64 requested_offset = atoll(call->parameter1);
-			i64 requested_size = atoll(call->parameter2);
 
-			if (requested_offset >= 0 && requested_size > 0) {
+			// try to interpret as batch
+			i32 batch_size = (call->par_count - 2) / 2; // minus two, because 'command' and 'filename' are also counted
+			ASSERT(batch_size >= 1);
+			i64* chunk_offsets = alloca(batch_size * sizeof(i64));
+			i64* chunk_sizes = alloca(batch_size * sizeof(i64));
+			i64 total_size = 0;
+			for (i32 i = 0; i < batch_size; ++i) {
+				// try to interpret the parameters as numbers
+				chunk_offsets[i] = atoll(call->pars[2+2*i]);
+				chunk_sizes[i] = atoll(call->pars[3+2*i]);
+				total_size += chunk_sizes[i];
+			}
+
+
+			if (total_size > 0) {
+
 				FILE* fp = fopen64(filename_full_path, "rb");
 				bool32 success = false;
 				if (fp) {
 					struct stat st;
 					if (fstat(fileno(fp), &st) == 0) {
 						i64 filesize = st.st_size;
-						if ((requested_offset < filesize) && (requested_offset + requested_size < filesize)) {
-							//verify that it's at least a TIFF file we're trying to open
-							bool32 valid_tiff = true;
-							// read the 8-byte TIFF header / 16-byte BigTIFF header
-							tiff_header_t tiff_header = {};
-							if (fread(&tiff_header, sizeof(tiff_header_t) /*16*/, 1, fp) != 1) valid_tiff = false;
-							bool32 is_big_endian;
-							switch(tiff_header.byte_order_indication) {
-								case TIFF_BIG_ENDIAN: is_big_endian = true; break;
-								case TIFF_LITTLE_ENDIAN: is_big_endian = false; break;
-								default: valid_tiff = false;
+
+						char http_headers[4096];
+						snprintf(http_headers, sizeof(http_headers),
+						         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %llu\r\n\r\n",
+						         total_size);
+						u64 http_headers_size = strlen(http_headers);
+
+						u64 send_size = http_headers_size + total_size;
+						u8* send_buffer = malloc(send_size);
+						memcpy(send_buffer, http_headers, http_headers_size);
+						u8* data_buffer = send_buffer + http_headers_size;
+						u8* data_buffer_pos = data_buffer;
+
+						bool32 ok = true;
+
+						for (i32 i = 0; i < batch_size; ++i) {
+							// try to interpret the parameters as numbers
+							i64 requested_offset = chunk_offsets[i];
+							i64 requested_size = chunk_sizes[i];
+							fseeko64(fp, requested_offset, SEEK_SET);
+							ok = ok && (fread(data_buffer_pos, requested_size, 1, fp) == 1);
+							if (!ok) {
+								printf("Error reading from %s\n", filename);
 							}
-							u16 filetype = maybe_swap_16(tiff_header.filetype, is_big_endian);
-							bool32 is_bigtiff;
-							switch(filetype) {
-								case 0x2A: is_bigtiff = false; break;
-								case 0x2B: is_bigtiff = true; break;
-								default: valid_tiff = false;
+							data_buffer_pos += requested_size;
+						}
+
+						if (ok) {
+
+							u8* send_buffer_pos = send_buffer;
+							u64 send_size_remaining = send_size;
+
+							bool32 sent = false;
+							i32 bytes_written = 0;
+							i32 total_bytes_written = 0;
+							while (!sent) {
+								bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
+								total_bytes_written += bytes_written;
+								send_buffer_pos += bytes_written;
+								send_size_remaining -= bytes_written;
+								if (total_bytes_written >= send_size) {
+									sent = true;
+								} else {
+									send_pending(client_sock, context);
+								}
 							}
-
-							if (!valid_tiff) {
-								printf("Client tried to read from %s, which is not a TIFF file\n", filename);
-							} else  {
-								char http_headers[4096];
-								snprintf(http_headers, sizeof(http_headers),
-								         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %llu\r\n\r\n",
-								         requested_size);
-								u64 http_headers_size = strlen(http_headers);
-
-								u64 send_size = http_headers_size + requested_size;
-								u8* send_buffer = malloc(send_size);
-								memcpy(send_buffer, http_headers, http_headers_size);
-								u8* data_buffer = send_buffer + http_headers_size;
-
-								fseeko64(fp, requested_offset, SEEK_SET);
-								if (fread(data_buffer, requested_size, 1, fp) == 1) {
-
-									u8* send_buffer_pos = send_buffer;
-									u64 send_size_remaining = send_size;
-
-									bool32 sent = false;
-									i32 bytes_written = 0;
-									i32 total_bytes_written = 0;
-									while (!sent) {
-										bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
-										total_bytes_written += bytes_written;
-										send_buffer_pos += bytes_written;
-										send_size_remaining -= bytes_written;
-										if (total_bytes_written >= send_size) {
-											sent = true;
-										} else {
-											send_pending(client_sock, context);
-										}
-									}
 //									tls_close_notify(context);
 //									send_pending(client_sock, context);
 
-								}
-								free(send_buffer);
-							}
-
-
 						}
+						free(send_buffer);
 					}
 					fclose(fp);
 				}

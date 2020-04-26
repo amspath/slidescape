@@ -150,7 +150,7 @@ typedef struct wsi_t {
 
 typedef enum {
 	IMAGE_TYPE_STBI_COMPATIBLE,
-	IMAGE_TYPE_TIFF_GENERIC,
+	IMAGE_TYPE_TIFF,
 	IMAGE_TYPE_WSI,
 } image_type_enum;
 
@@ -199,11 +199,19 @@ typedef struct {
 
 typedef struct load_tile_task_t {
 	image_t* image;
+	tile_t* tile;
 	i32 level;
 	i32 tile_x;
 	i32 tile_y;
 	i32 priority;
 } load_tile_task_t;
+
+#define TILE_LOAD_BATCH_MAX 8
+
+typedef struct load_tile_task_batch_t {
+	i32 task_count;
+	load_tile_task_t tile_tasks[TILE_LOAD_BATCH_MAX];
+} load_tile_task_batch_t;
 
 
 // virtual keycodes
