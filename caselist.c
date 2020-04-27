@@ -26,12 +26,21 @@
 
 #define CASELIST_IMPL
 #include "caselist.h"
+#include "gui.h"
+#include "viewer.h"
 
 
-void reload_global_caselist(const char* filename) {
+void reset_global_caselist() {
 	global_selected_case = NULL;
 	caselist_destroy(&global_caselist);
 	memset(&global_caselist, 0, sizeof(caselist_t));
+	show_case_info_window = false;
+	show_slide_list_window = false;
+}
+
+void reload_global_caselist(const char* filename) {
+	unload_all_images();
+	reset_global_caselist();
 	load_caselist(&global_caselist, filename);
 }
 

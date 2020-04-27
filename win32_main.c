@@ -318,15 +318,9 @@ void win32_open_file_dialog(HWND window) {
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
 	// Display the Open dialog box.
+	mouse_show();
 	if (GetOpenFileName(&ofn)==TRUE) {
-
-		const char* ext = get_file_extension(filename);
-		if (strcasecmp(ext, "json") == 0) {
-			reload_global_caselist(filename);
-			show_slide_list_window = true;
-		} else {
-			load_image_from_file(filename);
-		}
+		load_generic_file(filename);
 	}
 }
 
@@ -344,7 +338,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			HDROP hdrop = (HDROP) wparam;
 			char buffer[2048];
 			if (DragQueryFile(hdrop, 0, buffer, sizeof(buffer))) {
-				load_image_from_file(buffer);
+				load_generic_file(buffer);
 			}
 			DragFinish(hdrop);
 
@@ -367,6 +361,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			is_program_running = false;
 		} break;
 
+#if 0
 		case WM_SETCURSOR: {
 			if (!result) { // only process this message if ImGui hasn't changed the cursor already
 				if (show_cursor) {
@@ -378,6 +373,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			}
 
 		} break;
+#endif
 
 		case WM_DESTROY: {
 			// TODO: Handle this as an error - recreate window?

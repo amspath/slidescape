@@ -55,6 +55,7 @@ void do_gui(i32 client_width, i32 client_height) {
 	{
 		static struct {
 			bool open_file;
+			bool close;
 			bool open_remote;
 			bool exit_program;
 			bool show_case_list;
@@ -66,6 +67,7 @@ void do_gui(i32 client_width, i32 client_height) {
 		if (ImGui::BeginMenu("File"))
 		{
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
+			if (ImGui::MenuItem("Close", NULL, &menu_items_clicked.close)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -94,11 +96,14 @@ void do_gui(i32 client_width, i32 client_height) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
 			win32_open_file_dialog(main_window);
+		} else if (menu_items_clicked.close) {
+			unload_all_images();
+			reset_global_caselist();
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (menu_items_clicked.show_case_list) {
-			show_slide_list_window = true;
 			reload_global_caselist("cases.json");
+			show_slide_list_window = true;
 		}
 		else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);

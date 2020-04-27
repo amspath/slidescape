@@ -44,6 +44,7 @@ typedef struct {
 	u32 prefix_len;
 } caselist_t;
 
+void reset_global_caselist();
 void reload_global_caselist(const char* filename);
 bool32 load_caselist(caselist_t* caselist, const char* json_filename);
 void caselist_destroy(caselist_t* caselist);

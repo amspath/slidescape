@@ -583,6 +583,7 @@ void unload_all_images() {
 		sb_free(loaded_images);
 		loaded_images = NULL;
 	}
+	mouse_show();
 }
 
 void add_image_from_tiff(tiff_t tiff) {
@@ -624,6 +625,18 @@ void add_image_from_tiff(tiff_t tiff) {
 	}
 	reset_scene(&new_image);
 	sb_push(loaded_images, new_image);
+}
+
+bool32 load_generic_file(const char* filename) {
+	const char* ext = get_file_extension(filename);
+	if (strcasecmp(ext, "json") == 0) {
+		reload_global_caselist(filename);
+		show_slide_list_window = true;
+	} else {
+		// assume it is an image file?
+		reset_global_caselist();
+		load_image_from_file(filename);
+	}
 }
 
 bool32 load_image_from_file(const char* filename) {
@@ -721,7 +734,7 @@ void init_viewer() {
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
 		char* filename = g_argv[1];
-		load_image_from_file(filename);
+		load_generic_file(filename);
 	}
 }
 
