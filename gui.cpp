@@ -33,6 +33,7 @@
 #include "openslide_api.h"
 #include "viewer.h"
 #include "tlsclient.h"
+#include "caselist.h"
 
 #define GUI_IMPL
 #include "gui.h"
@@ -56,6 +57,7 @@ void do_gui(i32 client_width, i32 client_height) {
 			bool open_file;
 			bool open_remote;
 			bool exit_program;
+			bool show_case_list;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -80,7 +82,7 @@ void do_gui(i32 client_width, i32 client_height) {
 			{
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
-				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
+				if (ImGui::MenuItem("Show case list", NULL, &menu_items_clicked.show_case_list)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -94,6 +96,9 @@ void do_gui(i32 client_width, i32 client_height) {
 			win32_open_file_dialog(main_window);
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
+		} else if (menu_items_clicked.show_case_list) {
+			show_slide_list_window = true;
+			reload_global_caselist("cases.json");
 		}
 		else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);
@@ -154,9 +159,9 @@ void do_gui(i32 client_width, i32 client_height) {
 	if (show_display_options_window) {
 
 		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Display options", &show_display_options_window);
+		ImGui::Begin("Options", &show_display_options_window);
 
 
 		// General BeginCombo() API, you have full control over your selection data and display type.
@@ -220,10 +225,41 @@ void do_gui(i32 client_width, i32 client_height) {
 
 	if (show_slide_list_window) {
 
-		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(20, 50), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(180, 530), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Select case", &show_slide_list_window);
+
+		// List box
+		const char* listbox_items_dummy[] = { "", };
+		const char** listbox_items = listbox_items_dummy;
+		i32 items_count = 0;
+
+		caselist_t* caselist = &global_caselist;
+		if (caselist->names) {
+			listbox_items = caselist->names;
+			items_count = caselist->num_cases_with_filenames;
+		}
+
+		static int listbox_item_current = -1;
+		float line_height = ImGui::GetTextLineHeightWithSpacing();
+		float list_height_in_items = ImGui::GetWindowHeight() / line_height;
+		if (ImGui::ListBox("##listbox\n(single select)", &listbox_item_current, listbox_items, items_count, (int)(list_height_in_items - 2.5f))) {
+			// value changed
+			if (caselist->cases) {
+				global_selected_case = caselist->cases + listbox_item_current;
+				show_case_info_window = true;
+				unload_all_images();
+				if (global_selected_case->filename) {
+
+					// If the SLIDES_DIR environment variable is set, load slides from there
+					char path_buffer[2048] = {};
+					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix, global_selected_case->filename);
+
+					load_image_from_file(path_buffer);
+				}
+			}
+		}
 
 		// stub
 
@@ -232,6 +268,29 @@ void do_gui(i32 client_width, i32 client_height) {
 
 
 
+	}
+
+	if (show_case_info_window) {
+		ImGui::SetNextWindowPos(ImVec2(20, 600), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Case info", &show_case_info_window);
+
+		if (global_selected_case != NULL) {
+			ImGui::TextWrapped("%s\n", global_selected_case->name);
+			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);
+			if (ImGui::TreeNode("Diagnosis and comment"))
+			{
+				ImGui::TextWrapped("%s\n", global_selected_case->diagnosis);
+				ImGui::TextWrapped("%s\n", global_selected_case->notes);
+				ImGui::TreePop();
+			}
+
+
+		}
+
+
+		ImGui::End();
 	}
 
 

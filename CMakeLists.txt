@@ -51,6 +51,7 @@ add_executable(slideviewer
         stringutils.c
         shader.c
         tiff.c
+        caselist.c
         imgui.cpp
         imgui_demo.cpp
         imgui_draw.cpp
@@ -62,6 +63,7 @@ add_executable(slideviewer
         tlsclient.c
         ${JPEG_SOURCE_FILES}
         lz4.c
+        parson.c
 )
 target_link_libraries(slideviewer user32 gdi32 winmm opengl32 ws2_32)
 endif(WIN32)

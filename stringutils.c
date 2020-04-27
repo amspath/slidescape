@@ -35,14 +35,13 @@ const char* one_past_last_slash(const char* s, i32 max) {
 	const char* pos = s + len - 1;
 	for (; pos >= s; --pos) {
 		char c = *pos;
-		if (c == '/')  {
-			pos += 1; // gone back one too far
+		if (c == '/' || c == '\\')  {
 			break;
 		} else {
 			++stripped_len;
 		}
 	}
-	const char* result = pos;
+	const char* result = pos + 1; // gone back one too far
 	ASSERT(stripped_len > 0 && stripped_len <= len);
 	return result;
 }

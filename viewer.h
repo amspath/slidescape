@@ -383,7 +383,7 @@ void init_viewer();
 void unload_all_images();
 void reset_scene(image_t* image);
 void add_image_from_tiff(tiff_t tiff);
-bool32 load_image_from_file(char* filename);
+bool32 load_image_from_file(const char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
 void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t);

@@ -44,6 +44,7 @@
 #include "jpeg_decoder.h"
 #include "tlsclient.h"
 #include "gui.h"
+#include "caselist.h"
 
 void gl_diagnostic(const char* prefix) {
 	GLenum err = glGetError();
@@ -625,7 +626,7 @@ void add_image_from_tiff(tiff_t tiff) {
 	sb_push(loaded_images, new_image);
 }
 
-bool32 load_image_from_file(char* filename) {
+bool32 load_image_from_file(const char* filename) {
 	unload_all_images();
 
 	bool32 result = false;

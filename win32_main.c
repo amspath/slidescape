@@ -42,12 +42,13 @@
 
 
 #include "platform.h"
-
+#include "stringutils.h"
 
 #include "intrinsics.h"
 
 #include "gui.h"
 #include "tlsclient.h"
+#include "caselist.h"
 
 
 // If both dedicated GPU and integrated graphics are available -> choose dedicated
@@ -318,7 +319,14 @@ void win32_open_file_dialog(HWND window) {
 
 	// Display the Open dialog box.
 	if (GetOpenFileName(&ofn)==TRUE) {
-		load_image_from_file(filename);
+
+		const char* ext = get_file_extension(filename);
+		if (strcasecmp(ext, "json") == 0) {
+			reload_global_caselist(filename);
+			show_slide_list_window = true;
+		} else {
+			load_image_from_file(filename);
+		}
 	}
 }
 

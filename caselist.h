@@ -18,23 +18,38 @@
 
 #pragma once
 #include "common.h"
-#include <windows.h>
+#include "parson.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 
-void win32_init_gui(HWND hwnd);
-void do_gui(i32 client_width, i32 client_height);
+typedef struct {
+	const char *name;
+	const char *filename;
+	const char *clinical_context;
+	const char *diagnosis;
+	const char *notes;
+} case_t;
 
-// from imgui_impl_win32.cpp
-LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+typedef struct {
+	u32 case_count;
+	u32 num_cases_with_filenames;
+	case_t *cases;
+	const char** names;
+	JSON_Value* json_root_value;
+	bool32 is_remote;
+	char folder_prefix[512]; // working directory
+	u32 prefix_len;
+} caselist_t;
 
-
+void reload_global_caselist(const char* filename);
+bool32 load_caselist(caselist_t* caselist, const char* json_filename);
+void caselist_destroy(caselist_t* caselist);
 
 // globals
-#if defined(GUI_IMPL)
+#if defined(CASELIST_IMPL)
 #define INIT(...) __VA_ARGS__
 #define extern
 #else
@@ -42,24 +57,15 @@ LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPAR
 #undef extern
 #endif
 
-extern bool is_fullscreen;
-extern bool is_program_running;
-extern bool show_demo_window;
-extern bool show_image_adjustments_window INIT(= false);
-extern bool show_open_remote_window;
-extern bool show_slide_list_window;
-extern bool show_case_info_window;
-extern bool show_display_options_window;
-extern bool gui_want_capture_mouse;
-extern bool gui_want_capture_keyboard;
-extern char remote_hostname[64] INIT(= "localhost");
-extern char remote_port[64] INIT(= "2000");
-extern char remote_filename[128] INIT(= "sample.tiff");
-
+extern caselist_t global_caselist;
+extern case_t* global_selected_case;
 
 #undef INIT
 #undef extern
 
+
+
 #ifdef __cplusplus
-};
+}
 #endif
+
