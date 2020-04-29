@@ -77,6 +77,11 @@ enum tiff_data_type_enum {
 };
 
 #pragma pack(push, 1)
+
+typedef struct {
+	i32 a, b;
+} tiff_rational_t;
+
 typedef struct {
 	u16 byte_order_indication; // either 0x4949 for little-endian or 0x4D4D for big-endian
 	u16 filetype; // must be 0x002A for standard TIFF or 0x002B for BigTIFF
@@ -190,6 +195,8 @@ typedef struct tiff_ifd_t {
 	float y_tile_side_in_um;
 	u16 chroma_subsampling_horizontal;
 	u16 chroma_subsampling_vertical;
+	u64 reference_black_white_rational_count;
+	tiff_rational_t* reference_black_white;
 } tiff_ifd_t;
 
 

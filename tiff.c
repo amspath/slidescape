@@ -182,6 +182,29 @@ u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 	return integers;
 }
 
+
+tiff_rational_t* tiff_read_field_rationals(tiff_t* tiff, tiff_tag_t* tag) {
+	tiff_rational_t* rationals = calloc(ATLEAST(8, tag->data_count * sizeof(tiff_rational_t)), 1);
+
+	if (tag->data_is_offset) {
+		file_read_at_offset(rationals, tiff->fp, tag->offset, tag->data_count * sizeof(tiff_rational_t));
+	} else {
+		// data is inlined
+		rationals = malloc(sizeof(u64));
+		rationals[0] = *(tiff_rational_t*) tag->data_u64;
+	}
+
+	if (tiff->is_big_endian) {
+		for (i32 i = 0; i < tag->data_count; ++i) {
+			tiff_rational_t* rational = rationals + i;
+			rational->a = bswap_32(rational->a);
+			rational->b = bswap_32(rational->b);
+		}
+	}
+
+	return rationals;
+}
+
 bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	bool32 is_bigtiff = tiff->is_bigtiff;
 	bool32 is_big_endian = tiff->is_big_endian;
@@ -349,7 +372,18 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 			} break;
 			case TIFF_TAG_REFERENCEBLACKWHITE: {
-
+				ifd->reference_black_white_rational_count = tag->data_count;
+				ifd->reference_black_white = tiff_read_field_rationals(tiff, tag); //TODO: free, add to serialized format
+				if (ifd->reference_black_white == NULL) {
+					free(tags);
+					return false; // failed
+				}
+#if TIFF_VERBOSE
+				for (i32 i = 0; i < tag->data_count; ++i) {
+					tiff_rational_t* reference_black_white = ifd->reference_black_white + i;
+					printf("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
+				}
+#endif
 			} break;
 			default: {
 			} break;
@@ -887,8 +921,7 @@ void tiff_destroy(tiff_t* tiff) {
 		if (ifd->tile_byte_counts) free(ifd->tile_byte_counts);
 		if (ifd->image_description) free(ifd->image_description);
 		if (ifd->jpeg_tables) free(ifd->jpeg_tables);
-
-
+		if (ifd->reference_black_white) free(ifd->reference_black_white);
 	}
 	// TODO: fix this, choose either stretchy_buffer or regular malloc, not both...
 	if (tiff->is_remote) {
