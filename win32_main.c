@@ -414,6 +414,9 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 						curr_input->drag_vector.y += raw->data.mouse.lLastY;
 						curr_input->dmouse_xy.y += raw->data.mouse.lLastY;
 //						printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
+					} else {
+						// not dragging
+						mouse_show();
 					}
 				}
 

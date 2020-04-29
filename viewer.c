@@ -90,22 +90,10 @@ v2i rect2i_center_point(rect2i* rect) {
 #define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
 
 void reset_scene(image_t* image) {
-	switch(image->type) {
-		case IMAGE_TYPE_STBI_COMPATIBLE: {
-
-		} break;
-		case IMAGE_TYPE_TIFF: {
-			tiff_t* tiff = &image->tiff.tiff;
-			current_level = tiff->level_count-1;
-			zoom_position = (float)current_level;
-
-			camera_pos.x = (tiff->main_image->image_width * tiff->mpp_x) / 2.0f;
-			camera_pos.y = (tiff->main_image->image_height * tiff->mpp_y) / 2.0f;
-		} break;
-		case IMAGE_TYPE_WSI: {
-
-		} break;
-	}
+	current_level = ATLEAST(0, image->level_count-2);
+	zoom_position = (float)current_level;
+	camera_pos.x = image->width_in_um / 2.0f;
+	camera_pos.y = image->height_in_um / 2.0f;
 
 }
 
@@ -251,6 +239,10 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 	level_image_t* level_image = image->level_images + level;
 	tile_t* tile = get_tile(level_image, tile_x, tile_y);
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
+	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
+	float tile_world_pos_y_end = (tile_y + 1) * level_image->y_tile_side_in_um;
+	float tile_x_excess = tile_world_pos_x_end - image->width_in_um;
+	float tile_y_excess = tile_world_pos_y_end - image->height_in_um;
 
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
@@ -352,6 +344,27 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 			}
 
 		}
+
+		// Trim the tile (replace with transparent color) if it extends beyond the image size
+		// TODO: anti-alias edge?
+		i32 new_tile_height = TILE_DIM;
+		i32 pitch = TILE_DIM * BYTES_PER_PIXEL;
+		if (tile_y_excess > 0) {
+			i32 excess_rows = (int)(tile_y_excess / level_image->y_tile_side_in_um * TILE_DIM);
+			ASSERT(excess_rows >= 0);
+			new_tile_height = TILE_DIM - excess_rows;
+			memset(temp_memory + (new_tile_height * pitch), 0, excess_rows * pitch);
+		}
+		if (tile_x_excess > 0) {
+			i32 excess_pixels = (int)(tile_x_excess / level_image->x_tile_side_in_um * TILE_DIM);
+			ASSERT(excess_pixels >= 0);
+			i32 new_tile_width = TILE_DIM - excess_pixels;
+			for (i32 row = 0; row < new_tile_height; ++row) {
+				u8* write_pos = temp_memory + (row * pitch) + (new_tile_width * BYTES_PER_PIXEL);
+				memset(write_pos, 0, excess_pixels * BYTES_PER_PIXEL);
+			}
+		}
+
 	} else if (image->type == IMAGE_TYPE_WSI) {
 		wsi_t* wsi = &image->wsi.wsi;
 		i64 x = (tile_x * TILE_DIM) << level;
@@ -511,11 +524,6 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			}
 		}
 
-		current_level = wsi->level_count - 1;
-		zoom_position = (float)current_level;
-
-		camera_pos.x = (wsi->width * wsi->mpp_x) / 2.0f;
-		camera_pos.y = (wsi->height * wsi->mpp_y) / 2.0f;
 
 	}
 
@@ -594,6 +602,10 @@ void add_image_from_tiff(tiff_t tiff) {
 	new_image.mpp_x = tiff.mpp_x;
 	new_image.mpp_y = tiff.mpp_y;
 	ASSERT(tiff.main_image);
+	new_image.width_in_pixels = tiff.main_image->image_width;
+	new_image.width_in_um = tiff.main_image->image_width * tiff.mpp_x;
+	new_image.height_in_pixels = tiff.main_image->image_height;
+	new_image.height_in_um = tiff.main_image->image_height * tiff.mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
 	if (tiff.level_count > 0 && tiff.main_image->tile_width) {
 
@@ -697,6 +709,10 @@ bool32 load_image_from_file(const char* filename) {
 			image.is_freshly_loaded = true;
 			image.mpp_x = wsi->mpp_x;
 			image.mpp_y = wsi->mpp_y;
+			image.width_in_pixels = wsi->width;
+			image.width_in_um = wsi->width * wsi->mpp_x;
+			image.height_in_pixels = wsi->height;
+			image.height_in_um = wsi->height * wsi->mpp_y;
 			if (wsi->level_count > 0 & wsi->levels[0].x_tile_side_in_um > 0) {
 
 				image.level_count = wsi->level_count;
@@ -717,6 +733,7 @@ bool32 load_image_from_file(const char* filename) {
 				}
 			}
 
+			reset_scene(&image);
 			sb_push(loaded_images, image);
 			result = true;
 
@@ -814,8 +831,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			input->drag_vector = (v2i){};
 			mouse_hide();
 		} else {
-			mouse_show();
 			if (input->mouse_buttons[0].transition_count != 0) {
+				mouse_show();
 				is_dragging = false;
 //			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 			}
@@ -1055,15 +1072,19 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
 			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
 				camera_pos.y += level_image->um_per_pixel_y * panning_speed;
+				mouse_hide();
 			}
 			if (input->keyboard.action_up.down || is_key_down(input, 'W')) {
 				camera_pos.y -= level_image->um_per_pixel_y * panning_speed;
+				mouse_hide();
 			}
 			if (input->keyboard.action_right.down || is_key_down(input, 'D')) {
 				camera_pos.x += level_image->um_per_pixel_x * panning_speed;
+				mouse_hide();
 			}
 			if (input->keyboard.action_left.down || is_key_down(input, 'A')) {
 				camera_pos.x -= level_image->um_per_pixel_x * panning_speed;
+				mouse_hide();
 			}
 
 			if (is_dragging) {

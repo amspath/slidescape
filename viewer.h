@@ -196,6 +196,10 @@ typedef struct {
 	level_image_t* level_images;
 	float mpp_x;
 	float mpp_y;
+	i64 width_in_pixels;
+	i64 width_in_um;
+	i64 height_in_pixels;
+	i64 height_in_um;
 } image_t;
 
 typedef struct load_tile_task_t {
