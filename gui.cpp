@@ -39,9 +39,10 @@
 #include "gui.h"
 
 
-void do_gui(i32 client_width, i32 client_height) {
+void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 	ImGuiIO& io = ImGui::GetIO();
 
+	// TODO: check if this is stale??
 	gui_want_capture_mouse = io.WantCaptureMouse;
 	gui_want_capture_keyboard = io.WantCaptureKeyboard;
 
@@ -123,7 +124,7 @@ void do_gui(i32 client_width, i32 client_height) {
 		ImGui::InputText("Port", remote_port, sizeof(remote_port));
 		ImGui::InputText("Filename", remote_filename, sizeof(remote_filename));
 		if (ImGui::Button("Connect")) {
-			if (open_remote_slide(remote_hostname, atoll(remote_port), remote_filename)) {
+			if (open_remote_slide(app_state, remote_hostname, atoll(remote_port), remote_filename)) {
 				show_open_remote_window = false; // success!
 			}
 		}
@@ -200,7 +201,7 @@ void do_gui(i32 client_width, i32 client_height) {
 		}
 
 		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
-		ImGui::ColorEdit3("color", (float*)&clear_color); // Edit 3 floats representing a color
+		ImGui::ColorEdit3("color", (float*)&app_state->clear_color); // Edit 3 floats representing a color
 
 		ImGui::Text("\nTIFF backend");
 //		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
@@ -261,7 +262,7 @@ void do_gui(i32 client_width, i32 client_height) {
 					char path_buffer[2048] = {};
 					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix, global_selected_case->filename);
 
-					load_image_from_file(path_buffer);
+					load_image_from_file(app_state, path_buffer);
 				}
 			}
 		}

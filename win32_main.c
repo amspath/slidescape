@@ -27,6 +27,7 @@
 #define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
 
+// TODO: fix circular reference
 #include "viewer.h"
 
 #include <stdio.h>
@@ -263,6 +264,8 @@ void win32_init_input() {
 
 
 	win32_init_xinput();
+
+	// Flip-flop
 	old_input = &inputs[0];
 	curr_input = &inputs[1];
 }
@@ -325,7 +328,7 @@ void win32_open_file_dialog(HWND window) {
 	// Display the Open dialog box.
 	mouse_show();
 	if (GetOpenFileName(&ofn)==TRUE) {
-		load_generic_file(filename);
+		load_generic_file(&global_app_state, filename);
 	}
 }
 
@@ -343,7 +346,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			HDROP hdrop = (HDROP) wparam;
 			char buffer[2048];
 			if (DragQueryFile(hdrop, 0, buffer, sizeof(buffer))) {
-				load_generic_file(buffer);
+				load_generic_file(&global_app_state, buffer);
 			}
 			DragFinish(hdrop);
 
@@ -913,7 +916,6 @@ void win32_init_opengl(HWND window) {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
 			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
-			WGL_CONTEXT_FLAGS_ARB, 0/*WGL_CONTEXT_DEBUG_BIT_ARB*/, // Ask for a debug context
 			0
 	};
 #endif
@@ -1210,6 +1212,7 @@ void win32_init_main_window() {
 		panic();
 	};
 
+	// TODO: make this configurable
 	int desired_width = 1600;
 	int desired_height = 900;
 
@@ -1268,7 +1271,15 @@ int main(int argc, char** argv) {
 
 	win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 
-	init_viewer();
+	init_opengl_stuff();
+	win32_init_gui(main_window);
+
+	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
+	// TODO: give the viewer the option to do this without referring to the g_argc which it does not need to know!
+	if (g_argc > 1) {
+		char* filename = g_argv[1];
+		load_generic_file(&global_app_state, filename);
+	}
 
 	i64 last_clock = get_clock();
 	while (is_program_running) {
@@ -1280,9 +1291,9 @@ int main(int argc, char** argv) {
 		win32_process_input(main_window);
 
 		dimension = win32_get_window_dimension(main_window);
-		viewer_update_and_render(curr_input, dimension.width, dimension.height, delta_t);
+		viewer_update_and_render(&global_app_state, curr_input, dimension.width, dimension.height, delta_t);
 
-		do_gui(dimension.width, dimension.height);
+		do_gui(&global_app_state, dimension.width, dimension.height);
 
 //		glFinish();
 		SwapBuffers(wglGetCurrentDC());

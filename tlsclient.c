@@ -276,7 +276,7 @@ u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename
 	return read_buffer;
 }
 
-bool32 open_remote_slide(const char* hostname, i32 portno, const char* filename) {
+bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename) {
 
 	bool32 success = false;
 
@@ -367,7 +367,7 @@ bool32 open_remote_slide(const char* hostname, i32 portno, const char* filename)
 		tiff.location = (network_location_t){ .hostname = hostname, .portno = portno, .filename = filename };
 
 		unload_all_images();
-		add_image_from_tiff(tiff);
+		add_image_from_tiff(&app_state->scene, tiff);
 		success = true;
 	} else {
 		tiff_destroy(&tiff);

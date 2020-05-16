@@ -46,13 +46,6 @@
 #include "gui.h"
 #include "caselist.h"
 
-void gl_diagnostic(const char* prefix) {
-	GLenum err = glGetError();
-	if (err != GL_NO_ERROR) {
-		printf("%s: failed with error code 0x%x\n", prefix, err);
-	}
-}
-
 
 // TODO: remove? do we still need this>
 rect2i clip_rect(rect2i* first, rect2i* second) {
@@ -89,11 +82,11 @@ v2i rect2i_center_point(rect2i* rect) {
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
 #define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
 
-void reset_scene(image_t* image) {
+void reset_scene(image_t *image, scene_t *scene) {
 	current_level = ATLEAST(0, image->level_count-2);
-	zoom_position = (float)current_level;
-	camera_pos.x = image->width_in_um / 2.0f;
-	camera_pos.y = image->height_in_um / 2.0f;
+	scene->zoom_position = (float)current_level;
+	scene->camera.x = image->width_in_um / 2.0f;
+	scene->camera.y = image->height_in_um / 2.0f;
 
 }
 
@@ -561,14 +554,14 @@ void unload_image(image_t* image) {
 	if (image) {
 		if (image->type == IMAGE_TYPE_WSI) {
 			unload_wsi(&image->wsi.wsi);
-		} else if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
-			if (image->stbi.pixels) {
-				stbi_image_free(image->stbi.pixels);
-				image->stbi.pixels = NULL;
+		} else if (image->type == IMAGE_TYPE_SIMPLE) {
+			if (image->simple.pixels) {
+				stbi_image_free(image->simple.pixels);
+				image->simple.pixels = NULL;
 			}
-			if (image->stbi.texture != 0) {
-				unload_texture(image->stbi.texture);
-				image->stbi.texture = 0;
+			if (image->simple.texture != 0) {
+				unload_texture(image->simple.texture);
+				image->simple.texture = 0;
 			}
 		} else if (image->type == IMAGE_TYPE_TIFF) {
 			tiff_destroy(&image->tiff.tiff);
@@ -610,7 +603,7 @@ void unload_all_images() {
 	mouse_show();
 }
 
-void add_image_from_tiff(tiff_t tiff) {
+void add_image_from_tiff(scene_t *scene, tiff_t tiff) {
 	image_t new_image = {0};
 	new_image.type = IMAGE_TYPE_TIFF;
 	new_image.tiff.tiff = tiff;
@@ -651,11 +644,11 @@ void add_image_from_tiff(tiff_t tiff) {
 			}
 		}
 	}
-	reset_scene(&new_image);
+	reset_scene(&new_image, scene);
 	sb_push(loaded_images, new_image);
 }
 
-bool32 load_generic_file(const char* filename) {
+bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	const char* ext = get_file_extension(filename);
 	if (strcasecmp(ext, "json") == 0) {
 		reload_global_caselist(filename);
@@ -663,11 +656,11 @@ bool32 load_generic_file(const char* filename) {
 	} else {
 		// assume it is an image file?
 		reset_global_caselist();
-		load_image_from_file(filename);
+		load_image_from_file(app_state, filename);
 	}
 }
 
-bool32 load_image_from_file(const char* filename) {
+bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 	unload_all_images();
 
 	bool32 result = false;
@@ -676,21 +669,21 @@ bool32 load_image_from_file(const char* filename) {
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0) {
 		// Load using stb_image
 		image_t image = {0};
-		image.type = IMAGE_TYPE_STBI_COMPATIBLE;
-		image.stbi.channels = 4; // desired: RGBA
-		image.stbi.pixels = stbi_load(filename, &image.stbi.width, &image.stbi.height, &image.stbi.channels_in_file, 4);
-		if (image.stbi.pixels) {
+		image.type = IMAGE_TYPE_SIMPLE;
+		image.simple.channels = 4; // desired: RGBA
+		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
+		if (image.simple.pixels) {
 			glEnable(GL_TEXTURE_2D);
-			glGenTextures(1, &image.stbi.texture);
+			glGenTextures(1, &image.simple.texture);
 			//glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, image.stbi.texture);
+			glBindTexture(GL_TEXTURE_2D, image.simple.texture);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.stbi.width, image.stbi.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.stbi.pixels);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.simple.width, image.simple.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.simple.pixels);
 
 			image.is_freshly_loaded = true;
 			sb_push(loaded_images, image);
@@ -702,7 +695,7 @@ bool32 load_image_from_file(const char* filename) {
 	} else if (use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0)) {
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			add_image_from_tiff(tiff);
+			add_image_from_tiff(&app_state->scene, tiff);
 			result = true;
 		} else {
 			tiff_destroy(&tiff);
@@ -749,7 +742,7 @@ bool32 load_image_from_file(const char* filename) {
 				}
 			}
 
-			reset_scene(&image);
+			reset_scene(&image, &app_state->scene);
 			sb_push(loaded_images, image);
 			result = true;
 
@@ -757,18 +750,6 @@ bool32 load_image_from_file(const char* filename) {
 	}
 	return result;
 
-}
-
-
-void init_viewer() {
-	init_opengl_stuff();
-	win32_init_gui(main_window);
-
-	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
-	if (g_argc > 1) {
-		char* filename = g_argv[1];
-		load_generic_file(filename);
-	}
 }
 
 i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
@@ -811,10 +792,43 @@ int priority_cmp_func (const void* a, const void* b) {
 	return ( (*(load_tile_task_t*)b).priority - (*(load_tile_task_t*)a).priority );
 }
 
-void viewer_update_and_render(input_t* input, i32 client_width, i32 client_height, float delta_t) {
+void init_scene(app_state_t *app_state, scene_t *scene) {
+	memset(scene, 0, sizeof(scene_t));
+	scene->clear_color = app_state->clear_color;
+	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
+	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
+	scene->initialized = true;
+}
+
+void init_app_state(app_state_t* app_state) {
+	memset(app_state, 0, sizeof(app_state_t));
+	app_state->clear_color = (v4f){0.95f, 0.95f, 0.95f, 1.00f};
+	app_state->initialized = true;
+}
+
+// TODO: refactor delta_t
+// TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
+void
+viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
+
+	if (!app_state->initialized) init_app_state(app_state);
+	// Note: the window might get resized, so need to update this every frame
+	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
+
+	scene_t* scene = &app_state->scene;
+	if (!scene->initialized) init_scene(app_state, scene);
+
+	// Note: could be changed to allow e.g. multiple scenes side by side
+	scene->viewport = app_state->client_viewport;
+
+
+	// TODO: this is part of rendering and doesn't belong here
 	glViewport(0, 0, client_width, client_height);
-	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
+	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+
+
 	// Determine the image to view;
 	for (i32 i = 0; i < 9; ++i) {
 		if (input->keyboard.keys['1' + i].down) {
@@ -828,6 +842,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		return; // nothing to draw
 	}
 
+
+	// TODO: mutate state here
+
 	// todo: process even more of the mouse/keyboard input here?
 	v2i current_drag_vector = {};
 	if (input) {
@@ -837,10 +854,10 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 				// Don't start dragging if clicked outside the window
 				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
 				if (is_point_inside_rect(valid_drag_start_rect, input->mouse_xy)) {
-					is_dragging = true; // drag start
+					scene->is_dragging = true; // drag start
 //						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
-			} else if (is_dragging) {
+			} else if (scene->is_dragging) {
 				// already started dragging on a previous frame
 				current_drag_vector = input->drag_vector;
 			}
@@ -849,13 +866,13 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		} else {
 			if (input->mouse_buttons[0].transition_count != 0) {
 				mouse_show();
-				is_dragging = false;
+				scene->is_dragging = false;
 //			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 			}
 		}
 	}
 
-	if (image->type == IMAGE_TYPE_STBI_COMPATIBLE) {
+	if (image->type == IMAGE_TYPE_SIMPLE) {
 		// Display a basic image
 
 		float display_pos_x = 0.0f;
@@ -880,7 +897,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			image->is_freshly_loaded = false;
 		}
 		float pan_multiplier = 2.0f;
-		if (is_dragging) {
+		if (scene->is_dragging) {
 			obj_pos.x += current_drag_vector.x * pan_multiplier;
 			obj_pos.y += current_drag_vector.y * pan_multiplier;
 		}
@@ -888,7 +905,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		mat4x4 model_matrix;
 		mat4x4_identity(model_matrix);
 		mat4x4_translate_in_place(model_matrix, obj_pos.x, obj_pos.y, 0.0f);
-		mat4x4_scale_aniso(model_matrix, model_matrix, image->stbi.width * 2, image->stbi.height * 2, 1.0f);
+		mat4x4_scale_aniso(model_matrix, model_matrix, image->simple.width * 2, image->simple.height * 2, 1.0f);
 
 
 		glUseProgram(basic_shader);
@@ -917,7 +934,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 		// todo: bunch up vertex and index uploads
 
-		draw_rect(image->stbi.texture);
+		draw_rect(image->simple.texture);
 	}
 	else if (image->type == IMAGE_TYPE_TIFF || image->type == IMAGE_TYPE_WSI) {
 
@@ -990,12 +1007,12 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 					if (current_level < old_level) {
 						// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
-						camera_pos.x += center_offset_x * level_image->um_per_pixel_x;
-						camera_pos.y += center_offset_y * level_image->um_per_pixel_y;
+						scene->camera.x += center_offset_x * level_image->um_per_pixel_x;
+						scene->camera.y += center_offset_y * level_image->um_per_pixel_y;
 					} else if (current_level > old_level) {
 						// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
-						camera_pos.x -= center_offset_x * level_image->um_per_pixel_x * 0.5f;
-						camera_pos.y -= center_offset_y * level_image->um_per_pixel_y * 0.5f;
+						scene->camera.x -= center_offset_x * level_image->um_per_pixel_x * 0.5f;
+						scene->camera.y -= center_offset_y * level_image->um_per_pixel_y * 0.5f;
 					}
 #endif
 				}
@@ -1009,7 +1026,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 		// TODO: fix/rewrite
 		// Spring/bounce effect
-		float d_zoom = (float) current_level - zoom_position;
+		float d_zoom = (float) current_level - scene->zoom_position;
 		float abs_d_zoom = fabs(d_zoom);
 		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
 		float linear_catch_up_speed = 10.0f * delta_t;
@@ -1018,18 +1035,18 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
 			         sign_d_zoom;
 		}
-		zoom_position += d_zoom;
+		scene->zoom_position += d_zoom;
 
-		float screen_um_per_pixel_x = powf(2.0f, zoom_position) * image->mpp_x;
-		float screen_um_per_pixel_y = powf(2.0f, zoom_position) * image->mpp_y;
+		float screen_um_per_pixel_x = powf(2.0f, scene->zoom_position) * image->mpp_x;
+		float screen_um_per_pixel_y = powf(2.0f, scene->zoom_position) * image->mpp_y;
 
 		float r_minus_l = screen_um_per_pixel_x * (float) client_width;
 		float t_minus_b = screen_um_per_pixel_y * (float) client_height;
 
-		float camera_rect_x1 = camera_pos.x - r_minus_l * 0.5f;
-		float camera_rect_x2 = camera_pos.x + r_minus_l * 0.5f;
-		float camera_rect_y1 = camera_pos.y - t_minus_b * 0.5f;
-		float camera_rect_y2 = camera_pos.y + t_minus_b * 0.5f;
+		float camera_rect_x1 = scene->camera.x - r_minus_l * 0.5f;
+		float camera_rect_x2 = scene->camera.x + r_minus_l * 0.5f;
+		float camera_rect_y1 = scene->camera.y - t_minus_b * 0.5f;
+		float camera_rect_y2 = scene->camera.y + t_minus_b * 0.5f;
 
 		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, level_image->x_tile_side_in_um);
 		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, level_image->x_tile_side_in_um) + 1;
@@ -1079,7 +1096,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 #endif
 
 			// Panning should be faster when zoomed in very far.
-			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - zoom_position) / (float) max_level;
+			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - scene->zoom_position) / (float) max_level;
 			if (is_key_down(input, KEYCODE_SHIFT)) {
 				panning_multiplier *= 0.25f;
 			}
@@ -1087,28 +1104,31 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
 			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
-				camera_pos.y += level_image->um_per_pixel_y * panning_speed;
+				scene->camera.y += level_image->um_per_pixel_y * panning_speed;
 				mouse_hide();
 			}
 			if (input->keyboard.action_up.down || is_key_down(input, 'W')) {
-				camera_pos.y -= level_image->um_per_pixel_y * panning_speed;
+				scene->camera.y -= level_image->um_per_pixel_y * panning_speed;
 				mouse_hide();
 			}
 			if (input->keyboard.action_right.down || is_key_down(input, 'D')) {
-				camera_pos.x += level_image->um_per_pixel_x * panning_speed;
+				scene->camera.x += level_image->um_per_pixel_x * panning_speed;
 				mouse_hide();
 			}
 			if (input->keyboard.action_left.down || is_key_down(input, 'A')) {
-				camera_pos.x -= level_image->um_per_pixel_x * panning_speed;
+				scene->camera.x -= level_image->um_per_pixel_x * panning_speed;
 				mouse_hide();
 			}
 
-			if (is_dragging) {
-				camera_pos.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
-				camera_pos.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
+			if (scene->is_dragging) {
+				scene->camera.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
+				scene->camera.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
 			}
 
 		}
+
+
+		// IO
 
 		// Create a 'wishlist' of tiles to request
 		load_tile_task_t tile_wishlist[32];
@@ -1142,9 +1162,9 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 					}
 
 					float tile_distance_from_center_of_screen_x =
-							(camera_pos.x - ((tile_x + 0.5f) * drawn_level->x_tile_side_in_um)) / drawn_level->um_per_pixel_x;
+							(scene->camera.x - ((tile_x + 0.5f) * drawn_level->x_tile_side_in_um)) / drawn_level->um_per_pixel_x;
 					float tile_distance_from_center_of_screen_y =
-							(camera_pos.y - ((tile_y + 0.5f) * drawn_level->y_tile_side_in_um)) / drawn_level->um_per_pixel_y;
+							(scene->camera.y - ((tile_y + 0.5f) * drawn_level->y_tile_side_in_um)) / drawn_level->um_per_pixel_y;
 					float tile_distance_from_center_of_screen =
 							sqrtf(SQUARE(tile_distance_from_center_of_screen_x) + SQUARE(tile_distance_from_center_of_screen_y));
 					tile_distance_from_center_of_screen /= screen_radius;
@@ -1216,6 +1236,8 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 
 
+		// RENDERING
+
 
 		mat4x4 projection = {};
 		{
@@ -1233,7 +1255,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 
 		// define view matrix
 		mat4x4 view_matrix;
-		mat4x4_translate(view_matrix, -camera_pos.x, -camera_pos.y, 0.0f);
+		mat4x4_translate(view_matrix, -scene->camera.x, -scene->camera.y, 0.0f);
 
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
@@ -1241,7 +1263,7 @@ void viewer_update_and_render(input_t* input, i32 client_width, i32 client_heigh
 		glUseProgram(basic_shader);
 		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
-		glUniform3fv(basic_shader_u_background_color, 1, (GLfloat *) &clear_color);
+		glUniform3fv(basic_shader_u_background_color, 1, (GLfloat *) &app_state->clear_color);
 		if (use_image_adjustments) {
 			glUniform1f(basic_shader_u_black_level, black_level);
 			glUniform1f(basic_shader_u_white_level, white_level);

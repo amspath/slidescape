@@ -18,6 +18,7 @@
 
 #pragma once
 #include "common.h"
+#include "viewer.h"
 #include <windows.h>
 
 #ifdef __cplusplus
@@ -26,7 +27,7 @@ extern "C" {
 
 
 void win32_init_gui(HWND hwnd);
-void do_gui(i32 client_width, i32 client_height);
+void do_gui(app_state_t *app_state, i32 client_width, i32 client_height);
 
 // from imgui_impl_win32.cpp
 LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
