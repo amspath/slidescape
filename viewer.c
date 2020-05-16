@@ -47,41 +47,6 @@
 #include "caselist.h"
 
 
-// TODO: remove? do we still need this>
-rect2i clip_rect(rect2i* first, rect2i* second) {
-	i32 x0 = MAX(first->x, second->x);
-	i32 y0 = MAX(first->y, second->y);
-	i32 x1 = MIN(first->x + first->w, second->x + second->w);
-	i32 y1 = MIN(first->y + first->h, second->y + second->h);
-	rect2i result = {
-			.x = x0,
-			.y = y0,
-			.w = x1 - x0,
-			.h = y1 - y0,
-	};
-	return result;
-}
-
-bool is_point_inside_rect(rect2i rect, v2i point) {
-	bool result = true;
-	if (point.x < rect.x || point.x >= (rect.x + rect.w) || point.y < rect.y || point.y >= (rect.y + rect.h)) {
-		result = false;
-	}
-	return result;
-}
-
-v2i rect2i_center_point(rect2i* rect) {
-	v2i result = {
-			.x = rect->x + rect->w / 2,
-			.y = rect->y + rect->h / 2,
-	};
-	return result;
-}
-
-#define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
-#define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
-#define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
-
 void reset_scene(image_t *image, scene_t *scene) {
 	current_level = ATLEAST(0, image->level_count-2);
 	scene->zoom_position = (float)current_level;
@@ -125,7 +90,6 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
 	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
 	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
-	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
 
 
 	if (image->type == IMAGE_TYPE_TIFF) {
@@ -223,24 +187,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 	}
 
-
-
-
-
-//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-/*
-	finish_up:
-	write_barrier;
-
-	// do the submitting directly on the GPU
-	glEnable(GL_TEXTURE_2D);
-	tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
-//	free(batch);
-	glFinish(); // Block thread execution until all OpenGL operations have finished.*/
-
 }
 
-void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
+void load_tile_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
 	i32 level = task_data->level;
 	i32 tile_x = task_data->tile_x;
@@ -402,25 +351,8 @@ bool32 enqueue_load_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
 	load_tile_task_t* task_data = malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
 	*task_data = (load_tile_task_t){ .image = image, .level = level, .tile_x = tile_x, .tile_y = tile_y };
 
-	return add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data);
+	return add_work_queue_entry(&work_queue, load_tile_func, task_data);
 
-}
-
-i32 load_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
-	level_image_t* level_image = image->level_images + level;
-	tile_t* tile = get_tile(level_image, tile_x, tile_y);
-
-	if (tile->texture != 0 || tile->is_submitted_for_loading || tile->is_empty) {
-		// Yay, this tile is already loaded, being loaded, or empty (nothing to do)
-		return 0;
-	} else {
-		read_barrier;
-		if (enqueue_load_tile(image, level, tile_x, tile_y)) {
-			tile->is_submitted_for_loading = true;
-		}
-		return 1;
-
-	}
 }
 
 u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
@@ -1228,7 +1160,7 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 					load_tile_task_t *task_data = malloc(
 							sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
 					*task_data = *the_task;
-					if (add_work_queue_entry(&work_queue, tiff_load_tile_func, task_data)) {
+					if (add_work_queue_entry(&work_queue, load_tile_func, task_data)) {
 						// success
 						task_data->tile->is_submitted_for_loading = true;
 					}

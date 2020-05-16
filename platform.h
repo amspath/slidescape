@@ -19,6 +19,7 @@
 #pragma once
 
 #include "common.h"
+#include "mathutils.h"
 
 #ifdef TARGET_EMSCRIPTEN
 #include <emscripten/emscripten.h>
@@ -47,6 +48,64 @@ typedef struct work_queue_entry_t {
 } work_queue_entry_t;
 
 typedef struct work_queue_t work_queue_t;
+
+typedef struct button_state_t {
+	bool8 down;
+	u8 transition_count;
+} button_state_t;
+
+typedef struct controller_input_t {
+	bool32 is_connected;
+	bool32 is_analog;
+	float x_start, y_start;
+	float x_min, y_min;
+	float x_max, y_max;
+	float x_end, y_end; // end state
+	union {
+		button_state_t buttons[16];
+		struct {
+			button_state_t move_up;
+			button_state_t move_down;
+			button_state_t move_left;
+			button_state_t move_right;
+			button_state_t action_up;
+			button_state_t action_down;
+			button_state_t action_left;
+			button_state_t action_right;
+			button_state_t left_shoulder;
+			button_state_t right_shoulder;
+			button_state_t start;
+			button_state_t back;
+			button_state_t button_a;
+			button_state_t button_b;
+			button_state_t button_x;
+			button_state_t button_y;
+
+			// NOTE: add buttons above this line
+			// cl complains about zero-sized arrays, so this the terminator is a full blown button now :(
+			button_state_t terminator;
+		};
+	};
+	button_state_t keys[256];
+} controller_input_t;
+
+typedef struct {
+	button_state_t mouse_buttons[5];
+	i32 mouse_z;
+	v2i dmouse_xy;
+	v2i drag_start_xy;
+	v2i drag_vector;
+	v2i mouse_xy;
+	float delta_t;
+	union {
+		controller_input_t abstract_controllers[5];
+		struct {
+			controller_input_t keyboard;
+			controller_input_t controllers[4];
+		};
+	};
+
+} input_t;
 
 
 
@@ -251,6 +310,9 @@ extern bool is_fullscreen;
 extern bool is_program_running;
 extern void* thread_local_storage[MAX_THREAD_COUNT];
 extern work_queue_t work_queue;
+extern input_t inputs[2];
+extern input_t *old_input;
+extern input_t *curr_input;
 
 #undef INIT
 #undef extern

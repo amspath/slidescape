@@ -78,15 +78,11 @@ WINDOWPLACEMENT window_position = { sizeof(window_position) };
 surface_t backbuffer;
 
 WNDCLASSA main_window_class;
-bool32 is_main_window_initialized;
 
-work_queue_t work_queue;
 win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
 
-input_t inputs[2];
-input_t *old_input;
-input_t *curr_input;
+
 
 // for software renderer only; remove this??
 static GLuint global_blit_texture_handle;
@@ -1216,7 +1212,7 @@ void win32_init_main_window() {
 	RECT desired_window_rect = {};
 	desired_window_rect.right = desired_width;
 	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES|WS_MAXIMIZE;
+	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_EX_ACCEPTFILES;
 	AdjustWindowRect(&desired_window_rect, window_style, 0);
 	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
@@ -1235,8 +1231,7 @@ void win32_init_main_window() {
 	win32_init_opengl(main_window);
 	win32_gl_swap_interval(1);
 
-//	win32_resize_DIB_section(&backbuffer, desired_width, desired_height);
-	is_main_window_initialized = true; // prevent trying to redraw while resizing too early!
+	ShowWindow(main_window, SW_MAXIMIZE);
 
 }
 

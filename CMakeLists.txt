@@ -49,6 +49,7 @@ add_executable(slideviewer
         viewer.c
         glad.c
         stringutils.c
+        mathutils.c
         shader.c
         tiff.c
         caselist.c
