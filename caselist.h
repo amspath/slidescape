@@ -19,6 +19,7 @@
 #pragma once
 #include "common.h"
 #include "parson.h"
+#include "viewer.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,8 +45,9 @@ typedef struct {
 	u32 prefix_len;
 } caselist_t;
 
-void reset_global_caselist();
-void reload_global_caselist(const char* filename);
+typedef struct app_state_t app_state_t;
+void reset_global_caselist(app_state_t* app_state);
+void reload_global_caselist(app_state_t *app_state, const char *filename);
 bool32 load_caselist(caselist_t* caselist, const char* json_filename);
 void caselist_destroy(caselist_t* caselist);
 
@@ -58,8 +60,8 @@ void caselist_destroy(caselist_t* caselist);
 #undef extern
 #endif
 
-extern caselist_t global_caselist;
-extern case_t* global_selected_case;
+//extern caselist_t global_caselist;
+//extern case_t* global_selected_case;
 
 #undef INIT
 #undef extern

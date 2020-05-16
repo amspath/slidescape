@@ -17,10 +17,12 @@
 */
 
 #pragma once
+
 #include "common.h"
 
 #include "tiff.h"
 #include "openslide_api.h"
+#include "caselist.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -250,29 +252,31 @@ typedef struct scene_t {
 	bool8 initialized;
 } scene_t;
 
-typedef struct app_state {
+typedef struct app_state_t {
 	rect2i client_viewport;
 	scene_t scene;
 	v4f clear_color;
-	// TODO: pull more state into this struct
-//	float black_level;
-//	float white_level;
-//	image_t* loaded_images; // sb
-//	i32 displayed_image;
-	bool8 initialized;
+	float black_level;
+	float white_level;
+	image_t* loaded_images; // sb
+	i32 displayed_image;
+	caselist_t caselist;
+	case_t* selected_case;
+	bool use_builtin_tiff_backend;
+	bool use_image_adjustments;
+	bool initialized;
 } app_state_t;
 
 
 //  prototypes
-void unload_all_images();
-void reset_scene(image_t *image, scene_t *scene);
-void add_image_from_tiff(scene_t *scene, tiff_t tiff);
-bool32 load_generic_file(app_state_t *app_state, const char *filename);
-bool32 load_image_from_file(app_state_t* app_state, const char *filename);
+void unload_all_images(app_state_t* app_state);
+void reset_scene(image_t* image, scene_t* scene);
+void add_image_from_tiff(app_state_t* app_state, tiff_t tiff);
+bool32 load_generic_file(app_state_t* app_state, const char* filename);
+bool32 load_image_from_file(app_state_t* app_state, const char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
-void
-viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t);
+void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 
 void init_opengl_stuff();
 
@@ -288,14 +292,7 @@ void init_opengl_stuff();
 
 extern app_state_t global_app_state;
 
-// If enabled, always revert to OpenSlide when loading TIFF files.
-extern bool use_builtin_tiff_backend INIT(= true);
-extern bool use_image_adjustments;
-extern image_t* loaded_images; // sb
-extern i32 displayed_image;
 extern i32 current_level; // derived value -> make local variable
-extern float black_level INIT(= 0.10f);
-extern float white_level INIT(= 0.95f);
 
 #undef INIT
 #undef extern

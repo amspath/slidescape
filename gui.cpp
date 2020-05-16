@@ -98,12 +98,12 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		} else if (menu_items_clicked.open_file) {
 			win32_open_file_dialog(main_window);
 		} else if (menu_items_clicked.close) {
-			unload_all_images();
-			reset_global_caselist();
+			unload_all_images(app_state);
+			reset_global_caselist(app_state);
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (menu_items_clicked.show_case_list) {
-			reload_global_caselist("cases.json");
+			reload_global_caselist(app_state, "cases.json");
 			show_slide_list_window = true;
 		}
 		else if (prev_fullscreen != is_fullscreen) {
@@ -146,10 +146,10 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		ImGui::Begin("Image adjustments", &show_image_adjustments_window);                          // Create a window called "Hello, world!" and append into it.
 
 //		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-		ImGui::Checkbox("Use image adjustments", &use_image_adjustments);
+		ImGui::Checkbox("Use image adjustments", &app_state->use_image_adjustments);
 
-		ImGui::SliderFloat("black level", &black_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-		ImGui::SliderFloat("white level", &white_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+		ImGui::SliderFloat("black level", &app_state->black_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+		ImGui::SliderFloat("white level", &app_state->white_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 
 
 
@@ -206,17 +206,17 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		ImGui::Text("\nTIFF backend");
 //		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
 		const char* tiff_backends[] = { "Built-in", "OpenSlide" };
-		if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1-use_builtin_tiff_backend], flags)) // The second parameter is the label previewed before opening the combo.
+		if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1-app_state->use_builtin_tiff_backend], flags)) // The second parameter is the label previewed before opening the combo.
 		{
-			if (ImGui::Selectable(tiff_backends[0], use_builtin_tiff_backend)) {
-				use_builtin_tiff_backend = true;
+			if (ImGui::Selectable(tiff_backends[0], app_state->use_builtin_tiff_backend)) {
+				app_state->use_builtin_tiff_backend = true;
 			}
-			if (use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+			if (app_state->use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
 			if (is_openslide_available) {
-				if (ImGui::Selectable(tiff_backends[1], !use_builtin_tiff_backend)) {
-					use_builtin_tiff_backend = false;
+				if (ImGui::Selectable(tiff_backends[1], !app_state->use_builtin_tiff_backend)) {
+					app_state->use_builtin_tiff_backend = false;
 				}
-				if (!use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+				if (!app_state->use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
 			}
 			ImGui::EndCombo();
 		}
@@ -241,7 +241,7 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		const char** listbox_items = listbox_items_dummy;
 		i32 items_count = 0;
 
-		caselist_t* caselist = &global_caselist;
+		caselist_t* caselist = &app_state->caselist;
 		if (caselist->names) {
 			listbox_items = caselist->names;
 			items_count = caselist->num_cases_with_filenames;
@@ -253,14 +253,14 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		if (ImGui::ListBox("##listbox\n(single select)", &listbox_item_current, listbox_items, items_count, (int)(list_height_in_items - 2.5f))) {
 			// value changed
 			if (caselist->cases) {
-				global_selected_case = caselist->cases + listbox_item_current;
+				app_state->selected_case = caselist->cases + listbox_item_current;
 				show_case_info_window = true;
-				unload_all_images();
-				if (global_selected_case->filename) {
+				unload_all_images(app_state);
+				if (app_state->selected_case->filename) {
 
 					// If the SLIDES_DIR environment variable is set, load slides from there
 					char path_buffer[2048] = {};
-					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix, global_selected_case->filename);
+					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix, app_state->selected_case->filename);
 
 					load_image_from_file(app_state, path_buffer);
 				}
@@ -282,6 +282,7 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 		ImGui::Begin("Case info", &show_case_info_window);
 
+		case_t* global_selected_case = app_state->selected_case;
 		if (global_selected_case != NULL) {
 			ImGui::TextWrapped("%s\n", global_selected_case->name);
 			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);

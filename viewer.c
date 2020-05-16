@@ -589,21 +589,21 @@ void unload_image(image_t* image) {
 	}
 }
 
-void unload_all_images() {
-	i32 current_image_count = sb_count(loaded_images);
+void unload_all_images(app_state_t *app_state) {
+	i32 current_image_count = sb_count(app_state->loaded_images);
 	if (current_image_count > 0) {
-		ASSERT(loaded_images);
+		ASSERT(app_state->loaded_images);
 		for (i32 i = 0; i < current_image_count; ++i) {
-			image_t* old_image = loaded_images + i;
+			image_t* old_image = app_state->loaded_images + i;
 			unload_image(old_image);
 		}
-		sb_free(loaded_images);
-		loaded_images = NULL;
+		sb_free(app_state->loaded_images);
+		app_state->loaded_images = NULL;
 	}
 	mouse_show();
 }
 
-void add_image_from_tiff(scene_t *scene, tiff_t tiff) {
+void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 	image_t new_image = {0};
 	new_image.type = IMAGE_TYPE_TIFF;
 	new_image.tiff.tiff = tiff;
@@ -644,24 +644,24 @@ void add_image_from_tiff(scene_t *scene, tiff_t tiff) {
 			}
 		}
 	}
-	reset_scene(&new_image, scene);
-	sb_push(loaded_images, new_image);
+	reset_scene(&new_image, &app_state->scene);
+	sb_push(app_state->loaded_images, new_image);
 }
 
 bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	const char* ext = get_file_extension(filename);
 	if (strcasecmp(ext, "json") == 0) {
-		reload_global_caselist(filename);
+		reload_global_caselist(app_state, filename);
 		show_slide_list_window = true;
 	} else {
 		// assume it is an image file?
-		reset_global_caselist();
+		reset_global_caselist(app_state);
 		load_image_from_file(app_state, filename);
 	}
 }
 
 bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
-	unload_all_images();
+	unload_all_images(app_state);
 
 	bool32 result = false;
 	const char* ext = get_file_extension(filename);
@@ -686,16 +686,16 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.simple.width, image.simple.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.simple.pixels);
 
 			image.is_freshly_loaded = true;
-			sb_push(loaded_images, image);
+			sb_push(app_state->loaded_images, image);
 			result = true;
 
 			//stbi_image_free(image->stbi.pixels);
 		}
 
-	} else if (use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0)) {
+	} else if (app_state->use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0)) {
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			add_image_from_tiff(&app_state->scene, tiff);
+			add_image_from_tiff(app_state, tiff);
 			result = true;
 		} else {
 			tiff_destroy(&tiff);
@@ -743,7 +743,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			}
 
 			reset_scene(&image, &app_state->scene);
-			sb_push(loaded_images, image);
+			sb_push(app_state->loaded_images, image);
 			result = true;
 
 		}
@@ -803,6 +803,10 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 void init_app_state(app_state_t* app_state) {
 	memset(app_state, 0, sizeof(app_state_t));
 	app_state->clear_color = (v4f){0.95f, 0.95f, 0.95f, 1.00f};
+	app_state->black_level = 0.10f;
+	app_state->white_level = 0.95f;
+	// If disabled, revert to OpenSlide when loading TIFF files.
+	app_state->use_builtin_tiff_backend = true;
 	app_state->initialized = true;
 }
 
@@ -832,11 +836,11 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 	// Determine the image to view;
 	for (i32 i = 0; i < 9; ++i) {
 		if (input->keyboard.keys['1' + i].down) {
-			displayed_image = MIN(sb_count(loaded_images)-1, i);
+			app_state->displayed_image = MIN(sb_count(app_state->loaded_images)-1, i);
 		}
 	}
 
-	image_t* image = loaded_images + displayed_image;
+	image_t* image = app_state->loaded_images + app_state->displayed_image;
 
 	if (!image) {
 		return; // nothing to draw
@@ -910,9 +914,9 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 
 		glUseProgram(basic_shader);
 
-		if (use_image_adjustments) {
-			glUniform1f(basic_shader_u_black_level, black_level);
-			glUniform1f(basic_shader_u_white_level, white_level);
+		if (app_state->use_image_adjustments) {
+			glUniform1f(basic_shader_u_black_level, app_state->black_level);
+			glUniform1f(basic_shader_u_white_level, app_state->white_level);
 		} else {
 			glUniform1f(basic_shader_u_black_level, 0.0f);
 			glUniform1f(basic_shader_u_white_level, 1.0f);
@@ -1061,7 +1065,7 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 		if (input) {
 
 			if (was_key_pressed(input, 'P')) {
-				use_image_adjustments = !use_image_adjustments;
+				app_state->use_image_adjustments = !app_state->use_image_adjustments;
 			}
 #if 0
 
@@ -1264,9 +1268,9 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
 		glUniform3fv(basic_shader_u_background_color, 1, (GLfloat *) &app_state->clear_color);
-		if (use_image_adjustments) {
-			glUniform1f(basic_shader_u_black_level, black_level);
-			glUniform1f(basic_shader_u_white_level, white_level);
+		if (app_state->use_image_adjustments) {
+			glUniform1f(basic_shader_u_black_level, app_state->black_level);
+			glUniform1f(basic_shader_u_white_level, app_state->white_level);
 		} else {
 			glUniform1f(basic_shader_u_black_level, 0.0f);
 			glUniform1f(basic_shader_u_white_level, 1.0f);

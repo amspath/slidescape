@@ -43,8 +43,7 @@ LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPAR
 #undef extern
 #endif
 
-extern bool is_fullscreen;
-extern bool is_program_running;
+
 extern bool show_demo_window;
 extern bool show_image_adjustments_window INIT(= false);
 extern bool show_open_remote_window;

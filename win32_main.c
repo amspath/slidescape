@@ -64,9 +64,6 @@ __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #endif
 
-int g_argc;
-char** g_argv;
-
 HINSTANCE g_instance;
 HINSTANCE g_prev_instance;
 LPSTR g_cmdline;

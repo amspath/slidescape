@@ -366,8 +366,8 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 		tiff.is_remote = true;
 		tiff.location = (network_location_t){ .hostname = hostname, .portno = portno, .filename = filename };
 
-		unload_all_images();
-		add_image_from_tiff(&app_state->scene, tiff);
+		unload_all_images(app_state);
+		add_image_from_tiff(app_state, tiff);
 		success = true;
 	} else {
 		tiff_destroy(&tiff);

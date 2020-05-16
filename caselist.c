@@ -25,23 +25,23 @@
 #include "stringutils.h"
 
 #define CASELIST_IMPL
+#include "viewer.h"
 #include "caselist.h"
 #include "gui.h"
-#include "viewer.h"
 
 
-void reset_global_caselist() {
-	global_selected_case = NULL;
-	caselist_destroy(&global_caselist);
-	memset(&global_caselist, 0, sizeof(caselist_t));
+void reset_global_caselist(app_state_t* app_state) {
+	app_state->selected_case = NULL;
+	caselist_destroy(&app_state->caselist);
+	memset(&app_state->caselist, 0, sizeof(caselist_t));
 	show_case_info_window = false;
 	show_slide_list_window = false;
 }
 
-void reload_global_caselist(const char* filename) {
-	unload_all_images();
-	reset_global_caselist();
-	load_caselist(&global_caselist, filename);
+void reload_global_caselist(app_state_t *app_state, const char *filename) {
+	unload_all_images(app_state);
+	reset_global_caselist(app_state);
+	load_caselist(&app_state->caselist, filename);
 }
 
 bool32 load_caselist(caselist_t* caselist, const char* json_filename) {
