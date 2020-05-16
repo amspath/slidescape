@@ -111,7 +111,7 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
-	gl_diagnostic("glTexImage2D");
+//	gl_diagnostic("glTexImage2D");
 	return texture;
 }
 
@@ -167,6 +167,11 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				total_read_size += chunk_size;
 			}
 
+
+			u32 new_textures[TILE_LOAD_BATCH_MAX] = {0};
+
+			// Note: First download everything, then decode and upload everything to the GPU.
+			// It would be faster to pipeline this somehow.
 			u8* read_buffer = download_remote_batch(tiff->location.hostname, tiff->location.portno,
 			                                        tiff->location.filename,
 			                                        chunk_offsets, chunk_sizes, batch_size, &bytes_read, logical_thread_index);
@@ -199,19 +204,31 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 							}
 						}
 
-						// do the submitting directly on the GPU
-						glEnable(GL_TEXTURE_2D);
-						task->tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
+						new_textures[i] = load_texture(temp_memory, TILE_DIM, TILE_DIM);
 					}
 
 				}
 
 			}
+
+			// Note: setting task->tile->texture to the texture handle lets the main thread know that the texture
+			// is ready for use. However, the texture may still not *actually* be available until OpenGL has done its
+			// magic, so to be 100% sure we need to call glFinish() before setting task->tile->texture
+			// We only want to call glFinish() once, so we store the new texture handles temporarily while the
+			// rest of the batch is still loading.
+			// Better would be to flag the texture as 'ready for use' as soon as it's done, but I don't know
+			// how we could query this / be notified of this. (maybe an optimization for later?)
+			glFinish();
+			write_barrier;
+			for (i32 i = 0; i < batch_size; ++i) {
+				load_tile_task_t* task = batch->tile_tasks + i;
+				task->tile->texture = new_textures[i];
+			}
+
 			free(read_buffer);
 		}
 
 	}
-	glFinish();
 
 
 
@@ -378,14 +395,13 @@ void tiff_load_tile_func(i32 logical_thread_index, void* userdata) {
 
 //	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 
-	finish_up:
-	write_barrier;
-
-	// do the submitting directly on the GPU
+	finish_up:;
 	glEnable(GL_TEXTURE_2D);
-	tile->texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
-	free(task_data);
+	u32 new_texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
 	glFinish(); // Block thread execution until all OpenGL operations have finished.
+	write_barrier;
+	tile->texture = new_texture;
+	free(task_data);
 
 }
 

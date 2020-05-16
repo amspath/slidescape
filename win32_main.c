@@ -50,6 +50,7 @@
 #include "tlsclient.h"
 #include "caselist.h"
 
+#define USE_OPENGL_DEBUG_CONTEXT DO_DEBUG
 
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
@@ -899,13 +900,23 @@ void win32_init_opengl(HWND window) {
 		win32_diagnostic("SetPixelFormat");
 	}
 
+#if USE_OPENGL_DEBUG_CONTEXT
 	int context_attribs[] = {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 4,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 5,
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
 			WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB, // Ask for a debug context
 			0
 	};
+#else
+	int context_attribs[] = {
+			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+			WGL_CONTEXT_FLAGS_ARB, 0/*WGL_CONTEXT_DEBUG_BIT_ARB*/, // Ask for a debug context
+			0
+	};
+#endif
 
 	glrcs[0] = wglCreateContextAttribsARB(dc, NULL, context_attribs);
 	if (glrcs[0] == NULL) {
@@ -949,6 +960,7 @@ void win32_init_opengl(HWND window) {
 	}
 
 	// Try to enable debug output on the main thread.
+#if USE_OPENGL_DEBUG_CONTEXT
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
@@ -961,6 +973,7 @@ void win32_init_opengl(HWND window) {
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, true);
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
+#endif
 
 	// debug
 	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
@@ -1109,6 +1122,7 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 	}
 	ReleaseDC(main_window, dc);
 
+#if USE_OPENGL_DEBUG_CONTEXT
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
@@ -1121,6 +1135,7 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, true);
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
+#endif
 
 //	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
@@ -1269,6 +1284,7 @@ int main(int argc, char** argv) {
 
 		do_gui(dimension.width, dimension.height);
 
+//		glFinish();
 		SwapBuffers(wglGetCurrentDC());
 	}
 
