@@ -346,7 +346,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 				load_generic_file(&global_app_state, buffer);
 			}
 			DragFinish(hdrop);
-
+			SetForegroundWindow(window); // set focus on the window (this does not happen automatically)
 		} break;
 
 #if 0
@@ -1216,7 +1216,7 @@ void win32_init_main_window() {
 	RECT desired_window_rect = {};
 	desired_window_rect.right = desired_width;
 	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES;
+	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_VISIBLE|WS_EX_ACCEPTFILES|WS_MAXIMIZE;
 	AdjustWindowRect(&desired_window_rect, window_style, 0);
 	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
