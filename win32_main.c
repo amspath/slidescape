@@ -51,12 +51,16 @@
 #include "caselist.h"
 
 
+// For some reason, using the Intel integrated graphics is much faster to start up (?)
+// Therefore, disabled this again... also better for power consumption, probably
+#if 0
 // If both dedicated GPU and integrated graphics are available -> choose dedicated
 // see:
 // https://stackoverflow.com/questions/6036292/select-a-graphic-device-in-windows-opengl
 // https://stackoverflow.com/questions/17458803/amd-equivalent-to-nvoptimusenablement
 __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+#endif
 
 int g_argc;
 char** g_argv;
@@ -897,7 +901,7 @@ void win32_init_opengl(HWND window) {
 
 	int context_attribs[] = {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 5,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 4,
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
 			WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB, // Ask for a debug context
 			0
@@ -952,7 +956,10 @@ void win32_init_opengl(HWND window) {
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(opengl_debug_message_callback, 0);
-		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, true);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, false);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_LOW, 0, NULL, true);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, true);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
 
 	// debug
@@ -1109,7 +1116,10 @@ DWORD WINAPI _Noreturn thread_proc(void* parameter) {
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(opengl_debug_message_callback, 0);
-		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, true);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, false);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_LOW, 0, NULL, true);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, true);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
 
 //	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
@@ -1141,7 +1151,6 @@ void win32_init_multithreading() {
 
 		DWORD thread_id;
 		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
-		SetThreadPriority(thread_handle, THREAD_PRIORITY_BELOW_NORMAL);
 		CloseHandle(thread_handle);
 
 	}
@@ -1221,8 +1230,6 @@ int main(int argc, char** argv) {
 	g_cmdline = GetCommandLine();
 	g_argc = argc;
 	g_argv = argv;
-
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
 	GetSystemInfo(&system_info);
 	logical_cpu_count = system_info.dwNumberOfProcessors;
