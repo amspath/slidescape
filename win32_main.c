@@ -83,12 +83,6 @@ win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
 
 
-
-// for software renderer only; remove this??
-static GLuint global_blit_texture_handle;
-
-openslide_api openslide;
-
 void win32_diagnostic(const char* prefix) {
     DWORD error_id = GetLastError();
     char* message_buffer;
@@ -98,55 +92,13 @@ void win32_diagnostic(const char* prefix) {
     LocalFree(message_buffer);
 }
 
-
-bool32 win32_init_openslide() {
-	i64 debug_start = get_clock();
-	SetDllDirectoryA("openslide");
-	HINSTANCE dll_handle = LoadLibraryA("libopenslide-0.dll");
-	if (dll_handle) {
-
-#define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(dll_handle, #proc))) goto failed;
-		GET_PROC(openslide_detect_vendor);
-		GET_PROC(openslide_open);
-		GET_PROC(openslide_get_level_count);
-		GET_PROC(openslide_get_level0_dimensions);
-		GET_PROC(openslide_get_level_dimensions);
-		GET_PROC(openslide_get_level_downsample);
-		GET_PROC(openslide_get_best_level_for_downsample);
-		GET_PROC(openslide_read_region);
-		GET_PROC(openslide_close);
-		GET_PROC(openslide_get_error);
-		GET_PROC(openslide_get_property_names);
-		GET_PROC(openslide_get_property_value);
-		GET_PROC(openslide_get_associated_image_names);
-		GET_PROC(openslide_get_associated_image_dimensions);
-		GET_PROC(openslide_read_associated_image);
-		GET_PROC(openslide_get_version);
-#undef GET_PROC
-
-		printf("Initialized OpenSlide in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
-		return true;
-
-	} else failed: {
-		win32_diagnostic("LoadLibraryA");
-		printf("Could not load libopenslide-0.dll\n");
-		return false;
-	}
-
-}
-
-bool32 is_openslide_available;
-bool32 is_openslide_loading_done;
-
 void load_openslide_task(int logical_thread_index, void* userdata) {
-	is_openslide_available = win32_init_openslide();
+	is_openslide_available = init_openslide();
 	is_openslide_loading_done = true;
 }
 
-
-
 u8* platform_alloc(size_t size) {
-	u8* result = VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+	u8* result = (u8*) VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	if (!result) {
 		printf("Error: memory allocation failed!\n");
 		panic();
@@ -162,7 +114,7 @@ file_mem_t* platform_read_entire_file(const char* filename) {
 			i64 filesize = st.st_size;
 			if (filesize > 0) {
 				size_t allocation_size = filesize + sizeof(result->len) + 1;
-				result = malloc(allocation_size);
+				result = (file_mem_t*) malloc(allocation_size);
 				if (result) {
 					((u8*)result)[allocation_size-1] = '\0';
 					result->len = filesize;
@@ -397,7 +349,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			}
 			u32 size;
 			GetRawInputData((HRAWINPUT) lparam, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
-			RAWINPUT* raw = alloca(size);
+			RAWINPUT* raw = (RAWINPUT*) alloca(size);
 			GetRawInputData((HRAWINPUT) lparam, RID_INPUT, raw, &size, sizeof(RAWINPUTHEADER));
 
 			if (raw->header.dwType == RIM_TYPEMOUSE)
@@ -756,9 +708,9 @@ void win32_gl_swap_interval(int interval) {
 HMODULE opengl32_dll_handle;
 
 void* gl_get_proc_address(const char *name) {
-	void* proc = GetProcAddress(opengl32_dll_handle, name);
+	void* proc = (void*) GetProcAddress(opengl32_dll_handle, name);
 	if (!proc) {
-		proc = wglGetProcAddress(name);
+		proc = (void*) wglGetProcAddress(name);
 		if (!proc) {
 			printf("Error initalizing OpenGL: could not load proc '%s'.\n", name);
 		}
@@ -796,15 +748,14 @@ void win32_init_opengl(HWND window) {
 			                            0/*WS_DISABLED*/, 0, 0, 640, 480, NULL, NULL, g_instance, 0);
 	HDC dummy_dc = GetDC(dummy_window);
 
-	PIXELFORMATDESCRIPTOR desired_pixel_format = {
-			.nSize = sizeof(desired_pixel_format),
-			.nVersion = 1,
-			.iPixelType = PFD_TYPE_RGBA,
-			.dwFlags = PFD_SUPPORT_OPENGL|PFD_DRAW_TO_WINDOW|PFD_DOUBLEBUFFER,
-			.cColorBits = 32,
-			.cAlphaBits = 8,
-			.iLayerType = PFD_MAIN_PLANE,
-	};
+	PIXELFORMATDESCRIPTOR desired_pixel_format = (PIXELFORMATDESCRIPTOR){};
+	desired_pixel_format.nSize = sizeof(desired_pixel_format);
+	desired_pixel_format.nVersion = 1;
+	desired_pixel_format.iPixelType = PFD_TYPE_RGBA;
+	desired_pixel_format.dwFlags = PFD_SUPPORT_OPENGL|PFD_DRAW_TO_WINDOW|PFD_DOUBLEBUFFER;
+	desired_pixel_format.cColorBits = 32;
+	desired_pixel_format.cAlphaBits = 8;
+	desired_pixel_format.iLayerType = PFD_MAIN_PLANE;
 
 	int suggested_pixel_format_index = ChoosePixelFormat(dummy_dc, &desired_pixel_format);
 	PIXELFORMATDESCRIPTOR suggested_pixel_format;
@@ -829,9 +780,9 @@ void win32_init_opengl(HWND window) {
 
 	// Now try to load the extensions we will need.
 
-#define GET_WGL_PROC(proc) do { proc = (void*) wglGetProcAddress(#proc); } while(0)
+#define GET_WGL_PROC(proc, type) do { proc = (type) wglGetProcAddress(#proc); } while(0)
 
-	GET_WGL_PROC(wglGetExtensionsStringEXT);
+	GET_WGL_PROC(wglGetExtensionsStringEXT, PFNWGLGETEXTENSIONSSTRINGEXTPROC);
 	if (!wglGetExtensionsStringEXT) {
 		printf("Error: wglGetExtensionsStringEXT is unavailable\n");
 		panic();
@@ -840,22 +791,22 @@ void win32_init_opengl(HWND window) {
 //	puts(wgl_extensions_string);
 
 	if (win32_wgl_extension_supported("WGL_EXT_swap_control")) {
-		GET_WGL_PROC(wglSwapIntervalEXT);
-		GET_WGL_PROC(wglGetSwapIntervalEXT);
+		GET_WGL_PROC(wglSwapIntervalEXT, PFNWGLSWAPINTERVALEXTPROC);
+		GET_WGL_PROC(wglGetSwapIntervalEXT, PFNWGLGETSWAPINTERVALEXTPROC);
 	} else {
 		printf("Error: WGL_EXT_swap_control is unavailable\n");
 		panic();
 	}
 
 	if (win32_wgl_extension_supported("WGL_ARB_create_context")) {
-		GET_WGL_PROC(wglCreateContextAttribsARB);
+		GET_WGL_PROC(wglCreateContextAttribsARB, PFNWGLCREATECONTEXTATTRIBSARBPROC);
 	} else {
 		printf("Error: WGL_ARB_create_context is unavailable\n");
 		panic();
 	}
 
 	if (win32_wgl_extension_supported("WGL_ARB_pixel_format")) {
-		GET_WGL_PROC(wglChoosePixelFormatARB);
+		GET_WGL_PROC(wglChoosePixelFormatARB, PFNWGLCHOOSEPIXELFORMATARBPROC);
 	} else {
 		printf("Error: WGL_ARB_pixel_format is unavailable\n");
 		panic();
@@ -887,7 +838,7 @@ void win32_init_opengl(HWND window) {
 	suggested_pixel_format_index = 0;
 	memset_zero(&suggested_pixel_format);
 	bool32 status = wglChoosePixelFormatARB(dc, pixel_attribs, NULL, 1, &suggested_pixel_format_index, &num_formats);
-	if (status == false || num_formats == 0) {
+	if (!status || num_formats == 0) {
 		printf("wglChoosePixelFormatARB() failed.");
 		panic();
 	}
@@ -899,7 +850,7 @@ void win32_init_opengl(HWND window) {
 #if USE_OPENGL_DEBUG_CONTEXT
 	int context_attribs[] = {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 5,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
 			WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB, // Ask for a debug context
 			0
@@ -972,9 +923,6 @@ void win32_init_opengl(HWND window) {
 
 	// debug
 	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
-
-	// for software renderer only; remove this??
-//	glGenTextures(1, &global_blit_texture_handle);
 
 	glDrawBuffer(GL_BACK);
 
@@ -1074,8 +1022,8 @@ bool32 is_queue_work_in_progress(work_queue_t* queue) {
 	return result;
 }
 
-DWORD WINAPI _Noreturn thread_proc(void* parameter) {
-	win32_thread_info_t* thread_info = parameter;
+DWORD WINAPI thread_proc(void* parameter) {
+	win32_thread_info_t* thread_info = (win32_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
 	// Allocate a private memory buffer
@@ -1190,15 +1138,14 @@ void win32_init_multithreading() {
 }
 
 void win32_init_main_window() {
-	main_window_class = (WNDCLASSA){
-			.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-			.lpfnWndProc = main_window_callback,
-			.hInstance = g_instance,
-			.hCursor = the_cursor,
-//			.hIcon = ,
-			.lpszClassName = "SlideviewerMainWindow",
-			.hbrBackground = NULL,
-	};
+	main_window_class = (WNDCLASSA){};
+	main_window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+	main_window_class.lpfnWndProc = main_window_callback;
+	main_window_class.hInstance = g_instance;
+	main_window_class.hCursor = the_cursor;
+//	main_window_class.hIcon = ;
+	main_window_class.lpszClassName = "SlideviewerMainWindow";
+	main_window_class.hbrBackground = NULL;
 
 	if (!RegisterClassA(&main_window_class)) {
 		win32_diagnostic("RegisterClassA");

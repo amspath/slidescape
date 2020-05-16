@@ -16,8 +16,11 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef STRINGUTILS_H
-#define STRINGUTILS_H
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "common.h"
 
@@ -26,4 +29,7 @@ const char* one_past_last_slash(const char* s, i32 max);
 const char* get_file_extension(const char* filename);
 
 
-#endif //STRINGUTILS_H
+#ifdef __cplusplus
+};
+#endif
+

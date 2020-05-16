@@ -309,7 +309,6 @@ extern char** g_argv;
 extern bool is_fullscreen;
 extern bool is_program_running;
 extern void* thread_local_storage[MAX_THREAD_COUNT];
-extern work_queue_t work_queue;
 extern input_t inputs[2];
 extern input_t *old_input;
 extern input_t *curr_input;

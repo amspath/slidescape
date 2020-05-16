@@ -16,7 +16,6 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#define USE_MINIMAL_SYSTEM_HEADER
 #include "common.h"
 #include "platform.h"
 
@@ -25,6 +24,8 @@
 
 #include "stringutils.h"
 #include "stringified_shaders.c"
+
+#include "shader.h"
 
 #if DO_DEBUG
 #define STRINGIFY_SHADERS

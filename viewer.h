@@ -18,17 +18,17 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 #include "common.h"
 #include "mathutils.h"
 
 #include "tiff.h"
 #include "openslide_api.h"
 #include "caselist.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 
 typedef struct texture_t {
 	u32 texture;

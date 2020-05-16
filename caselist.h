@@ -19,7 +19,6 @@
 #pragma once
 #include "common.h"
 #include "parson.h"
-#include "viewer.h"
 
 #ifdef __cplusplus
 extern "C" {

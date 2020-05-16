@@ -118,12 +118,14 @@ typedef struct render_basis_t {
 } render_basis_t;
 
 
+/*
 render_group_t* allocate_render_group(arena_t* arena, u32 max_pushbuffer_size) {
 	render_group_t* result = push_struct(arena, render_group_t);
 	*result = (render_group_t) {
 		.pushbuffer_base = (u8*) push_size(arena, max_pushbuffer_size),
 	};
 }
+*/
 
 void* push_render_entry(render_group_t* group, u32 size) {
 	void* result = NULL;

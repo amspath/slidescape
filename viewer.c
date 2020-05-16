@@ -88,7 +88,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
-	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+	u8* temp_memory = (u8*) thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
 	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 
 
@@ -206,9 +206,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
-	u8* temp_memory = thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+	u8* temp_memory = (u8*) thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
 	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
-	u8* compressed_tile_data = thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
+	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
 
 
 	if (image->type == IMAGE_TYPE_TIFF) {
@@ -264,12 +264,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		} else {
 			// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 			// offset in the file where we want to do the read operation
-			LARGE_INTEGER offset = {.QuadPart = tile_offset};
-			thread_memory->overlapped = (OVERLAPPED) {
-					.Offset = offset.LowPart,
-					.OffsetHigh = offset.HighPart,
-					.hEvent = thread_memory->async_io_event
-			};
+			LARGE_INTEGER offset = {.QuadPart = (i64)tile_offset};
+			thread_memory->overlapped = (OVERLAPPED) {};
+			thread_memory->overlapped.Offset = offset.LowPart;
+			thread_memory->overlapped.OffsetHigh = (DWORD)offset.HighPart;
+			thread_memory->overlapped.hEvent = thread_memory->async_io_event;
 			ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
 
 			if (!ReadFile(tiff->win32_file_handle, compressed_tile_data,
@@ -348,8 +347,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 }
 
 bool32 enqueue_load_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
-	load_tile_task_t* task_data = malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-	*task_data = (load_tile_task_t){ .image = image, .level = level, .tile_x = tile_x, .tile_y = tile_y };
+	load_tile_task_t* task_data = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
+	*task_data = (load_tile_task_t){ .image = image, .tile = NULL, .level = level, .tile_x = tile_x, .tile_y = tile_y };
 
 	return add_work_queue_entry(&work_queue, load_tile_func, task_data);
 
@@ -536,7 +535,7 @@ void unload_all_images(app_state_t *app_state) {
 }
 
 void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
-	image_t new_image = {0};
+	image_t new_image = (image_t){};
 	new_image.type = IMAGE_TYPE_TIFF;
 	new_image.tiff.tiff = tiff;
 	new_image.is_freshly_loaded = true;
@@ -551,7 +550,7 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 	if (tiff.level_count > 0 && tiff.main_image->tile_width) {
 
 		new_image.level_count = tiff.level_count;
-		new_image.level_images = calloc(1, tiff.level_count * sizeof(level_image_t));
+		new_image.level_images = (level_image_t*) calloc(1, tiff.level_count * sizeof(level_image_t));
 
 		for (i32 i = 0; i < tiff.level_count; ++i) {
 			level_image_t* level_image = new_image.level_images + i;
@@ -563,7 +562,7 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 			level_image->um_per_pixel_y = ifd->um_per_pixel_y;
 			level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
 			level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
-			level_image->tiles = calloc(1, ifd->tile_count * sizeof(tile_t));
+			level_image->tiles = (tile_t*) calloc(1, ifd->tile_count * sizeof(tile_t));
 			ASSERT(ifd->tile_byte_counts != NULL);
 			ASSERT(ifd->tile_offsets != NULL);
 			// mark the empty tiles, so that we can skip loading them later on
@@ -600,7 +599,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0) {
 		// Load using stb_image
-		image_t image = {0};
+		image_t image = (image_t){};
 		image.type = IMAGE_TYPE_SIMPLE;
 		image.simple.channels = 4; // desired: RGBA
 		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
@@ -641,7 +640,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			printf("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
 			return false;
 		}
-		image_t image = {0};
+		image_t image = (image_t){};
 
 		image.type = IMAGE_TYPE_WSI;
 		wsi_t* wsi = &image.wsi.wsi;
@@ -657,7 +656,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			if (wsi->level_count > 0 & wsi->levels[0].x_tile_side_in_um > 0) {
 
 				image.level_count = wsi->level_count;
-				image.level_images = calloc(1, wsi->level_count * sizeof(level_image_t));
+				image.level_images = (level_image_t*) calloc(1, wsi->level_count * sizeof(level_image_t));
 
 				for (i32 i = 0; i < wsi->level_count; ++i) {
 					level_image_t* level_image = image.level_images + i;
@@ -669,7 +668,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 					level_image->um_per_pixel_y = wsi_level->um_per_pixel_y;
 					level_image->x_tile_side_in_um = wsi_level->x_tile_side_in_um;
 					level_image->y_tile_side_in_um = wsi_level->y_tile_side_in_um;
-					level_image->tiles = calloc(1, wsi_level->tile_count * sizeof(tile_t));
+					level_image->tiles = (tile_t*) calloc(1, wsi_level->tile_count * sizeof(tile_t));
 					// Note: OpenSlide doesn't allow us to quickly check if tiles are empty or not.
 				}
 			}
@@ -1141,7 +1140,7 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 				if (intermittent % intermittent_interval == 0) {
 					i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 3); // can be tweaked
 
-					load_tile_task_batch_t* batch = calloc(1, sizeof(load_tile_task_batch_t));
+					load_tile_task_batch_t* batch = (load_tile_task_batch_t*) calloc(1, sizeof(load_tile_task_batch_t));
 					batch->task_count = ATMOST(COUNT(batch->tile_tasks), max_tiles_to_load);
 					memcpy(batch->tile_tasks, tile_wishlist, batch->task_count * sizeof(load_tile_task_t));
 					if (add_work_queue_entry(&work_queue, tiff_load_tile_batch_func, batch)) {
@@ -1156,9 +1155,8 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 				// regular file loading
 				i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 10);
 				for (i32 i = 0; i < max_tiles_to_load; ++i) {
-					load_tile_task_t *the_task = &tile_wishlist[i];
-					load_tile_task_t *task_data = malloc(
-							sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
+					load_tile_task_t* the_task = &tile_wishlist[i];
+					load_tile_task_t* task_data = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
 					*task_data = *the_task;
 					if (add_work_queue_entry(&work_queue, load_tile_func, task_data)) {
 						// success

@@ -67,8 +67,8 @@ bool32 load_caselist(caselist_t* caselist, const char* json_filename) {
 			caselist->case_count = json_array_get_count(json_cases);
 			caselist->case_count = json_array_get_count(json_cases);
 			if (caselist->case_count > 0) {
-				caselist->cases = calloc(1, caselist->case_count * sizeof(case_t));
-				caselist->names = calloc(1, caselist->case_count * sizeof(void*));
+				caselist->cases = (case_t*) calloc(1, caselist->case_count * sizeof(case_t));
+				caselist->names = (const char**) calloc(1, caselist->case_count * sizeof(void*));
 
 
 				i32 num_cases_with_filenames = 0;

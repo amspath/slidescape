@@ -53,6 +53,7 @@ add_executable(slideviewer
         shader.c
         tiff.c
         caselist.c
+        openslide.c
         imgui.cpp
         imgui_demo.cpp
         imgui_draw.cpp

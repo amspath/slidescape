@@ -91,6 +91,7 @@ extern SYSTEM_INFO system_info;
 extern u32 os_page_size;
 extern i32 total_thread_count;
 extern i32 logical_cpu_count;
+extern work_queue_t work_queue;
 
 
 #undef INIT

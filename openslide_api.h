@@ -55,7 +55,8 @@ typedef struct openslide_api {
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_WIDTH "openslide.bounds-width"
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_HEIGHT "openslide.bounds-height"
 
-
+// prototypes
+bool32 init_openslide();
 
 // globals
 #if defined(OPENSLIDE_API_IMPL)

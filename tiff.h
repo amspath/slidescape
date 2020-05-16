@@ -18,6 +18,11 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
 #include "common.h"
 #include "stdio.h"
 
@@ -176,8 +181,8 @@ typedef struct tiff_ifd_t {
 	u32 image_height;
 	u32 tile_width;
 	u32 tile_height;
-	u64* tile_offsets;
 	u64 tile_count;
+	u64* tile_offsets;
 	u64* tile_byte_counts;
 	char* image_description;
 	u64 image_description_length;
@@ -407,3 +412,8 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer);
 i64 find_end_of_http_headers(u8* str, u64 len);
 bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size);
 void tiff_destroy(tiff_t* tiff);
+
+#ifdef __cplusplus
+};
+#endif
+
