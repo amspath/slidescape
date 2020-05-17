@@ -37,10 +37,16 @@
 
 #define GUI_IMPL
 #include "gui.h"
+#include "annotation.h"
 
+void gui_new_frame() {
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+}
 
-void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
-	ImGuiIO& io = ImGui::GetIO();
+void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
+	ImGuiIO &io = ImGui::GetIO();
 
 	// TODO: check if this is stale??
 	gui_want_capture_mouse = io.WantCaptureMouse;
@@ -48,12 +54,15 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 
 	// Start the Dear ImGui frame
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplWin32_NewFrame();
-	ImGui::NewFrame();
+//	ImGui_ImplOpenGL3_NewFrame();
+//	ImGui_ImplWin32_NewFrame();
+//	ImGui::NewFrame();
 
-	if (ImGui::BeginMainMenuBar())
-	{
+
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	bool ret = ImGui::BeginMainMenuBar();
+	ImGui::PopStyleVar(1);
+	if (ret) {
 		static struct {
 			bool open_file;
 			bool close;
@@ -65,24 +74,21 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 		bool prev_fullscreen = is_fullscreen;
 
-		if (ImGui::BeginMenu("File"))
-		{
+		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
 			if (ImGui::MenuItem("Close", NULL, &menu_items_clicked.close)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
 		}
-		if (ImGui::BeginMenu("View"))
-		{
+		if (ImGui::BeginMenu("View")) {
 			prev_fullscreen = is_fullscreen = win32_is_fullscreen(main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
 			ImGui::Separator();
 
 			if (ImGui::MenuItem("Options...", NULL, &show_display_options_window)) {}
-			if (ImGui::BeginMenu("Debug"))
-			{
+			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
 				if (ImGui::MenuItem("Show case list", NULL, &menu_items_clicked.show_case_list)) {}
@@ -105,8 +111,7 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		} else if (menu_items_clicked.show_case_list) {
 			reload_global_caselist(app_state, "cases.json");
 			show_slide_list_window = true;
-		}
-		else if (prev_fullscreen != is_fullscreen) {
+		} else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);
 			if (currently_fullscreen != is_fullscreen) {
 				win32_toggle_fullscreen(main_window);
@@ -143,13 +148,16 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		ImGui::SetNextWindowPos(ImVec2(25, 50), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(360, 200), ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Image adjustments", &show_image_adjustments_window);                          // Create a window called "Hello, world!" and append into it.
+		ImGui::Begin("Image adjustments",
+		             &show_image_adjustments_window);                          // Create a window called "Hello, world!" and append into it.
 
 //		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
 		ImGui::Checkbox("Use image adjustments", &app_state->use_image_adjustments);
 
-		ImGui::SliderFloat("black level", &app_state->black_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-		ImGui::SliderFloat("white level", &app_state->white_level, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+		ImGui::SliderFloat("black level", &app_state->black_level, 0.0f,
+		                   1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+		ImGui::SliderFloat("white level", &app_state->white_level, 0.0f,
+		                   1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 
 
 
@@ -172,15 +180,15 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 		// General BeginCombo() API, you have full control over your selection data and display type.
 		// (your selection data could be an index, a pointer to the object, an id for the object, a flag stored in the object itself, etc.)
-		const char* items[] = { "Dark", "Light", "Classic" };
+		const char* items[] = {"Dark", "Light", "Classic"};
 		static i32 style_color = 0;
 		int old_style_color = style_color;
 		static ImGuiComboFlags flags = 0;
 		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
-		if (ImGui::BeginCombo("##user_interface_colors_combo", items[style_color], flags)) // The second parameter is the label previewed before opening the combo.
+		if (ImGui::BeginCombo("##user_interface_colors_combo", items[style_color],
+		                      flags)) // The second parameter is the label previewed before opening the combo.
 		{
-			for (int n = 0; n < IM_ARRAYSIZE(items); n++)
-			{
+			for (int n = 0; n < IM_ARRAYSIZE(items); n++) {
 				bool is_selected = (style_color == n);
 				if (ImGui::Selectable(items[n], is_selected))
 					style_color = n;
@@ -201,12 +209,13 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		}
 
 		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
-		ImGui::ColorEdit3("color", (float*)&app_state->clear_color); // Edit 3 floats representing a color
+		ImGui::ColorEdit3("color", (float*) &app_state->clear_color); // Edit 3 floats representing a color
 
 		ImGui::Text("\nTIFF backend");
 //		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
-		const char* tiff_backends[] = { "Built-in", "OpenSlide" };
-		if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1-app_state->use_builtin_tiff_backend], flags)) // The second parameter is the label previewed before opening the combo.
+		const char* tiff_backends[] = {"Built-in", "OpenSlide"};
+		if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1 - app_state->use_builtin_tiff_backend],
+		                      flags)) // The second parameter is the label previewed before opening the combo.
 		{
 			if (ImGui::Selectable(tiff_backends[0], app_state->use_builtin_tiff_backend)) {
 				app_state->use_builtin_tiff_backend = true;
@@ -237,7 +246,7 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		ImGui::Begin("Select case", &show_slide_list_window);
 
 		// List box
-		const char* listbox_items_dummy[] = { "", };
+		const char* listbox_items_dummy[] = {"",};
 		const char** listbox_items = listbox_items_dummy;
 		i32 items_count = 0;
 
@@ -250,7 +259,8 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		static int listbox_item_current = -1;
 		float line_height = ImGui::GetTextLineHeightWithSpacing();
 		float list_height_in_items = ImGui::GetWindowHeight() / line_height;
-		if (ImGui::ListBox("##listbox\n(single select)", &listbox_item_current, listbox_items, items_count, (int)(list_height_in_items - 2.5f))) {
+		if (ImGui::ListBox("##listbox\n(single select)", &listbox_item_current, listbox_items, items_count,
+		                   (int) (list_height_in_items - 2.5f))) {
 			// value changed
 			if (caselist->cases) {
 				app_state->selected_case = caselist->cases + listbox_item_current;
@@ -260,7 +270,8 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 					// If the SLIDES_DIR environment variable is set, load slides from there
 					char path_buffer[2048] = {};
-					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix, app_state->selected_case->filename);
+					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix,
+					         app_state->selected_case->filename);
 
 					load_image_from_file(app_state, path_buffer);
 				}
@@ -271,7 +282,6 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 
 		ImGui::End();
-
 
 
 	}
@@ -286,8 +296,7 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 		if (global_selected_case != NULL) {
 			ImGui::TextWrapped("%s\n", global_selected_case->name);
 			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);
-			if (ImGui::TreeNode("Diagnosis and comment"))
-			{
+			if (ImGui::TreeNode("Diagnosis and comment")) {
 				ImGui::TextWrapped("%s\n", global_selected_case->diagnosis);
 				ImGui::TextWrapped("%s\n", global_selected_case->notes);
 				ImGui::TreePop();
@@ -301,6 +310,11 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 	}
 
 
+
+//}
+//
+//void gui_render(app_state_t* app_state, i32 client_width, i32 client_height) {
+
 	// Rendering
 	ImGui::Render();
 	glViewport(0, 0, client_width, client_height);
@@ -310,6 +324,26 @@ void do_gui(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 
 
+}
+
+ImVec2 to_imvec2(v2f v) {
+	return ImVec2(v.x, v.y);
+}
+
+void gui_draw_circle(v2f pos) {
+	ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+	draw_list->AddCircle(to_imvec2(pos), 50, ImColor(0, 0, 0, 255), 24, 2.0f);
+}
+
+void gui_draw_point(v2f pos) {
+	ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+	draw_list->AddRectFilled(ImVec2(pos.x-1, pos.y-1),ImVec2(pos.x+1, pos.y+1), ImColor(0, 0, 0, 255), 0.0f, ImDrawCornerFlags_None);
+}
+
+void gui_draw_poly(v2f* points, i32 count, u32 color) {
+	ImDrawList* draw_list = ImGui::GetForegroundDrawList();
+	ImVec2* points_alias = (ImVec2*) points;
+	draw_list->AddPolyline(points_alias, count, color, true, 2.0f);//(ImVec2(pos.x-1, pos.y-1),ImVec2(pos.x+1, pos.y+1), ImColor(0, 0, 0, 255), 0.0f, ImDrawCornerFlags_None);
 }
 
 void win32_init_gui(HWND hwnd) {
@@ -328,6 +362,8 @@ void win32_init_gui(HWND hwnd) {
 
 	ImGuiStyle& style = ImGui::GetStyle();
 	style.Alpha = 0.95f;
+	style.DisplaySafeAreaPadding = ImVec2(0.0f, 0.0f);
+	style.TouchExtraPadding = ImVec2(0.0f, 1.0f);
 
 	// Setup Platform/Renderer bindings
 	ImGui_ImplWin32_Init(hwnd);

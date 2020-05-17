@@ -1213,6 +1213,8 @@ int main(int argc, char** argv) {
 	init_opengl_stuff();
 	win32_init_gui(main_window);
 
+	init_app_state(&global_app_state);
+
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	// TODO: give the viewer the option to do this without referring to the g_argc which it does not need to know!
 	if (g_argc > 1) {
@@ -1229,10 +1231,12 @@ int main(int argc, char** argv) {
 
 		win32_process_input(main_window);
 
+
+
 		dimension = win32_get_window_dimension(main_window);
 		viewer_update_and_render(&global_app_state, curr_input, dimension.width, dimension.height, delta_t);
 
-		do_gui(&global_app_state, dimension.width, dimension.height);
+		gui_draw(&global_app_state, dimension.width, dimension.height);
 
 //		glFinish();
 		SwapBuffers(wglGetCurrentDC());

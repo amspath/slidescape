@@ -744,10 +744,11 @@ void init_app_state(app_state_t* app_state) {
 	app_state->initialized = true;
 }
 
+
+
 // TODO: refactor delta_t
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
-void
-viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
+void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
 
 	if (!app_state->initialized) init_app_state(app_state);
 	// Note: the window might get resized, so need to update this every frame
@@ -761,6 +762,7 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 
 
 	// TODO: this is part of rendering and doesn't belong here
+	gui_new_frame();
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
@@ -791,7 +793,7 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 			if (input->mouse_buttons[0].transition_count != 0) {
 				// Don't start dragging if clicked outside the window
 				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
-				if (is_point_inside_rect(valid_drag_start_rect, input->mouse_xy)) {
+				if (is_point_inside_rect2i(valid_drag_start_rect, input->mouse_xy)) {
 					scene->is_dragging = true; // drag start
 //						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
@@ -981,15 +983,24 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 		float r_minus_l = screen_um_per_pixel_x * (float) client_width;
 		float t_minus_b = screen_um_per_pixel_y * (float) client_height;
 
-		float camera_rect_x1 = scene->camera.x - r_minus_l * 0.5f;
-		float camera_rect_x2 = scene->camera.x + r_minus_l * 0.5f;
-		float camera_rect_y1 = scene->camera.y - t_minus_b * 0.5f;
-		float camera_rect_y2 = scene->camera.y + t_minus_b * 0.5f;
 
-		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, level_image->x_tile_side_in_um);
-		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, level_image->x_tile_side_in_um) + 1;
-		i32 camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, level_image->y_tile_side_in_um);
-		i32 camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, level_image->y_tile_side_in_um) + 1;
+
+		v2f camera_min = {
+				.x = scene->camera.x - r_minus_l * 0.5f,
+				.y = scene->camera.y - t_minus_b * 0.5f,
+		};
+		v2f camera_max = {
+				.x = scene->camera.x + r_minus_l * 0.5f,
+				.y = scene->camera.y + t_minus_b * 0.5f,
+		};
+
+
+		draw_annotations(camera_min, screen_um_per_pixel_x);
+
+		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, level_image->x_tile_side_in_um);
+		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, level_image->x_tile_side_in_um) + 1;
+		i32 camera_tile_y1 = tile_pos_from_world_pos(camera_min.y, level_image->y_tile_side_in_um);
+		i32 camera_tile_y2 = tile_pos_from_world_pos(camera_max.y, level_image->y_tile_side_in_um) + 1;
 
 		camera_tile_x1 = CLAMP(camera_tile_x1, 0, level_image->width_in_tiles);
 		camera_tile_x2 = CLAMP(camera_tile_x2, 0, level_image->width_in_tiles);
@@ -1078,10 +1089,10 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 
 			i32 base_priority = (image->level_count - level) * 100; // highest priority for the most zoomed in levels
 
-			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, drawn_level->x_tile_side_in_um);
-			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, drawn_level->x_tile_side_in_um) + 1;
-			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, drawn_level->y_tile_side_in_um);
-			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, drawn_level->y_tile_side_in_um) + 1;
+			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, drawn_level->x_tile_side_in_um);
+			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, drawn_level->x_tile_side_in_um) + 1;
+			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_min.y, drawn_level->y_tile_side_in_um);
+			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_max.y, drawn_level->y_tile_side_in_um) + 1;
 
 			level_camera_tile_x1 = CLAMP(level_camera_tile_x1, 0, drawn_level->width_in_tiles);
 			level_camera_tile_x2 = CLAMP(level_camera_tile_x2, 0, drawn_level->width_in_tiles);
@@ -1216,10 +1227,10 @@ viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_widt
 		for (i32 level = image->level_count - 1; level >= current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 
-			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_rect_x1, drawn_level->x_tile_side_in_um);
-			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_rect_x2, drawn_level->x_tile_side_in_um) + 1;
-			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_rect_y1, drawn_level->y_tile_side_in_um);
-			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_rect_y2, drawn_level->y_tile_side_in_um) + 1;
+			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, drawn_level->x_tile_side_in_um);
+			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, drawn_level->x_tile_side_in_um) + 1;
+			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_min.y, drawn_level->y_tile_side_in_um);
+			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_max.y, drawn_level->y_tile_side_in_um) + 1;
 
 			level_camera_tile_x1 = CLAMP(level_camera_tile_x1, 0, drawn_level->width_in_tiles);
 			level_camera_tile_x2 = CLAMP(level_camera_tile_x2, 0, drawn_level->width_in_tiles);

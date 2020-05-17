@@ -25,10 +25,15 @@ extern "C" {
 #define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
 #define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
+#define TO_RGBA(r,g,b,a) ((a) << 24 | (r) << 8 | (g) << 8 | (b) << 16)
 
 typedef struct rect2i {
 	i32 x, y, w, h;
 } rect2i;
+
+typedef struct rect2f {
+	float x, y, w, h;
+} rect2f;
 
 typedef struct v2i {
 	i32 x, y;
@@ -58,8 +63,9 @@ typedef struct v4f {
 
 // prototypes
 rect2i clip_rect(rect2i* first, rect2i* second);
-bool is_point_inside_rect(rect2i rect, v2i point);
+bool is_point_inside_rect2i(rect2i rect, v2i point);
 v2i rect2i_center_point(rect2i* rect);
+v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
 
 // globals
 #if defined(MATHUTILS_IMPL)

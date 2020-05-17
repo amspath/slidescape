@@ -20,6 +20,7 @@
 #include "viewer.h"
 #include "annotation.h"
 #include "platform.h"
+#include "gui.h"
 #include "yxml.h"
 
 // XML parsing using the yxml library.
@@ -35,6 +36,25 @@ u32 coordinate_count;
 
 asap_xml_element_enum current_xml_element_type;
 asap_xml_attribute_enum current_xml_attribute_type;
+
+void draw_annotations(v2f camera_min, float screen_um_per_pixel) {
+	for (i32 annotation_index = 0; annotation_index < annotation_count; ++annotation_index) {
+		annotation_t* annotation = annotations + annotation_index;
+//		rgba_t rgba = annotation->color;
+		rgba_t rgba = {50, 50, 0, 255 };
+		u32 color = TO_RGBA(rgba.r, rgba.g, rgba.b, rgba.a);
+		if (annotation->has_coordinates) {
+			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
+			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+				coordinate_t* coordinate = coordinates + annotation->first_coordinate + i;
+				v2f world_pos = {coordinate->x, coordinate->y};
+				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, screen_um_per_pixel);
+				points[i] = transformed_pos;
+			}
+			gui_draw_poly(points, annotation->coordinate_count, color);
+		}
+	}
+}
 
 void annotation_set_attribute(annotation_t* annotation, const char* attr, const char* value) {
 	if (strcmp(attr, "Color") == 0) {
@@ -59,9 +79,9 @@ void coordinate_set_attribute(coordinate_t* coordinate, const char* attr, const 
 	if (strcmp(attr, "Order") == 0) {
 		coordinate->order = atoi(value);
 	} else if (strcmp(attr, "X") == 0) {
-		coordinate->x = atof(value);
+		coordinate->x = atof(value) * 0.25f; // TODO: address assumption
 	} else if (strcmp(attr, "Y") == 0) {
-		coordinate->y = atof(value);
+		coordinate->y = atof(value) * 0.25f; // TODO: address assumption
 	}
 }
 
@@ -69,10 +89,12 @@ void unload_annotations() {
 	if (annotations) {
 		sb_free(annotations);
 		annotations = NULL;
+		annotation_count = 0;
 	}
 	if (coordinates) {
 		sb_free(coordinates);
 		coordinates = NULL;
+		coordinate_count = 0;
 	}
 }
 

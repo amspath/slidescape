@@ -75,6 +75,7 @@ typedef struct asap_xml_parse_state_t {
 
 } asap_xml_parse_state_t;
 
+void draw_annotations(v2f camera_min, float screen_um_per_pixel);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 
 #ifdef __cplusplus

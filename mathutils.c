@@ -34,7 +34,7 @@ rect2i clip_rect(rect2i* first, rect2i* second) {
 	return result;
 }
 
-bool is_point_inside_rect(rect2i rect, v2i point) {
+bool is_point_inside_rect2i(rect2i rect, v2i point) {
 	bool result = true;
 	if (point.x < rect.x || point.x >= (rect.x + rect.w) || point.y < rect.y || point.y >= (rect.y + rect.h)) {
 		result = false;
@@ -48,6 +48,14 @@ v2i rect2i_center_point(rect2i* rect) {
 			.y = rect->y + rect->h / 2,
 	};
 	return result;
+}
+
+v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel) {
+	v2f transformed_pos = {
+			.x = (world_pos.x - camera_min.x) / screen_um_per_pixel,
+			.y = (world_pos.y - camera_min.y) / screen_um_per_pixel,
+	};
+	return transformed_pos;
 }
 
 

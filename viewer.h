@@ -193,6 +193,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename);
 bool32 load_image_from_file(app_state_t* app_state, const char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
+void init_app_state(app_state_t* app_state);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 
 void init_opengl_stuff();
