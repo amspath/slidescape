@@ -34,7 +34,7 @@ extern "C" {
 
 #define MAX_THREAD_COUNT 128
 
-typedef struct {
+typedef struct file_mem_t {
 	size_t len;
 	u8 data[0];
 } file_mem_t;
@@ -89,7 +89,7 @@ typedef struct controller_input_t {
 	button_state_t keys[256];
 } controller_input_t;
 
-typedef struct {
+typedef struct input_t {
 	button_state_t mouse_buttons[5];
 	i32 mouse_z;
 	v2i dmouse_xy;

@@ -34,6 +34,10 @@ typedef struct v2i {
 	i32 x, y;
 } v2i;
 
+typedef struct rgba_t {
+	u8 r, g, b, a;
+} rgba_t;
+
 typedef struct v2f {
 	float x, y;
 } v2f;

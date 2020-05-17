@@ -53,6 +53,7 @@ add_executable(slideviewer
         shader.c
         tiff.c
         caselist.c
+        annotation.c
         openslide.c
         imgui.cpp
         imgui_demo.cpp
@@ -66,6 +67,7 @@ add_executable(slideviewer
         ${JPEG_SOURCE_FILES}
         lz4.c
         parson.c
+        yxml.c
 )
 target_link_libraries(slideviewer user32 gdi32 winmm opengl32 ws2_32)
 endif(WIN32)

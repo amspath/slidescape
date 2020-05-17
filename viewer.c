@@ -45,6 +45,7 @@
 #include "tlsclient.h"
 #include "gui.h"
 #include "caselist.h"
+#include "annotation.h"
 
 
 void reset_scene(image_t *image, scene_t *scene) {
@@ -584,6 +585,8 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	if (strcasecmp(ext, "json") == 0) {
 		reload_global_caselist(app_state, filename);
 		show_slide_list_window = true;
+	} else if (strcasecmp(ext, "xml") == 0) {
+		load_asap_xml_annotations(app_state, filename);
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);

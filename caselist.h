@@ -20,9 +20,7 @@
 #include "common.h"
 #include "parson.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+
 
 
 typedef struct {
@@ -67,7 +65,4 @@ void caselist_destroy(caselist_t* caselist);
 
 
 
-#ifdef __cplusplus
-}
-#endif
 
