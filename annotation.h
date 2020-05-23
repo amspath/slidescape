@@ -75,8 +75,16 @@ typedef struct asap_xml_parse_state_t {
 
 } asap_xml_parse_state_t;
 
-void draw_annotations(v2f camera_min, float screen_um_per_pixel);
+typedef struct annotation_set_t_ {
+	annotation_t* annotations; // sb
+	u32 annotation_count;
+	coordinate_t* coordinates; // sb
+	u32 coordinate_count;
+} annotation_set_t;
+
+void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
+void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 
 #ifdef __cplusplus
 }

@@ -995,7 +995,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		};
 
 
-		draw_annotations(camera_min, screen_um_per_pixel_x);
+		draw_annotations(&scene->annotation_set, camera_min, screen_um_per_pixel_x);
 
 		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, level_image->x_tile_side_in_um);
 		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, level_image->x_tile_side_in_um) + 1;

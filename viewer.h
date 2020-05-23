@@ -29,6 +29,7 @@ extern "C" {
 #include "tiff.h"
 #include "openslide_api.h"
 #include "caselist.h"
+#include "annotation.h"
 
 typedef struct texture_t {
 	u32 texture;
@@ -165,6 +166,7 @@ typedef struct scene_t {
 	v4f clear_color;
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
+	annotation_set_t annotation_set;
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
 	bool8 initialized;
 } scene_t;

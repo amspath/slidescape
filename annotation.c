@@ -28,25 +28,21 @@
 // https://dev.yorhel.nl/yxml/man
 #define YXML_STACK_BUFFER_SIZE KILOBYTES(32)
 
-annotation_t* annotations; // sb
-u32 annotation_count;
 
-coordinate_t* coordinates; // sb
-u32 coordinate_count;
 
 asap_xml_element_enum current_xml_element_type;
 asap_xml_attribute_enum current_xml_attribute_type;
 
-void draw_annotations(v2f camera_min, float screen_um_per_pixel) {
-	for (i32 annotation_index = 0; annotation_index < annotation_count; ++annotation_index) {
-		annotation_t* annotation = annotations + annotation_index;
+void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel) {
+	for (i32 annotation_index = 0; annotation_index < annotation_set->annotation_count; ++annotation_index) {
+		annotation_t* annotation = annotation_set->annotations + annotation_index;
 //		rgba_t rgba = annotation->color;
 		rgba_t rgba = {50, 50, 0, 255 };
 		u32 color = TO_RGBA(rgba.r, rgba.g, rgba.b, rgba.a);
 		if (annotation->has_coordinates) {
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-				coordinate_t* coordinate = coordinates + annotation->first_coordinate + i;
+				coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
 				v2f world_pos = {coordinate->x, coordinate->y};
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, screen_um_per_pixel);
 				points[i] = transformed_pos;
@@ -85,22 +81,20 @@ void coordinate_set_attribute(coordinate_t* coordinate, const char* attr, const 
 	}
 }
 
-void unload_annotations() {
-	if (annotations) {
-		sb_free(annotations);
-		annotations = NULL;
-		annotation_count = 0;
+void unload_annotations(annotation_set_t* annotation_set) {
+	if (annotation_set->annotations) {
+		sb_free(annotation_set->annotations);
 	}
-	if (coordinates) {
-		sb_free(coordinates);
-		coordinates = NULL;
-		coordinate_count = 0;
+	if (annotation_set->coordinates) {
+		sb_free(annotation_set->coordinates);
 	}
+	memset(annotation_set, 0, sizeof(*annotation_set));
 }
 
 
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
-	unload_annotations();
+	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+	unload_annotations(annotation_set);
 
 	file_mem_t* file = platform_read_entire_file(filename);
 	yxml_t* x = NULL;
@@ -142,21 +136,21 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						current_xml_element_type = ASAP_XML_ELEMENT_NONE;
 						if (strcmp(x->elem, "Annotation") == 0) {
 							annotation_t new_annotation = (annotation_t){};
-							sb_push(annotations, new_annotation);
-							++annotation_count;
+							sb_push(annotation_set->annotations, new_annotation);
+							++annotation_set->annotation_count;
 							current_xml_element_type = ASAP_XML_ELEMENT_ANNOTATION;
 						} else if (strcmp(x->elem, "Coordinate") == 0) {
 							coordinate_t new_coordinate = (coordinate_t){};
-							sb_push(coordinates, new_coordinate);
+							sb_push(annotation_set->coordinates, new_coordinate);
 							current_xml_element_type = ASAP_XML_ELEMENT_COORDINATE;
 
-							annotation_t* current_annotation = &sb_last(annotations);
+							annotation_t* current_annotation = &sb_last(annotation_set->annotations);
 							if (!current_annotation->has_coordinates) {
-								current_annotation->first_coordinate = coordinate_count;
+								current_annotation->first_coordinate = annotation_set->coordinate_count;
 								current_annotation->has_coordinates = true;
 							}
 							current_annotation->coordinate_count++;
-							++coordinate_count;
+							++annotation_set->coordinate_count;
 						}
 					} break;
 					case YXML_CONTENT: {
@@ -211,9 +205,9 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						if (attrcur) {
 //							printf("attr %s = %s\n", x->attr, attrbuf);
 							if (current_xml_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
-								annotation_set_attribute(&sb_last(annotations), x->attr, attrbuf);
+								annotation_set_attribute(&sb_last(annotation_set->annotations), x->attr, attrbuf);
 							} else if (current_xml_element_type == ASAP_XML_ELEMENT_COORDINATE) {
-								coordinate_set_attribute(&sb_last(coordinates), x->attr, attrbuf);
+								coordinate_set_attribute(&sb_last(annotation_set->coordinates), x->attr, attrbuf);
 							}
 						}
 					} break;
@@ -239,3 +233,51 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 
 	return success;
 }
+
+typedef struct {
+
+} xml_write_tag_state_t;
+
+const char* get_annotation_type_name(annotation_type_enum type) {
+	const char* result = "";
+	switch(type) {
+		case ANNOTATION_UNKNOWN_TYPE: default: break;
+		case ANNOTATION_RECTANGLE: result = "Rectangle"; break;
+		case ANNOTATION_POLYGON: result = "Polygon"; break;
+	}
+	return result;
+
+}
+
+void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out) {
+	ASSERT(annotation_set);
+	FILE* fp = fopen(filename_out, "wb");
+	if (fp) {
+//		const char* base_tag = "<ASAP_Annotations><Annotations>";
+
+		fprintf(fp, "<ASAP_Annotations><Annotations>");
+
+		for (i32 annotation_index = 0; annotation_index < annotation_set->annotation_count; ++annotation_index) {
+			annotation_t* annotation = annotation_set->annotations + annotation_index;
+			char color_buf[32];
+			snprintf(color_buf, sizeof(color_buf), "#%02x%02x%02x", annotation->color.r, annotation->color.g, annotation->color.b);
+
+			const char* group = "None";
+			const char* type_name = get_annotation_type_name(annotation->type);
+
+			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">",
+			        color_buf, annotation->name, group, type_name);
+
+			// coordinates
+
+			fprintf(fp, "</Annotation>");
+		}
+
+		fprintf(fp, "</Annotations></ASAP_Annotations>");
+
+		fclose(fp);
+
+
+	}
+}
+

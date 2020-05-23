@@ -69,6 +69,7 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 			bool open_remote;
 			bool exit_program;
 			bool show_case_list;
+			bool save_annotations;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -92,6 +93,7 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
 				if (ImGui::MenuItem("Show case list", NULL, &menu_items_clicked.show_case_list)) {}
+				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -116,6 +118,8 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 			if (currently_fullscreen != is_fullscreen) {
 				win32_toggle_fullscreen(main_window);
 			}
+		} else if(menu_items_clicked.save_annotations) {
+			save_asap_xml_annotations(&app_state->scene.annotation_set, "test_out.xml");
 		}
 	}
 
