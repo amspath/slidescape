@@ -36,8 +36,8 @@ asap_xml_attribute_enum current_xml_attribute_type;
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel) {
 	for (i32 annotation_index = 0; annotation_index < annotation_set->annotation_count; ++annotation_index) {
 		annotation_t* annotation = annotation_set->annotations + annotation_index;
-//		rgba_t rgba = annotation->color;
-		rgba_t rgba = {50, 50, 0, 255 };
+		rgba_t rgba = annotation->color;
+//		rgba_t rgba = {50, 50, 0, 255 };
 		u32 color = TO_RGBA(rgba.r, rgba.g, rgba.b, rgba.a);
 		if (annotation->has_coordinates) {
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
@@ -52,15 +52,54 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 	}
 }
 
-void annotation_set_attribute(annotation_t* annotation, const char* attr, const char* value) {
+u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
+	annotation_group_t new_group = {};
+	strncpy(new_group.name, name, sizeof(new_group.name));
+	sb_push(annotation_set->groups, new_group);
+	u32 new_group_index = annotation_set->group_count;
+	++annotation_set->group_count;
+	return new_group_index;
+}
+
+i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name) {
+	for (i32 i = 0; i < annotation_set->group_count; ++i) {
+		if (strcmp(annotation_set->groups[i].name, group_name) == 0) {
+			return i;
+		}
+	}
+	return -1; // not found
+}
+
+void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, const char* attr,
+                              const char* value) {
 	if (strcmp(attr, "Color") == 0) {
 		// TODO: parse color hex string #rrggbb
+		if (strlen(value) != 7 || value[0] != '#') {
+			printf("annotation_set_attribute(): Color attribute \"%s\" not in form #rrggbb\n", value);
+		} else {
+			rgba_t rgba = {};
+			char temp[3] = {};
+			temp[0] = value[1];
+			temp[1] = value[2];
+			rgba.r = (u8)strtoul(temp, NULL, 16);
+			temp[0] = value[3];
+			temp[1] = value[4];
+			rgba.g = (u8)strtoul(temp, NULL, 16);
+			temp[0] = value[5];
+			temp[1] = value[6];
+			rgba.g = (u8)strtoul(temp, NULL, 16);
+			rgba.a = 255;
+			annotation->color = rgba;
+		}
+
 	} else if (strcmp(attr, "Name") == 0) {
 		strncpy(annotation->name, value, sizeof(annotation->name));
 	} else if (strcmp(attr, "PartOfGroup") == 0) {
-		// find group
-		// create group if not exists
-		annotation->group_id = 0;
+		i32 group_index = find_annotation_group(annotation_set, value);
+		if (group_index < 0) {
+			group_index = add_annotation_group(annotation_set, value); // Group not found --> create it
+		}
+		annotation->group_id = group_index;
 	} else if (strcmp(attr, "Type") == 0) {
 		annotation->type = ANNOTATION_UNKNOWN_TYPE;
 		if (strcmp(value, "Rectangle") == 0) {
@@ -75,26 +114,32 @@ void coordinate_set_attribute(coordinate_t* coordinate, const char* attr, const 
 	if (strcmp(attr, "Order") == 0) {
 		coordinate->order = atoi(value);
 	} else if (strcmp(attr, "X") == 0) {
-		coordinate->x = atof(value) * 0.25f; // TODO: address assumption
+		coordinate->x = atof(value) * 0.25; // TODO: address assumption
 	} else if (strcmp(attr, "Y") == 0) {
-		coordinate->y = atof(value) * 0.25f; // TODO: address assumption
+		coordinate->y = atof(value) * 0.25; // TODO: address assumption
 	}
 }
 
-void unload_annotations(annotation_set_t* annotation_set) {
+void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	if (annotation_set->annotations) {
 		sb_free(annotation_set->annotations);
 	}
 	if (annotation_set->coordinates) {
 		sb_free(annotation_set->coordinates);
 	}
+	if (annotation_set->groups) {
+		sb_free(annotation_set->groups);
+	}
 	memset(annotation_set, 0, sizeof(*annotation_set));
+
+	// reserve annotation group 0 for the "None" category
+	add_annotation_group(annotation_set, "None");
 }
 
 
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-	unload_annotations(annotation_set);
+	unload_and_reinit_annotations(annotation_set);
 
 	file_mem_t* file = platform_read_entire_file(filename);
 	yxml_t* x = NULL;
@@ -205,7 +250,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						if (attrcur) {
 //							printf("attr %s = %s\n", x->attr, attrbuf);
 							if (current_xml_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
-								annotation_set_attribute(&sb_last(annotation_set->annotations), x->attr, attrbuf);
+								annotation_set_attribute(annotation_set, &sb_last(annotation_set->annotations), x->attr, attrbuf);
 							} else if (current_xml_element_type == ASAP_XML_ELEMENT_COORDINATE) {
 								coordinate_set_attribute(&sb_last(annotation_set->coordinates), x->attr, attrbuf);
 							}
@@ -233,10 +278,6 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 
 	return success;
 }
-
-typedef struct {
-
-} xml_write_tag_state_t;
 
 const char* get_annotation_type_name(annotation_type_enum type) {
 	const char* result = "";
@@ -268,12 +309,20 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">",
 			        color_buf, annotation->name, group, type_name);
 
-			// coordinates
+			if (annotation->has_coordinates) {
+				fprintf(fp, "<Coordinates>");
+				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
+					coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
+					fprintf(fp, "<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />", coordinate_index, coordinate->x / 0.25, coordinate->y / 0.25);
+				}
+				fprintf(fp, "</Coordinates>");
+			}
+
 
 			fprintf(fp, "</Annotation>");
 		}
 
-		fprintf(fp, "</Annotations></ASAP_Annotations>");
+		fprintf(fp, "</Annotations></ASAP_Annotations>\n");
 
 		fclose(fp);
 

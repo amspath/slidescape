@@ -48,13 +48,6 @@ typedef enum asap_xml_attribute_enum {
 	ASAP_XML_ATTRIBUTE_Y = 6,
 } asap_xml_attribute_enum;
 
-typedef struct annotation_group_t {
-	rgba_t color;
-	char name[64];
-	u32 group_id;
-	bool8 is_explicitly_defined;
-} annotation_group_t;
-
 typedef struct annotation_t {
 	annotation_type_enum type;
 	char name[64];
@@ -71,15 +64,17 @@ typedef struct coordinate_t {
 	double y;
 } coordinate_t;
 
-typedef struct asap_xml_parse_state_t {
-
-} asap_xml_parse_state_t;
+typedef struct annotation_group_t {
+	char name[64];
+} annotation_group_t;
 
 typedef struct annotation_set_t_ {
 	annotation_t* annotations; // sb
 	u32 annotation_count;
 	coordinate_t* coordinates; // sb
 	u32 coordinate_count;
+	annotation_group_t* groups; // sb
+	u32 group_count;
 } annotation_set_t;
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
