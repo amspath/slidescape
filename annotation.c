@@ -23,6 +23,9 @@
 #include "gui.h"
 #include "yxml.h"
 
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui.h"
+
 // XML parsing using the yxml library.
 // Note: what is the optimal stack buffer size for yxml?
 // https://dev.yorhel.nl/yxml/man
@@ -47,7 +50,9 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, screen_um_per_pixel);
 				points[i] = transformed_pos;
 			}
-			gui_draw_poly(points, annotation->coordinate_count, color);
+			// Draw the annotation in the background list (behind UI elements), as a thick colored line
+			ImDrawList* draw_list = igGetBackgroundDrawList();
+			ImDrawList_AddPolyline(draw_list, (ImVec2*)points, annotation->coordinate_count, color, true, 2.0f);
 		}
 	}
 }

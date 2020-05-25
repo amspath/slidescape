@@ -29,10 +29,6 @@ extern "C" {
 void win32_init_gui(HWND hwnd);
 void gui_new_frame();
 void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height);
-void gui_render(app_state_t* app_state, i32 client_width, i32 client_height);
-void gui_draw_circle(v2f pos);
-void gui_draw_point(v2f pos);
-void gui_draw_poly(v2f* points, i32 count, u32 color);
 
 // from imgui_impl_win32.cpp
 LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);

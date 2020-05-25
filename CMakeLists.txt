@@ -61,6 +61,7 @@ add_executable(slideviewer
         imgui_widgets.cpp
         imgui_impl_opengl3.cpp
         imgui_impl_win32.cpp
+        cimgui.cpp
         gui.cpp
         jpeg_decoder.c
         tlsclient.c

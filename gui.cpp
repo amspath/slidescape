@@ -330,26 +330,6 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 }
 
-ImVec2 to_imvec2(v2f v) {
-	return ImVec2(v.x, v.y);
-}
-
-void gui_draw_circle(v2f pos) {
-	ImDrawList* draw_list = ImGui::GetForegroundDrawList();
-	draw_list->AddCircle(to_imvec2(pos), 50, ImColor(0, 0, 0, 255), 24, 2.0f);
-}
-
-void gui_draw_point(v2f pos) {
-	ImDrawList* draw_list = ImGui::GetForegroundDrawList();
-	draw_list->AddRectFilled(ImVec2(pos.x-1, pos.y-1),ImVec2(pos.x+1, pos.y+1), ImColor(0, 0, 0, 255), 0.0f, ImDrawCornerFlags_None);
-}
-
-void gui_draw_poly(v2f* points, i32 count, u32 color) {
-	ImDrawList* draw_list = ImGui::GetForegroundDrawList();
-	ImVec2* points_alias = (ImVec2*) points;
-	draw_list->AddPolyline(points_alias, count, color, true, 2.0f);//(ImVec2(pos.x-1, pos.y-1),ImVec2(pos.x+1, pos.y+1), ImColor(0, 0, 0, 255), 0.0f, ImDrawCornerFlags_None);
-}
-
 void win32_init_gui(HWND hwnd) {
 
 	// Setup Dear ImGui context

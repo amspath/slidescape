@@ -109,3 +109,4 @@ namespace ImGui
 
 #define IMGUI_IMPL_OPENGL_LOADER_GLAD
 #define IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
+#define IMGUI_IMPL_API extern "C"
