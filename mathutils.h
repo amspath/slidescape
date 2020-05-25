@@ -25,8 +25,9 @@ extern "C" {
 #define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
 #define TO_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
-#define TO_RGBA(r,g,b,a) ((a) << 24 | (r) << 8 | (g) << 8 | (b) << 16)
+#define TO_RGBA(r,g,b,a) ((a) << 24 | (r) << 0 | (g) << 8 | (b) << 16)
 
+#pragma pack(push, 1)
 typedef struct rect2i {
 	i32 x, y, w, h;
 } rect2i;
@@ -60,6 +61,7 @@ typedef struct v4f {
 		struct {float x, y, z, w; };
 	};
 } v4f;
+#pragma pack(pop)
 
 // prototypes
 rect2i clip_rect(rect2i* first, rect2i* second);

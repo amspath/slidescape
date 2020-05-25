@@ -35,7 +35,7 @@ typedef enum asap_xml_element_enum {
 	ASAP_XML_ELEMENT_NONE = 0, // for unhandled elements
 	ASAP_XML_ELEMENT_ANNOTATION = 1,
 	ASAP_XML_ELEMENT_COORDINATE = 2,
-	ASAP_XML_ELEMENT_ANNOTATION_GROUP = 3,
+	ASAP_XML_ELEMENT_GROUP = 3,
 } asap_xml_element_enum;
 
 typedef enum asap_xml_attribute_enum {
@@ -66,6 +66,8 @@ typedef struct coordinate_t {
 
 typedef struct annotation_group_t {
 	char name[64];
+	rgba_t color;
+	bool8 is_explicitly_defined; // true if there is an associated <Group> in the XML file
 } annotation_group_t;
 
 typedef struct annotation_set_t_ {
