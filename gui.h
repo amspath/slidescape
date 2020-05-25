@@ -28,6 +28,7 @@ extern "C" {
 
 void win32_init_gui(HWND hwnd);
 void gui_new_frame();
+void menu_close_file(app_state_t* app_state);
 void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height);
 
 // from imgui_impl_win32.cpp
@@ -50,6 +51,7 @@ extern bool show_image_adjustments_window INIT(= false);
 extern bool show_open_remote_window;
 extern bool show_slide_list_window;
 extern bool show_case_info_window;
+extern bool show_annotations_window;
 extern bool show_display_options_window;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;

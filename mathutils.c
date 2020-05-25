@@ -19,6 +19,7 @@
 #include "common.h"
 #define MATHUTILS_IMPL
 #include "mathutils.h"
+#include <math.h>
 
 rect2i clip_rect(rect2i* first, rect2i* second) {
 	i32 x0 = MAX(first->x, second->x);
@@ -56,6 +57,16 @@ v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_p
 			.y = (world_pos.y - camera_min.y) / screen_um_per_pixel,
 	};
 	return transformed_pos;
+}
+
+float v2i_distance(v2i v) {
+	float result = sqrtf(SQUARE(v.x) + SQUARE(v.y));
+	return result;
+}
+
+float v2f_distance(v2f v) {
+	float result = sqrtf(SQUARE(v.x) + SQUARE(v.y));
+	return result;
 }
 
 

@@ -23,6 +23,8 @@
 #include "gui.h"
 #include "yxml.h"
 
+#include <math.h>
+
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #define CIMGUI_NO_EXPORT
 #include "cimgui.h"
@@ -40,10 +42,21 @@ typedef struct asap_xml_parse_state_t {
 asap_xml_parse_state_t global_parse_state;
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel) {
+	if (!annotation_set->enabled) return;
 	for (i32 annotation_index = 0; annotation_index < annotation_set->annotation_count; ++annotation_index) {
 		annotation_t* annotation = annotation_set->annotations + annotation_index;
+		annotation_group_t* group = annotation_set->groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };
-		u32 color = *(u32*)(&annotation->color);
+		rgba_t rgba = group->color;
+		rgba.a = 255;
+		float thickness = 2.0f;
+		if (annotation->selected) {
+			rgba.r = LERP(0.2f, rgba.r, 255);
+			rgba.g = LERP(0.2f, rgba.g, 255);
+			rgba.b = LERP(0.2f, rgba.b, 255);
+			thickness *= 2.0f;
+		}
+		u32 color = *(u32*)(&rgba);
 		if (annotation->has_coordinates) {
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
@@ -54,9 +67,142 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 			}
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
 			ImDrawList* draw_list = igGetBackgroundDrawList();
-			ImDrawList_AddPolyline(draw_list, (ImVec2*)points, annotation->coordinate_count, color, true, 2.0f);
+			ImDrawList_AddPolyline(draw_list, (ImVec2*)points, annotation->coordinate_count, color, true, thickness);
 		}
 	}
+}
+
+i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr) {
+	i32 result = -1;
+	float shortest_sq_distance = 1e50;
+	for (i32 annotation_index = 0; annotation_index < annotation_set->annotation_count; ++annotation_index) {
+		annotation_t* annotation = annotation_set->annotations + annotation_index;
+		if (annotation->has_coordinates) {
+			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+				coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
+				float delta_x = x - (float)coordinate->x;
+				float delta_y = y - (float)coordinate->y;
+				float sq_distance = SQUARE(delta_x) + SQUARE(delta_y);
+				if (sq_distance < shortest_sq_distance) {
+					shortest_sq_distance = sq_distance;
+					if (distance_ptr) {
+						*distance_ptr = sqrtf(shortest_sq_distance);
+					}
+					result = annotation_index;
+				}
+			}
+		}
+
+	}
+	return result;
+}
+
+i32 select_annotation(scene_t* scene, bool32 additive) {
+	annotation_set_t* annotation_set = &scene->annotation_set;
+	float distance = 0.0f;
+
+	i32 nearest_annotation_index = find_nearest_annotation(annotation_set, scene->mouse.x, scene->mouse.y, &distance);
+	if (nearest_annotation_index >= 0) {
+		ASSERT(scene->pixel_width > 0.0f);
+
+		// have to click somewhat close to a coordinate, otherwise treat as unselect
+		float pixel_distance = distance / scene->pixel_width;
+		if (pixel_distance < 500.0f) {
+			annotation_t* annotation = annotation_set->annotations + nearest_annotation_index;
+			annotation->selected = !annotation->selected;
+		}
+	}
+
+	// unselect all annotations (except if Ctrl held down)
+	if (!additive) {
+		for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+			if (i == nearest_annotation_index) continue; // skip the one we just selected!
+			annotation_t* annotation = annotation_set->annotations + i;
+			annotation->selected = false;
+		}
+	}
+
+	return nearest_annotation_index;
+}
+
+void draw_annotations_window(app_state_t* app_state) {
+	igSetNextWindowPos((ImVec2){20, 600}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+	igSetNextWindowSize((ImVec2){400, 250}, ImGuiCond_FirstUseEver);
+
+	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+
+	const char** item_previews = alloca(annotation_set->group_count * sizeof(char*));
+	for (i32 i = 0; i < annotation_set->group_count; ++i) {
+		annotation_group_t* group = annotation_set->groups + i;
+		item_previews[i] = group->name;
+	}
+
+//	static i32 selected_group_index = -1;
+
+	// find group corresponding to the currently selected annotations
+	i32 annotation_group_index = -1;
+	for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->annotations + i;
+		if (annotation->selected) {
+			if (annotation_group_index == -1) {
+				annotation_group_index = annotation->group_id;
+			} else if (annotation_group_index != annotation->group_id) {
+				annotation_group_index = -2; // multiple groups selected
+			}
+
+		}
+	}
+
+
+
+	igBegin("Annotations", &show_annotations_window, 0);
+
+	const char* preview = "";
+	if (annotation_group_index >= 0 && annotation_group_index < annotation_set->group_count) {
+		preview = item_previews[annotation_group_index];
+	} else if (annotation_group_index == -2) {
+		preview = "(multiple)"; // if multiple annotations with different groups are selected
+	}
+	igText("Number of annotations loaded: %d\n", annotation_set->annotation_count);
+	igCheckbox("Show annotations", &annotation_set->enabled);
+
+
+	if (igBeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
+		for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
+			annotation_group_t* group = annotation_set->groups + group_index;
+			if (igSelectableBool(item_previews[group_index], (annotation_group_index == group_index), 0, (ImVec2){})) {
+				// set group
+				for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+					annotation_t* annotation = annotation_set->annotations + i;
+					if (annotation->selected) {
+						annotation->group_id = group_index;
+					}
+				}
+			}
+		}
+		igEndCombo();
+	}
+
+	ImGuiColorEditFlags flags = 0;
+	float color[3] = {};
+	if (annotation_group_index >= 0) {
+		annotation_group_t* group = annotation_set->groups + annotation_group_index;
+		rgba_t rgba = group->color;
+		color[0] = BYTE_TO_FLOAT(rgba.r);
+		color[1] = BYTE_TO_FLOAT(rgba.g);
+		color[2] = BYTE_TO_FLOAT(rgba.b);
+		if (igColorEdit3("Group color", (float*) color, flags)) {
+			rgba.r = FLOAT_TO_BYTE(color[0]);
+			rgba.g = FLOAT_TO_BYTE(color[1]);
+			rgba.b = FLOAT_TO_BYTE(color[2]);
+			group->color = rgba;
+		}
+	} else {
+		flags = ImGuiColorEditFlags_NoPicker;
+		igColorEdit3("Group color", (float*) color, flags);
+	}
+
+	igEnd();
 }
 
 u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
@@ -147,6 +293,9 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	}
 	if (annotation_set->groups) {
 		sb_free(annotation_set->groups);
+	}
+	if (annotation_set->filename) {
+		free(annotation_set->filename);
 	}
 	memset(annotation_set, 0, sizeof(*annotation_set));
 
@@ -304,6 +453,9 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 		}
 	}
 
+	annotation_set->filename = strdup(filename);
+	success = true;
+	annotation_set->enabled = true;
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
 	printf("Loaded annotations in %g seconds.\n", seconds_elapsed);
 

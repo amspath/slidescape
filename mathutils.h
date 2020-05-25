@@ -68,6 +68,8 @@ rect2i clip_rect(rect2i* first, rect2i* second);
 bool is_point_inside_rect2i(rect2i rect, v2i point);
 v2i rect2i_center_point(rect2i* rect);
 v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
+float v2i_distance(v2i v);
+float v2f_distance(v2f v);
 
 // globals
 #if defined(MATHUTILS_IMPL)

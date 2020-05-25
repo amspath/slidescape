@@ -20,10 +20,13 @@
 
 #include "common.h"
 #include "mathutils.h"
+#include "viewer.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct scene_t scene_t;
 
 typedef enum annotation_type_enum {
 	ANNOTATION_UNKNOWN_TYPE = 0,
@@ -56,30 +59,39 @@ typedef struct annotation_t {
 	u32 first_coordinate;
 	u32 coordinate_count;
 	bool8 has_coordinates;
+	bool8 selected;
 } annotation_t;
 
 typedef struct coordinate_t {
 	i32 order;
 	double x;
 	double y;
+	bool8 selected;
 } coordinate_t;
 
 typedef struct annotation_group_t {
 	char name[64];
 	rgba_t color;
 	bool8 is_explicitly_defined; // true if there is an associated <Group> in the XML file
+	bool8 selected;
 } annotation_group_t;
 
-typedef struct annotation_set_t_ {
+typedef struct annotation_set_t {
 	annotation_t* annotations; // sb
 	u32 annotation_count;
 	coordinate_t* coordinates; // sb
 	u32 coordinate_count;
 	annotation_group_t* groups; // sb
 	u32 group_count;
+	bool enabled;
+	char* filename;
 } annotation_set_t;
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
+i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr);
+i32 select_annotation(scene_t* scene, bool32 additive);
+void draw_annotations_window(app_state_t* app_state);
+void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 

@@ -713,13 +713,21 @@ i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
 	return tile;
 }
 
+bool32 was_button_pressed(button_state_t* button) {
+	bool32 result = button->down && button->transition_count > 0;
+	return result;
+}
+
+bool32 was_button_released(button_state_t* button) {
+	bool32 result = (!button->down) && button->transition_count > 0;
+	return result;
+}
+
 bool32 was_key_pressed(input_t* input, i32 keycode) {
 	u8 key = keycode & 0xFF;
-	if (input->keyboard.keys[key].down && input->keyboard.keys[key].transition_count > 0) {
-		return true;
-	} else {
-		return false;
-	}
+	button_state_t* button = &input->keyboard.keys[key];
+	bool32 result = was_button_pressed(button);
+	return result;
 }
 
 bool32 is_key_down(input_t* input, i32 keycode) {
@@ -751,6 +759,8 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->clear_color = app_state->clear_color;
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
 	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
+	scene->pixel_width = 1.0f;
+	scene->pixel_height = 1.0f;
 	scene->initialized = true;
 }
 
@@ -807,7 +817,24 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// todo: process even more of the mouse/keyboard input here?
 	v2i current_drag_vector = {};
+	float mouse_x = 0.0f;
+	float mouse_y = 0.0f;
+	bool32 scene_clicked = false;
+	float click_x = 0.0f;
+	float click_y = 0.0f;
 	if (input) {
+		if (was_key_pressed(input, 'W') && is_key_down(input, KEYCODE_CONTROL)) {
+			menu_close_file(app_state);
+			return;
+		}
+
+		if (was_button_released(&input->mouse_buttons[0])) {
+			float drag_distance = v2i_distance(scene->cumulative_drag_vector);
+			if (drag_distance < 2.0f) {
+				scene_clicked = true;
+			}
+		}
+
 		if (input->mouse_buttons[0].down) {
 			// Mouse drag.
 			if (input->mouse_buttons[0].transition_count != 0) {
@@ -815,11 +842,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
 				if (is_point_inside_rect2i(valid_drag_start_rect, input->mouse_xy)) {
 					scene->is_dragging = true; // drag start
+					scene->cumulative_drag_vector = (v2i){};
 //						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
 			} else if (scene->is_dragging) {
 				// already started dragging on a previous frame
 				current_drag_vector = input->drag_vector;
+				scene->cumulative_drag_vector.x += current_drag_vector.x;
+				scene->cumulative_drag_vector.y += current_drag_vector.y;
 			}
 			input->drag_vector = (v2i){};
 			mouse_hide();
@@ -978,7 +1008,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			}
 
-
 		}
 
 
@@ -997,11 +1026,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 		scene->zoom_position += d_zoom;
 
-		float screen_um_per_pixel_x = powf(2.0f, scene->zoom_position) * image->mpp_x;
-		float screen_um_per_pixel_y = powf(2.0f, scene->zoom_position) * image->mpp_y;
+		scene->pixel_width = powf(2.0f, scene->zoom_position) * image->mpp_x;
+		scene->pixel_height = powf(2.0f, scene->zoom_position) * image->mpp_y;
 
-		float r_minus_l = screen_um_per_pixel_x * (float) client_width;
-		float t_minus_b = screen_um_per_pixel_y * (float) client_height;
+		float r_minus_l = scene->pixel_width * (float) client_width;
+		float t_minus_b = scene->pixel_height * (float) client_height;
 
 
 
@@ -1015,7 +1044,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		};
 
 
-		draw_annotations(&scene->annotation_set, camera_min, screen_um_per_pixel_x);
+		draw_annotations(&scene->annotation_set, camera_min, scene->pixel_width);
 
 		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, level_image->x_tile_side_in_um);
 		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, level_image->x_tile_side_in_um) + 1;
@@ -1027,7 +1056,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		camera_tile_y1 = CLAMP(camera_tile_y1, 0, level_image->height_in_tiles);
 		camera_tile_y2 = CLAMP(camera_tile_y2, 0, level_image->height_in_tiles);
 
+		scene->mouse = scene->camera;
 		if (input) {
+
+			scene->mouse.x = camera_min.x + (float)input->mouse_xy.x * scene->pixel_width;
+			scene->mouse.y = camera_min.y + (float)input->mouse_xy.y * scene->pixel_height;
+
 
 			if (was_key_pressed(input, 'P')) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;
@@ -1092,6 +1126,16 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (scene->is_dragging) {
 				scene->camera.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
 				scene->camera.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
+			}
+
+			// try to select an annotation
+			if (scene->annotation_set.annotation_count > 0) {
+				if (was_key_pressed(input, 'Q') || (!gui_want_capture_mouse && scene_clicked)) {
+					i64 select_begin = get_clock();
+					select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
+					float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
+//					printf("Selecting took %g ms.\n", selection_ms);
+				}
 			}
 
 		}

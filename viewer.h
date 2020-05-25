@@ -162,12 +162,17 @@ typedef struct entity_t {
 typedef struct scene_t {
 	rect2i viewport;
 	v2f camera;
+	//v2f camera_min;
+	v2f mouse;
+	float pixel_width;
+	float pixel_height;
 	float zoom_position;
 	v4f clear_color;
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
 	annotation_set_t annotation_set;
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
+	v2i cumulative_drag_vector;
 	bool8 initialized;
 } scene_t;
 

@@ -45,6 +45,12 @@ void gui_new_frame() {
 	ImGui::NewFrame();
 }
 
+void menu_close_file(app_state_t* app_state) {
+	unload_all_images(app_state);
+	reset_global_caselist(app_state);
+	unload_and_reinit_annotations(&app_state->scene.annotation_set);
+}
+
 void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
@@ -77,7 +83,7 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
-			if (ImGui::MenuItem("Close", NULL, &menu_items_clicked.close)) {}
+			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -86,6 +92,8 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 			prev_fullscreen = is_fullscreen = win32_is_fullscreen(main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
+			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
+
 			ImGui::Separator();
 
 			if (ImGui::MenuItem("Options...", NULL, &show_display_options_window)) {}
@@ -106,8 +114,7 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 		} else if (menu_items_clicked.open_file) {
 			win32_open_file_dialog(main_window);
 		} else if (menu_items_clicked.close) {
-			unload_all_images(app_state);
-			reset_global_caselist(app_state);
+			menu_close_file(app_state);
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (menu_items_clicked.show_case_list) {
@@ -295,6 +302,30 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 		ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Case info", &show_case_info_window);
+
+		case_t* global_selected_case = app_state->selected_case;
+		if (global_selected_case != NULL) {
+			ImGui::TextWrapped("%s\n", global_selected_case->name);
+			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);
+			if (ImGui::TreeNode("Diagnosis and comment")) {
+				ImGui::TextWrapped("%s\n", global_selected_case->diagnosis);
+				ImGui::TextWrapped("%s\n", global_selected_case->notes);
+				ImGui::TreePop();
+			}
+
+
+		}
+
+
+		ImGui::End();
+	}
+
+	if (show_annotations_window) {
+		draw_annotations_window(app_state);
+		ImGui::SetNextWindowPos(ImVec2(20, 600), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Annotations", &show_annotations_window);
 
 		case_t* global_selected_case = app_state->selected_case;
 		if (global_selected_case != NULL) {
