@@ -57,3 +57,35 @@ const char* get_file_extension(const char* filename) {
 	}
 	return ext;
 }
+
+void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
+	size_t new_ext_len = strlen(new_ext);
+	size_t original_len = strlen(filename);
+	char* end = filename + original_len;
+	char* append_pos = end; // where we will add the new extension
+	// Strip the original extension
+	for (char* pos = end - 1; pos >= filename; --pos) {
+		if (*pos == '/' || *pos == '\\') {
+			// gone too far, default to end of original filename
+			break;
+		}
+		if (*pos == '.') {
+			if (new_ext_len == 0) {
+				*pos = '\0'; // done: only strip extension
+				return;
+			} else {
+				append_pos = pos + 1;
+				break;
+			}
+		}
+	}
+	// Now append the new extension
+	const char* new_ext_pos = new_ext;
+	char* buffer_end = filename + max_len;
+	for (i32 append_len = (buffer_end - append_pos); append_len > 0; --append_len) {
+		*append_pos = *new_ext_pos;
+		if (*new_ext_pos == '\0') break;
+		++append_pos;
+		++new_ext_pos;
+	}
+}

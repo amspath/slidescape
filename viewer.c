@@ -26,6 +26,7 @@
 #include "openslide_api.h"
 #include <glad/glad.h>
 #include <linmath.h>
+#include <io.h>
 
 #include "arena.h"
 #include "arena.c"
@@ -580,6 +581,10 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 	sb_push(app_state->loaded_images, new_image);
 }
 
+bool file_exists(const char* filename) {
+	return (access(filename, F_OK) != -1);
+}
+
 bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	const char* ext = get_file_extension(filename);
 	if (strcasecmp(ext, "json") == 0) {
@@ -590,7 +595,22 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
-		load_image_from_file(app_state, filename);
+		if (load_image_from_file(app_state, filename)) {
+			// Check if there is an associated ASAP XML annotations file
+			size_t len = strlen(filename);
+			size_t temp_size = len + 5; // add 5 so that we can always append ".xml\0"
+			char* temp_filename = alloca(temp_size);
+			strncpy(temp_filename, filename, temp_size);
+			replace_file_extension(temp_filename, temp_size, "xml");
+			if (file_exists(temp_filename)) {
+				printf("Found XML annotations: %s\n", temp_filename);
+				load_asap_xml_annotations(app_state, temp_filename);
+			}
+
+		} else {
+			printf("Could not load '%s'\n", filename);
+		}
+
 	}
 }
 
