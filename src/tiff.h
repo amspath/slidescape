@@ -176,9 +176,14 @@ enum tiff_photometric_interpretation_enum {
 	TIFF_PHOTOMETRIC_LOGLUV = 32845,
 };
 
+enum subimage_type_enum {
+	TIFF_UNKNOWN_SUBIMAGE = 0,
+	TIFF_LEVEL_SUBIMAGE = 1,
+	TIFF_MACRO_SUBIMAGE = 2,
+	TIFF_LABEL_SUBIMAGE = 3,
+};
+
 typedef struct tiff_t tiff_t;
-
-
 
 
 typedef struct tiff_ifd_t {
@@ -196,7 +201,8 @@ typedef struct tiff_ifd_t {
 	u64 jpeg_tables_length;
 	u16 compression; // 7 = JPEG
 	u16 color_space;
-	bool8 is_level_image;
+	u32 tiff_subfiletype;
+	u32 subimage_type;
 	float level_magnification;
 	u32 width_in_tiles;
 	u32 height_in_tiles;
@@ -282,7 +288,7 @@ typedef struct {
 	float y_tile_side_in_um;
 	u16 chroma_subsampling_horizontal;
 	u16 chroma_subsampling_vertical;
-	bool8 is_level_image;
+	u32 subimage_type;
 //	tiff_tile_t* tiles;
 } tiff_serial_ifd_t;
 

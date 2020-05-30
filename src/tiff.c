@@ -288,10 +288,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 #endif
 		switch(tag->code) {
 			case TIFF_TAG_NEW_SUBFILE_TYPE: {
-				u32 subfiletype = tag->data_u32;
-				if (subfiletype & TIFF_FILETYPE_REDUCEDIMAGE) {
-					ifd->is_level_image = true;
-				}
+				ifd->tiff_subfiletype = tag->data_u32;
 			} break;
 			// Note: the data type of many tags (E.g. ImageWidth) can actually be either SHORT or LONG,
 			// but because we already converted the byte order to native (=little-endian) with enough
@@ -325,15 +322,6 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 #if TIFF_VERBOSE
 				printf("%.500s\n", ifd->image_description);
 #endif
-				if (strncmp(ifd->image_description, "Macro", 5) == 0) {
-					tiff->macro_image = ifd;
-					tiff->macro_image_index = ifd->ifd_index;
-				} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
-					tiff->label_image = ifd;
-					tiff->label_image_index = ifd->ifd_index;
-				} else if (strncmp(ifd->image_description, "level", 5) == 0) {
-					ifd->is_level_image = true;
-				}
 			} break;
 			case TIFF_TAG_TILE_WIDTH: {
 				ifd->tile_width = tag->data_u32;
@@ -406,6 +394,29 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	if (ifd->tile_height > 0) {
 		ifd->height_in_tiles = (ifd->image_height + ifd->tile_height - 1) / ifd->tile_height;
 	}
+
+	// Try to deduce what type of image this is (level, macro, or label).
+	// Unfortunately this does not seem to be very consistently specified in the TIFF files, so in part we have to guess.
+	if (ifd->image_description) {
+		if (strncmp(ifd->image_description, "Macro", 5) == 0) {
+			ifd->subimage_type = TIFF_MACRO_SUBIMAGE;
+			tiff->macro_image = ifd;
+			tiff->macro_image_index = ifd->ifd_index;
+		} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
+			ifd->subimage_type = TIFF_LABEL_SUBIMAGE;
+			tiff->label_image = ifd;
+			tiff->label_image_index = ifd->ifd_index;
+		} else if (strncmp(ifd->image_description, "level", 5) == 0) {
+			ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
+		}
+	}
+	// Guess that it must be a level image if it's not explicitly said to be something else
+	if (ifd->subimage_type == TIFF_UNKNOWN_SUBIMAGE /*0*/ && ifd->tile_width > 0) {
+		if (ifd->ifd_index == 0 /* main image */ || ifd->tiff_subfiletype & TIFF_FILETYPE_REDUCEDIMAGE) {
+			ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
+		}
+	}
+
 
 
 	// Read the next IFD
@@ -480,10 +491,10 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				tiff->level_image_index = 0;
 
 				// TODO: make more robust
-				u64 level_counter = 1; // begin at 1 because we are also counting level 0 (= the first IFD)
-				for (i32 i = 1; i < tiff->ifd_count; ++i) {
+				u64 level_counter = 0;
+				for (i32 i = 0; i < tiff->ifd_count; ++i) {
 					tiff_ifd_t* ifd = tiff->ifds + i;
-					if (ifd->is_level_image) ++level_counter;
+					if (ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) ++level_counter;
 				}
 				tiff->level_count = level_counter;
 
@@ -601,7 +612,7 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 			.y_tile_side_in_um = ifd->y_tile_side_in_um,
 			.chroma_subsampling_horizontal = ifd->chroma_subsampling_horizontal,
 			.chroma_subsampling_vertical = ifd->chroma_subsampling_vertical,
-			.is_level_image = ifd->is_level_image,
+			.subimage_type = ifd->subimage_type,
 		};
 #if INCLUDE_IMAGE_DESCRIPTION
 		total_size += ifd->image_description_length;
@@ -836,7 +847,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 		ifd->jpeg_tables_length = serial_ifd->jpeg_tables_length;
 		ifd->compression = serial_ifd->compression;
 		ifd->color_space = serial_ifd->color_space;
-		ifd->is_level_image = serial_ifd->is_level_image;
+		ifd->subimage_type = serial_ifd->subimage_type;
 		ifd->level_magnification = serial_ifd->level_magnification;
 		ifd->width_in_tiles = serial_ifd->width_in_tiles;
 		ifd->height_in_tiles = serial_ifd->height_in_tiles;
