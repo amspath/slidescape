@@ -287,6 +287,12 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 		       tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
 #endif
 		switch(tag->code) {
+			case TIFF_TAG_NEW_SUBFILE_TYPE: {
+				u32 subfiletype = tag->data_u32;
+				if (subfiletype & TIFF_FILETYPE_REDUCEDIMAGE) {
+					ifd->is_level_image = true;
+				}
+			} break;
 			// Note: the data type of many tags (E.g. ImageWidth) can actually be either SHORT or LONG,
 			// but because we already converted the byte order to native (=little-endian) with enough
 			// padding in the tag struct, we can get away with treating them as if they are always LONG.
@@ -477,7 +483,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				u64 level_counter = 1; // begin at 1 because we are also counting level 0 (= the first IFD)
 				for (i32 i = 1; i < tiff->ifd_count; ++i) {
 					tiff_ifd_t* ifd = tiff->ifds + i;
-					if (ifd->is_level_image || ifd->image_description == NULL) ++level_counter;
+					if (ifd->is_level_image) ++level_counter;
 				}
 				tiff->level_count = level_counter;
 

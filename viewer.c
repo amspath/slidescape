@@ -50,7 +50,7 @@
 
 
 void reset_scene(image_t *image, scene_t *scene) {
-	current_level = ATLEAST(0, image->level_count-2);
+	current_level = ATLEAST(0, (i32)image->level_count-2);
 	scene->zoom_position = (float)current_level;
 	scene->camera.x = image->width_in_um / 2.0f;
 	scene->camera.y = image->height_in_um / 2.0f;

@@ -81,6 +81,12 @@ enum tiff_data_type_enum {
 	TIFF_IFD8 = 18,
 };
 
+enum tiff_subfiletype_enum {
+	TIFF_FILETYPE_REDUCEDIMAGE = 1,
+	TIFF_FILETYPE_PAGE = 2,
+	TIFF_FILETYPE_MASK = 4,
+};
+
 #pragma pack(push, 1)
 
 typedef struct {
