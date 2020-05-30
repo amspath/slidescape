@@ -29,8 +29,12 @@
 
 bool32 init_openslide() {
 	i64 debug_start = get_clock();
-	SetDllDirectoryA("openslide");
 	HINSTANCE dll_handle = LoadLibraryA("libopenslide-0.dll");
+	if (!dll_handle) {
+		SetDllDirectoryA("openslide");
+		dll_handle = LoadLibraryA("libopenslide-0.dll");
+		SetDllDirectoryA(NULL);
+	}
 	if (dll_handle) {
 
 #define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(dll_handle, #proc))) goto failed;
@@ -56,8 +60,8 @@ bool32 init_openslide() {
 		return true;
 
 	} else failed: {
-		win32_diagnostic("LoadLibraryA");
-		printf("Could not load libopenslide-0.dll\n");
+		//win32_diagnostic("LoadLibraryA");
+		printf("OpenSlide not available: could not load libopenslide-0.dll\n");
 		return false;
 	}
 
