@@ -52,40 +52,40 @@ set(JPEG_SOURCE_FILES deps/jpeg/jerror.c
 # client only supported on Windows x64 for now
 if (WIN32)
 add_executable(slideviewer
-        win32_main.c
-        viewer.c
-        glad.c
-        stringutils.c
-        mathutils.c
-        shader.c
-        tiff.c
-        caselist.c
-        annotation.c
-        openslide.c
-        imgui.cpp
-        imgui_demo.cpp
-        imgui_draw.cpp
-        imgui_widgets.cpp
-        imgui_impl_opengl3.cpp
-        imgui_impl_win32.cpp
-        cimgui.cpp
-        gui.cpp
-        jpeg_decoder.c
-        tlsclient.c
+        src/win32_main.c
+        src/viewer.c
+        src/glad.c
+        src/stringutils.c
+        src/mathutils.c
+        src/shader.c
+        src/tiff.c
+        src/caselist.c
+        src/annotation.c
+        src/openslide.c
+        src/imgui.cpp
+        src/imgui_demo.cpp
+        src/imgui_draw.cpp
+        src/imgui_widgets.cpp
+        src/imgui_impl_opengl3.cpp
+        src/imgui_impl_win32.cpp
+        src/cimgui.cpp
+        src/gui.cpp
+        src/jpeg_decoder.c
+        src/tlsclient.c
         ${JPEG_SOURCE_FILES}
-        lz4.c
-        parson.c
-        yxml.c
+        src/lz4.c
+        src/parson.c
+        src/yxml.c
 )
 target_link_libraries(slideviewer user32 gdi32 winmm opengl32 ws2_32)
 endif(WIN32)
 
 add_executable(tlsserver
-        server.c
-        tiff.c
-        jpeg_decoder.c
+        src/server.c
+        src/tiff.c
+        src/jpeg_decoder.c
         ${JPEG_SOURCE_FILES}
-        lz4.c
+        src/lz4.c
 )
 target_compile_definitions(tlsserver PRIVATE IS_SERVER=1)
 

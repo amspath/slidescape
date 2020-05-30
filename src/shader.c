@@ -23,7 +23,7 @@
 #include <stdio.h>
 
 #include "stringutils.h"
-#include "stringified_shaders.c"
+#include "../stringified_shaders.c"
 
 #include "shader.h"
 
