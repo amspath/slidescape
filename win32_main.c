@@ -103,6 +103,7 @@ u8* platform_alloc(size_t size) {
 		printf("Error: memory allocation failed!\n");
 		panic();
 	}
+	return result;
 }
 
 file_mem_t* platform_read_entire_file(const char* filename) {
@@ -1188,8 +1189,10 @@ int main(int argc, char** argv) {
 	g_argc = argc;
 	g_argv = argv;
 
+	printf("Starting up...\n");
+
 	GetSystemInfo(&system_info);
-	logical_cpu_count = system_info.dwNumberOfProcessors;
+	logical_cpu_count = (i32)system_info.dwNumberOfProcessors;
 	os_page_size = system_info.dwPageSize;
 	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 
@@ -1207,8 +1210,6 @@ int main(int argc, char** argv) {
 	init_networking();
 
 	is_program_running = true;
-
-	win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 
 	init_opengl_stuff();
 	win32_init_gui(main_window);
@@ -1231,9 +1232,7 @@ int main(int argc, char** argv) {
 
 		win32_process_input(main_window);
 
-
-
-		dimension = win32_get_window_dimension(main_window);
+		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 		viewer_update_and_render(&global_app_state, curr_input, dimension.width, dimension.height, delta_t);
 
 		gui_draw(&global_app_state, dimension.width, dimension.height);

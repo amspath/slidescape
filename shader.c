@@ -146,12 +146,7 @@ void load_shader(u32 shader, const char* source_filename) {
 	i32 success = 0;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 	if (success) {
-		/*printf("Shader %s loaded ", source_filename);
-		if (source_from_file) {
-			printf("(from file).\n");
-		} else {
-			printf("(from cache).\n");
-		}*/
+//		printf("Loaded %sshader: %s\n", source_from_file ? "" : "cached ", source_filename);
 	} else {
 		char info_log[2048];
 		glGetShaderInfoLog(shader, sizeof(info_log), NULL, info_log);

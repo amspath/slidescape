@@ -461,7 +461,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 				i64 w = 0;
 				i64 h = 0;
 				openslide.openslide_get_associated_image_dimensions(wsi->osr, name, &w, &h);
-				printf("%s : w=%d h=%d\n", name, w, h);
+				printf("%s : w=%lld h=%lld\n", name, w, h);
 
 			}
 		}
@@ -590,8 +590,9 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	if (strcasecmp(ext, "json") == 0) {
 		reload_global_caselist(app_state, filename);
 		show_slide_list_window = true;
+		return true;
 	} else if (strcasecmp(ext, "xml") == 0) {
-		load_asap_xml_annotations(app_state, filename);
+		return load_asap_xml_annotations(app_state, filename);
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
@@ -606,9 +607,11 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 				printf("Found XML annotations: %s\n", temp_filename);
 				load_asap_xml_annotations(app_state, temp_filename);
 			}
+			return true;
 
 		} else {
 			printf("Could not load '%s'\n", filename);
+			return false;
 		}
 
 	}
@@ -676,7 +679,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			image.width_in_um = wsi->width * wsi->mpp_x;
 			image.height_in_pixels = wsi->height;
 			image.height_in_um = wsi->height * wsi->mpp_y;
-			if (wsi->level_count > 0 & wsi->levels[0].x_tile_side_in_um > 0) {
+			if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
 
 				image.level_count = wsi->level_count;
 				image.level_images = (level_image_t*) calloc(1, wsi->level_count * sizeof(level_image_t));

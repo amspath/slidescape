@@ -57,7 +57,7 @@ int send_pending_udp(int client_sock, struct TLSContext *context, struct sockadd
     do {
         out_buffer = tls_get_message(context, &out_buffer_len, offset);
         if (out_buffer) {
-            send_res += sendto(client_sock, out_buffer, out_buffer_len, 0, (struct sockaddr *)clientaddr, socket_len);
+            send_res += sendto(client_sock, (const char*)out_buffer, out_buffer_len, 0, (struct sockaddr *)clientaddr, socket_len);
             offset += out_buffer_len;
         }
     } while (out_buffer);
@@ -199,10 +199,10 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 		send_pending(sockfd, tls_context);
 		if (tls_established(tls_context)) {
 			if (!sent) {
-				static const char requestfmt[] = "GET %s HTTP/1.1\r\nConnection: close\r\n\r\n\0";
+				static const char requestfmt[] = "GET %s HTTP/1.1\r\nConnection: close\r\n\r\n";
 				char request[4096];
 				snprintf(request, sizeof(request), requestfmt, uri);
-				size_t request_len = COUNT(requestfmt) + strlen(request);
+				size_t request_len = strlen(request);
 
 				// try kTLS (kernel TLS implementation in linux >= 4.13)
 				// note that you can use send on a ktls socket
@@ -210,9 +210,9 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 				if (!tls_make_ktls(tls_context, sockfd)) {
 					// call send as on regular TCP sockets
 					// TLS record layer is handled by the kernel
-					send(sockfd, request, strlen(request), 0);
+					send(sockfd, request, request_len, 0);
 				} else {
-					tls_write(tls_context, (unsigned char *)request, strlen(request));
+					tls_write(tls_context, (unsigned char *)request, request_len);
 					send_pending(sockfd, tls_context);
 				}
 				sent = 1;
@@ -327,10 +327,10 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 		send_pending(sockfd, tls_context);
 		if (tls_established(tls_context)) {
 			if (!sent) {
-				static const char requestfmt[] = "GET /slide/%s/header HTTP/1.1\r\nConnection: close\r\n\r\n\0";
+				static const char requestfmt[] = "GET /slide/%s/header HTTP/1.1\r\nConnection: close\r\n\r\n";
 				char request[4096];
 				snprintf(request, sizeof(request), requestfmt, filename);
-				size_t request_len = COUNT(requestfmt) + strlen(request);
+				i32 request_len = (i32)strlen(request);
 
 				// try kTLS (kernel TLS implementation in linux >= 4.13)
 				// note that you can use send on a ktls socket
@@ -338,9 +338,9 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 				if (!tls_make_ktls(tls_context, sockfd)) {
 					// call send as on regular TCP sockets
 					// TLS record layer is handled by the kernel
-					send(sockfd, request, strlen(request), 0);
+					send(sockfd, request, request_len, 0);
 				} else {
-					tls_write(tls_context, (unsigned char *)request, strlen(request));
+					tls_write(tls_context, (unsigned char *)request, request_len);
 					send_pending(sockfd, tls_context);
 				}
 				sent = 1;
