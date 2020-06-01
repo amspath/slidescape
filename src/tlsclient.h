@@ -50,6 +50,6 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 
 
 #ifdef __cplusplus
-};
+}
 #endif
 

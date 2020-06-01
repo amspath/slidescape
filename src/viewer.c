@@ -50,8 +50,8 @@
 
 
 void reset_scene(image_t *image, scene_t *scene) {
-	current_level = ATLEAST(0, (i32)image->level_count-2);
-	scene->zoom_position = (float)current_level;
+	scene->current_level = ATLEAST(0, image->level_count-2);
+	scene->zoom_position = (float)scene->current_level;
 	scene->camera.x = image->width_in_um / 2.0f;
 	scene->camera.y = image->height_in_um / 2.0f;
 
@@ -796,9 +796,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// TODO: this is part of rendering and doesn't belong here
 	gui_new_frame();
+
+	// Set up rendering state for the next frame
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
 
@@ -931,12 +935,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 	else if (image->type == IMAGE_TYPE_TIFF || image->type == IMAGE_TYPE_WSI) {
 
-		i32 old_level = current_level;
+		i32 old_level = scene->current_level;
 		i32 center_offset_x = 0;
 		i32 center_offset_y = 0;
 
 		i32 max_level = image->level_count - 1;
-		level_image_t* level_image = image->level_images + current_level;
+		level_image_t* level_image = image->level_images + scene->current_level;
 
 		// TODO: move all input handling code together
 		if (input) {
@@ -990,19 +994,19 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (dlevel != 0) {
 //		        printf("mouse_z = %d\n", input->mouse_z);
-				current_level = CLAMP(current_level + dlevel, 0, image->level_count - 1);
-				level_image = image->level_images + current_level;
+				scene->current_level = CLAMP(scene->current_level + dlevel, 0, image->level_count - 1);
+				level_image = image->level_images + scene->current_level;
 
-				if (current_level != old_level && used_mouse_to_zoom) {
+				if (scene->current_level != old_level && used_mouse_to_zoom) {
 #if 1
 					center_offset_x = input->mouse_xy.x - client_width / 2;
 					center_offset_y = (input->mouse_xy.y - client_height / 2);
 
-					if (current_level < old_level) {
+					if (scene->current_level < old_level) {
 						// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
 						scene->camera.x += center_offset_x * level_image->um_per_pixel_x;
 						scene->camera.y += center_offset_y * level_image->um_per_pixel_y;
-					} else if (current_level > old_level) {
+					} else if (scene->current_level > old_level) {
 						// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
 						scene->camera.x -= center_offset_x * level_image->um_per_pixel_x * 0.5f;
 						scene->camera.y -= center_offset_y * level_image->um_per_pixel_y * 0.5f;
@@ -1018,8 +1022,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// TODO: fix/rewrite
 		// Spring/bounce effect
-		float d_zoom = (float) current_level - scene->zoom_position;
-		float abs_d_zoom = fabs(d_zoom);
+		float d_zoom = (float) scene->current_level - scene->zoom_position;
+		float abs_d_zoom = fabsf(d_zoom);
 		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
 		float linear_catch_up_speed = 10.0f * delta_t;
 		float exponential_catch_up_speed = 18.0f * delta_t;
@@ -1151,7 +1155,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		i32 num_tasks_on_wishlist = 0;
 		float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
 
-		for (i32 level = image->level_count - 1; level >= current_level; --level) {
+		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 
 			i32 base_priority = (image->level_count - level) * 100; // highest priority for the most zoomed in levels
@@ -1287,11 +1291,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			glUniform1f(basic_shader_u_white_level, 1.0f);
 		}
 
-		i32 num_levels_above_current = image->level_count - current_level - 1;
+		i32 num_levels_above_current = image->level_count - scene->current_level - 1;
 		ASSERT(num_levels_above_current >= 0);
 
 		// Draw all levels within the viewport, up to the current zoom factor
-		for (i32 level = image->level_count - 1; level >= current_level; --level) {
+		for (i32 level = scene->current_level; level < image->level_count; ++level) {
+//		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 
 			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, drawn_level->x_tile_side_in_um);

@@ -76,6 +76,6 @@ extern bool32 is_openslide_loading_done;
 
 
 #ifdef __cplusplus
-};
+}
 #endif
 

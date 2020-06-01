@@ -426,6 +426,6 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size);
 void tiff_destroy(tiff_t* tiff);
 
 #ifdef __cplusplus
-};
+}
 #endif
 

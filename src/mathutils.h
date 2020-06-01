@@ -87,6 +87,6 @@ float v2f_distance(v2f v);
 
 
 #ifdef __cplusplus
-};
+}
 #endif
 

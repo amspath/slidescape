@@ -98,7 +98,7 @@ extern work_queue_t work_queue;
 #undef extern
 
 #ifdef __cplusplus
-};
+}
 #endif
 
 

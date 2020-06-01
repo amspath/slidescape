@@ -317,6 +317,6 @@ extern input_t *curr_input;
 #undef extern
 
 #ifdef __cplusplus
-};
+}
 #endif
 

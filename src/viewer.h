@@ -112,7 +112,7 @@ typedef struct {
 			wsi_t wsi;
 		} wsi;
 	};
-	u64 level_count;
+	i32 level_count;
 	level_image_t* level_images;
 	float mpp_x;
 	float mpp_y;
@@ -167,6 +167,7 @@ typedef struct scene_t {
 	float pixel_width;
 	float pixel_height;
 	float zoom_position;
+	i32 current_level;
 	v4f clear_color;
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
@@ -217,13 +218,11 @@ void init_opengl_stuff();
 
 extern app_state_t global_app_state;
 
-extern i32 current_level; // derived value -> make local variable
-
 #undef INIT
 #undef extern
 
 
 #ifdef __cplusplus
-};
+}
 #endif
 

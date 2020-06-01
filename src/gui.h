@@ -64,5 +64,5 @@ extern char remote_filename[128] INIT(= "sample.tiff");
 #undef extern
 
 #ifdef __cplusplus
-};
+}
 #endif
