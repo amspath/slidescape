@@ -97,6 +97,11 @@ i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, 
 	return result;
 }
 
+void annotations_modified(annotation_set_t* annotation_set) {
+	annotation_set->modified = true; // need to (auto-)save the changes
+	annotation_set->last_modification_time = get_clock();
+}
+
 i32 select_annotation(scene_t* scene, bool32 additive) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 	float distance = 0.0f;
@@ -176,6 +181,7 @@ void draw_annotations_window(app_state_t* app_state) {
 					annotation_t* annotation = annotation_set->annotations + i;
 					if (annotation->selected) {
 						annotation->group_id = group_index;
+						annotations_modified(annotation_set);
 					}
 				}
 			}
@@ -196,6 +202,7 @@ void draw_annotations_window(app_state_t* app_state) {
 			rgba.g = FLOAT_TO_BYTE(color[1]);
 			rgba.b = FLOAT_TO_BYTE(color[2]);
 			group->color = rgba;
+			annotations_modified(annotation_set);
 		}
 	} else {
 		flags = ImGuiColorEditFlags_NoPicker;
@@ -537,6 +544,24 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 		fclose(fp);
 
 
+	}
+}
+
+void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay) {
+	if (!annotation_set->modified) return; // no changes, nothing to do
+	if (!annotation_set->filename) return; // don't know where to save to / file doesn't already exist (?)
+
+	bool proceed = force_ignore_delay;
+	if (!force_ignore_delay) {
+		float seconds_since_last_modified = get_seconds_elapsed(annotation_set->last_modification_time, get_clock());
+		// only autosave if there haven't been any additional changes for some time (don't do it too often)
+		if (seconds_since_last_modified > 2.0f) {
+			proceed = true;
+		}
+	}
+	if (proceed) {
+		save_asap_xml_annotations(annotation_set, annotation_set->filename);
+		annotation_set->modified = false;
 	}
 }
 

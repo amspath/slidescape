@@ -1160,7 +1160,7 @@ void win32_init_main_window() {
 	RECT desired_window_rect = {};
 	desired_window_rect.right = desired_width;
 	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_EX_ACCEPTFILES;
+	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_EX_ACCEPTFILES|WS_MAXIMIZE;
 	AdjustWindowRect(&desired_window_rect, window_style, 0);
 	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
@@ -1214,13 +1214,14 @@ int main(int argc, char** argv) {
 	init_opengl_stuff();
 	win32_init_gui(main_window);
 
-	init_app_state(&global_app_state);
+	app_state_t* app_state = &global_app_state;
+	init_app_state(app_state);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	// TODO: give the viewer the option to do this without referring to the g_argc which it does not need to know!
 	if (g_argc > 1) {
 		char* filename = g_argv[1];
-		load_generic_file(&global_app_state, filename);
+		load_generic_file(app_state, filename);
 	}
 
 	i64 last_clock = get_clock();
@@ -1233,13 +1234,16 @@ int main(int argc, char** argv) {
 		win32_process_input(main_window);
 
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
-		viewer_update_and_render(&global_app_state, curr_input, dimension.width, dimension.height, delta_t);
+		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 
-		gui_draw(&global_app_state, dimension.width, dimension.height);
+		gui_draw(app_state, dimension.width, dimension.height);
 
-//		glFinish();
+		autosave(app_state, false);
+
 		SwapBuffers(wglGetCurrentDC());
 	}
+
+	autosave(app_state, true); // save any unsaved changes
 
 	return 0;
 }

@@ -85,6 +85,8 @@ typedef struct annotation_set_t {
 	u32 group_count;
 	bool enabled;
 	char* filename;
+	bool modified;
+	i64 last_modification_time;
 } annotation_set_t;
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
@@ -94,6 +96,7 @@ void draw_annotations_window(app_state_t* app_state);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
+void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
 
 #ifdef __cplusplus
 }

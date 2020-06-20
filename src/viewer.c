@@ -777,6 +777,11 @@ void init_app_state(app_state_t* app_state) {
 	app_state->initialized = true;
 }
 
+void autosave(app_state_t* app_state, bool force_ignore_delay) {
+	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+	autosave_annotations(app_state, annotation_set, force_ignore_delay);
+}
+
 
 
 // TODO: refactor delta_t
