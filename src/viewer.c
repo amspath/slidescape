@@ -1150,6 +1150,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			}
 
+			if (!gui_want_capture_keyboard && was_key_pressed(input, KEYCODE_DELETE)) {
+				delete_selected_annotations(&scene->annotation_set);
+			}
+
 		}
 
 

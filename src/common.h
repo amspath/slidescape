@@ -68,6 +68,9 @@
 #include <stdlib.h>
 
 #include <stretchy_buffer.h> // https://github.com/nothings/stb/blob/master/stretchy_buffer.h
+#define sb_raw_count(a)    stb__sbn(a)
+#define sb_raw_capacity(a) stb__sbm(a)
+#define sb_maybegrow       stb__sbmaybegrow
 
 // Typedef choices for numerical types
 typedef int8_t i8;

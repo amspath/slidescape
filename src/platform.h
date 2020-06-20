@@ -294,6 +294,8 @@ bool32 add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback,
 bool32 is_queue_work_in_progress(work_queue_t* queue);
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);
 
+bool file_exists(const char* filename); // TODO: move definition somewhere else
+
 
 // globals
 #if defined(WIN32_MAIN_IMPL)

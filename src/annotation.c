@@ -61,7 +61,7 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 				coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
-				v2f world_pos = {coordinate->x, coordinate->y};
+				v2f world_pos = {(float)coordinate->x, (float)coordinate->y};
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, screen_um_per_pixel);
 				points[i] = transformed_pos;
 			}
@@ -100,6 +100,35 @@ i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, 
 void annotations_modified(annotation_set_t* annotation_set) {
 	annotation_set->modified = true; // need to (auto-)save the changes
 	annotation_set->last_modification_time = get_clock();
+}
+
+void delete_selected_annotations(annotation_set_t* annotation_set) {
+	if (!annotation_set->annotations) return;
+	bool has_selected = false;
+	for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->annotations + i;
+		if (annotation->selected) {
+			has_selected = true;
+			break;
+		}
+	}
+	if (has_selected) {
+		// rebuild the annotations, leaving out the deleted ones
+		size_t copy_size = annotation_set->annotation_count * sizeof(annotation_t);
+		annotation_t* temp_copy = (annotation_t*) malloc(copy_size);
+		memcpy(temp_copy, annotation_set->annotations, copy_size);
+
+		sb_raw_count(annotation_set->annotations) = 0;
+		for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+			annotation_t* annotation = temp_copy + i;
+			if (annotation->selected) continue; // skip (delete)
+					sb_push(annotation_set->annotations, *annotation);
+		}
+		annotation_set->annotation_count = sb_count(annotation_set->annotations);
+		annotations_modified(annotation_set);
+	}
+
+
 }
 
 i32 select_annotation(scene_t* scene, bool32 additive) {
@@ -560,6 +589,11 @@ void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_s
 		}
 	}
 	if (proceed) {
+		char backup_filename[4096];
+		snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->filename);
+		if (!file_exists(backup_filename)) {
+			rename(annotation_set->filename, backup_filename);
+		}
 		save_asap_xml_annotations(annotation_set, annotation_set->filename);
 		annotation_set->modified = false;
 	}

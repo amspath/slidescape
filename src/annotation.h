@@ -55,9 +55,9 @@ typedef struct annotation_t {
 	annotation_type_enum type;
 	char name[64];
 	rgba_t color;
-	u32 group_id;
-	u32 first_coordinate;
-	u32 coordinate_count;
+	i32 group_id;
+	i32 first_coordinate;
+	i32 coordinate_count;
 	bool8 has_coordinates;
 	bool8 selected;
 } annotation_t;
@@ -78,11 +78,11 @@ typedef struct annotation_group_t {
 
 typedef struct annotation_set_t {
 	annotation_t* annotations; // sb
-	u32 annotation_count;
+	i32 annotation_count;
 	coordinate_t* coordinates; // sb
-	u32 coordinate_count;
+	i32 coordinate_count;
 	annotation_group_t* groups; // sb
-	u32 group_count;
+	i32 group_count;
 	bool enabled;
 	char* filename;
 	bool modified;
@@ -91,6 +91,7 @@ typedef struct annotation_set_t {
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
 i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr);
+void delete_selected_annotations(annotation_set_t* annotation_set);
 i32 select_annotation(scene_t* scene, bool32 additive);
 void draw_annotations_window(app_state_t* app_state);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
