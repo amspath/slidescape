@@ -26,6 +26,7 @@ extern "C" {
 #include "common.h"
 #include "mathutils.h"
 
+#include "arena.h"
 #include "tiff.h"
 #include "openslide_api.h"
 #include "caselist.h"
@@ -178,6 +179,8 @@ typedef struct scene_t {
 } scene_t;
 
 typedef struct app_state_t {
+	u8* temp_storage_memory;
+	arena_t temp_arena;
 	rect2i client_viewport;
 	scene_t scene;
 	v4f clear_color;

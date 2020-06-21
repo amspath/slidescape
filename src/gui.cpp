@@ -101,7 +101,7 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
 				if (ImGui::MenuItem("Show case list", NULL, &menu_items_clicked.show_case_list)) {}
-				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
+//				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();

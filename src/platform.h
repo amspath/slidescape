@@ -280,7 +280,7 @@ typedef struct input_t {
 i64 get_clock();
 float get_seconds_elapsed(i64 start, i64 end);
 void platform_sleep(u32 ms);
-
+i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
 
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
 file_mem_t* platform_read_entire_file(const char* filename);

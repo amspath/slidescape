@@ -315,16 +315,19 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			is_program_running = false;
 		} break;
 
-#if 0
+#if 1
 		case WM_SETCURSOR: {
-			if (!result) { // only process this message if ImGui hasn't changed the cursor already
+			if (!gui_want_capture_mouse) {
+				result = DefWindowProcA(window, message, wparam, lparam);
+			}
+			/*if (!result) { // only process this message if ImGui hasn't changed the cursor already
 				if (show_cursor) {
 //				    SetCursor(the_cursor);
 					result = DefWindowProcA(window, message, wparam, lparam);
 				} else {
 					SetCursor(NULL); // hide the cursor when dragging
 				}
-			}
+			}*/
 
 		} break;
 #endif
@@ -334,6 +337,14 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			is_program_running = false;
 		} break;
 
+		case WM_INPUT: {
+			result = DefWindowProcA(window, message, wparam, lparam); // apparently this is needed for cleanup?
+		}; break;
+
+		case WM_CHAR:
+		case WM_DEADCHAR:
+		case WM_SYSCHAR:
+		case WM_SYSDEADCHAR:
 		case WM_KEYDOWN:
 		case WM_KEYUP:
 		case WM_SYSKEYDOWN:
@@ -342,43 +353,6 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 				break;
 			}
 			ASSERT(!"Keyboard messages should not be dispatched!");
-		} break;
-
-		case WM_INPUT: {
-			if (gui_want_capture_mouse) {
-				break;
-			}
-			u32 size;
-			GetRawInputData((HRAWINPUT) lparam, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
-			RAWINPUT* raw = (RAWINPUT*) alloca(size);
-			GetRawInputData((HRAWINPUT) lparam, RID_INPUT, raw, &size, sizeof(RAWINPUTHEADER));
-
-			if (raw->header.dwType == RIM_TYPEMOUSE)
-			{
-				if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-					curr_input->drag_vector = (v2i){};
-					curr_input->drag_start_xy = curr_input->mouse_xy;
-				}
-
-				// We want relative mouse movement
-				if (!(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
-					if (curr_input->mouse_buttons[0].down) {
-						curr_input->drag_vector.x += raw->data.mouse.lLastX;
-						curr_input->dmouse_xy.x += raw->data.mouse.lLastX;
-						curr_input->drag_vector.y += raw->data.mouse.lLastY;
-						curr_input->dmouse_xy.y += raw->data.mouse.lLastY;
-//						printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
-					} else {
-						// not dragging
-						mouse_show();
-					}
-				}
-
-
-			}
-
-
-
 		} break;
 
 #if 0
@@ -419,7 +393,7 @@ bool32 cursor_hidden;
 POINT stored_mouse_pos;
 
 void mouse_hide() {
-	if (!cursor_hidden) {
+	if (!cursor_hidden && !gui_want_capture_mouse) {
 		GetCursorPos(&stored_mouse_pos);
 		ShowCursor(0);
 		cursor_hidden = true;
@@ -428,6 +402,7 @@ void mouse_hide() {
 
 void mouse_show() {
 	if (cursor_hidden) {
+		// TODO: mouse move asymptotically to the window corners?
 //		SetCursorPos(stored_mouse_pos.x, stored_mouse_pos.y);
 		ShowCursor(1);
 		cursor_hidden = false;
@@ -435,9 +410,15 @@ void mouse_show() {
 }
 
 void win32_process_pending_messages(input_t* input, HWND window) {
+	i64 begin = get_clock(); // profiling
+
 	controller_input_t* keyboard_input = &input->keyboard;
 	MSG message;
+	i32 messages_processed = 0;
 	while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
+		++messages_processed;
+		i64 last_message_clock = get_clock();
+
 		if (message.message == WM_QUIT) {
 			is_program_running = false;
 		}
@@ -463,6 +444,41 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 					i32 z_delta = GET_WHEEL_DELTA_WPARAM(message.wParam);
 					input->mouse_z = z_delta;
 				}
+			} break;
+
+			case WM_INPUT: {
+				if (gui_want_capture_mouse) {
+					break;
+				}
+				u32 size;
+				GetRawInputData((HRAWINPUT) message.lParam, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
+				RAWINPUT* raw = (RAWINPUT*) alloca(size);
+				GetRawInputData((HRAWINPUT) message.lParam, RID_INPUT, raw, &size, sizeof(RAWINPUTHEADER));
+
+				if (raw->header.dwType == RIM_TYPEMOUSE)
+				{
+					if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
+						curr_input->drag_vector = (v2i){};
+						curr_input->drag_start_xy = curr_input->mouse_xy;
+					}
+
+					// We want relative mouse movement
+					if (!(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+						if (curr_input->mouse_buttons[0].down) {
+							curr_input->drag_vector.x += raw->data.mouse.lLastX;
+							curr_input->dmouse_xy.x += raw->data.mouse.lLastX;
+							curr_input->drag_vector.y += raw->data.mouse.lLastY;
+							curr_input->dmouse_xy.y += raw->data.mouse.lLastY;
+//						printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
+						} else {
+							// not dragging
+							mouse_show();
+						}
+					}
+
+
+				}
+
 			} break;
 
 			case WM_KEYDOWN:
@@ -564,7 +580,20 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 
 
 		}
+
+//		i64 message_process_end = get_clock();
+//		float ms_elapsed = get_seconds_elapsed(last_message_clock, message_process_end) * 1000.0f;
+//		if (ms_elapsed > 1.0f) {
+//			printf("Long message processing time (%g ms)! message = %x\n", ms_elapsed, message.message);
+//		}
+
 	}
+
+//	float ms_elapsed = get_seconds_elapsed(begin, get_clock()) * 1000.0f;
+//	if (ms_elapsed > 20.0f) {
+//		printf("Long input handling time! Handled %d messages.\n", messages_processed);
+//	}
+
 }
 
 void win32_process_xinput_controllers() {
@@ -681,6 +710,11 @@ void win32_process_xinput_controllers() {
 }
 
 
+void win32_init_gdi_renderer() {
+
+}
+
+
 const char* wgl_extensions_string;
 
 PFNWGLSWAPINTERVALEXTPROC       wglSwapIntervalEXT = NULL;
@@ -693,7 +727,7 @@ PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = NULL;
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
 bool win32_wgl_extension_supported(const char *extension_name) {
 	ASSERT(wgl_extensions_string);
-	bool32 supported = (strstr(wgl_extensions_string, extension_name) != NULL);
+	bool supported = (strstr(wgl_extensions_string, extension_name) != NULL);
 	return supported;
 }
 
@@ -931,6 +965,9 @@ void win32_init_opengl(HWND window) {
 
 
 void win32_process_input(HWND window) {
+
+	i64 last_section = get_clock(); // profiling
+
 	// Swap
 	input_t* temp = old_input;
 	old_input = curr_input;
@@ -963,8 +1000,15 @@ void win32_process_input(HWND window) {
 	win32_process_keyboard_event(&curr_input->mouse_buttons[3], GetKeyState(VK_XBUTTON1) & (1<<15));
 	win32_process_keyboard_event(&curr_input->mouse_buttons[4], GetKeyState(VK_XBUTTON2) & (1<<15));
 
+	last_section = profiler_end_section(last_section, "input: (1)", 5.0f);
+
+
 	win32_process_pending_messages(curr_input, window);
-	win32_process_xinput_controllers();
+	last_section = profiler_end_section(last_section, "input: (2) process pending messages", 20.0f);
+
+//	win32_process_xinput_controllers();
+//	last_section = profiler_end_section(last_section, "input: (3) xinput", 5.0f);
+
 
 }
 
@@ -1183,6 +1227,21 @@ void win32_init_main_window() {
 
 }
 
+bool profiling = false;
+
+i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms) {
+	if (!profiling) return -1;
+	else {
+		i64 end = get_clock();
+		float ms_elapsed = get_seconds_elapsed(start, end) * 1000.0f;
+		if (ms_elapsed > report_threshold_ms) {
+			printf("[profiler] %s: %g ms\n", name, ms_elapsed);
+		}
+		return end;
+	}
+}
+
+
 int main(int argc, char** argv) {
 	g_instance = GetModuleHandle(NULL);
 	g_cmdline = GetCommandLine();
@@ -1224,6 +1283,8 @@ int main(int argc, char** argv) {
 		load_generic_file(app_state, filename);
 	}
 
+	HDC glrc_hdc = wglGetCurrentDC();
+
 	i64 last_clock = get_clock();
 	while (is_program_running) {
 
@@ -1232,15 +1293,21 @@ int main(int argc, char** argv) {
 		last_clock = current_clock;
 
 		win32_process_input(main_window);
+		i64 section_end = profiler_end_section(last_clock, "input", 20.0f);
 
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
+		section_end = profiler_end_section(section_end, "viewer update and render", 20.0f);
 
 		gui_draw(app_state, dimension.width, dimension.height);
+		section_end = profiler_end_section(section_end, "gui draw", 10.0f);
+
 
 		autosave(app_state, false);
 
-		SwapBuffers(wglGetCurrentDC());
+		SwapBuffers(glrc_hdc);
+		section_end = profiler_end_section(section_end, "end frame", 100.0f);
+
 	}
 
 	autosave(app_state, true); // save any unsaved changes

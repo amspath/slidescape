@@ -768,12 +768,18 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 }
 
 void init_app_state(app_state_t* app_state) {
+	ASSERT(!app_state->initialized); // check sanity
+	ASSERT(app_state->temp_storage_memory == NULL);
 	memset(app_state, 0, sizeof(app_state_t));
+
+	size_t temp_storage_size = MEGABYTES(16); // Note: what is a good size to use here?
+	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
+	init_arena(&app_state->temp_arena, temp_storage_size, app_state->temp_storage_memory);
+
 	app_state->clear_color = (v4f){0.95f, 0.95f, 0.95f, 1.00f};
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
-	// If disabled, revert to OpenSlide when loading TIFF files.
-	app_state->use_builtin_tiff_backend = true;
+	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
 	app_state->initialized = true;
 }
 
@@ -788,6 +794,8 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
 
+	i64 last_section = get_clock(); // start profiler section
+
 	if (!app_state->initialized) init_app_state(app_state);
 	// Note: the window might get resized, so need to update this every frame
 	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
@@ -797,7 +805,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// Note: could be changed to allow e.g. multiple scenes side by side
 	scene->viewport = app_state->client_viewport;
-
 
 	// TODO: this is part of rendering and doesn't belong here
 	gui_new_frame();
@@ -809,6 +816,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
 
 
 	// Determine the image to view;
@@ -873,6 +881,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 		}
 	}
+
+	last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (1)", 5.0f);
+
 
 	if (image->type == IMAGE_TYPE_SIMPLE) {
 		// Display a basic image
@@ -1156,6 +1167,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		}
 
+		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
 		// IO
 
@@ -1219,6 +1231,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
 
+		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
 
 		if (num_tasks_on_wishlist > 0){
@@ -1262,6 +1275,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		}
 
+		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 
 
 		// RENDERING
@@ -1303,6 +1317,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		i32 num_levels_above_current = image->level_count - scene->current_level - 1;
 		ASSERT(num_levels_above_current >= 0);
 
+		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
+
+
 		// Draw all levels within the viewport, up to the current zoom factor
 		for (i32 level = scene->current_level; level < image->level_count; ++level) {
 //		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
@@ -1342,6 +1359,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 		}
+
+		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
+
 	}
 
 
