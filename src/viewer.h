@@ -193,6 +193,7 @@ typedef struct app_state_t {
 	bool use_builtin_tiff_backend;
 	bool use_image_adjustments;
 	bool initialized;
+	bool allow_idling_next_frame;
 } app_state_t;
 
 

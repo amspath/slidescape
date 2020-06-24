@@ -395,7 +395,11 @@ void win32_init_gui(HWND hwnd) {
 	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
 	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
 	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
-	ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 17.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
+	ImFontConfig font_config = ImFontConfig();
+//	font_config.OversampleH = 3;
+//	font_config.OversampleV = 2;
+//	font_config.RasterizerMultiply = 1.2f;
+	ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 17.0f, &font_config, io.Fonts->GetGlyphRangesJapanese());
 	if (!font) {
 		// could not load font
 	}

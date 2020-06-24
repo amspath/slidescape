@@ -104,6 +104,7 @@ typedef struct input_t {
 			controller_input_t controllers[4];
 		};
 	};
+	bool are_any_buttons_down;
 
 } input_t;
 

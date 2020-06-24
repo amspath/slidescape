@@ -818,31 +818,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
 
+	i32 image_count = sb_count(app_state->loaded_images);
+	ASSERT(image_count >= 0);
 
-	// Determine the image to view;
-	for (i32 i = 0; i < 9; ++i) {
-		if (input->keyboard.keys['1' + i].down) {
-			app_state->displayed_image = MIN(sb_count(app_state->loaded_images)-1, i);
-		}
+	if (image_count == 0) {
+		return; // nothing to draw
 	}
 
 	image_t* image = app_state->loaded_images + app_state->displayed_image;
 
-	if (!image) {
-		return; // nothing to draw
-	}
 
 
 	// TODO: mutate state here
+	app_state->allow_idling_next_frame = true; // but we might set it to true later
 
 	// todo: process even more of the mouse/keyboard input here?
 	v2i current_drag_vector = {};
-	float mouse_x = 0.0f;
-	float mouse_y = 0.0f;
 	bool32 scene_clicked = false;
-	float click_x = 0.0f;
-	float click_y = 0.0f;
 	if (input) {
+		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
+
 		if (was_key_pressed(input, 'W') && is_key_down(input, KEYCODE_CONTROL)) {
 			menu_close_file(app_state);
 			return;
@@ -1040,6 +1035,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// Spring/bounce effect
 		float d_zoom = (float) scene->current_level - scene->zoom_position;
 		float abs_d_zoom = fabsf(d_zoom);
+		if (abs_d_zoom > 1e-5f) {
+			app_state->allow_idling_next_frame = false;
+		}
 		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
 		float linear_catch_up_speed = 10.0f * delta_t;
 		float exponential_catch_up_speed = 18.0f * delta_t;
@@ -1235,7 +1233,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 		if (num_tasks_on_wishlist > 0){
-
+			app_state->allow_idling_next_frame = false;
 
 			if (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) {
 				// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.

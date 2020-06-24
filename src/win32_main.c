@@ -409,13 +409,30 @@ void mouse_show() {
 	}
 }
 
-void win32_process_pending_messages(input_t* input, HWND window) {
+// returns true if there was an idle period, false otherwise.
+bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idling) {
 	i64 begin = get_clock(); // profiling
 
 	controller_input_t* keyboard_input = &input->keyboard;
 	MSG message;
 	i32 messages_processed = 0;
-	while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE)) {
+
+	bool did_idle = false;
+	WINBOOL has_message = PeekMessageA(&message, NULL, 0, 0, PM_NOREMOVE);
+	if (!has_message) {
+		if (!allow_idling) {
+			return false; // don't idle waiting for messages if there e.g. animations on screen
+		} else {
+			did_idle = true;
+			WINBOOL ret = GetMessageA(&message, NULL, 0, 0); // blocks until there is a message
+			if (ret == -1) {
+				win32_diagnostic("GetMessageA");
+				panic();
+			}
+		}
+	}
+
+	do {
 		++messages_processed;
 		i64 last_message_clock = get_clock();
 
@@ -427,13 +444,7 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 			default: {
 				TranslateMessage(&message);
 				DispatchMessageA(&message);
-			}
-				break;
-
-			case WM_QUIT: {
-				is_program_running = false;
-			}
-				break;
+			} break;
 
 			case WM_MOUSEWHEEL: {
 				if (gui_want_capture_mouse) {
@@ -587,12 +598,13 @@ void win32_process_pending_messages(input_t* input, HWND window) {
 //			printf("Long message processing time (%g ms)! message = %x\n", ms_elapsed, message.message);
 //		}
 
-	}
+	} while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE));
 
 //	float ms_elapsed = get_seconds_elapsed(begin, get_clock()) * 1000.0f;
 //	if (ms_elapsed > 20.0f) {
 //		printf("Long input handling time! Handled %d messages.\n", messages_processed);
 //	}
+	return did_idle;
 
 }
 
@@ -964,7 +976,7 @@ void win32_init_opengl(HWND window) {
 }
 
 
-void win32_process_input(HWND window) {
+bool win32_process_input(HWND window, app_state_t* app_state) {
 
 	i64 last_section = get_clock(); // profiling
 
@@ -973,20 +985,21 @@ void win32_process_input(HWND window) {
 	old_input = curr_input;
 	curr_input = temp;
 
-	{
-		// reset the transition counts.
-		memset_zero(&curr_input->keyboard);
-		for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
-			curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
-		}
-		for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
-			curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
-		}
-		memset_zero(&curr_input->mouse_buttons);
-		for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
-			curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
-		}
+
+	// reset the transition counts.
+
+	memset_zero(&curr_input->keyboard);
+	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+		curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
 	}
+	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
+		curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
+	}
+	memset_zero(&curr_input->mouse_buttons);
+	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+		curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
+	}
+
 
 	POINT cursor_pos;
 	GetCursorPos(&cursor_pos);
@@ -994,22 +1007,36 @@ void win32_process_input(HWND window) {
 	curr_input->mouse_xy = (v2i){ cursor_pos.x, cursor_pos.y };
 	curr_input->mouse_z = 0;
 
-	win32_process_keyboard_event(&curr_input->mouse_buttons[0], GetKeyState(VK_LBUTTON) & (1<<15));
-	win32_process_keyboard_event(&curr_input->mouse_buttons[1], GetKeyState(VK_RBUTTON) & (1<<15));
-	win32_process_keyboard_event(&curr_input->mouse_buttons[2], GetKeyState(VK_MBUTTON) & (1<<15));
-	win32_process_keyboard_event(&curr_input->mouse_buttons[3], GetKeyState(VK_XBUTTON1) & (1<<15));
-	win32_process_keyboard_event(&curr_input->mouse_buttons[4], GetKeyState(VK_XBUTTON2) & (1<<15));
+	// NOTE: should we call GetAsyncKeyState or GetKeyState?
+	win32_process_keyboard_event(&curr_input->mouse_buttons[0], GetAsyncKeyState(VK_LBUTTON) & (1<<15));
+	win32_process_keyboard_event(&curr_input->mouse_buttons[1], GetAsyncKeyState(VK_RBUTTON) & (1<<15));
+	win32_process_keyboard_event(&curr_input->mouse_buttons[2], GetAsyncKeyState(VK_MBUTTON) & (1<<15));
+	win32_process_keyboard_event(&curr_input->mouse_buttons[3], GetAsyncKeyState(VK_XBUTTON1) & (1<<15));
+	win32_process_keyboard_event(&curr_input->mouse_buttons[4], GetAsyncKeyState(VK_XBUTTON2) & (1<<15));
 
 	last_section = profiler_end_section(last_section, "input: (1)", 5.0f);
 
 
-	win32_process_pending_messages(curr_input, window);
-	last_section = profiler_end_section(last_section, "input: (2) process pending messages", 20.0f);
+	bool did_idle = win32_process_pending_messages(curr_input, window, app_state->allow_idling_next_frame);
+//	last_section = profiler_end_section(last_section, "input: (2) process pending messages", 20.0f);
 
 //	win32_process_xinput_controllers();
 //	last_section = profiler_end_section(last_section, "input: (3) xinput", 5.0f);
 
+	// Check if at least one button/key is pressed at all (if no buttons are pressed,
+	// we might be allowed to idle waiting for input (skipping frames!) as long as nothing is animating on the screen).
+	curr_input->are_any_buttons_down = false;
+	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.buttons[i].down;
+	}
+	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.keys[i].down;
+	}
+	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->mouse_buttons[i].down;
+	}
 
+	return did_idle;
 }
 
 
@@ -1292,7 +1319,10 @@ int main(int argc, char** argv) {
 		float delta_t = (float)(current_clock - last_clock) / (float)performance_counter_frequency;
 		last_clock = current_clock;
 
-		win32_process_input(main_window);
+		bool did_idle = win32_process_input(main_window, app_state);
+		if (did_idle) {
+			last_clock = get_clock();
+		}
 		i64 section_end = profiler_end_section(last_clock, "input", 20.0f);
 
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
