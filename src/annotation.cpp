@@ -25,11 +25,8 @@
 
 #include <math.h>
 
-//#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
-//#define CIMGUI_NO_EXPORT
 #include "imgui.h"
 #include "imgui_internal.h"
-//#include "cimgui.h"
 
 // XML parsing using the yxml library.
 // Note: what is the optimal stack buffer size for yxml?
@@ -60,6 +57,7 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 		}
 		u32 color = *(u32*)(&rgba);
 		if (annotation->has_coordinates) {
+			// TODO: don't abuse the stack here
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 				coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
@@ -77,6 +75,7 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr) {
 	i32 result = -1;
 	float shortest_sq_distance = 1e50;
+	// TODO: use bounding boxes and subdivide line segments with far apart coordinates
 	for (i32 annotation_index = 0; annotation_index < annotation_set->annotation_count; ++annotation_index) {
 		annotation_t* annotation = annotation_set->annotations + annotation_index;
 		if (annotation->has_coordinates) {
@@ -222,7 +221,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
 
-		ImGui::Text("(work in progress, this window should be redesigned/removed/repurposed...)");
+		ImGui::Text("(work in progress...)");
 
 		ImGui::Text("Number of annotations loaded: %d\n", annotation_set->annotation_count);
 		ImGui::Checkbox("Show annotations", &annotation_set->enabled);
@@ -254,7 +253,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 
 
-		if (ImGui::Button("Assign annotation to group...")) {
+		if (ImGui::Button("Assign group...")) {
 			show_annotation_group_assignment_window = true;
 		}
 
@@ -292,7 +291,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		ImGui::SetNextWindowPos((ImVec2){1359,43}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
 		ImGui::SetNextWindowSize((ImVec2){214,343}, ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Assign to group", &show_annotation_group_assignment_window);
+		ImGui::Begin("Assign group", &show_annotation_group_assignment_window);
 
 		ImGui::TextUnformatted(preview);
 

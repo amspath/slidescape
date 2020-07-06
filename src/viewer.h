@@ -22,6 +22,8 @@
 extern "C" {
 #endif
 
+#define SLIDEVIEWER_VERSION "0.15"
+
 
 #include "common.h"
 #include "mathutils.h"

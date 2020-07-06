@@ -92,7 +92,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::MenuItem("Load...", NULL, &menu_items_clicked.open_file)) {} // TODO: only accept annotation files here?
 			ImGui::Separator();
 			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
-			if (ImGui::MenuItem("Assign to group...", NULL, &show_annotation_group_assignment_window)) {}
+			if (ImGui::MenuItem("Assign group...", NULL, &show_annotation_group_assignment_window)) {}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
@@ -110,6 +110,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				ImGui::EndMenu();
 			}
+			ImGui::EndMenu();
+		}
+		if (ImGui::BeginMenu("Help")) {
+			if (ImGui::MenuItem("About...", NULL, &show_about_window)) {}
 			ImGui::EndMenu();
 		}
 
@@ -328,6 +332,28 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state, input);
+	}
+
+	if (show_about_window) {
+		ImGui::Begin("About Slideviewer", &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
+
+		ImGui::TextUnformatted("Slideviewer - a whole-slide image viewer for digital pathology");
+		ImGui::Text("Author: Pieter Valkema\n");
+		ImGui::TextUnformatted("Version: " SLIDEVIEWER_VERSION );
+
+
+		ImGui::Text("\nLicense information:\nThis program is free software: you can redistribute it and/or modify\n"
+		            "  it under the terms of the GNU General Public License as published by\n"
+		            "  the Free Software Foundation, either version 3 of the License, or\n"
+		            "  (at your option) any later version.\n\n");
+		if (ImGui::Button("View releases on GitHub")) {
+#if WINDOWS
+			ShellExecuteW(0, 0, L"https://github.com/Falcury/slideviewer/releases", 0, 0 , SW_SHOW );
+#endif
+		};
+
+
+		ImGui::End();
 	}
 
 

@@ -54,6 +54,7 @@ extern bool show_case_info_window;
 extern bool show_annotations_window;
 extern bool show_annotation_group_assignment_window;
 extern bool show_display_options_window;
+extern bool show_about_window;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 extern char remote_hostname[64] INIT(= "localhost");
