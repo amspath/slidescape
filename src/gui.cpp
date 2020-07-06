@@ -51,7 +51,7 @@ void menu_close_file(app_state_t* app_state) {
 	unload_and_reinit_annotations(&app_state->scene.annotation_set);
 }
 
-void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
+void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
 	// TODO: check if this is stale??
@@ -327,7 +327,7 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 	}
 
 	if (show_annotations_window || show_annotation_group_assignment_window) {
-		draw_annotations_window(app_state);
+		draw_annotations_window(app_state, input);
 	}
 
 

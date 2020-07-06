@@ -93,7 +93,7 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr);
 void delete_selected_annotations(annotation_set_t* annotation_set);
 i32 select_annotation(scene_t* scene, bool32 additive);
-void draw_annotations_window(app_state_t* app_state);
+void draw_annotations_window(app_state_t* app_state, input_t* input);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);

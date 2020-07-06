@@ -1336,7 +1336,7 @@ int main(int argc, char** argv) {
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 		section_end = profiler_end_section(section_end, "viewer update and render", 20.0f);
 
-		gui_draw(app_state, dimension.width, dimension.height);
+		gui_draw(app_state, curr_input, dimension.width, dimension.height);
 		section_end = profiler_end_section(section_end, "gui draw", 10.0f);
 
 

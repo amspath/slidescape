@@ -161,7 +161,7 @@ i32 select_annotation(scene_t* scene, bool32 additive) {
 	return nearest_annotation_index;
 }
 
-void draw_annotations_window(app_state_t* app_state) {
+void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 
@@ -191,6 +191,18 @@ void draw_annotations_window(app_state_t* app_state) {
 	u32 selectable_flags = 0;
 	if (nothing_selected) {
 		selectable_flags |= ImGuiSelectableFlags_Disabled;
+	}
+
+	// Detect hotkey presses for group assignment
+	bool* hotkey_pressed = (bool*) alloca(annotation_set->group_count * sizeof(bool));
+	memset(hotkey_pressed, 0, annotation_set->group_count * sizeof(bool));
+	for (i32 i = 0; i < ATMOST(9, annotation_set->group_count); ++i) {
+		if (was_key_pressed(input, '1'+i)) {
+			hotkey_pressed[i] = true;
+		}
+	}
+	if (annotation_set->group_count >= 10 && was_key_pressed(input, '0')) {
+		hotkey_pressed[9] = true;
 	}
 
 	const char* preview = "";
@@ -225,7 +237,8 @@ void draw_annotations_window(app_state_t* app_state) {
 			for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
 				annotation_group_t* group = annotation_set->groups + group_index;
 
-				if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})) {
+				if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
+				      || ((!nothing_selected) && hotkey_pressed[group_index])) {
 					// set group
 					for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
 						annotation_t* annotation = annotation_set->annotations + i;
@@ -303,7 +316,8 @@ void draw_annotations_window(app_state_t* app_state) {
 //		ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, color);
 //		color.w = 0.7f;
 //		ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
-			if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))) {
+			if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))
+			    || ((!nothing_selected) && hotkey_pressed[group_index])) {
 				// set group
 				for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
 					annotation_t* annotation = annotation_set->annotations + i;
@@ -313,8 +327,17 @@ void draw_annotations_window(app_state_t* app_state) {
 					}
 				}
 			}
+
 			ImGui::SameLine(0); ImGui::RadioButton(item_previews[group_index], &annotation_group_index, group_index);
-			//ImGui::SameLine(300); ImGui::Text(" 2,345 bytes");
+			if (group_index <= 9) {
+				ImGui::SameLine(ImGui::GetWindowWidth()-40.0f);
+				if (group_index <= 8) {
+					ImGui::Text("[%d]", group_index+1);
+				} else if (group_index == 9) {
+					ImGui::TextUnformatted("[0]");
+				}
+
+			}
 			ImGui::PopStyleColor(1);
 			ImGui::PopID();
 
