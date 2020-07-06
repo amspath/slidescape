@@ -60,7 +60,7 @@ add_executable(slideviewer
         src/shader.c
         src/tiff.c
         src/caselist.c
-        src/annotation.c
+        src/annotation.cpp
         src/openslide.c
         src/imgui.cpp
         src/imgui_demo.cpp
@@ -68,7 +68,7 @@ add_executable(slideviewer
         src/imgui_widgets.cpp
         src/imgui_impl_opengl3.cpp
         src/imgui_impl_win32.cpp
-        src/cimgui.cpp
+#        src/cimgui.cpp
         src/gui.cpp
         src/jpeg_decoder.c
         src/tlsclient.c

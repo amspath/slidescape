@@ -88,11 +88,17 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
 		}
+		if (ImGui::BeginMenu("Annotation")) {
+			if (ImGui::MenuItem("Load...", NULL, &menu_items_clicked.open_file)) {} // TODO: only accept annotation files here?
+			ImGui::Separator();
+			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
+			if (ImGui::MenuItem("Assign to group...", NULL, &show_annotation_group_assignment_window)) {}
+			ImGui::EndMenu();
+		}
 		if (ImGui::BeginMenu("View")) {
 			prev_fullscreen = is_fullscreen = win32_is_fullscreen(main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
-			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
 
 			ImGui::Separator();
 
@@ -320,28 +326,8 @@ void gui_draw(app_state_t *app_state, i32 client_width, i32 client_height) {
 		ImGui::End();
 	}
 
-	if (show_annotations_window) {
+	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state);
-		ImGui::SetNextWindowPos(ImVec2(20, 600), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_FirstUseEver);
-
-		ImGui::Begin("Annotations", &show_annotations_window);
-
-		case_t* global_selected_case = app_state->selected_case;
-		if (global_selected_case != NULL) {
-			ImGui::TextWrapped("%s\n", global_selected_case->name);
-			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);
-			if (ImGui::TreeNode("Diagnosis and comment")) {
-				ImGui::TextWrapped("%s\n", global_selected_case->diagnosis);
-				ImGui::TextWrapped("%s\n", global_selected_case->notes);
-				ImGui::TreePop();
-			}
-
-
-		}
-
-
-		ImGui::End();
 	}
 
 

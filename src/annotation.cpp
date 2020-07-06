@@ -25,9 +25,11 @@
 
 #include <math.h>
 
-#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
-#define CIMGUI_NO_EXPORT
-#include "cimgui.h"
+//#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+//#define CIMGUI_NO_EXPORT
+#include "imgui.h"
+#include "imgui_internal.h"
+//#include "cimgui.h"
 
 // XML parsing using the yxml library.
 // Note: what is the optimal stack buffer size for yxml?
@@ -66,8 +68,8 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 				points[i] = transformed_pos;
 			}
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
-			ImDrawList* draw_list = igGetBackgroundDrawList();
-			ImDrawList_AddPolyline(draw_list, (ImVec2*)points, annotation->coordinate_count, color, true, thickness);
+			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+			draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, color, true, thickness);
 		}
 	}
 }
@@ -160,12 +162,10 @@ i32 select_annotation(scene_t* scene, bool32 additive) {
 }
 
 void draw_annotations_window(app_state_t* app_state) {
-	igSetNextWindowPos((ImVec2){20, 600}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-	igSetNextWindowSize((ImVec2){400, 250}, ImGuiCond_FirstUseEver);
 
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 
-	const char** item_previews = alloca(annotation_set->group_count * sizeof(char*));
+	const char** item_previews = (const char**) alloca(annotation_set->group_count * sizeof(char*));
 	for (i32 i = 0; i < annotation_set->group_count; ++i) {
 		annotation_group_t* group = annotation_set->groups + i;
 		item_previews[i] = group->name;
@@ -186,25 +186,124 @@ void draw_annotations_window(app_state_t* app_state) {
 
 		}
 	}
-
-
-
-	igBegin("Annotations", &show_annotations_window, 0);
+	bool nothing_selected = (annotation_group_index == -1);
+	bool multiple_selected = (annotation_group_index == -2);
+	u32 selectable_flags = 0;
+	if (nothing_selected) {
+		selectable_flags |= ImGuiSelectableFlags_Disabled;
+	}
 
 	const char* preview = "";
 	if (annotation_group_index >= 0 && annotation_group_index < annotation_set->group_count) {
 		preview = item_previews[annotation_group_index];
-	} else if (annotation_group_index == -2) {
+	} else if (multiple_selected) {
 		preview = "(multiple)"; // if multiple annotations with different groups are selected
+	} else if (nothing_selected) {
+		preview = "(nothing selected)";
 	}
-	igText("Number of annotations loaded: %d\n", annotation_set->annotation_count);
-	igCheckbox("Show annotations", &annotation_set->enabled);
+
+	if (show_annotations_window) {
+
+		ImGui::SetNextWindowPos((ImVec2){20, 600}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+		ImGui::SetNextWindowSize((ImVec2){400, 250}, ImGuiCond_FirstUseEver);
 
 
-	if (igBeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
+		ImGui::Begin("Annotations", &show_annotations_window, 0);
+
+		ImGui::Text("(work in progress, this window should be redesigned/removed/repurposed...)");
+
+		ImGui::Text("Number of annotations loaded: %d\n", annotation_set->annotation_count);
+		ImGui::Checkbox("Show annotations", &annotation_set->enabled);
+
+
+		if (nothing_selected) {
+			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+
+		if (ImGui::BeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
+			for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
+				annotation_group_t* group = annotation_set->groups + group_index;
+
+				if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})) {
+					// set group
+					for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+						annotation_t* annotation = annotation_set->annotations + i;
+						if (annotation->selected) {
+							annotation->group_id = group_index;
+							annotations_modified(annotation_set);
+						}
+					}
+				}
+			}
+			ImGui::EndCombo();
+		}
+
+
+
+		if (ImGui::Button("Assign annotation to group...")) {
+			show_annotation_group_assignment_window = true;
+		}
+
+		ImGuiColorEditFlags flags = 0;
+		float color[3] = {};
+		if (annotation_group_index >= 0) {
+			annotation_group_t* group = annotation_set->groups + annotation_group_index;
+			rgba_t rgba = group->color;
+			color[0] = BYTE_TO_FLOAT(rgba.r);
+			color[1] = BYTE_TO_FLOAT(rgba.g);
+			color[2] = BYTE_TO_FLOAT(rgba.b);
+			if (ImGui::ColorEdit3("Group color", (float*) color, flags)) {
+				rgba.r = FLOAT_TO_BYTE(color[0]);
+				rgba.g = FLOAT_TO_BYTE(color[1]);
+				rgba.b = FLOAT_TO_BYTE(color[2]);
+				group->color = rgba;
+				annotations_modified(annotation_set);
+			}
+		} else {
+			flags = ImGuiColorEditFlags_NoPicker;
+			ImGui::ColorEdit3("Group color", (float*) color, flags);
+		}
+
+		if (nothing_selected) {
+			ImGui::PopItemFlag();
+			ImGui::PopStyleVar();
+		}
+
+		ImGui::End();
+	}
+
+
+	if (show_annotation_group_assignment_window) {
+
+		ImGui::SetNextWindowPos((ImVec2){1359,43}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+		ImGui::SetNextWindowSize((ImVec2){214,343}, ImGuiCond_FirstUseEver);
+
+		ImGui::Begin("Assign to group", &show_annotation_group_assignment_window);
+
+		ImGui::TextUnformatted(preview);
+
+
+		if (nothing_selected) {
+			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+
 		for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
 			annotation_group_t* group = annotation_set->groups + group_index;
-			if (igSelectableBool(item_previews[group_index], (annotation_group_index == group_index), 0, (ImVec2){})) {
+
+			u32 rgba_u32 = *(u32*) &group->color;
+			ImVec4 color = ImColor(rgba_u32);
+
+			static int e = 0;
+			ImGui::PushID(group_index);
+			color.w = 1.0f;
+			ImGui::PushStyleColor(ImGuiCol_CheckMark, color);
+//		color.w = 0.6f;
+//		ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, color);
+//		color.w = 0.7f;
+//		ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
+			if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))) {
 				// set group
 				for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
 					annotation_t* annotation = annotation_set->annotations + i;
@@ -214,31 +313,23 @@ void draw_annotations_window(app_state_t* app_state) {
 					}
 				}
 			}
+			ImGui::SameLine(0); ImGui::RadioButton(item_previews[group_index], &annotation_group_index, group_index);
+			//ImGui::SameLine(300); ImGui::Text(" 2,345 bytes");
+			ImGui::PopStyleColor(1);
+			ImGui::PopID();
+
 		}
-		igEndCombo();
+
+		if (nothing_selected) {
+			ImGui::PopItemFlag();
+			ImGui::PopStyleVar();
+		}
+
+		ImGui::End();
 	}
 
-	ImGuiColorEditFlags flags = 0;
-	float color[3] = {};
-	if (annotation_group_index >= 0) {
-		annotation_group_t* group = annotation_set->groups + annotation_group_index;
-		rgba_t rgba = group->color;
-		color[0] = BYTE_TO_FLOAT(rgba.r);
-		color[1] = BYTE_TO_FLOAT(rgba.g);
-		color[2] = BYTE_TO_FLOAT(rgba.b);
-		if (igColorEdit3("Group color", (float*) color, flags)) {
-			rgba.r = FLOAT_TO_BYTE(color[0]);
-			rgba.g = FLOAT_TO_BYTE(color[1]);
-			rgba.b = FLOAT_TO_BYTE(color[2]);
-			group->color = rgba;
-			annotations_modified(annotation_set);
-		}
-	} else {
-		flags = ImGuiColorEditFlags_NoPicker;
-		igColorEdit3("Group color", (float*) color, flags);
-	}
 
-	igEnd();
+
 }
 
 u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
@@ -352,13 +443,15 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	bool32 success = false;
 	i64 start = get_clock();
 
-	if (0) { failed:
-		goto cleanup;
+	if (0) { failed: cleanup:
+		if (x) free(x);
+		if (file) free(file);
+		return success;
 	}
 
 	if (file) {
 		// hack: merge memory for yxml_t struct and stack buffer
-		x = malloc(sizeof(yxml_t) + YXML_STACK_BUFFER_SIZE);
+		x = (yxml_t*) malloc(sizeof(yxml_t) + YXML_STACK_BUFFER_SIZE);
 		yxml_init(x, x + 1, YXML_STACK_BUFFER_SIZE);
 
 		// parse XML byte for byte
@@ -495,11 +588,8 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
 	printf("Loaded annotations in %g seconds.\n", seconds_elapsed);
 
-	cleanup:
-	if (x) free(x);
-	if (file) free(file);
-
-	return success;
+	goto cleanup;
+	// return success;
 }
 
 const char* get_annotation_type_name(annotation_type_enum type) {
