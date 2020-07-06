@@ -417,9 +417,12 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 	MSG message;
 	i32 messages_processed = 0;
 
-	// TODO: allow idling while the application is not in focus
-	// TODO: solve responsiveness issues
-	//allow_idling = false;
+	// Just to be sure we don't get stalls, don't allow idling while we are actively using the window
+	// TODO: revise, might be unnecessary power usage
+	HWND foreground_window = GetForegroundWindow();
+	if (foreground_window == window) {
+		allow_idling = false; //
+	}
 
 	bool did_idle = false;
 	WINBOOL has_message = PeekMessageA(&message, NULL, 0, 0, PM_REMOVE);
