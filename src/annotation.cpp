@@ -404,10 +404,12 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 		}
 		annotation->group_id = group_index;
 	} else if (strcmp(attr, "Type") == 0) {
-		annotation->type = ANNOTATION_UNKNOWN_TYPE;
 		if (strcmp(value, "Rectangle") == 0) {
 			annotation->type = ANNOTATION_RECTANGLE;
 		} else if (strcmp(value, "Polygon") == 0) {
+			annotation->type = ANNOTATION_POLYGON;
+		} else {
+			printf("Warning: annotation '%s' with unrecognized type '%s', defaulting to 'Polygon'.\n", annotation->name, value);
 			annotation->type = ANNOTATION_POLYGON;
 		}
 	}
@@ -498,6 +500,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						// start of an element: '<Tag ..'
 //						printf("element start: %s\n", x->elem);
 						contentcur = contentbuf;
+						*contentcur = '\0';
 
 						parse_state->element_type = ASAP_XML_ELEMENT_NONE;
 						if (strcmp(x->elem, "Annotation") == 0) {
@@ -562,6 +565,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						// attribute: 'Name=..'
 //						printf("attr start: %s\n", x->attr);
 						attrcur = attrbuf;
+						*attrcur = '\0';
 					} break;
 					case YXML_ATTRVAL: {
 						// attribute value
