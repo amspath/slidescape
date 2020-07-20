@@ -81,6 +81,9 @@ void init_draw_rect() {
 
 void draw_rect(u32 texture) {
 	glBindVertexArray(vao_rect);
+//	glEnable(GL_TEXTURE_2D);
+//	glActiveTexture(GL_TEXTURE0 + 0);
+//	glUniform1i(basic_shader_u_tex, 0);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 }

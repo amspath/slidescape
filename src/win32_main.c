@@ -742,11 +742,13 @@ PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = NULL;
 PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = NULL;
 PFNSETPIXELFORMATPROC wglSetPixelFormat = NULL;
 PFNDESCRIBEPIXELFORMATPROC wglDescribePixelFormat = NULL;
+PFNCHOOSEPIXELFORMATPROC wglChoosePixelFormat = NULL;
 PFNWGLGETPROCADDRESSPROC wglGetProcAddress_alt = NULL; // need to rename, because these are already declared in wingdi.h
 PFNWGLCREATECONTEXTPROC wglCreateContext_alt = NULL;
 PFNWGLMAKECURRENTPROC wglMakeCurrent_alt = NULL;
 PFNWGLDELETECONTEXTPROC wglDeleteContext_alt = NULL;
 PFNWGLGETCURRENTDCPROC wglGetCurrentDC_alt = NULL;
+PFNSWAPBUFFERSPROC wglSwapBuffers = NULL;
 
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
 bool win32_wgl_extension_supported(const char *extension_name) {
@@ -814,6 +816,10 @@ void win32_init_opengl(HWND window) {
 	if (!wglSetPixelFormat) { panic(); }
 	wglDescribePixelFormat = (PFNDESCRIBEPIXELFORMATPROC) gl_get_proc_address("wglDescribePixelFormat");
 	if (!wglDescribePixelFormat) { panic(); }
+	wglChoosePixelFormat = (PFNCHOOSEPIXELFORMATPROC) gl_get_proc_address("wglChoosePixelFormat");
+	if (!wglChoosePixelFormat) { panic(); }
+	wglSwapBuffers = (PFNSWAPBUFFERSPROC) gl_get_proc_address("wglSwapBuffers");
+	if (!wglSwapBuffers) { panic(); }
 
 	// We want to create an OpenGL context using wglCreateContextAttribsARB, instead of the regular wglCreateContext.
 	// Unfortunately, that's considered an OpenGL extension. Therefore, we first need to create a "dummy" context
@@ -835,15 +841,23 @@ void win32_init_opengl(HWND window) {
 	desired_pixel_format.dwFlags = PFD_SUPPORT_OPENGL|PFD_DRAW_TO_WINDOW|PFD_DOUBLEBUFFER;
 	desired_pixel_format.cColorBits = 32;
 	desired_pixel_format.cAlphaBits = 8;
+	desired_pixel_format.cStencilBits = 8;
 	desired_pixel_format.iLayerType = PFD_MAIN_PLANE;
 
-	int suggested_pixel_format_index = ChoosePixelFormat(dummy_dc, &desired_pixel_format);
+	int suggested_pixel_format_index = wglChoosePixelFormat(dummy_dc, &desired_pixel_format);
 	PIXELFORMATDESCRIPTOR suggested_pixel_format;
-	DescribePixelFormat(dummy_dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
-	SetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format);
+	wglDescribePixelFormat(dummy_dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
+	if (!SetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format)) {
+		win32_diagnostic("wglSetPixelFormat");
+		panic();
+	}
 
 	// Create the OpenGL context for the main thread.
 	HGLRC dummy_glrc = wglCreateContext_alt(dummy_dc);
+	if (!dummy_glrc) {
+		win32_diagnostic("wglCreateContext");
+		panic();
+	}
 
 	if (!wglMakeCurrent_alt(dummy_dc, dummy_glrc)) {
 		win32_diagnostic("wglMakeCurrent");
@@ -907,8 +921,8 @@ void win32_init_opengl(HWND window) {
 			WGL_COLOR_BITS_ARB,         32,
 			WGL_DEPTH_BITS_ARB,         24,
 			WGL_STENCIL_BITS_ARB,       8,
-//			WGL_SAMPLE_BUFFERS_ARB, TRUE,
-//			WGL_SAMPLES_ARB, 4,
+			WGL_SAMPLE_BUFFERS_ARB,     TRUE,
+			WGL_SAMPLES_ARB,            4,
 			0,0
 	};
 
@@ -918,13 +932,31 @@ void win32_init_opengl(HWND window) {
 	suggested_pixel_format_index = 0;
 	memset_zero(&suggested_pixel_format);
 	bool32 status = wglChoosePixelFormatARB(dc, pixel_attribs, NULL, 1, &suggested_pixel_format_index, &num_formats);
-	if (!status/* || num_formats == 0*/) {
-		printf("wglChoosePixelFormatARB() failed.");
-		panic();
+	if (!status || num_formats == 0) {
+//		printf("wglChoosePixelFormatARB() failed, trying another pixel format\n");
+		// This alternative configuration seems to be required for the Mesa3D software renderer.
+		const int pixel_attribs_alternative[] = {
+				WGL_DRAW_TO_WINDOW_ARB,     TRUE,
+				WGL_ACCELERATION_ARB,       WGL_FULL_ACCELERATION_ARB,
+				WGL_SUPPORT_OPENGL_ARB,     TRUE,
+				WGL_DOUBLE_BUFFER_ARB,      TRUE,
+				WGL_PIXEL_TYPE_ARB,         WGL_TYPE_RGBA_ARB,
+				WGL_COLOR_BITS_ARB,         32,
+				WGL_DEPTH_BITS_ARB,         24,
+				WGL_STENCIL_BITS_ARB,       8,
+//			    WGL_SAMPLE_BUFFERS_ARB,     TRUE,
+//	    		WGL_SAMPLES_ARB,            4,
+				0,0
+		};
+		status = wglChoosePixelFormatARB(dc, pixel_attribs_alternative, NULL, 1, &suggested_pixel_format_index, &num_formats);
+		if (!status || num_formats == 0) {
+			printf("wglChoosePixelFormatARB() failed.");
+			panic();
+		}
 	}
 	wglDescribePixelFormat(dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
 	if (!wglSetPixelFormat(dc, suggested_pixel_format_index, &suggested_pixel_format)) {
-		win32_diagnostic("SetPixelFormat");
+		win32_diagnostic("wglSetPixelFormat");
 	}
 
 #if USE_OPENGL_DEBUG_CONTEXT
@@ -999,6 +1031,8 @@ void win32_init_opengl(HWND window) {
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, NULL, true);
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
+	glDebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, GL_DEBUG_TYPE_OTHER, 0,
+	                     GL_DEBUG_SEVERITY_HIGH, -1, "OpenGL debugging enabled");
 #endif
 
 	// debug
@@ -1368,7 +1402,7 @@ int main(int argc, char** argv) {
 
 		autosave(app_state, false);
 
-		SwapBuffers(glrc_hdc);
+		wglSwapBuffers(glrc_hdc);
 		section_end = profiler_end_section(section_end, "end frame", 100.0f);
 
 	}

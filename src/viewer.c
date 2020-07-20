@@ -63,14 +63,14 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glGenTextures(1, &texture);
 //	printf("Generated texture %d\n", texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+	glGenerateMipmap(GL_TEXTURE_2D);
 //	gl_diagnostic("glTexImage2D");
 	return texture;
 }
@@ -810,11 +810,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	gui_new_frame();
 
 	// Set up rendering state for the next frame
+	glDrawBuffer(GL_BACK);
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
 
@@ -1302,6 +1303,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
 
 		glUseProgram(basic_shader);
+		glActiveTexture(GL_TEXTURE0);
 		glUniform1i(basic_shader_u_tex, 0);
 
 		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
@@ -1319,7 +1321,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		ASSERT(num_levels_above_current >= 0);
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
-
 
 		// Draw all levels within the viewport, up to the current zoom factor
 		for (i32 level = scene->current_level; level < image->level_count; ++level) {
@@ -1364,7 +1365,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
 
 	}
-
 
 }
 
