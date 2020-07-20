@@ -54,7 +54,6 @@ void menu_close_file(app_state_t* app_state) {
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
-	// TODO: check if this is stale??
 	gui_want_capture_mouse = io.WantCaptureMouse;
 	gui_want_capture_keyboard = io.WantCaptureKeyboard;
 

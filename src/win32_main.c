@@ -348,10 +348,10 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_KEYUP:
 		case WM_SYSKEYDOWN:
 		case WM_SYSKEYUP: {
-			if (gui_want_capture_keyboard) {
-				break;
-			}
-			ASSERT(!"Keyboard messages should not be dispatched!");
+//			if (gui_want_capture_keyboard) {
+//				break;
+//			}
+//			ASSERT(!"Keyboard messages should not be dispatched!");
 		} break;
 
 #if 0
@@ -502,76 +502,25 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 			case WM_KEYUP:
 			case WM_SYSKEYDOWN:
 			case WM_SYSKEYUP: {
-				if (gui_want_capture_keyboard) {
-					TranslateMessage(&message);
-					DispatchMessageA(&message);
-					break;
-				}
+				TranslateMessage(&message);
+				DispatchMessageA(&message);
+
 				u32 vk_code = (u32) message.wParam;
-				int repeat_count = message.lParam & 0xFFFF;
-				bool32 was_down = ((message.lParam & (1 << 30)) != 0);
+				bool32 alt_down = message.lParam & (1 << 29);
 				bool32 is_down = ((message.lParam & (1 << 31)) == 0);
+				bool32 was_down = ((message.lParam & (1 << 30)) != 0);
+				int repeat_count = message.lParam & 0xFFFF;
 				i16 ctrl_state = GetKeyState(VK_CONTROL);
 				bool32 ctrl_down = (ctrl_state < 0); // 'down' determined by high order bit == sign bit
 				if (was_down && is_down) break; // uninteresting: repeated key
 
-				bool32 alt_down = message.lParam & (1 << 29);
-				win32_process_keyboard_event(&keyboard_input->keys[vk_code & 0xFF], is_down);
-
-				switch (vk_code) {
-					default:
-						break;
-					case VK_UP:
-						win32_process_keyboard_event(&keyboard_input->action_up, is_down);
-						break;
-					case VK_DOWN:
-						win32_process_keyboard_event(&keyboard_input->action_down, is_down);
-						break;
-					case VK_LEFT:
-						win32_process_keyboard_event(&keyboard_input->action_left, is_down);
-						break;
-					case VK_RIGHT:
-						win32_process_keyboard_event(&keyboard_input->action_right, is_down);
-						break;
-
-					case 'W':
-						win32_process_keyboard_event(&keyboard_input->move_up, is_down);
-						break;
-					case 'S':
-						win32_process_keyboard_event(&keyboard_input->move_down, is_down);
-						break;
-					case 'A':
-						win32_process_keyboard_event(&keyboard_input->move_left, is_down);
-						break;
-					case 'D':
-						win32_process_keyboard_event(&keyboard_input->move_right, is_down);
-						break;
-
-					case 'Q': {
-						win32_process_keyboard_event(&keyboard_input->left_shoulder, is_down);
-					}
-						break;
-
-					case 'E': {
-						win32_process_keyboard_event(&keyboard_input->right_shoulder, is_down);
-					}
-						break;
-
-					case VK_SPACE: {
-						win32_process_keyboard_event(&keyboard_input->button_a, is_down);
-					}
-						break;
-
-					/*case VK_ESCAPE: {
-						is_program_running = false;
-					}*/
-						break;
-
+				switch(vk_code) {
+					default: break;
 					case VK_F1: {
 						if (is_down) {
 							show_demo_window = !show_demo_window;
 						}
-					}
+					} break;
 
 					case VK_F4: {
 						if (is_down && alt_down) {
@@ -589,10 +538,65 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 						if (is_down && message.hwnd) {
 							win32_toggle_fullscreen(message.hwnd);
 						}
-
-					}
-						break;
+					} break;
 				}
+
+				if (!gui_want_capture_keyboard) {
+
+					win32_process_keyboard_event(&keyboard_input->keys[vk_code & 0xFF], is_down);
+
+					switch (vk_code) {
+						default:
+							break;
+						case VK_UP:
+							win32_process_keyboard_event(&keyboard_input->action_up, is_down);
+							break;
+						case VK_DOWN:
+							win32_process_keyboard_event(&keyboard_input->action_down, is_down);
+							break;
+						case VK_LEFT:
+							win32_process_keyboard_event(&keyboard_input->action_left, is_down);
+							break;
+						case VK_RIGHT:
+							win32_process_keyboard_event(&keyboard_input->action_right, is_down);
+							break;
+
+						case 'W':
+							win32_process_keyboard_event(&keyboard_input->move_up, is_down);
+							break;
+						case 'S':
+							win32_process_keyboard_event(&keyboard_input->move_down, is_down);
+							break;
+						case 'A':
+							win32_process_keyboard_event(&keyboard_input->move_left, is_down);
+							break;
+						case 'D':
+							win32_process_keyboard_event(&keyboard_input->move_right, is_down);
+							break;
+
+						case 'Q': {
+							win32_process_keyboard_event(&keyboard_input->left_shoulder, is_down);
+						}
+							break;
+
+						case 'E': {
+							win32_process_keyboard_event(&keyboard_input->right_shoulder, is_down);
+						}
+							break;
+
+						case VK_SPACE: {
+							win32_process_keyboard_event(&keyboard_input->button_a, is_down);
+						}
+							break;
+
+							/*case VK_ESCAPE: {
+								is_program_running = false;
+							}*/
+							break;
+					}
+				}
+
+
 			} break;
 
 
