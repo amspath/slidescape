@@ -107,6 +107,8 @@ namespace ImGui
 }
 */
 
+#include "config.h" // for USE_OPENGL_DEBUG_CONTEXT
+
 #define IMGUI_IMPL_OPENGL_LOADER_GLAD
 #define IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
 #define IMGUI_IMPL_API extern "C"

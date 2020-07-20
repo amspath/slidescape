@@ -39,7 +39,7 @@
 #include <xinput.h>
 
 #include <glad/glad.h>
-#include <GL/wglext.h>
+#include <GL/wgl.h>
 
 
 #include "platform.h"
@@ -51,7 +51,6 @@
 #include "tlsclient.h"
 #include "caselist.h"
 
-#define USE_OPENGL_DEBUG_CONTEXT DO_DEBUG
 
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
@@ -741,7 +740,13 @@ PFNWGLGETSWAPINTERVALEXTPROC    wglGetSwapIntervalEXT = NULL;
 PFNWGLGETEXTENSIONSSTRINGEXTPROC wglGetExtensionsStringEXT = NULL;
 PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = NULL;
 PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = NULL;
-
+PFNSETPIXELFORMATPROC wglSetPixelFormat = NULL;
+PFNDESCRIBEPIXELFORMATPROC wglDescribePixelFormat = NULL;
+PFNWGLGETPROCADDRESSPROC wglGetProcAddress_alt = NULL; // need to rename, because these are already declared in wingdi.h
+PFNWGLCREATECONTEXTPROC wglCreateContext_alt = NULL;
+PFNWGLMAKECURRENTPROC wglMakeCurrent_alt = NULL;
+PFNWGLDELETECONTEXTPROC wglDeleteContext_alt = NULL;
+PFNWGLGETCURRENTDCPROC wglGetCurrentDC_alt = NULL;
 
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
 bool win32_wgl_extension_supported(const char *extension_name) {
@@ -764,7 +769,7 @@ HMODULE opengl32_dll_handle;
 void* gl_get_proc_address(const char *name) {
 	void* proc = (void*) GetProcAddress(opengl32_dll_handle, name);
 	if (!proc) {
-		proc = (void*) wglGetProcAddress(name);
+		proc = (void*) wglGetProcAddress_alt(name);
 		if (!proc) {
 			printf("Error initalizing OpenGL: could not load proc '%s'.\n", name);
 		}
@@ -772,6 +777,7 @@ void* gl_get_proc_address(const char *name) {
 	return proc;
 }
 
+#if USE_OPENGL_DEBUG_CONTEXT
 void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                               const char* message, const void* user_param)
 {
@@ -779,6 +785,7 @@ void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint
 	       ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
 	       type, severity, message );
 }
+#endif
 
 void win32_init_opengl(HWND window) {
 	i64 debug_start = get_clock();
@@ -788,6 +795,25 @@ void win32_init_opengl(HWND window) {
 		win32_diagnostic("LoadLibraryA");
 		printf("Error initializing OpenGL: failed to load opengl32.dll.\n");
 	}
+
+	// Dynamically import all of the functions we need from opengl32.dll and all the wgl functions
+	wglGetProcAddress_alt = (PFNWGLGETPROCADDRESSPROC) GetProcAddress(opengl32_dll_handle, "wglGetProcAddress");
+	if (!wglGetProcAddress_alt) {
+		printf("Error initalizing OpenGL: could not load proc 'wglGetProcAddress'.\n");
+		panic();
+	}
+	wglCreateContext_alt = (PFNWGLCREATECONTEXTPROC) gl_get_proc_address("wglCreateContext");
+	if (!wglCreateContext_alt) { panic(); }
+	wglMakeCurrent_alt = (PFNWGLMAKECURRENTPROC) gl_get_proc_address("wglMakeCurrent");
+	if (!wglMakeCurrent_alt) { panic(); }
+	wglDeleteContext_alt = (PFNWGLDELETECONTEXTPROC) gl_get_proc_address("wglDeleteContext");
+	if (!wglDeleteContext_alt) { panic(); }
+	wglGetCurrentDC_alt = (PFNWGLGETCURRENTDCPROC) gl_get_proc_address("wglGetCurrentDC");
+	if (!wglGetCurrentDC_alt) { panic(); }
+	wglSetPixelFormat = (PFNSETPIXELFORMATPROC) gl_get_proc_address("wglSetPixelFormat");
+	if (!wglSetPixelFormat) { panic(); }
+	wglDescribePixelFormat = (PFNDESCRIBEPIXELFORMATPROC) gl_get_proc_address("wglDescribePixelFormat");
+	if (!wglDescribePixelFormat) { panic(); }
 
 	// We want to create an OpenGL context using wglCreateContextAttribsARB, instead of the regular wglCreateContext.
 	// Unfortunately, that's considered an OpenGL extension. Therefore, we first need to create a "dummy" context
@@ -817,9 +843,9 @@ void win32_init_opengl(HWND window) {
 	SetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format);
 
 	// Create the OpenGL context for the main thread.
-	HGLRC dummy_glrc = wglCreateContext(dummy_dc);
+	HGLRC dummy_glrc = wglCreateContext_alt(dummy_dc);
 
-	if (!wglMakeCurrent(dummy_dc, dummy_glrc)) {
+	if (!wglMakeCurrent_alt(dummy_dc, dummy_glrc)) {
 		win32_diagnostic("wglMakeCurrent");
 		panic();
 	}
@@ -829,12 +855,13 @@ void win32_init_opengl(HWND window) {
 	if (temp_glGetString == NULL) {
 		panic();
 	}
+
 	char* version_string = (char*)temp_glGetString(GL_VERSION);
 	printf("OpenGL supported version: %s\n", version_string);
 
 	// Now try to load the extensions we will need.
 
-#define GET_WGL_PROC(proc, type) do { proc = (type) wglGetProcAddress(#proc); } while(0)
+#define GET_WGL_PROC(proc, type) do { proc = (type) wglGetProcAddress_alt(#proc); } while(0)
 
 	GET_WGL_PROC(wglGetExtensionsStringEXT, PFNWGLGETEXTENSIONSSTRINGEXTPROC);
 	if (!wglGetExtensionsStringEXT) {
@@ -872,18 +899,17 @@ void win32_init_opengl(HWND window) {
 	// https://mariuszbartosik.com/opengl-4-x-initialization-in-windows-without-a-framework/
 
 	const int pixel_attribs[] = {
-			WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
-			WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
-			WGL_DOUBLE_BUFFER_ARB, GL_TRUE,
-			WGL_PIXEL_TYPE_ARB, WGL_TYPE_RGBA_ARB,
-			WGL_ACCELERATION_ARB, WGL_FULL_ACCELERATION_ARB,
-			WGL_COLOR_BITS_ARB, 32,
-			WGL_ALPHA_BITS_ARB, 8,
-			WGL_DEPTH_BITS_ARB, 24,
-			WGL_STENCIL_BITS_ARB, 8,
-			WGL_SAMPLE_BUFFERS_ARB, GL_TRUE,
-			WGL_SAMPLES_ARB, 4,
-			0
+			WGL_DRAW_TO_WINDOW_ARB,     TRUE,
+			WGL_ACCELERATION_ARB,       WGL_FULL_ACCELERATION_ARB,
+			WGL_SUPPORT_OPENGL_ARB,     TRUE,
+			WGL_DOUBLE_BUFFER_ARB,      TRUE,
+			WGL_PIXEL_TYPE_ARB,         WGL_TYPE_RGBA_ARB,
+			WGL_COLOR_BITS_ARB,         32,
+			WGL_DEPTH_BITS_ARB,         24,
+			WGL_STENCIL_BITS_ARB,       8,
+//			WGL_SAMPLE_BUFFERS_ARB, TRUE,
+//			WGL_SAMPLES_ARB, 4,
+			0,0
 	};
 
 	HDC dc = GetDC(window);
@@ -892,12 +918,12 @@ void win32_init_opengl(HWND window) {
 	suggested_pixel_format_index = 0;
 	memset_zero(&suggested_pixel_format);
 	bool32 status = wglChoosePixelFormatARB(dc, pixel_attribs, NULL, 1, &suggested_pixel_format_index, &num_formats);
-	if (!status || num_formats == 0) {
+	if (!status/* || num_formats == 0*/) {
 		printf("wglChoosePixelFormatARB() failed.");
 		panic();
 	}
-	DescribePixelFormat(dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
-	if (!SetPixelFormat(dc, suggested_pixel_format_index, &suggested_pixel_format)) {
+	wglDescribePixelFormat(dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
+	if (!wglSetPixelFormat(dc, suggested_pixel_format_index, &suggested_pixel_format)) {
 		win32_diagnostic("SetPixelFormat");
 	}
 
@@ -912,7 +938,7 @@ void win32_init_opengl(HWND window) {
 #else
 	int context_attribs[] = {
 			WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-			WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+			WGL_CONTEXT_MINOR_VERSION_ARB, 1,
 			WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
 			0
 	};
@@ -926,11 +952,11 @@ void win32_init_opengl(HWND window) {
 
 
 	// Delete the dummy context and start using the real one.
-	wglMakeCurrent(NULL, NULL);
-	wglDeleteContext(dummy_glrc);
+	wglMakeCurrent_alt(NULL, NULL);
+	wglDeleteContext_alt(dummy_glrc);
 	ReleaseDC(dummy_window, dummy_dc);
 	DestroyWindow(dummy_window);
-	if (!wglMakeCurrent(dc, glrcs[0])) {
+	if (!wglMakeCurrent_alt(dc, glrcs[0])) {
 		win32_diagnostic("wglMakeCurrent");
 		panic();
 	}
@@ -1132,7 +1158,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 	}
 	HGLRC glrc = glrcs[thread_info->logical_thread_index];
 	ASSERT(glrc);
-	while (!wglMakeCurrent(dc, glrc)) {
+	while (!wglMakeCurrent_alt(dc, glrc)) {
 		DWORD error_id = GetLastError();
 		if (error_id == 0) {
 			Sleep(1000);
@@ -1317,7 +1343,7 @@ int main(int argc, char** argv) {
 		load_generic_file(app_state, filename);
 	}
 
-	HDC glrc_hdc = wglGetCurrentDC();
+	HDC glrc_hdc = wglGetCurrentDC_alt();
 
 	i64 last_clock = get_clock();
 	while (is_program_running) {

@@ -36,6 +36,8 @@ i32 basic_shader_u_tex;
 i32 basic_shader_u_black_level;
 i32 basic_shader_u_white_level;
 i32 basic_shader_u_background_color;
+i32 basic_shader_attrib_location_pos;
+i32 basic_shader_attrib_location_tex_coord;
 
 
 void init_draw_rect() {
@@ -70,17 +72,15 @@ void init_draw_rect() {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
 	u32 vertex_stride = 5 * sizeof(float);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, vertex_stride, (void*)0); // position coordinates
-	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)(3*sizeof(float))); // texture coordinates
-	glEnableVertexAttribArray(1);
+	glEnableVertexAttribArray(basic_shader_attrib_location_pos);
+	glEnableVertexAttribArray(basic_shader_attrib_location_tex_coord);
+	glVertexAttribPointer(basic_shader_attrib_location_pos, 3, GL_FLOAT, GL_FALSE, vertex_stride, (void*)0); // position coordinates
+	glVertexAttribPointer(basic_shader_attrib_location_tex_coord, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)(3 * sizeof(float))); // texture coordinates
 
 }
 
 void draw_rect(u32 texture) {
-	glUseProgram(basic_shader);
 	glBindVertexArray(vao_rect);
-	glUniform1i(basic_shader_u_tex, 0);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 }
@@ -94,7 +94,8 @@ void init_opengl_stuff() {
 	basic_shader_u_black_level = get_uniform(basic_shader, "black_level");
 	basic_shader_u_white_level = get_uniform(basic_shader, "white_level");
 	basic_shader_u_background_color = get_uniform(basic_shader, "bg_color");
-
+	basic_shader_attrib_location_pos = get_attrib(basic_shader, "pos");
+	basic_shader_attrib_location_tex_coord = get_attrib(basic_shader, "tex_coord");
 
 #ifdef STRINGIFY_SHADERS
 	write_stringified_shaders();

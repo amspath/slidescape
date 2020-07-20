@@ -77,7 +77,7 @@ add_executable(slideviewer
         src/parson.c
         src/yxml.c
 )
-target_link_libraries(slideviewer user32 gdi32 winmm opengl32 ws2_32)
+target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 endif(WIN32)
 
 add_executable(tlsserver

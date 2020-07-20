@@ -16,9 +16,11 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#pragma once
 #ifndef COMMON_H
 #define COMMON_H
 
+#include "config.h"
 
 #ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
@@ -127,11 +129,9 @@ static inline void panic() {
 #endif
 }
 
-#ifndef NDEBUG
-#define DO_DEBUG 1
+#if DO_DEBUG
 #define ASSERT(expr) if (!(expr)) panic();
 #else
-#define DO_DEBUG 0
 #define ASSERT(expr)
 #endif
 

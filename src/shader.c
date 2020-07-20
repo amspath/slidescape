@@ -190,14 +190,14 @@ u32 load_basic_shader_program(const char* vert_filename, const char* frag_filena
 i32 get_attrib(i32 program, const char *name) {
 	i32 attribute = glGetAttribLocation(program, name);
 	if(attribute == -1)
-		fprintf(stderr, "Could not bind attribute %s\n", name);
+		fprintf(stderr, "Could not get attribute location %s\n", name);
 	return attribute;
 }
 
 i32 get_uniform(i32 program, const char *name) {
 	i32 uniform = glGetUniformLocation(program, name);
 	if(uniform == -1)
-		fprintf(stderr, "Could not bind uniform %s\n", name);
+		fprintf(stderr, "Could not get uniform location %s\n", name);
 	return uniform;
 }
 

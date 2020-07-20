@@ -818,6 +818,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
 
+	app_state->allow_idling_next_frame = true; // but we might set it to false later
+
 	i32 image_count = sb_count(app_state->loaded_images);
 	ASSERT(image_count >= 0);
 
@@ -830,7 +832,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 	// TODO: mutate state here
-	app_state->allow_idling_next_frame = true; // but we might set it to true later
 
 	// todo: process even more of the mouse/keyboard input here?
 	v2i current_drag_vector = {};
@@ -1301,6 +1302,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
 
 		glUseProgram(basic_shader);
+		glUniform1i(basic_shader_u_tex, 0);
+
 		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
 		glUniform3fv(basic_shader_u_background_color, 1, (GLfloat *) &app_state->clear_color);

@@ -22,12 +22,8 @@
 extern "C" {
 #endif
 
-#define SLIDEVIEWER_VERSION "0.16"
-
-
 #include "common.h"
 #include "mathutils.h"
-
 #include "arena.h"
 #include "tiff.h"
 #include "openslide_api.h"
