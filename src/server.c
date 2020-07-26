@@ -56,6 +56,36 @@ pthread_cond_t semaphore_work_available;
 pthread_mutex_t work_mutex;
 volatile int work_available = -1;
 
+typedef struct mem_t {
+	size_t len;
+	u8 data[0];
+} mem_t;
+
+mem_t* read_entire_file(const char* filename) {
+	mem_t* result = NULL;
+	FILE* fp = fopen(filename, "rb");
+	if (fp) {
+		struct stat st;
+		if (fstat(fileno(fp), &st) == 0) {
+			i64 filesize = st.st_size;
+			if (filesize > 0) {
+				size_t allocation_size = filesize + sizeof(result->len) + 1;
+				result = (mem_t*) malloc(allocation_size);
+				if (result) {
+					((u8*)result)[allocation_size-1] = '\0';
+					result->len = filesize;
+					size_t bytes_read = fread(result->data, 1, filesize, fp);
+					if (bytes_read != filesize) {
+						panic();
+					}
+				}
+			}
+		}
+		fclose(fp);
+	}
+	return result;
+}
+
 
 //https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
 int msleep(long msec) {
@@ -325,22 +355,62 @@ slide_api_call_t* interpret_api_request(http_request_t* request) {
 	return NULL;
 }
 
+const char* prepend_env_dir(const char* base_filename, const char* env, char* path_buffer, size_t buffer_size) {
+	if (base_filename) {
+		char* prefix = getenv(env);
+		if (prefix) {
+			snprintf(path_buffer, buffer_size, "%s/%s", prefix, base_filename);
+			return path_buffer;
+		}
+	}
+	// failed
+	return base_filename;
+}
+
+bool32 send_buffer_to_client(struct TLSContext* context, int client_sock, u8* send_buffer, u64 send_size) {
+	u8* send_buffer_pos = send_buffer;
+	u32 send_size_remaining = (u32)send_size;
+
+	bool32 sent = false;
+	i32 bytes_written = 0;
+	i32 total_bytes_written = 0;
+	while (!sent) {
+		bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
+		total_bytes_written += bytes_written;
+		send_buffer_pos += bytes_written;
+		send_size_remaining -= bytes_written;
+		if (total_bytes_written >= send_size) {
+			sent = true;
+		} else {
+			send_pending(client_sock, context);
+		}
+	}
+	return sent;
+}
+
+bool32 execute_slide_set_api_call(struct TLSContext *context, int client_sock, slide_api_call_t *call) {
+	bool32 success = false;
+
+	const char* full_filename = prepend_env_dir(call->filename, "SLIDES_DIR", alloca(2048), 2048);
+	mem_t* file_mem = read_entire_file(full_filename);
+	if (file_mem) {
+		success = send_buffer_to_client(context, client_sock, file_mem->data, file_mem->len);
+	}
+
+	return success;
+}
+
 bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide_api_call_t *call) {
 	if (!call || !call->command) return false;
-	if (strcmp(call->command, "slide") == 0) {
-		char* filename = call->filename;
+	bool32 success = false;
 
+	if (strcmp(call->command, "slide_set") == 0) {
+		success = execute_slide_set_api_call(context, client_sock, call);
+	}
 
+	else if (strcmp(call->command, "slide") == 0) {
 		// If the SLIDES_DIR environment variable is set, load slides from there
-		const char* filename_full_path = filename;
-		char path_buffer[2048];
-		if (filename) {
-			char* prefix = getenv("SLIDES_DIR");
-			if (prefix) {
-				snprintf(path_buffer, sizeof(path_buffer), "%s/%s", prefix, filename);
-				filename_full_path = path_buffer;
-			}
-		}
+		const char* filename_full_path = prepend_env_dir(call->filename, "SLIDES_DIR", alloca(2048), 2048);
 
 
 		char* parameter1 = call->parameter1;
@@ -352,34 +422,17 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 				if (open_tiff_file(&tiff, filename_full_path)) {
 					push_buffer_t buffer = {0};
 					tiff_serialize(&tiff, &buffer);
-
 					u64 send_size = ((u64)buffer.data - (u64)buffer.raw_memory) + buffer.used_size;
 					u8* send_buffer = buffer.raw_memory;
-					u8* send_buffer_pos = send_buffer;
-					u64 send_size_remaining = send_size;
+					success = send_buffer_to_client(context, client_sock, send_buffer, send_size);
 
-					bool32 sent = false;
-					i32 bytes_written = 0;
-					i32 total_bytes_written = 0;
-					while (!sent) {
-						bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
-						total_bytes_written += bytes_written;
-						send_buffer_pos += bytes_written;
-						send_size_remaining -= bytes_written;
-						if (total_bytes_written >= send_size) {
-							sent = true;
-						} else {
-							send_pending(client_sock, context);
-						}
-					}
 //				    tls_close_notify(context);
 //				    send_pending(client_sock, context);
 					tiff_destroy(&tiff);
 					free(buffer.raw_memory);
-					return true;
 				} else {
 					fprintf(stderr, "Couldn't open TIFF file %s\n", filename_full_path);
-					return false;
+					success = false;
 				}
 
 
@@ -404,7 +457,6 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 			if (total_size > 0) {
 
 				FILE* fp = fopen64(filename_full_path, "rb");
-				bool32 success = false;
 				if (fp) {
 					struct stat st;
 					if (fstat(fileno(fp), &st) == 0) {
@@ -431,7 +483,7 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 							fseeko64(fp, requested_offset, SEEK_SET);
 							ok = ok && (fread(data_buffer_pos, requested_size, 1, fp) == 1);
 							if (!ok) {
-								printf("Error reading from %s\n", filename);
+								printf("Error reading from %s\n", call->filename);
 							}
 							data_buffer_pos += requested_size;
 						}
@@ -451,6 +503,7 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 								send_size_remaining -= bytes_written;
 								if (total_bytes_written >= send_size) {
 									sent = true;
+									success = true;
 								} else {
 									send_pending(client_sock, context);
 								}
@@ -466,12 +519,10 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 
 			}
 		}
-
-
 	} else {
 		printf("Slide API: unknown command %s\n", call->command);
-		return false;
 	};
+	return success;
 }
 
 struct TLSContext *server_context;
@@ -514,7 +565,7 @@ void *connection_handler(void *socket_desc) {
 #endif
 			break;
 		} else {
-			ret = tls_consume_stream(context, client_message, read_size, verify_signature);
+			ret = tls_consume_stream(context, (u8*) client_message, read_size, verify_signature);
 			if (ret < 0) {
 				fprintf(stderr, "[socket %d] Error in stream consume\n", client_sock);
 				goto cleanup;
@@ -547,7 +598,7 @@ void *connection_handler(void *socket_desc) {
 				fprintf(stderr, "[socket %d] Gracefully closed\n", client_sock);
 				break;
 			}
-			if (tls_consume_stream(context, client_message, read_size, verify_signature) < 0) {
+			if (tls_consume_stream(context, (u8*) client_message, read_size, verify_signature) < 0) {
 				fprintf(stderr, "[socket %d] Error in stream consume\n", client_sock);
 				goto cleanup;
 			}

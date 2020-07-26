@@ -38,6 +38,7 @@
 #define GUI_IMPL
 #include "gui.h"
 #include "annotation.h"
+#include "stringutils.h"
 
 void gui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -145,13 +146,29 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		ImGui::Begin("Open remote", &show_open_remote_window);
 
-		ImGui::InputText("Hostname", remote_hostname, sizeof(remote_hostname));
-		ImGui::InputText("Port", remote_port, sizeof(remote_port));
-		ImGui::InputText("Filename", remote_filename, sizeof(remote_filename));
-		if (ImGui::Button("Connect")) {
-			if (open_remote_slide(app_state, remote_hostname, atoll(remote_port), remote_filename)) {
-				show_open_remote_window = false; // success!
+		ImGuiInputTextFlags input_flags = ImGuiInputTextFlags_EnterReturnsTrue;
+		bool entered = false;
+		entered = entered || ImGui::InputText("Hostname", remote_hostname, sizeof(remote_hostname), input_flags);
+		entered = entered || ImGui::InputText("Port", remote_port, sizeof(remote_port), input_flags);
+		entered = entered || ImGui::InputText("Filename", remote_filename, sizeof(remote_filename), input_flags);
+		if (entered || ImGui::Button("Connect")) {
+			const char* ext = get_file_extension(remote_filename);
+			if (strcasecmp(ext, "json") == 0) {
+				// Open as 'caselist'
+				unload_all_images(app_state);
+				reset_global_caselist(app_state);
+				if (load_caselist_from_remote(&app_state->caselist, remote_hostname, atoi(remote_port), remote_filename)) {
+					show_slide_list_window = true;
+					show_open_remote_window = false; // success!
+				}
+			} else {
+				// Open as 'slide'
+				if (open_remote_slide(app_state, remote_hostname, atoi(remote_port), remote_filename)) {
+					show_open_remote_window = false; // success!
+				}
 			}
+
+
 		}
 		ImGui::End();
 	}
@@ -288,12 +305,18 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				unload_all_images(app_state);
 				if (app_state->selected_case->filename) {
 
-					// If the SLIDES_DIR environment variable is set, load slides from there
-					char path_buffer[2048] = {};
-					snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix,
-					         app_state->selected_case->filename);
+					if (caselist->is_remote) {
+						open_remote_slide(app_state, remote_hostname, atoi(remote_port), app_state->selected_case->filename);
+					} else {
+						// If the SLIDES_DIR environment variable is set, load slides from there
+						char path_buffer[2048] = {};
+						snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix,
+						         app_state->selected_case->filename);
 
-					load_image_from_file(app_state, path_buffer);
+						load_image_from_file(app_state, path_buffer);
+					}
+
+
 				}
 			}
 		}

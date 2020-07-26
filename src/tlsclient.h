@@ -32,6 +32,7 @@ u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename
                           i32 *bytes_read, i32 thread_id);
 u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename, i64 *chunk_offsets, i64 *chunk_sizes,
                           i32 batch_size, i32 *bytes_read, i32 thread_id);
+mem_t* download_remote_caselist(const char *hostname, i32 portno, const char *filename);
 bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename);
 
 // globals

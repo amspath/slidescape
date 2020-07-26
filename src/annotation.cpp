@@ -462,7 +462,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	asap_xml_parse_state_t* parse_state = &global_parse_state;
 	memset(parse_state, 0, sizeof(*parse_state));
 
-	file_mem_t* file = platform_read_entire_file(filename);
+	mem_t* file = platform_read_entire_file(filename);
 	yxml_t* x = NULL;
 	bool32 success = false;
 	i64 start = get_clock();

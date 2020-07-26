@@ -104,7 +104,7 @@ void write_stringified_shaders() {
 #endif
 
 void load_shader(u32 shader, const char* source_filename) {
-	file_mem_t* shader_source_file = platform_read_entire_file(source_filename);
+	mem_t* shader_source_file = platform_read_entire_file(source_filename);
 	const char* shader_source = NULL;
 	bool32 source_from_file = false;
 

@@ -276,78 +276,95 @@ u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename
 	return read_buffer;
 }
 
-bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename) {
+typedef struct {
+	i64 start_clock;
+	i64 sockfd;
+	struct TLSContext* tls_context;
+} tls_connection_t;
 
-	bool32 success = false;
-
-	i64 start = get_clock();
-	i64 sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0) {
-		printf("ERROR opening socket\n");
-		return false;
-	}
-	// Set timeout interval
-	u32 timeout_ms = 2000;
-	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
-	setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
-	struct hostent* server = gethostbyname(hostname);
-	if (server == NULL) {
-		printf("ERROR, no such host\n");
-		closesocket(sockfd);
-		sockfd = 0;
-		return false;
-	}
-	struct sockaddr_in serv_addr = { .sin_family = AF_INET };
-	memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
-	serv_addr.sin_port = htons(portno);
-	if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-		printf("ERROR connecting\n");
-		closesocket(sockfd);
-		sockfd = 0;
-		return false;
-	}
-	struct TLSContext* tls_context = tls_create_context(0, TLS_V13);
-	// the next line is needed only if you want to serialize the connection context or kTLS is used
+tls_connection_t* open_remote_connection(const char* hostname, i32 portno, void* alloced_mem_for_struct) {
+	tls_connection_t* connection = (tls_connection_t*) alloced_mem_for_struct;
+	if (connection) {
+		memset(connection, 0, sizeof(*connection));
+		connection->start_clock = get_clock();
+		connection->sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (connection->sockfd < 0) {
+			printf("ERROR opening socket\n");
+			return NULL;
+		}
+		// Set timeout interval
+		u32 timeout_ms = 2000;
+		setsockopt(connection->sockfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
+		setsockopt(connection->sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
+		struct hostent* server = gethostbyname(hostname);
+		if (server == NULL) {
+			printf("ERROR, no such host\n");
+			closesocket(connection->sockfd);
+			connection->sockfd = 0;
+			return NULL;
+		}
+		struct sockaddr_in serv_addr = { .sin_family = AF_INET };
+		memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
+		serv_addr.sin_port = htons((u16)portno);
+		if (connect(connection->sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
+			printf("Error: couldn't connect to %s:%d\n", hostname, portno);
+			closesocket(connection->sockfd);
+			connection->sockfd = 0;
+			return NULL;
+		}
+		connection->tls_context = tls_create_context(0, TLS_V13);
+		if (!connection->tls_context) {
+			printf("Error: couldn't create TLS context\n");
+		}
+		// the next line is needed only if you want to serialize the connection context or kTLS is used
 //	tls_make_exportable(tls_context, 1);
-	tls_client_connect(tls_context);
+		tls_client_connect(connection->tls_context);
 //	printf("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
-	send_pending(sockfd, tls_context);
+		send_pending(connection->sockfd, connection->tls_context);
+	}
 
+	return connection;
+}
+
+float close_remote_connection(tls_connection_t* connection) {
+	tls_destroy_context(connection->tls_context);
+	closesocket(connection->sockfd);
+
+	float seconds_elapsed = get_seconds_elapsed(connection->start_clock, get_clock());
+	return seconds_elapsed;
+}
+
+bool32 remote_request(tls_connection_t* connection, const char* request, i32 request_len, mem_t* mem_buffer) {
+	// TODO: refactor
 	u8 receive_buffer[0xFFFF]; // receive in 64K byte chunks
 	i32 receive_size;
 	i32 sent = 0;
 
-	i32 read_buffer_size = MEGABYTES(2);
-	u8* read_buffer = calloc(read_buffer_size, 1);
-	u8* read_buffer_pos = read_buffer;
+	u8* read_buffer_pos = mem_buffer->data;
 	i32 total_bytes_read = 0;
 
-	while ((receive_size = recv(sockfd, (char*)receive_buffer, sizeof(receive_buffer), 0)) > 0) {
-		tls_consume_stream(tls_context, receive_buffer, receive_size, validate_certificate);
-		send_pending(sockfd, tls_context);
-		if (tls_established(tls_context)) {
+	while ((receive_size = recv(connection->sockfd, (char*)receive_buffer, sizeof(receive_buffer), 0)) > 0) {
+		tls_consume_stream(connection->tls_context, receive_buffer, receive_size, validate_certificate);
+		send_pending(connection->sockfd, connection->tls_context);
+		if (tls_established(connection->tls_context)) {
 			if (!sent) {
-				static const char requestfmt[] = "GET /slide/%s/header HTTP/1.1\r\nConnection: close\r\n\r\n";
-				char request[4096];
-				snprintf(request, sizeof(request), requestfmt, filename);
-				i32 request_len = (i32)strlen(request);
 
 				// try kTLS (kernel TLS implementation in linux >= 4.13)
 				// note that you can use send on a ktls socket
 				// recv must be handled by TLSe
-				if (!tls_make_ktls(tls_context, sockfd)) {
+				if (!tls_make_ktls(connection->tls_context, connection->sockfd)) {
 					// call send as on regular TCP sockets
 					// TLS record layer is handled by the kernel
-					send(sockfd, request, request_len, 0);
+					send(connection->sockfd, request, request_len, 0);
 				} else {
-					tls_write(tls_context, (unsigned char *)request, request_len);
-					send_pending(sockfd, tls_context);
+					tls_write(connection->tls_context, (unsigned char *)request, request_len);
+					send_pending(connection->sockfd, connection->tls_context);
 				}
 				sent = 1;
 			}
 
 			// TODO: use realloc to resize read buffer if needed?
-			i32 read_size = tls_read(tls_context, read_buffer_pos, read_buffer_size - total_bytes_read - 1);
+			i32 read_size = tls_read(connection->tls_context, read_buffer_pos, mem_buffer->capacity - total_bytes_read - 1);
 			if (read_size > 0) {
 //				fwrite(read_buffer, read_size, 1, stdout);
 				read_buffer_pos += read_size;
@@ -357,30 +374,75 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 		}
 	}
 
-	// now we should have the whole HTTP response
-	printf("HTTP read finished, length = %d\n", total_bytes_read);
-//	fwrite(read_buffer, total_bytes_read, 1, stdout);
+	mem_buffer->len = (size_t)total_bytes_read;
+	return (sent && total_bytes_read > 0);
+}
 
-	tiff_t tiff = {0};
-	if (tiff_deserialize(&tiff, read_buffer, total_bytes_read)) {
-		tiff.is_remote = true;
-		tiff.location = (network_location_t){ .hostname = hostname, .portno = portno, .filename = filename };
+mem_t* download_remote_caselist(const char *hostname, i32 portno, const char *filename) {
+	mem_t* result = NULL;
 
-		unload_all_images(app_state);
-		add_image_from_tiff(app_state, tiff);
-		success = true;
-	} else {
-		tiff_destroy(&tiff);
+	tls_connection_t* connection = open_remote_connection(hostname, portno, alloca(sizeof(tls_connection_t)));
+	if (connection) {
+
+		static const char requestfmt[] = "GET /slide_set/%s HTTP/1.1\r\nConnection: close\r\n\r\n";
+		char request[4096];
+		snprintf(request, sizeof(request), requestfmt, filename);
+		i32 request_len = (i32)strlen(request);
+
+		mem_t* mem_buffer = platform_allocate_mem_buffer(MEGABYTES(2));
+		bool32 read_ok = remote_request(connection, request, request_len, mem_buffer);
+		float seconds_elapsed = close_remote_connection(connection);
+		if (read_ok) {
+			result = mem_buffer; // don't free (ownership passes to caller)
+			printf("Downloaded case list '%s' in %g seconds.\n", filename, seconds_elapsed);
+		} else {
+			free(mem_buffer);
+		}
 	}
 
+	return result;
+}
+
+bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename) {
+
+	bool32 success = false;
+
+	static const char requestfmt[] = "GET /slide/%s/header HTTP/1.1\r\nConnection: close\r\n\r\n";
+	char request[4096];
+	snprintf(request, sizeof(request), requestfmt, filename);
+	i32 request_len = (i32)strlen(request);
+
+	tls_connection_t* connection = open_remote_connection(hostname, portno, alloca(sizeof(tls_connection_t)));
+	if (!connection) {
+		return false;
+	}
+
+	mem_t* mem_buffer = platform_allocate_mem_buffer(MEGABYTES(2));
+	bool32 read_ok = remote_request(connection, request, request_len, mem_buffer);
+	float seconds_elapsed = close_remote_connection(connection);
+
+	if (read_ok) {
+		// now we should have the whole HTTP response
+		printf("HTTP read finished, length = %d\n", mem_buffer->len);
+//	fwrite(read_buffer, total_bytes_read, 1, stdout);
+
+		tiff_t tiff = {0};
+		if (tiff_deserialize(&tiff, mem_buffer->data, mem_buffer->len)) {
+			tiff.is_remote = true;
+			tiff.location = (network_location_t){ .hostname = hostname, .portno = portno, .filename = filename };
+
+			unload_all_images(app_state);
+			add_image_from_tiff(app_state, tiff);
+			success = true;
+		} else {
+			tiff_destroy(&tiff);
+		}
+
+	}
+	free(mem_buffer);
 
 
-	free(read_buffer);
-
-	tls_destroy_context(tls_context);
-	closesocket(sockfd);
-
-	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
+//	float seconds_elapsed = close_remote_connection(connection);
 	printf("Open remote took %g seconds\n", seconds_elapsed);
 	return success;
 }

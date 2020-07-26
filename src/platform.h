@@ -34,10 +34,11 @@ extern "C" {
 
 #define MAX_THREAD_COUNT 128
 
-typedef struct file_mem_t {
+typedef struct mem_t {
 	size_t len;
+	size_t capacity;
 	u8 data[0];
-} file_mem_t;
+} mem_t;
 
 typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
 
@@ -284,7 +285,8 @@ void platform_sleep(u32 ms);
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
 
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
-file_mem_t* platform_read_entire_file(const char* filename);
+mem_t* platform_allocate_mem_buffer(size_t capacity);
+mem_t* platform_read_entire_file(const char* filename);
 
 void mouse_show();
 void mouse_hide();

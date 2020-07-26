@@ -28,6 +28,7 @@
 #include "viewer.h"
 #include "caselist.h"
 #include "gui.h"
+#include "tlsclient.h"
 
 
 void reset_global_caselist(app_state_t* app_state) {
@@ -41,31 +42,25 @@ void reset_global_caselist(app_state_t* app_state) {
 void reload_global_caselist(app_state_t *app_state, const char *filename) {
 	unload_all_images(app_state);
 	reset_global_caselist(app_state);
-	load_caselist(&app_state->caselist, filename);
+	load_caselist_from_file(&app_state->caselist, filename);
 }
 
-bool32 load_caselist(caselist_t* caselist, const char* json_filename) {
-	file_mem_t* caselist_file = platform_read_entire_file(json_filename);
+bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist_name) {
+
 	bool32 success = false;
 
-	if (caselist_file) {
-		JSON_Value* root_value = json_parse_string((const char*)caselist_file->data);
+	if (file_mem) {
+		JSON_Value* root_value = json_parse_string((const char*)file_mem->data);
 		if (json_value_get_type(root_value) != JSONArray) {
 			// failed
 
 		} else {
-			// Set the 'working directory' of the case list to the folder the JSON file is located in.
-			strncpy(caselist->folder_prefix, json_filename, sizeof(caselist->folder_prefix) - 1);
-			char* prefix_end = (char*) one_past_last_slash(caselist->folder_prefix, sizeof(caselist->folder_prefix));
-			ASSERT(prefix_end >= caselist->folder_prefix);
-			*prefix_end = '\0';
-			caselist->prefix_len = strlen(caselist->folder_prefix);
-
 			caselist->json_root_value = root_value;
 
+			// The base element of the cases file is an unnamed array; each element is a case
 			JSON_Array* json_cases = json_value_get_array(root_value);
-			caselist->case_count = json_array_get_count(json_cases);
-			caselist->case_count = json_array_get_count(json_cases);
+			caselist->case_count = (u32) json_array_get_count(json_cases);
+
 			if (caselist->case_count > 0) {
 				caselist->cases = (case_t*) calloc(1, caselist->case_count * sizeof(case_t));
 				caselist->names = (const char**) calloc(1, caselist->case_count * sizeof(void*));
@@ -75,16 +70,20 @@ bool32 load_caselist(caselist_t* caselist, const char* json_filename) {
 				for (i32 i = 0; i < caselist->case_count; ++i) {
 					i32 curr_index = num_cases_with_filenames;
 					case_t* the_case = caselist->cases + curr_index;
-					JSON_Object* json_case_obj = json_array_get_object(json_cases, i);
+					JSON_Object* json_case_obj = json_array_get_object(json_cases, (size_t) i);
+					the_case->name = json_object_get_string(json_case_obj, "name");
+					if (!the_case->name) {
+						printf("%s: case %d has no name element, defaulting to '(unnamed)'\n", caselist_name, i);
+						the_case->name = "(unnamed)";
+					}
+					the_case->clinical_context = json_object_get_string(json_case_obj, "clinical_context");
+					the_case->diagnosis = json_object_get_string(json_case_obj, "diagnosis");
+					the_case->notes = json_object_get_string(json_case_obj, "notes");
 					const char* image_filename = json_object_get_string(json_case_obj, "filename");
 					if (image_filename) {
 						++num_cases_with_filenames;
-						the_case->filename = image_filename;
-						the_case->name = json_object_get_string(json_case_obj, "name");
+						strncpy(the_case->filename, image_filename, sizeof(the_case->filename));
 						caselist->names[curr_index] = the_case->name; // for ImGui
-						the_case->clinical_context = json_object_get_string(json_case_obj, "clinical_context");
-						the_case->diagnosis = json_object_get_string(json_case_obj, "diagnosis");
-						the_case->notes = json_object_get_string(json_case_obj, "notes");
 					}
 
 				}
@@ -93,17 +92,40 @@ bool32 load_caselist(caselist_t* caselist, const char* json_filename) {
 
 				success = true;
 			}
-
-
-
 		}
+	}
+	return success;
+}
 
+bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename) {
+	bool32 success = false;
+	mem_t* caselist_file = platform_read_entire_file(json_filename);
 
+	if (caselist_file) {
+		// Set the 'working directory' of the case list to the folder the JSON file is located in.
+		strncpy(caselist->folder_prefix, json_filename, sizeof(caselist->folder_prefix) - 1);
+		char* prefix_end = (char*) one_past_last_slash(caselist->folder_prefix, sizeof(caselist->folder_prefix));
+		ASSERT(prefix_end >= caselist->folder_prefix);
+		*prefix_end = '\0';
+		caselist->prefix_len = strlen(caselist->folder_prefix);
+
+		caselist->is_remote = false;
+		success = load_caselist(caselist, caselist_file, json_filename);
 		free(caselist_file);
 	}
+	return success;
+}
+
+bool32 load_caselist_from_remote(caselist_t* caselist, const char* hostname, i32 portno, const char* name) {
+	bool32 success = false;
+
+	mem_t* json_file = download_remote_caselist(hostname, portno, name); // load from remote
+	caselist->is_remote = true;
+	success = load_caselist(caselist, json_file, name);
 
 	return success;
 }
+
 
 void caselist_destroy(caselist_t* caselist) {
 	if (caselist) {
