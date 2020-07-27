@@ -93,7 +93,6 @@ typedef struct controller_input_t {
 typedef struct input_t {
 	button_state_t mouse_buttons[5];
 	i32 mouse_z;
-	v2i dmouse_xy;
 	v2i drag_start_xy;
 	v2i drag_vector;
 	v2i mouse_xy;

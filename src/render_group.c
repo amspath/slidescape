@@ -72,17 +72,15 @@ void init_draw_rect() {
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
 	u32 vertex_stride = 5 * sizeof(float);
-	glEnableVertexAttribArray(basic_shader_attrib_location_pos);
-	glEnableVertexAttribArray(basic_shader_attrib_location_tex_coord);
-	glVertexAttribPointer(basic_shader_attrib_location_pos, 3, GL_FLOAT, GL_FALSE, vertex_stride, (void*)0); // position coordinates
-	glVertexAttribPointer(basic_shader_attrib_location_tex_coord, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)(3 * sizeof(float))); // texture coordinates
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, vertex_stride, (void*)0); // position coordinates
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)(3*sizeof(float))); // texture coordinates
+	glEnableVertexAttribArray(1);
 
 }
 
 void draw_rect(u32 texture) {
 	glBindVertexArray(vao_rect);
-//	glEnable(GL_TEXTURE_2D);
-//	glActiveTexture(GL_TEXTURE0 + 0);
 //	glUniform1i(basic_shader_u_tex, 0);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);

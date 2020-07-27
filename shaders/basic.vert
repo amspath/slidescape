@@ -1,14 +1,16 @@
-#version 140
+#version 410
 
-in vec3 pos;
-in vec2 tex_coord;
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec2 tex_coord;
 
-out vec2 vs_tex_coord;
+out VS_OUT {
+    vec2 tex_coord;
+} vs_out;
 
 uniform mat4 model_matrix;
 uniform mat4 projection_view_matrix;
 
 void main() {
     gl_Position = projection_view_matrix * model_matrix * vec4(pos.xyz, 1.0f);
-    vs_tex_coord = tex_coord;
+    vs_out.tex_coord = tex_coord;
 }

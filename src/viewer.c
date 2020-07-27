@@ -63,14 +63,14 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glGenTextures(1, &texture);
 //	printf("Generated texture %d\n", texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
-//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-//	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
-	glGenerateMipmap(GL_TEXTURE_2D);
+//	glGenerateMipmap(GL_TEXTURE_2D);
 //	gl_diagnostic("glTexImage2D");
 	return texture;
 }
@@ -920,6 +920,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 		glUseProgram(basic_shader);
+		glUniform1i(basic_shader_u_tex, 0);
 
 		if (app_state->use_image_adjustments) {
 			glUniform1f(basic_shader_u_black_level, app_state->black_level);
