@@ -33,9 +33,9 @@
 
 void reset_global_caselist(app_state_t* app_state) {
 	app_state->selected_case = NULL;
+	app_state->selected_case_index = 0;
 	caselist_destroy(&app_state->caselist);
 	memset(&app_state->caselist, 0, sizeof(caselist_t));
-	show_case_info_window = false;
 	show_slide_list_window = false;
 }
 
@@ -65,6 +65,17 @@ bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_i
 
 			success = load_image_from_file(app_state, path_buffer);
 		}
+	}
+	return success;
+}
+
+bool32 caselist_select_first_case(app_state_t* app_state, caselist_t* caselist) {
+	bool32 success = false;
+	case_t* first_case = caselist->cases;
+	app_state->selected_case = first_case;
+	app_state->selected_case_index = 0;
+	if (first_case && first_case->slides) {
+		success = caselist_open_slide(app_state, caselist, first_case->slides);
 	}
 	return success;
 }
@@ -147,6 +158,7 @@ bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist
 
 
 				success = true;
+
 			}
 		}
 	}

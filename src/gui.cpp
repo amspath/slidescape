@@ -27,6 +27,7 @@
 #include <glad/glad.h>
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_win32.h"
 
@@ -50,6 +51,20 @@ void menu_close_file(app_state_t* app_state) {
 	unload_all_images(app_state);
 	reset_global_caselist(app_state);
 	unload_and_reinit_annotations(&app_state->scene.annotation_set);
+}
+
+void gui_push_disabled_style(bool condition) {
+	if (condition) {
+		ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+	}
+}
+
+void gui_pop_disabled_style(bool condition) {
+	if (condition) {
+		ImGui::PopItemFlag();
+		ImGui::PopStyleVar();
+	}
 }
 
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
@@ -130,6 +145,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		} else if (menu_items_clicked.show_case_list) {
 			reload_global_caselist(app_state, "cases.json");
 			show_slide_list_window = true;
+			caselist_select_first_case(app_state, &app_state->caselist);
 		} else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);
 			if (currently_fullscreen != is_fullscreen) {
@@ -160,6 +176,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				if (load_caselist_from_remote(&app_state->caselist, remote_hostname, atoi(remote_port), remote_filename)) {
 					show_slide_list_window = true;
 					show_open_remote_window = false; // success!
+					caselist_select_first_case(app_state, &app_state->caselist);
 				}
 			} else {
 				// Open as 'slide'
@@ -275,41 +292,100 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		ImGui::End();
 	}
 
+
+
 	if (show_slide_list_window) {
 
 		ImGui::SetNextWindowPos(ImVec2(20, 50), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(180, 530), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(460,541), ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Select case", &show_slide_list_window);
-
-		// List box
-		const char* listbox_items_dummy[] = {"",};
-		const char** listbox_items = listbox_items_dummy;
-		i32 items_count = 0;
+		ImGui::Begin("Case info", &show_slide_list_window);
 
 		caselist_t* caselist = &app_state->caselist;
-		if (caselist->names) {
-			listbox_items = caselist->names;
-			items_count = caselist->case_count;
+
+		const char* case_preview = "";
+		case_t* selected_case = app_state->selected_case;
+		i32 selected_case_index = app_state->selected_case_index;
+
+		case_t* previous_selected_case = selected_case;
+
+		if (selected_case) {
+			case_preview = selected_case->name;
 		}
 
-		static int listbox_item_current = -1;
-		float line_height = ImGui::GetTextLineHeightWithSpacing();
-		float list_height_in_items = ImGui::GetWindowHeight() / line_height;
-		if (ImGui::ListBox("##listbox\n(single select)", &listbox_item_current, listbox_items, items_count,
-		                   (int) (list_height_in_items - 2.5f))) {
-			// value changed
-			if (caselist->cases) {
-				app_state->selected_case = caselist->cases + listbox_item_current;
-				show_case_info_window = true;
-				unload_all_images(app_state);
-				slide_info_t* slides = app_state->selected_case->slides;
-				if (slides) {
-					slide_info_t* first_slide = &slides[0];
-					caselist_open_slide(app_state, caselist, first_slide);
+		bool can_move_left = (selected_case_index > 0);
+		bool can_move_right = (selected_case_index < (i32)caselist->case_count-1);
 
+		gui_push_disabled_style(!can_move_left);
+		if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
+			if (caselist->cases && can_move_left) {
+				app_state->selected_case_index = (--selected_case_index);
+				app_state->selected_case = selected_case = caselist->cases + selected_case_index;
+			}
+		}
+		gui_pop_disabled_style(!can_move_left);
+		ImGui::SameLine();
+		gui_push_disabled_style(!can_move_right);
+		if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
+			if (caselist->cases && can_move_right) {
+				app_state->selected_case_index = (++selected_case_index);
+				app_state->selected_case = selected_case = caselist->cases + selected_case_index;
+			}
+		}
+		gui_pop_disabled_style(!can_move_right);
+		ImGui::SameLine();
+
+		if (ImGui::BeginCombo("##Select_case", case_preview, ImGuiComboFlags_HeightLarge)) {
+			if (caselist->cases) {
+				for (u32 i = 0; i < caselist->case_count; ++i) {
+					case_t* the_case = caselist->cases + i;
+					if (ImGui::Selectable(the_case->name, selected_case_index == (i32)i)) {
+						app_state->selected_case = selected_case = the_case;
+						app_state->selected_case_index = selected_case_index = (i32)i;
+					}
 				}
 			}
+			ImGui::EndCombo();
+		}
+
+		if (selected_case != previous_selected_case) {
+			if (selected_case && selected_case->slides) {
+				caselist_open_slide(app_state, caselist, selected_case->slides);
+			}
+		}
+
+
+		ImGui::NewLine();
+		ImGui::Separator();
+		ImGui::NewLine();
+
+		if (selected_case != NULL) {
+//			ImGui::TextWrapped("%s\n", selected_case->name);
+
+			slide_info_t* slides = selected_case->slides;
+			u32 slide_count = selected_case->slide_count;
+			for (u32 slide_index = 0; slide_index < slide_count; ++slide_index) {
+				slide_info_t* slide = slides + slide_index;
+				if (ImGui::Button(slide->stain) && slide_count > 1) {
+					caselist_open_slide(app_state, &app_state->caselist, slide);
+				}
+				// TODO: correctly wrap buttons to the next line? For now, 5 per line.
+				if (slide_index < 4 || ((slide_index + 1) % 5) != 0) {
+					ImGui::SameLine();
+				}
+			}
+			ImGui::NewLine();
+
+			ImGui::TextWrapped("%s\n", selected_case->clinical_context);
+			ImGui::NewLine();
+
+			if (ImGui::TreeNode("Diagnosis and comment")) {
+				ImGui::TextWrapped("%s\n", selected_case->diagnosis);
+				ImGui::TextWrapped("%s\n", selected_case->notes);
+				ImGui::TreePop();
+			}
+
+
 		}
 
 		// stub
@@ -320,42 +396,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 	}
 
-	if (show_case_info_window) {
-		ImGui::SetNextWindowPos(ImVec2(20, 600), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Case info", &show_case_info_window);
-
-		case_t* global_selected_case = app_state->selected_case;
-		if (global_selected_case != NULL) {
-			ImGui::TextWrapped("%s\n", global_selected_case->name);
-
-			slide_info_t* slides = global_selected_case->slides;
-			u32 slide_count = global_selected_case->slide_count;
-			if (slide_count > 1) {
-				for (u32 slide_index = 0; slide_index < slide_count; ++slide_index) {
-					slide_info_t* slide = slides + slide_index;
-					if (ImGui::Button(slide->stain)) {
-						caselist_open_slide(app_state, &app_state->caselist, slide);
-					}
-					ImGui::SameLine();
-				}
-				ImGui::NewLine();
-			}
-
-			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);
-			if (ImGui::TreeNode("Diagnosis and comment")) {
-				ImGui::TextWrapped("%s\n", global_selected_case->diagnosis);
-				ImGui::TextWrapped("%s\n", global_selected_case->notes);
-				ImGui::TreePop();
-			}
-
-
-		}
-
-
-		ImGui::End();
-	}
 
 	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state, input);

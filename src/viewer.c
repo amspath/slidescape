@@ -590,6 +590,7 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	if (strcasecmp(ext, "json") == 0) {
 		reload_global_caselist(app_state, filename);
 		show_slide_list_window = true;
+		caselist_select_first_case(app_state, &app_state->caselist);
 		return true;
 	} else if (strcasecmp(ext, "xml") == 0) {
 		return load_asap_xml_annotations(app_state, filename);

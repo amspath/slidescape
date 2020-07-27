@@ -188,6 +188,7 @@ typedef struct app_state_t {
 	i32 displayed_image;
 	caselist_t caselist;
 	case_t* selected_case;
+	i32 selected_case_index;
 	bool use_builtin_tiff_backend;
 	bool use_image_adjustments;
 	bool initialized;
