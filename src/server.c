@@ -46,6 +46,7 @@
 #include "tlse.c"
 
 #include "tiff.h"
+#include "stringutils.h"
 
 #define THREAD_COUNT 16
 #define SERVER_VERBOSE 1
@@ -86,6 +87,9 @@ mem_t* read_entire_file(const char* filename) {
 	return result;
 }
 
+bool file_exists(const char* filename) {
+	return (access(filename, F_OK) != -1);
+}
 
 //https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
 int msleep(long msec) {
@@ -355,16 +359,16 @@ slide_api_call_t* interpret_api_request(http_request_t* request) {
 	return NULL;
 }
 
-const char* prepend_env_dir(const char* base_filename, const char* env, char* path_buffer, size_t buffer_size) {
+void locate_file_prepend_env(const char* base_filename, const char* env, char* path_buffer, size_t buffer_size) {
 	if (base_filename) {
 		char* prefix = getenv(env);
 		if (prefix) {
 			snprintf(path_buffer, buffer_size, "%s/%s", prefix, base_filename);
-			return path_buffer;
+			return;
 		}
 	}
 	// failed
-	return base_filename;
+	strcpy(path_buffer, base_filename);
 }
 
 bool32 send_buffer_to_client(struct TLSContext* context, int client_sock, u8* send_buffer, u64 send_size) {
@@ -391,8 +395,10 @@ bool32 send_buffer_to_client(struct TLSContext* context, int client_sock, u8* se
 bool32 execute_slide_set_api_call(struct TLSContext *context, int client_sock, slide_api_call_t *call) {
 	bool32 success = false;
 
-	const char* full_filename = prepend_env_dir(call->filename, "SLIDES_DIR", alloca(2048), 2048);
-	mem_t* file_mem = read_entire_file(full_filename);
+	char path_buffer[2048];
+	path_buffer[0] = '\0';
+	locate_file_prepend_env(call->filename, "SLIDES_DIR", path_buffer, sizeof(path_buffer));
+	mem_t* file_mem = read_entire_file(path_buffer);
 	if (file_mem) {
 		success = send_buffer_to_client(context, client_sock, file_mem->data, file_mem->len);
 	}
@@ -410,16 +416,24 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 
 	else if (strcmp(call->command, "slide") == 0) {
 		// If the SLIDES_DIR environment variable is set, load slides from there
-		const char* filename_full_path = prepend_env_dir(call->filename, "SLIDES_DIR", alloca(2048), 2048);
-
+		char path_buffer[2048];
+		path_buffer[0] = '\0';
+		locate_file_prepend_env(call->filename, "SLIDES_DIR", path_buffer, sizeof(path_buffer));
+		const char* ext = get_file_extension(path_buffer);
+		if (strcasecmp(ext, "tiff") != 0) {
+			// TODO: search for files with this pattern
+			size_t path_len = strlen(path_buffer);
+			snprintf(path_buffer + path_len, sizeof(path_buffer) - path_len, ".tiff");
+		}
 
 		char* parameter1 = call->parameter1;
 		char* parameter2 = call->parameter2;
 		// is the client requesting TIFF header and metadata?
 		if (parameter1 && strcmp(parameter1, "header") == 0) {
-			if (filename_full_path) {
+			if (file_exists(path_buffer)) {
+
 				tiff_t tiff = {0};
-				if (open_tiff_file(&tiff, filename_full_path)) {
+				if (open_tiff_file(&tiff, path_buffer)) {
 					push_buffer_t buffer = {0};
 					tiff_serialize(&tiff, &buffer);
 					u64 send_size = ((u64)buffer.data - (u64)buffer.raw_memory) + buffer.used_size;
@@ -431,11 +445,14 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 					tiff_destroy(&tiff);
 					free(buffer.raw_memory);
 				} else {
-					fprintf(stderr, "Couldn't open TIFF file %s\n", filename_full_path);
+					fprintf(stderr, "Couldn't open TIFF file %s\n", path_buffer);
 					success = false;
 				}
 
 
+			} else {
+				fprintf(stderr, "Couldn't open file %s\n", path_buffer);
+				success = false;
 			}
 		}
 		else if (parameter1 && parameter2){
@@ -456,7 +473,7 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 
 			if (total_size > 0) {
 
-				FILE* fp = fopen64(filename_full_path, "rb");
+				FILE* fp = fopen64(path_buffer, "rb");
 				if (fp) {
 					struct stat st;
 					if (fstat(fileno(fp), &st) == 0) {

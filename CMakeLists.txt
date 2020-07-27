@@ -86,6 +86,7 @@ add_executable(slideserver
         src/jpeg_decoder.c
         ${JPEG_SOURCE_FILES}
         src/lz4.c
+        src/stringutils.c
 )
 target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
