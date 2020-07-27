@@ -89,7 +89,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			bool close;
 			bool open_remote;
 			bool exit_program;
-			bool show_case_list;
 			bool save_annotations;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
@@ -99,6 +98,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
 			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -114,14 +115,13 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			prev_fullscreen = is_fullscreen = win32_is_fullscreen(main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
-
+			ImGui::Separator();
+			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 			ImGui::Separator();
 
 			if (ImGui::MenuItem("Options...", NULL, &show_display_options_window)) {}
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
-				if (ImGui::MenuItem("Open remote", NULL, &menu_items_clicked.open_remote)) {}
-				if (ImGui::MenuItem("Show case list", NULL, &menu_items_clicked.show_case_list)) {}
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				ImGui::EndMenu();
 			}
@@ -142,10 +142,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
-		} else if (menu_items_clicked.show_case_list) {
-			reload_global_caselist(app_state, "cases.json");
-			show_slide_list_window = true;
-			caselist_select_first_case(app_state, &app_state->caselist);
 		} else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = win32_is_fullscreen(main_window);
 			if (currently_fullscreen != is_fullscreen) {
@@ -388,7 +384,13 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		}
 
-		// stub
+		if (caselist->case_count == 0) {
+			ImGui::TextWrapped("No case list has currently been loaded.\n\n"
+					  "To load a case list, you can do one of the following:\n"
+	                  "- Open a local case list file (with a '.json' file extension)\n"
+			          "- Connect to a remote case list (using File > Open remote)\n");
+		}
+
 
 
 		ImGui::End();
