@@ -23,23 +23,24 @@
 #define SLIDE_MAX_PATH 512
 #define SLIDE_MAX_META_STR 128
 
+typedef struct {
+	char base_filename[SLIDE_MAX_PATH];
+	char block[SLIDE_MAX_META_STR];
+	char stain[SLIDE_MAX_META_STR];
+	const char* notes;
+} slide_info_t;
 
 typedef struct {
 	const char *name;
-	char filename[SLIDE_MAX_PATH];
+	slide_info_t* slides;
+	u32 slide_count;
 	const char *clinical_context;
 	const char *diagnosis;
 	const char *notes;
 } case_t;
 
 typedef struct {
-	char base_filename[SLIDE_MAX_PATH];
-	char block[SLIDE_MAX_META_STR];
-} slide_info_t;
-
-typedef struct {
 	u32 case_count;
-	u32 num_cases_with_filenames;
 	case_t *cases;
 	const char** names;
 	JSON_Value* json_root_value;
@@ -51,6 +52,7 @@ typedef struct {
 typedef struct app_state_t app_state_t;
 void reset_global_caselist(app_state_t* app_state);
 void reload_global_caselist(app_state_t *app_state, const char *filename);
+bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_info_t* slide);
 bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist_name);
 bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename);
 bool32 load_caselist_from_remote(caselist_t* caselist, const char* hostname, i32 portno, const char* name);

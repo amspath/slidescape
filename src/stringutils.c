@@ -48,14 +48,16 @@ const char* one_past_last_slash(const char* s, i32 max) {
 
 const char* get_file_extension(const char* filename) {
 	size_t len = strlen(filename);
-	const char* ext = filename + len;
-	for (const char* pos = ext - 1; pos >= filename; --pos) {
+	const char* end = filename + len;
+	for (const char* pos = end - 1; pos >= filename; --pos) {
 		if (*pos == '.') {
-			ext = pos + 1;
+			return pos + 1;
+		}
+		if (*pos == '/' || *pos == '\\') {
 			break;
 		}
 	}
-	return ext;
+	return end; // no extension
 }
 
 void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {

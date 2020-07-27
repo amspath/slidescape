@@ -290,7 +290,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		caselist_t* caselist = &app_state->caselist;
 		if (caselist->names) {
 			listbox_items = caselist->names;
-			items_count = caselist->num_cases_with_filenames;
+			items_count = caselist->case_count;
 		}
 
 		static int listbox_item_current = -1;
@@ -303,19 +303,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				app_state->selected_case = caselist->cases + listbox_item_current;
 				show_case_info_window = true;
 				unload_all_images(app_state);
-				if (app_state->selected_case->filename) {
-
-					if (caselist->is_remote) {
-						open_remote_slide(app_state, remote_hostname, atoi(remote_port), app_state->selected_case->filename);
-					} else {
-						// If the SLIDES_DIR environment variable is set, load slides from there
-						char path_buffer[2048] = {};
-						snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix,
-						         app_state->selected_case->filename);
-
-						load_image_from_file(app_state, path_buffer);
-					}
-
+				slide_info_t* slides = app_state->selected_case->slides;
+				if (slides) {
+					slide_info_t* first_slide = &slides[0];
+					caselist_open_slide(app_state, caselist, first_slide);
 
 				}
 			}
@@ -338,6 +329,20 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		case_t* global_selected_case = app_state->selected_case;
 		if (global_selected_case != NULL) {
 			ImGui::TextWrapped("%s\n", global_selected_case->name);
+
+			slide_info_t* slides = global_selected_case->slides;
+			u32 slide_count = global_selected_case->slide_count;
+			if (slide_count > 1) {
+				for (u32 slide_index = 0; slide_index < slide_count; ++slide_index) {
+					slide_info_t* slide = slides + slide_index;
+					if (ImGui::Button(slide->stain)) {
+						caselist_open_slide(app_state, &app_state->caselist, slide);
+					}
+					ImGui::SameLine();
+				}
+				ImGui::NewLine();
+			}
+
 			ImGui::TextWrapped("%s\n", global_selected_case->clinical_context);
 			if (ImGui::TreeNode("Diagnosis and comment")) {
 				ImGui::TextWrapped("%s\n", global_selected_case->diagnosis);

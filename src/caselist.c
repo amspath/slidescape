@@ -45,6 +45,30 @@ void reload_global_caselist(app_state_t *app_state, const char *filename) {
 	load_caselist_from_file(&app_state->caselist, filename);
 }
 
+bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_info_t* slide) {
+	bool32 success = false;
+	if (slide->base_filename[0] != '\0') {
+		if (caselist->is_remote) {
+			success = open_remote_slide(app_state, remote_hostname, atoi(remote_port), slide->base_filename);
+		} else {
+
+			// If the SLIDES_DIR environment variable is set, load slides from there
+			char path_buffer[2048] = {};
+			i32 path_len = snprintf(path_buffer, sizeof(path_buffer), "%s%s", caselist->folder_prefix,
+			                        slide->base_filename);
+
+			if (!file_exists(path_buffer)) {
+				const char* ext = get_file_extension(slide->base_filename);
+				// TODO: search for files with this pattern
+				path_len += snprintf(path_buffer + path_len, sizeof(path_buffer) - path_len, ".tiff");
+			}
+
+			success = load_image_from_file(app_state, path_buffer);
+		}
+	}
+	return success;
+}
+
 bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist_name) {
 
 	bool32 success = false;
@@ -65,29 +89,61 @@ bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist
 				caselist->cases = (case_t*) calloc(1, caselist->case_count * sizeof(case_t));
 				caselist->names = (const char**) calloc(1, caselist->case_count * sizeof(void*));
 
-
-				i32 num_cases_with_filenames = 0;
 				for (i32 i = 0; i < caselist->case_count; ++i) {
-					i32 curr_index = num_cases_with_filenames;
-					case_t* the_case = caselist->cases + curr_index;
+					case_t* the_case = caselist->cases + i;
 					JSON_Object* json_case_obj = json_array_get_object(json_cases, (size_t) i);
 					the_case->name = json_object_get_string(json_case_obj, "name");
 					if (!the_case->name) {
 						printf("%s: case %d has no name element, defaulting to '(unnamed)'\n", caselist_name, i);
 						the_case->name = "(unnamed)";
 					}
+					caselist->names[i] = the_case->name; // for ImGui
 					the_case->clinical_context = json_object_get_string(json_case_obj, "clinical_context");
 					the_case->diagnosis = json_object_get_string(json_case_obj, "diagnosis");
 					the_case->notes = json_object_get_string(json_case_obj, "notes");
-					const char* image_filename = json_object_get_string(json_case_obj, "filename");
-					if (image_filename) {
-						++num_cases_with_filenames;
-						strncpy(the_case->filename, image_filename, sizeof(the_case->filename));
-						caselist->names[curr_index] = the_case->name; // for ImGui
+					JSON_Array* json_slides = json_object_get_array(json_case_obj, "slides");
+					if (json_slides) {
+						the_case->slide_count = (u32) json_array_get_count(json_slides);
+						the_case->slides = calloc(the_case->slide_count, sizeof(slide_info_t));
+
+						for (i32 slide_index = 0; slide_index < the_case->slide_count; ++slide_index) {
+							slide_info_t* slide = the_case->slides + slide_index;
+							JSON_Object* json_slide_obj = json_array_get_object(json_slides, (size_t) slide_index);
+
+							const char* base_filename = json_object_get_string(json_slide_obj, "filename");
+							const char* block = json_object_get_string(json_slide_obj, "block");
+							const char* stain = json_object_get_string(json_slide_obj, "stain");
+							const char* slide_notes = json_object_get_string(json_slide_obj, "notes");
+
+							if (base_filename) {
+								strncpy(slide->base_filename, base_filename, sizeof(slide->base_filename));
+							}
+							if (block) {
+								strncpy(slide->block, block, sizeof(slide->block));
+							}
+							if (stain) {
+								strncpy(slide->stain, stain, sizeof(slide->stain));
+							}
+							if (slide_notes) {
+								slide->notes = slide_notes;
+							}
+
+
+						}
+
+
+					} else {
+						the_case->slide_count = 1;
+						the_case->slides = calloc(1, sizeof(slide_info_t));
+						slide_info_t* slide = &the_case->slides[0];
+						const char* image_filename = json_object_get_string(json_case_obj, "filename");
+						if (image_filename) {
+							strncpy(slide->base_filename, image_filename, sizeof(slide->base_filename));
+						}
 					}
 
+
 				}
-				caselist->num_cases_with_filenames = num_cases_with_filenames;
 
 
 				success = true;
@@ -134,6 +190,16 @@ void caselist_destroy(caselist_t* caselist) {
 			caselist->json_root_value = NULL;
 		}
 		if (caselist->cases) {
+			for (i32 i = 0; i < caselist->case_count; ++i) {
+				case_t* the_case = caselist->cases + i;
+				if (the_case->slides) {
+					for (i32 j = 0; j < the_case->slide_count; ++j) {
+						// nothing to do here
+					}
+					free(the_case->slides);
+				}
+			}
+
 			free(caselist->cases);
 			caselist->cases = NULL;
 		}
