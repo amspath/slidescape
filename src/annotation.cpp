@@ -454,6 +454,10 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	add_annotation_group(annotation_set, "None");
 }
 
+enum {
+	ASAP_XML_PARSE_GROUPS = 0,
+	ASAP_XML_PARSE_ANNOTATIONS = 1,
+};
 
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
@@ -476,132 +480,139 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	if (file) {
 		// hack: merge memory for yxml_t struct and stack buffer
 		x = (yxml_t*) malloc(sizeof(yxml_t) + YXML_STACK_BUFFER_SIZE);
-		yxml_init(x, x + 1, YXML_STACK_BUFFER_SIZE);
 
-		// parse XML byte for byte
-		char attrbuf[128];
-		char* attrbuf_end = attrbuf + sizeof(attrbuf);
-		char* attrcur = NULL;
-		char contentbuf[128];
-		char* contentbuf_end = contentbuf + sizeof(contentbuf);
-		char* contentcur = NULL;
+		// ASAP puts all of the group definitions at the end of the file, instead of the beginning.
+		// To preserve the order of the groups, we need to load the XML in two passes:
+		// pass 0: read annotation groups only
+		// pass 1: read annotations and coordinates
+		for (i32 pass = 0; pass < 2; ++pass) {
+			yxml_init(x, x + 1, YXML_STACK_BUFFER_SIZE);
 
-		char* doc = (char*) file->data;
-		for (; *doc; doc++) {
-			yxml_ret_t r = yxml_parse(x, *doc);
-			if (r == YXML_OK) {
-				continue; // nothing worthy of note has happened -> continue
-			} else if (r < 0) {
-				goto failed;
-			} else if (r > 0) {
-				// token
-				switch(r) {
-					case YXML_ELEMSTART: {
-						// start of an element: '<Tag ..'
-//						printf("element start: %s\n", x->elem);
-						contentcur = contentbuf;
-						*contentcur = '\0';
+			// parse XML byte for byte
+			char attrbuf[128];
+			char* attrbuf_end = attrbuf + sizeof(attrbuf);
+			char* attrcur = NULL;
+			char contentbuf[128];
+			char* contentbuf_end = contentbuf + sizeof(contentbuf);
+			char* contentcur = NULL;
 
-						parse_state->element_type = ASAP_XML_ELEMENT_NONE;
-						if (strcmp(x->elem, "Annotation") == 0) {
-							annotation_t new_annotation = (annotation_t){};
-							sb_push(annotation_set->annotations, new_annotation);
-							++annotation_set->annotation_count;
-							parse_state->element_type = ASAP_XML_ELEMENT_ANNOTATION;
-						} else if (strcmp(x->elem, "Coordinate") == 0) {
-							coordinate_t new_coordinate = (coordinate_t){};
-							sb_push(annotation_set->coordinates, new_coordinate);
-							parse_state->element_type = ASAP_XML_ELEMENT_COORDINATE;
+			char* doc = (char*) file->data;
+			for (; *doc; doc++) {
+				yxml_ret_t r = yxml_parse(x, *doc);
+				if (r == YXML_OK) {
+					continue; // nothing worthy of note has happened -> continue
+				} else if (r < 0) {
+					goto failed;
+				} else if (r > 0) {
+					// token
+					switch(r) {
+						case YXML_ELEMSTART: {
+							// start of an element: '<Tag ..'
+//						    printf("element start: %s\n", x->elem);
+							contentcur = contentbuf;
+							*contentcur = '\0';
 
-							annotation_t* current_annotation = &sb_last(annotation_set->annotations);
-							if (!current_annotation->has_coordinates) {
-								current_annotation->first_coordinate = annotation_set->coordinate_count;
-								current_annotation->has_coordinates = true;
+							parse_state->element_type = ASAP_XML_ELEMENT_NONE;
+							if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Annotation") == 0) {
+								annotation_t new_annotation = (annotation_t){};
+								sb_push(annotation_set->annotations, new_annotation);
+								++annotation_set->annotation_count;
+								parse_state->element_type = ASAP_XML_ELEMENT_ANNOTATION;
+							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Coordinate") == 0) {
+								coordinate_t new_coordinate = (coordinate_t){};
+								sb_push(annotation_set->coordinates, new_coordinate);
+								parse_state->element_type = ASAP_XML_ELEMENT_COORDINATE;
+
+								annotation_t* current_annotation = &sb_last(annotation_set->annotations);
+								if (!current_annotation->has_coordinates) {
+									current_annotation->first_coordinate = annotation_set->coordinate_count;
+									current_annotation->has_coordinates = true;
+								}
+								current_annotation->coordinate_count++;
+								++annotation_set->coordinate_count;
+							} else if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
+								parse_state->element_type = ASAP_XML_ELEMENT_GROUP;
+								// reset the state (start parsing a new group)
+								parse_state->current_group = (annotation_group_t){};
+								parse_state->current_group.is_explicitly_defined = true; // (because this group has an XML tag)
 							}
-							current_annotation->coordinate_count++;
-							++annotation_set->coordinate_count;
-						} else if (strcmp(x->elem, "Group") == 0) {
-							parse_state->element_type = ASAP_XML_ELEMENT_GROUP;
-							// reset the state (start parsing a new group)
-							parse_state->current_group = (annotation_group_t){};
-							parse_state->current_group.is_explicitly_defined = true; // (because this group has an XML tag)
-						}
-					} break;
-					case YXML_CONTENT: {
-						// element content
-//						printf("   element content: %s\n", x->elem);
-						if (!contentcur) break;
-						char* tmp = x->data;
-						while (*tmp && contentbuf < contentbuf_end) {
-							*(contentcur++) = *(tmp++);
-						}
-						if (contentcur == contentbuf_end) {
-							// too long content
-							printf("load_asap_xml_annotations(): encountered a too long XML element content\n");
+						} break;
+						case YXML_CONTENT: {
+							// element content
+//						    printf("   element content: %s\n", x->elem);
+							if (!contentcur) break;
+							char* tmp = x->data;
+							while (*tmp && contentbuf < contentbuf_end) {
+								*(contentcur++) = *(tmp++);
+							}
+							if (contentcur == contentbuf_end) {
+								// too long content
+								printf("load_asap_xml_annotations(): encountered a too long XML element content\n");
+								goto failed;
+							}
+							*contentcur = '\0';
+						} break;
+						case YXML_ELEMEND: {
+							// end of an element: '.. />' or '</Tag>'
+//						    printf("element end: %s\n", x->elem);
+							if (contentcur) {
+								// NOTE: usually only whitespace (newlines and such)
+//							    printf("elem content: %s\n", contentbuf);
+							}
+							if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
+								annotation_group_t* parsed_group = &parse_state->current_group;
+								// Check if a group already exists with this name, if not create it
+								i32 group_index = find_annotation_group(annotation_set, parsed_group->name);
+								if (group_index < 0) {
+									group_index = add_annotation_group(annotation_set, parsed_group->name);
+								}
+								annotation_group_t* destination_group = annotation_set->groups + group_index;
+								// 'Commit' the group with all its attributes
+								memcpy(destination_group, parsed_group, sizeof(*destination_group));
+							}
+						} break;
+						case YXML_ATTRSTART: {
+							// attribute: 'Name=..'
+//						    printf("attr start: %s\n", x->attr);
+							attrcur = attrbuf;
+							*attrcur = '\0';
+						} break;
+						case YXML_ATTRVAL: {
+							// attribute value
+//						    printf("   attr val: %s\n", x->attr);
+							if (!attrcur) break;
+							char* tmp = x->data;
+							while (*tmp && attrbuf < attrbuf_end) {
+								*(attrcur++) = *(tmp++);
+							}
+							if (attrcur == attrbuf_end) {
+								// too long attribute
+								printf("load_asap_xml_annotations(): encountered a too long XML attribute\n");
+								goto failed;
+							}
+							*attrcur = '\0';
+						} break;
+						case YXML_ATTREND: {
+							// end of attribute '.."'
+							if (attrcur) {
+//							    printf("attr %s = %s\n", x->attr, attrbuf);
+								if (pass == ASAP_XML_PARSE_ANNOTATIONS && parse_state->element_type == ASAP_XML_ELEMENT_ANNOTATION) {
+									annotation_set_attribute(annotation_set, &sb_last(annotation_set->annotations), x->attr, attrbuf);
+								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && parse_state->element_type == ASAP_XML_ELEMENT_COORDINATE) {
+									coordinate_set_attribute(&sb_last(annotation_set->coordinates), x->attr, attrbuf);
+								} else if (pass == ASAP_XML_PARSE_GROUPS && parse_state->element_type == ASAP_XML_ELEMENT_GROUP) {
+									group_set_attribute(&parse_state->current_group, x->attr, attrbuf);
+								}
+							}
+						} break;
+						case YXML_PISTART:
+						case YXML_PICONTENT:
+						case YXML_PIEND:
+							break; // processing instructions (uninteresting, skip)
+						default: {
+							printf("yxml_parse(): unrecognized token (%d)\n", r);
 							goto failed;
 						}
-						*contentcur = '\0';
-					} break;
-					case YXML_ELEMEND: {
-						// end of an element: '.. />' or '</Tag>'
-//						printf("element end: %s\n", x->elem);
-						if (contentcur) {
-							// NOTE: usually only whitespace (newlines and such)
-//							printf("elem content: %s\n", contentbuf);
-						}
-						if (strcmp(x->elem, "Group") == 0) {
-							annotation_group_t* parsed_group = &parse_state->current_group;
-							// Check if a group already exists with this name, if not create it
-							i32 group_index = find_annotation_group(annotation_set, parsed_group->name);
-							if (group_index < 0) {
-								group_index = add_annotation_group(annotation_set, parsed_group->name);
-							}
-							annotation_group_t* destination_group = annotation_set->groups + group_index;
-							// 'Commit' the group with all its attributes
-							memcpy(destination_group, parsed_group, sizeof(*destination_group));
-						}
-					} break;
-					case YXML_ATTRSTART: {
-						// attribute: 'Name=..'
-//						printf("attr start: %s\n", x->attr);
-						attrcur = attrbuf;
-						*attrcur = '\0';
-					} break;
-					case YXML_ATTRVAL: {
-						// attribute value
-//						printf("   attr val: %s\n", x->attr);
-						if (!attrcur) break;
-						char* tmp = x->data;
-						while (*tmp && attrbuf < attrbuf_end) {
-							*(attrcur++) = *(tmp++);
-						}
-						if (attrcur == attrbuf_end) {
-							// too long attribute
-							printf("load_asap_xml_annotations(): encountered a too long XML attribute\n");
-							goto failed;
-						}
-						*attrcur = '\0';
-					} break;
-					case YXML_ATTREND: {
-						// end of attribute '.."'
-						if (attrcur) {
-//							printf("attr %s = %s\n", x->attr, attrbuf);
-							if (parse_state->element_type == ASAP_XML_ELEMENT_ANNOTATION) {
-								annotation_set_attribute(annotation_set, &sb_last(annotation_set->annotations), x->attr, attrbuf);
-							} else if (parse_state->element_type == ASAP_XML_ELEMENT_COORDINATE) {
-								coordinate_set_attribute(&sb_last(annotation_set->coordinates), x->attr, attrbuf);
-							} else if (parse_state->element_type == ASAP_XML_ELEMENT_GROUP) {
-								group_set_attribute(&parse_state->current_group, x->attr, attrbuf);
-							}
-						}
-					} break;
-					case YXML_PISTART:
-					case YXML_PICONTENT:
-					case YXML_PIEND:
-						break; // processing instructions (uninteresting, skip)
-					default: {
-						printf("yxml_parse(): unrecognized token (%d)\n", r);
-						goto failed;
 					}
 				}
 			}
