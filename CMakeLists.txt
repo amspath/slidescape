@@ -80,17 +80,17 @@ add_executable(slideviewer
 target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 endif(WIN32)
 
-add_executable(tlsserver
+add_executable(slideserver
         src/server.c
         src/tiff.c
         src/jpeg_decoder.c
         ${JPEG_SOURCE_FILES}
         src/lz4.c
 )
-target_compile_definitions(tlsserver PRIVATE IS_SERVER=1)
+target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
 if (WIN32)
-    target_link_libraries(tlsserver ws2_32 pthread)
+    target_link_libraries(slideserver ws2_32 pthread)
 else()
-    target_link_libraries(tlsserver pthread)
+    target_link_libraries(slideserver pthread)
 endif()
