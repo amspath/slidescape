@@ -492,10 +492,8 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 					if (!(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
 						if (curr_input->mouse_buttons[0].down) {
 							curr_input->drag_vector.x += raw->data.mouse.lLastX;
-							curr_input->dmouse_xy.x += raw->data.mouse.lLastX;
 							curr_input->drag_vector.y += raw->data.mouse.lLastY;
-							curr_input->dmouse_xy.y += raw->data.mouse.lLastY;
-//						printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
+//						    printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
 						} else {
 							// not dragging
 							mouse_show();
@@ -1062,6 +1060,9 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
 		curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
 	}
+
+	curr_input->drag_start_xy = old_input->drag_start_xy;
+	curr_input->drag_vector = old_input->drag_vector;
 
 
 	POINT cursor_pos;

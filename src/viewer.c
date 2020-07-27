@@ -861,7 +861,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (is_point_inside_rect2i(valid_drag_start_rect, input->mouse_xy)) {
 					scene->is_dragging = true; // drag start
 					scene->cumulative_drag_vector = (v2i){};
-//						printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+//					printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
 			} else if (scene->is_dragging) {
 				// already started dragging on a previous frame
