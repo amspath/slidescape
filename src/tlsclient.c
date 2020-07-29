@@ -189,12 +189,16 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 			LocalFree(message_buffer);
 			break;
 		} else if (receive_size == 0) {
+#if REMOTE_CLIENT_VERBOSE
 			printf("[thread %d] Gracefully closed\n", thread_id);
+#endif
 			break;
 		}
 		ret = tls_consume_stream(tls_context, receive_buffer, receive_size, validate_certificate);
 		if (ret < 0) {
+#if REMOTE_CLIENT_VERBOSE
 			printf("[thread %d] tls_consume_stream() returned error %d\n", thread_id, ret);
+#endif
 		}
 		send_pending(sockfd, tls_context);
 		if (tls_established(tls_context)) {
@@ -231,7 +235,9 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 	*bytes_read = total_bytes_read;
 
 	// now we should have the whole HTTP response
+#if REMOTE_CLIENT_VERBOSE
 	printf("[thread %d] HTTP read finished, length = %d\n", thread_id, total_bytes_read);
+#endif
 //	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
 
@@ -239,7 +245,9 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 	closesocket(sockfd);
 
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
+#if REMOTE_CLIENT_VERBOSE
 	printf("[thread %d] Open remote took %g seconds\n", thread_id, seconds_elapsed);
+#endif
 
 	return read_buffer;
 }
@@ -423,7 +431,9 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 
 	if (read_ok) {
 		// now we should have the whole HTTP response
+#if REMOTE_CLIENT_VERBOSE
 		printf("HTTP read finished, length = %d\n", mem_buffer->len);
+#endif
 //	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
 		tiff_t tiff = {0};

@@ -920,7 +920,9 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			} break;
 			case SERIAL_BLOCK_TERMINATOR: {
 				// Reached the end
+#if REMOTE_CLIENT_VERBOSE
 				printf("tiff_deserialize(): found a terminator block\n");
+#endif
 				reached_end = true;
 				break;
 			} break;
@@ -928,7 +930,9 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	}
 	if (reached_end) {
 		success = true;
+#if REMOTE_CLIENT_VERBOSE
 		printf("tiff_deserialize(): bytes_left = %lld, content length = %lld, buffer size = %llu\n", bytes_left, content_length, buffer_size);
+#endif
 	}
 
 	if (decompressed_buffer != NULL) free(decompressed_buffer);
