@@ -117,7 +117,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::MenuItem("Select region", NULL, &menu_items_clicked.select_region)) {}
 			if (ImGui::MenuItem("Deselect region", NULL, &menu_items_clicked.deselect, app_state->scene.has_selection_box)) {}
 			ImGui::Separator();
-			if (ImGui::MenuItem("Crop region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
+			if (ImGui::MenuItem("Crop view to region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
 				menu_items_clicked.crop_region = true;
 			}
 			ImGui::EndMenu();
