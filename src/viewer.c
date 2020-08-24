@@ -706,13 +706,6 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 
 }
 
-i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
-	ASSERT(tile_side > 0);
-	float tile_float = (world_pos / tile_side);
-	float tile = (i32)floorf(tile_float);
-	return tile;
-}
-
 bool32 was_button_pressed(button_state_t* button) {
 	bool32 result = button->down && button->transition_count > 0;
 	return result;
@@ -833,7 +826,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// todo: process even more of the mouse/keyboard input here?
 	v2i current_drag_vector = {};
-	bool32 scene_clicked = false;
+	scene->clicked = false;
+	scene->drag_started = false;
+	scene->drag_ended = false;
 	if (input) {
 		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
 
@@ -844,8 +839,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		if (was_button_released(&input->mouse_buttons[0])) {
 			float drag_distance = v2i_distance(scene->cumulative_drag_vector);
+			// TODO: tweak this
 			if (drag_distance < 2.0f) {
-				scene_clicked = true;
+				scene->clicked = true;
 			}
 		}
 
@@ -856,6 +852,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
 				if (is_point_inside_rect2i(valid_drag_start_rect, input->mouse_xy)) {
 					scene->is_dragging = true; // drag start
+					scene->drag_started = true;
 					scene->cumulative_drag_vector = (v2i){};
 //					printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
@@ -871,6 +868,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (input->mouse_buttons[0].transition_count != 0) {
 				mouse_show();
 				scene->is_dragging = false;
+				scene->drag_ended = true;
 //			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 			}
 		}
@@ -1053,36 +1051,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		float r_minus_l = scene->pixel_width * (float) client_width;
 		float t_minus_b = scene->pixel_height * (float) client_height;
 
-
-
-		v2f camera_min = {
-				.x = scene->camera.x - r_minus_l * 0.5f,
-				.y = scene->camera.y - t_minus_b * 0.5f,
-		};
-		v2f camera_max = {
-				.x = scene->camera.x + r_minus_l * 0.5f,
-				.y = scene->camera.y + t_minus_b * 0.5f,
+		bounds2f camera_bounds = {
+				.left = scene->camera.x - r_minus_l * 0.5f,
+				.top = scene->camera.y - t_minus_b * 0.5f,
+				.right = scene->camera.x + r_minus_l * 0.5f,
+				.bottom = scene->camera.y + t_minus_b * 0.5f,
 		};
 
 
-		draw_annotations(&scene->annotation_set, camera_min, scene->pixel_width);
-
-		i32 camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, level_image->x_tile_side_in_um);
-		i32 camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, level_image->x_tile_side_in_um) + 1;
-		i32 camera_tile_y1 = tile_pos_from_world_pos(camera_min.y, level_image->y_tile_side_in_um);
-		i32 camera_tile_y2 = tile_pos_from_world_pos(camera_max.y, level_image->y_tile_side_in_um) + 1;
-
-		camera_tile_x1 = CLAMP(camera_tile_x1, 0, level_image->width_in_tiles);
-		camera_tile_x2 = CLAMP(camera_tile_x2, 0, level_image->width_in_tiles);
-		camera_tile_y1 = CLAMP(camera_tile_y1, 0, level_image->height_in_tiles);
-		camera_tile_y2 = CLAMP(camera_tile_y2, 0, level_image->height_in_tiles);
+		draw_annotations(&scene->annotation_set, camera_bounds.min, scene->pixel_width);
 
 		scene->mouse = scene->camera;
 		if (input) {
 
-			scene->mouse.x = camera_min.x + (float)input->mouse_xy.x * scene->pixel_width;
-			scene->mouse.y = camera_min.y + (float)input->mouse_xy.y * scene->pixel_height;
+			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->pixel_width;
+			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->pixel_height;
 
+			/*if (was_key_pressed(input, 'O')) {
+				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
+//				printf("switching to creation mode\n");
+			}*/
 
 			if (was_key_pressed(input, 'P')) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;
@@ -1144,26 +1132,70 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				mouse_hide();
 			}
 
-			if (scene->is_dragging) {
-				scene->camera.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
-				scene->camera.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
-			}
+			if (app_state->mouse_mode == MODE_VIEW) {
+				if (scene->is_dragging) {
+					scene->camera.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
+					scene->camera.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
+				}
 
-			// try to select an annotation
-			if (scene->annotation_set.annotation_count > 0) {
-				if (was_key_pressed(input, 'Q') || (!gui_want_capture_mouse && scene_clicked)) {
-					i64 select_begin = get_clock();
-					select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
-					float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
-//					printf("Selecting took %g ms.\n", selection_ms);
+				if (!gui_want_capture_mouse) {
+					if (scene->clicked || was_key_pressed(input, 'Q')) {
+						// try to select an annotation
+						if (scene->annotation_set.annotation_count > 0) {
+							i64 select_begin = get_clock();
+							select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
+//				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
+//			    	    	printf("Selecting took %g ms.\n", selection_ms);
+						}
+					}
+
+				}
+
+			} else if (app_state->mouse_mode == MODE_CREATE_SELECTION_BOX) {
+				if (!gui_want_capture_mouse) {
+					if (scene->drag_started) {
+						scene->selection_box = (rect2f){ scene->mouse.x, scene->mouse.y, 0.0f, 0.0f };
+						scene->has_selection_box = true;
+					} else if (scene->is_dragging) {
+						scene->selection_box.w = scene->mouse.x - scene->selection_box.x;
+						scene->selection_box.h = scene->mouse.y - scene->selection_box.y;
+					} else if (scene->drag_ended) {
+						app_state->mouse_mode = MODE_VIEW;
+
+					}
+
 				}
 			}
+
+			/*if (scene->clicked && !gui_want_capture_mouse) {
+				scene->has_selection_box = false; // deselect selection box
+			}*/
+
+			// draw selection box
+			if (scene->has_selection_box){
+				rect2f final_selection_rect = rect2f_recanonicalize(&scene->selection_box);
+				bounds2f bounds = rect2f_to_bounds(&final_selection_rect);
+				v2f points[4];
+				points[0] = (v2f) { bounds.left, bounds.top };
+				points[1] = (v2f) { bounds.left, bounds.bottom };
+				points[2] = (v2f) { bounds.right, bounds.bottom };
+				points[3] = (v2f) { bounds.right, bounds.top };
+				for (i32 i = 0; i < 4; ++i) {
+					points[i] = world_pos_to_screen_pos(points[i], camera_bounds.min, scene->pixel_width);
+				}
+				rgba_t rgba = {0, 0, 0, 128};
+				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
+			}
+
+
 
 			if (!gui_want_capture_keyboard && was_key_pressed(input, KEYCODE_DELETE)) {
 				delete_selected_annotations(&scene->annotation_set);
 			}
 
 		}
+
+		// TODO: transform screen rect and cropped rect to tile bounds.
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
@@ -1177,21 +1209,27 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 
+
+			bounds2i level_tiles_bounds = {
+					.left = 0,
+					.top = 0,
+					.right = drawn_level->width_in_tiles,
+					.bottom = drawn_level->height_in_tiles,
+			};
+
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
+
+			if (scene->is_cropped) {
+				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
+			}
+
 			i32 base_priority = (image->level_count - level) * 100; // highest priority for the most zoomed in levels
 
-			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, drawn_level->x_tile_side_in_um);
-			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, drawn_level->x_tile_side_in_um) + 1;
-			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_min.y, drawn_level->y_tile_side_in_um);
-			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_max.y, drawn_level->y_tile_side_in_um) + 1;
 
-			level_camera_tile_x1 = CLAMP(level_camera_tile_x1, 0, drawn_level->width_in_tiles);
-			level_camera_tile_x2 = CLAMP(level_camera_tile_x2, 0, drawn_level->width_in_tiles);
-			level_camera_tile_y1 = CLAMP(level_camera_tile_y1, 0, drawn_level->height_in_tiles);
-			level_camera_tile_y2 = CLAMP(level_camera_tile_y2, 0, drawn_level->height_in_tiles);
-
-
-			for (i32 tile_y = level_camera_tile_y1; tile_y < level_camera_tile_y2; ++tile_y) {
-				for (i32 tile_x = level_camera_tile_x1; tile_x < level_camera_tile_x2; ++tile_x) {
+			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
+				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
 
 
 
@@ -1325,18 +1363,23 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 //		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 
-			i32 level_camera_tile_x1 = tile_pos_from_world_pos(camera_min.x, drawn_level->x_tile_side_in_um);
-			i32 level_camera_tile_x2 = tile_pos_from_world_pos(camera_max.x, drawn_level->x_tile_side_in_um) + 1;
-			i32 level_camera_tile_y1 = tile_pos_from_world_pos(camera_min.y, drawn_level->y_tile_side_in_um);
-			i32 level_camera_tile_y2 = tile_pos_from_world_pos(camera_max.y, drawn_level->y_tile_side_in_um) + 1;
+			bounds2i level_tiles_bounds = {
+					.left = 0,
+					.top = 0,
+					.right = drawn_level->width_in_tiles,
+					.bottom = drawn_level->height_in_tiles,
+			};
 
-			level_camera_tile_x1 = CLAMP(level_camera_tile_x1, 0, drawn_level->width_in_tiles);
-			level_camera_tile_x2 = CLAMP(level_camera_tile_x2, 0, drawn_level->width_in_tiles);
-			level_camera_tile_y1 = CLAMP(level_camera_tile_y1, 0, drawn_level->height_in_tiles);
-			level_camera_tile_y2 = CLAMP(level_camera_tile_y2, 0, drawn_level->height_in_tiles);
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
-			for (i32 tile_y = level_camera_tile_y1; tile_y < level_camera_tile_y2; ++tile_y) {
-				for (i32 tile_x = level_camera_tile_x1; tile_x < level_camera_tile_x2; ++tile_x) {
+			if (scene->is_cropped) {
+				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
+			}
+
+			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
+				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
 
 					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
 					if (tile->texture) {

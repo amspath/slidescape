@@ -79,8 +79,8 @@ typedef enum {
 
 typedef struct tile_t {
 	u32 texture;
-	bool32 is_submitted_for_loading;
-	bool32 is_empty;
+	bool8 is_submitted_for_loading;
+	bool8 is_empty;
 } tile_t;
 
 typedef struct {
@@ -145,6 +145,16 @@ enum entity_type_enum {
 	ENTITY_TILED_IMAGE = 2,
 };
 
+enum mouse_mode_enum {
+	MODE_VIEW,
+	MODE_CREATE_SELECTION_BOX,
+};
+
+enum placement_tool_enum {
+	TOOL_NONE,
+	TOOL_PLACE_OUTLINE,
+};
+
 typedef struct entity_t {
 	u32 type;
 	v2f pos;
@@ -173,8 +183,15 @@ typedef struct scene_t {
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
 	annotation_set_t annotation_set;
+	bool8 clicked;
+	bool8 drag_started;
+	bool8 drag_ended;
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
+	rect2f selection_box;
+	bool8 has_selection_box;
 	v2i cumulative_drag_vector;
+	bounds2f crop_bounds;
+	bool8 is_cropped;
 	bool8 initialized;
 } scene_t;
 
@@ -195,6 +212,8 @@ typedef struct app_state_t {
 	bool use_image_adjustments;
 	bool initialized;
 	bool allow_idling_next_frame;
+	u32 mouse_mode;
+	u32 mouse_tool;
 } app_state_t;
 
 
@@ -206,7 +225,6 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename);
 bool32 load_image_from_file(app_state_t* app_state, const char* filename);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
-i32 tile_pos_from_world_pos(float world_pos, float tile_side);
 bool32 was_button_pressed(button_state_t* button);
 bool32 was_button_released(button_state_t* button);
 bool32 was_key_pressed(input_t* input, i32 keycode);

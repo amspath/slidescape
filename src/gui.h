@@ -29,6 +29,7 @@ extern "C" {
 void win32_init_gui(HWND hwnd);
 void gui_new_frame();
 void menu_close_file(app_state_t* app_state);
+void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness);
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
 
 // from imgui_impl_win32.cpp

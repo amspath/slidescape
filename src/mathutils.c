@@ -35,6 +35,15 @@ rect2i clip_rect(rect2i* first, rect2i* second) {
 	return result;
 }
 
+bounds2i clip_bounds2i(bounds2i* a, bounds2i* b) {
+	bounds2i result = {};
+	result.left = MAX(a->left, b->left);
+	result.top = MAX(a->top, b->top);
+	result.right = MIN(a->right, b->right);
+	result.bottom = MIN(a->bottom, b->bottom);
+	return result;
+}
+
 bool is_point_inside_rect2i(rect2i rect, v2i point) {
 	bool result = true;
 	if (point.x < rect.x || point.x >= (rect.x + rect.w) || point.y < rect.y || point.y >= (rect.y + rect.h)) {
@@ -48,6 +57,35 @@ v2i rect2i_center_point(rect2i* rect) {
 			.x = rect->x + rect->w / 2,
 			.y = rect->y + rect->h / 2,
 	};
+	return result;
+}
+
+// reorient a rect with possible negative width and/or height
+rect2f rect2f_recanonicalize(rect2f* rect) {
+	rect2f result = {};
+	if (rect->w >= 0.0f) {
+		result.x = rect->x;
+		result.w = rect->w;
+	} else {
+		result.x = rect->x + rect->w; // negative, so move coordinate left
+		result.w = -rect->w;
+	}
+	if (rect->h >= 0.0f) {
+		result.y = rect->y;
+		result.h = rect->h;
+	} else {
+		result.y = rect->y + rect->h; // negative, so move coordinate to top
+		result.h = -rect->h;
+	}
+	return result;
+}
+
+bounds2f rect2f_to_bounds(rect2f* rect) {
+	bounds2f result = {};
+	result.left = rect->x;
+	result.top = rect->y;
+	result.right = rect->x + rect->w;
+	result.bottom = rect->y + rect->h;
 	return result;
 }
 
@@ -69,4 +107,20 @@ float v2f_distance(v2f v) {
 	return result;
 }
 
+
+i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
+	ASSERT(tile_side > 0);
+	float tile_float = (world_pos / tile_side);
+	float tile = (i32)floorf(tile_float);
+	return tile;
+}
+
+bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height) {
+	bounds2i result = {};
+	result.left = tile_pos_from_world_pos(world_bounds->left, tile_width);
+	result.top = tile_pos_from_world_pos(world_bounds->top, tile_height);
+	result.right = tile_pos_from_world_pos(world_bounds->right, tile_width) + 1;
+	result.bottom = tile_pos_from_world_pos(world_bounds->bottom, tile_height) + 1;
+	return result;
+}
 

@@ -61,15 +61,37 @@ typedef struct v4f {
 		struct {float x, y, z, w; };
 	};
 } v4f;
+
+
+typedef struct bounds2i {
+	union {
+		struct { i32 left, top, right, bottom; };
+		struct { v2i min, max; };
+	};
+} bounds2i;
+
+typedef struct bounds2f {
+	union {
+		struct { float left, top, right, bottom; };
+		struct { v2f min, max; };
+	};
+} bounds2f;
+
+
 #pragma pack(pop)
 
 // prototypes
 rect2i clip_rect(rect2i* first, rect2i* second);
+bounds2i clip_bounds2i(bounds2i* a, bounds2i* b);
 bool is_point_inside_rect2i(rect2i rect, v2i point);
 v2i rect2i_center_point(rect2i* rect);
+rect2f rect2f_recanonicalize(rect2f* rect);
+bounds2f rect2f_to_bounds(rect2f* rect);
 v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
 float v2i_distance(v2i v);
 float v2f_distance(v2f v);
+i32 tile_pos_from_world_pos(float world_pos, float tile_side);
+bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height);
 
 // globals
 #if defined(MATHUTILS_IMPL)

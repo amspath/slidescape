@@ -67,6 +67,12 @@ void gui_pop_disabled_style(bool condition) {
 	}
 }
 
+void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness) {
+	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+	u32 color = *(u32*)(&rgba);
+	draw_list->AddPolyline((ImVec2*)points, count, color, true, thickness);
+}
+
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
@@ -90,6 +96,9 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			bool open_remote;
 			bool exit_program;
 			bool save_annotations;
+			bool select_region;
+			bool deselect;
+			bool crop_region;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -102,6 +111,13 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
+			ImGui::EndMenu();
+		}
+		if (ImGui::BeginMenu("Edit")) {
+			if (ImGui::MenuItem("Select region", NULL, &menu_items_clicked.select_region)) {}
+			if (ImGui::MenuItem("Deselect region", NULL, &menu_items_clicked.deselect, app_state->scene.has_selection_box)) {}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Crop region", NULL, &menu_items_clicked.crop_region, app_state->scene.has_selection_box)) {}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Annotation")) {
@@ -149,6 +165,15 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			}
 		} else if(menu_items_clicked.save_annotations) {
 			save_asap_xml_annotations(&app_state->scene.annotation_set, "test_out.xml");
+		} else if (menu_items_clicked.select_region) {
+			app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
+		} else if (menu_items_clicked.deselect) {
+			app_state->scene.has_selection_box = false;
+		} else if (menu_items_clicked.crop_region) {
+			rect2f final_crop_rect = rect2f_recanonicalize(&app_state->scene.selection_box);
+			bounds2f bounds = rect2f_to_bounds(&final_crop_rect);
+			app_state->scene.crop_bounds = bounds;
+			app_state->scene.is_cropped = true;
 		}
 	}
 
