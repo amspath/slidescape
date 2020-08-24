@@ -27,7 +27,6 @@
 #define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
 
-// TODO: fix circular reference
 #include "viewer.h"
 
 #include <stdio.h>
@@ -101,40 +100,6 @@ u8* platform_alloc(size_t size) {
 	if (!result) {
 		printf("Error: memory allocation failed!\n");
 		panic();
-	}
-	return result;
-}
-
-mem_t* platform_allocate_mem_buffer(size_t capacity) {
-	size_t allocation_size = sizeof(mem_t) + capacity + 1;
-	mem_t* result = (mem_t*) malloc(allocation_size);
-	result->len = 0;
-	result->capacity = capacity;
-	return result;
-}
-
-mem_t* platform_read_entire_file(const char* filename) {
-	mem_t* result = NULL;
-	FILE* fp = fopen(filename, "rb");
-	if (fp) {
-		struct stat st;
-		if (fstat(fileno(fp), &st) == 0) {
-			i64 filesize = st.st_size;
-			if (filesize > 0) {
-				size_t allocation_size = sizeof(mem_t) + filesize + 1;
-				result = (mem_t*) malloc(allocation_size);
-				if (result) {
-					((u8*)result)[allocation_size-1] = '\0';
-					result->len = filesize;
-					result->capacity = filesize;
-					size_t bytes_read = fread(result->data, 1, filesize, fp);
-					if (bytes_read != filesize) {
-						panic();
-					}
-				}
-			}
-		}
-		fclose(fp);
 	}
 	return result;
 }
@@ -1318,6 +1283,7 @@ void win32_init_main_window() {
 
 }
 
+//TODO: move this
 bool profiling = false;
 
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms) {

@@ -581,10 +581,6 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 	sb_push(app_state->loaded_images, new_image);
 }
 
-bool file_exists(const char* filename) {
-	return (access(filename, F_OK) != -1);
-}
-
 bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	const char* ext = get_file_extension(filename);
 	if (strcasecmp(ext, "json") == 0) {

@@ -21,6 +21,7 @@
 #endif
 
 #include "common.h"
+#include "platform.h"
 #undef MIN
 #undef MAX // redefined by tlse.c
 
@@ -56,40 +57,6 @@ static char identity_str[0xFF] = {0};
 pthread_cond_t semaphore_work_available;
 pthread_mutex_t work_mutex;
 volatile int work_available = -1;
-
-typedef struct mem_t {
-	size_t len;
-	u8 data[0];
-} mem_t;
-
-mem_t* read_entire_file(const char* filename) {
-	mem_t* result = NULL;
-	FILE* fp = fopen(filename, "rb");
-	if (fp) {
-		struct stat st;
-		if (fstat(fileno(fp), &st) == 0) {
-			i64 filesize = st.st_size;
-			if (filesize > 0) {
-				size_t allocation_size = filesize + sizeof(result->len) + 1;
-				result = (mem_t*) malloc(allocation_size);
-				if (result) {
-					((u8*)result)[allocation_size-1] = '\0';
-					result->len = filesize;
-					size_t bytes_read = fread(result->data, 1, filesize, fp);
-					if (bytes_read != filesize) {
-						panic();
-					}
-				}
-			}
-		}
-		fclose(fp);
-	}
-	return result;
-}
-
-bool file_exists(const char* filename) {
-	return (access(filename, F_OK) != -1);
-}
 
 //https://stackoverflow.com/questions/1157209/is-there-an-alternative-sleep-function-in-c-to-milliseconds
 int msleep(long msec) {
@@ -398,7 +365,7 @@ bool32 execute_slide_set_api_call(struct TLSContext *context, int client_sock, s
 	char path_buffer[2048];
 	path_buffer[0] = '\0';
 	locate_file_prepend_env(call->filename, "SLIDES_DIR", path_buffer, sizeof(path_buffer));
-	mem_t* file_mem = read_entire_file(path_buffer);
+	mem_t* file_mem = platform_read_entire_file(path_buffer);
 	if (file_mem) {
 		success = send_buffer_to_client(context, client_sock, file_mem->data, file_mem->len);
 	}

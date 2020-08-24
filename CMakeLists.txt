@@ -53,6 +53,7 @@ set(JPEG_SOURCE_FILES deps/jpeg/jerror.c
 if (WIN32)
 add_executable(slideviewer
         src/win32_main.c
+        src/platform.c
         src/viewer.c
         src/glad.c
         src/stringutils.c
@@ -81,6 +82,7 @@ target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 endif(WIN32)
 
 add_executable(slideserver
+        src/platform.c
         src/server.c
         src/tiff.c
         src/jpeg_decoder.c

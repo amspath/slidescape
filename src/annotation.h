@@ -17,6 +17,8 @@
 */
 
 #pragma once
+#ifndef ANNOTATION_H
+#define ANNOTATION_H
 
 #include "common.h"
 #include "mathutils.h"
@@ -102,3 +104,5 @@ void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_s
 #ifdef __cplusplus
 }
 #endif
+
+#endif //ANNOTATION_H

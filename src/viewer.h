@@ -17,6 +17,8 @@
 */
 
 #pragma once
+#ifndef VIEWER_H
+#define VIEWER_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -236,3 +238,4 @@ extern app_state_t global_app_state;
 }
 #endif
 
+#endif //VIEWER_H

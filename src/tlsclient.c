@@ -34,6 +34,8 @@
 #define LTM_DESC
 #define TLS_AMALGAMATION
 #define LTC_NO_ASM
+#define NO_TLS_ROBOT_MITIGATION
+#define NO_TLS_LEGACY_SUPPORT
 #include "tlse.c"
 
 #include "tlsclient.h"
