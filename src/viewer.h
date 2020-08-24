@@ -234,6 +234,7 @@ void init_app_state(app_state_t* app_state);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 
+u32 load_texture(void* pixels, i32 width, i32 height);
 void init_opengl_stuff();
 
 

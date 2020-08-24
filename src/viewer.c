@@ -57,23 +57,6 @@ void reset_scene(image_t *image, scene_t *scene) {
 
 }
 
-u32 load_texture(void* pixels, i32 width, i32 height) {
-	u32 texture = 0; //gl_gen_texture();
-	glEnable(GL_TEXTURE_2D);
-	glGenTextures(1, &texture);
-//	printf("Generated texture %d\n", texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
-//	glGenerateMipmap(GL_TEXTURE_2D);
-//	gl_diagnostic("glTexImage2D");
-	return texture;
-}
 
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
@@ -803,6 +786,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	glDrawBuffer(GL_BACK);
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_STENCIL_TEST);
+	glStencilMask(0xFF);
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -1358,6 +1343,45 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
+		if (scene->is_cropped) {
+			// Set up the stencil buffer to prevent rendering outside the image area
+			///*
+			glEnable(GL_STENCIL_TEST);
+			glStencilFunc(GL_ALWAYS, 1, 0xFF);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+			glStencilMask(0xFF);
+			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
+			glDepthMask(GL_FALSE); // don't write to depth buffer
+//*/
+			{
+				mat4x4 model_matrix;
+				mat4x4_translate(model_matrix, scene->crop_bounds.left, scene->crop_bounds.top, 0.0f);
+				mat4x4_scale_aniso(model_matrix, model_matrix,
+				                   scene->crop_bounds.right - scene->crop_bounds.left,
+				                   scene->crop_bounds.bottom - scene->crop_bounds.top,
+				                   1.0f);
+				glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+				draw_rect(dummy_texture);
+			}
+
+			/*
+			glEnable(GL_STENCIL_TEST);
+			glStencilFunc(GL_ALWAYS, 1, 0xFF);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+			glStencilMask(0xFF);
+			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
+			glDepthMask(GL_FALSE); // don't write to depth buffer
+	//*/
+
+			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+			glDepthMask(GL_TRUE);
+			glStencilMask(0x00);
+			glStencilFunc(GL_EQUAL, 1, 0xFF);
+		} else {
+			glDisable(GL_STENCIL_TEST);
+		}
+
+
 		// Draw all levels within the viewport, up to the current zoom factor
 		for (i32 level = scene->current_level; level < image->level_count; ++level) {
 //		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
@@ -1402,6 +1426,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 		}
+
+		// restore OpenGL state
+		glDisable(GL_STENCIL_TEST);
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
 

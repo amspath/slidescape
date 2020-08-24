@@ -117,7 +117,9 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::MenuItem("Select region", NULL, &menu_items_clicked.select_region)) {}
 			if (ImGui::MenuItem("Deselect region", NULL, &menu_items_clicked.deselect, app_state->scene.has_selection_box)) {}
 			ImGui::Separator();
-			if (ImGui::MenuItem("Crop region", NULL, &menu_items_clicked.crop_region, app_state->scene.has_selection_box)) {}
+			if (ImGui::MenuItem("Crop region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
+				menu_items_clicked.crop_region = true;
+			}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Annotation")) {
@@ -170,10 +172,16 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		} else if (menu_items_clicked.deselect) {
 			app_state->scene.has_selection_box = false;
 		} else if (menu_items_clicked.crop_region) {
-			rect2f final_crop_rect = rect2f_recanonicalize(&app_state->scene.selection_box);
-			bounds2f bounds = rect2f_to_bounds(&final_crop_rect);
-			app_state->scene.crop_bounds = bounds;
-			app_state->scene.is_cropped = true;
+			if (!app_state->scene.is_cropped) {
+				rect2f final_crop_rect = rect2f_recanonicalize(&app_state->scene.selection_box);
+				bounds2f bounds = rect2f_to_bounds(&final_crop_rect);
+				app_state->scene.crop_bounds = bounds;
+				app_state->scene.is_cropped = true;
+				app_state->scene.has_selection_box = false;
+			} else {
+				app_state->scene.is_cropped = false;
+				app_state->scene.has_selection_box = false;
+			}
 		}
 	}
 
