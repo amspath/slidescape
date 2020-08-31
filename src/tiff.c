@@ -544,10 +544,15 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				}
 
 				float main_image_width = (float) main_image->image_width;
+				float main_image_height = (float) main_image->image_height;
 				tiff->max_downsample_level = 0;
+				i32 last_downsample_level = 0;
 				tiff->level_image_ifd_count = 0;
-				for (i32 ifd_index = 0; ifd_index < tiff->ifd_count; ++ifd_index) {
+				for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
 					tiff_ifd_t* ifd = tiff->ifds + ifd_index;
+					if (ifd->tile_count == 0) {
+						break; // not a tiled image, so cannot be part of the pyramid (could be macro or label image)
+					}
 					if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
 						++tiff->level_image_ifd_count;
 					}
@@ -555,7 +560,48 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					float level_width = (float)ifd->image_width;
 					float raw_downsample_factor = main_image_width / level_width;
 					float raw_downsample_level = log2f(raw_downsample_factor);
-					ifd->downsample_level = roundf(raw_downsample_level);
+					i32 downsample_level = (i32) roundf(raw_downsample_level);
+
+					// Some TIFF files have the width/height set to an integer multiple of the tile size.
+					// For the most zoomed out levels, this makes it harder to calculate the actual downsampling level
+					// (because we might underestimate it). So we need to do extra work to deduce the downsampling
+					// level in these corner cases.
+					if (ifd->image_width % ifd->tile_width == 0) {
+						if (ifd->width_in_tiles >= 1 && ifd->height_in_tiles >= 1) {
+							u32 min_possible_width = ifd->tile_width * (ifd->width_in_tiles-1) + 1;
+							u32 max_possible_width = ifd->tile_width * (ifd->width_in_tiles) ;
+							float downsample_factor_upper_bound = main_image_width / (float)min_possible_width;
+							float downsample_factor_lower_bound = main_image_width / (float)max_possible_width;
+
+							if (ifd->image_height % ifd->tile_height == 0) {
+								// constrain further based on the vertical tile count
+								u32 min_possible_height = ifd->tile_height * (ifd->height_in_tiles-1) + 1;
+								u32 max_possible_height = ifd->tile_height * (ifd->height_in_tiles);
+
+								float downsample_factor_y_upper_bound = main_image_height / (float)min_possible_height;
+								float downsample_factor_y_lower_bound = main_image_height / (float)max_possible_height;
+
+								downsample_factor_upper_bound = MIN(downsample_factor_upper_bound, downsample_factor_y_upper_bound);
+								downsample_factor_lower_bound = MAX(downsample_factor_lower_bound, downsample_factor_y_lower_bound);
+							}
+
+							float level_lower_bound = log2f(downsample_factor_lower_bound);
+							float level_upper_bound = log2f(downsample_factor_upper_bound);
+
+							i32 discrete_level_lower_bound = (i32) ceilf(level_lower_bound);
+							i32 discrete_level_upper_bound = (i32) floorf(level_upper_bound);
+
+							if (discrete_level_lower_bound == discrete_level_upper_bound) {
+								downsample_level = discrete_level_lower_bound;
+							} else {
+								// ambiguity could not be resolved. Use last resort.
+								downsample_level = MIN(discrete_level_lower_bound, last_downsample_level + 1);
+							}
+							DUMMY_STATEMENT;
+						}
+					}
+
+					ifd->downsample_level = last_downsample_level = downsample_level;
 					ifd->downsample_factor = exp2f((float)ifd->downsample_level);
 					tiff->max_downsample_level = MAX(ifd->downsample_level, tiff->max_downsample_level);
 					ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;

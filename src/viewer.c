@@ -49,14 +49,6 @@
 #include "annotation.h"
 
 
-void reset_scene(image_t *image, scene_t *scene) {
-	scene->current_level = ATLEAST(0, image->level_count-2);
-	scene->zoom_position = (float)scene->current_level;
-	scene->camera.x = image->width_in_um / 2.0f;
-	scene->camera.y = image->height_in_um / 2.0f;
-
-}
-
 
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
@@ -514,6 +506,8 @@ void unload_all_images(app_state_t *app_state) {
 		app_state->loaded_images = NULL;
 	}
 	mouse_show();
+	app_state->scene.is_cropped = false;
+	app_state->scene.has_selection_box = false;
 }
 
 void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
@@ -613,7 +607,6 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 
 		}
 	}
-	reset_scene(&new_image, &app_state->scene);
 	sb_push(app_state->loaded_images, new_image);
 }
 
@@ -732,7 +725,6 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 				}
 			}
 
-			reset_scene(&image, &app_state->scene);
 			sb_push(app_state->loaded_images, image);
 			result = true;
 
@@ -783,13 +775,33 @@ int priority_cmp_func (const void* a, const void* b) {
 	return ( (*(load_tile_task_t*)b).priority - (*(load_tile_task_t*)a).priority );
 }
 
+
+void zoom_set_pos(zoom_state_t* zoom, float pos) {
+	zoom->pos = pos;
+	zoom->downsample_factor = exp2f(zoom->pos);
+	zoom->pixel_width = zoom->downsample_factor * zoom->base_pixel_width;
+	zoom->pixel_height = zoom->downsample_factor * zoom->base_pixel_height;
+	float zoom_pos_with_rounding_tolerance = pos + 0.001f;
+	zoom->level = (i32) zoom_pos_with_rounding_tolerance;
+	ASSERT(zoom->notch_size != 0.0f);
+	zoom->notches = (i32) (zoom_pos_with_rounding_tolerance / zoom->notch_size);
+}
+
+void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, float base_pixel_width, float base_pixel_height) {
+	memset(zoom, 0, sizeof(zoom_state_t));
+	zoom->base_pixel_height = base_pixel_height;
+	zoom->base_pixel_width = base_pixel_width;
+	zoom->notch_size = notch_size;
+	zoom_set_pos(zoom, zoom_position);
+}
+
+
 void init_scene(app_state_t *app_state, scene_t *scene) {
 	memset(scene, 0, sizeof(scene_t));
 	scene->clear_color = app_state->clear_color;
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
 	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
-	scene->pixel_width = 1.0f;
-	scene->pixel_height = 1.0f;
+	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
 	scene->initialized = true;
 }
 
@@ -982,12 +994,24 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 	else if (image->type == IMAGE_TYPE_TIFF || image->type == IMAGE_TYPE_WSI) {
 
-		i32 old_level = scene->current_level;
+		if (image->is_freshly_loaded) {
+			float times_larger_x = (float)image->width_in_pixels / (float)client_width;
+			float times_larger_y = (float)image->height_in_pixels / (float)client_height;
+			float times_larger = MAX(times_larger_x, times_larger_y);
+			float desired_zoom_pos = log2f(times_larger * 1.5f);
+
+			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, image->mpp_x, image->mpp_y);
+			scene->camera.x = image->width_in_um / 2.0f;
+			scene->camera.y = image->height_in_um / 2.0f;
+
+			image->is_freshly_loaded = false;
+		}
+
+		zoom_state_t old_zoom = scene->zoom;
 		i32 center_offset_x = 0;
 		i32 center_offset_y = 0;
 
-		i32 max_level = image->level_count - 1;
-		level_image_t* level_image = image->level_images + scene->current_level;
+		i32 max_level = 10;//image->level_count - 1;
 
 		// TODO: move all input handling code together
 		if (input) {
@@ -1041,22 +1065,22 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (dlevel != 0) {
 //		        printf("mouse_z = %d\n", input->mouse_z);
-				scene->current_level = CLAMP(scene->current_level + dlevel, 0, image->level_count - 1);
-				level_image = image->level_images + scene->current_level;
+				i32 new_level = CLAMP(scene->zoom.level + dlevel, 0, max_level);
+				zoom_set_pos(&scene->zoom, (float) new_level);
 
-				if (scene->current_level != old_level && used_mouse_to_zoom) {
+				if (scene->zoom.level != old_zoom.level && used_mouse_to_zoom) {
 #if 1
 					center_offset_x = input->mouse_xy.x - client_width / 2;
 					center_offset_y = (input->mouse_xy.y - client_height / 2);
 
-					if (scene->current_level < old_level) {
+					if (scene->zoom.level < old_zoom.level) {
 						// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
-						scene->camera.x += center_offset_x * level_image->um_per_pixel_x;
-						scene->camera.y += center_offset_y * level_image->um_per_pixel_y;
-					} else if (scene->current_level > old_level) {
+						scene->camera.x += center_offset_x * scene->zoom.pixel_width;
+						scene->camera.y += center_offset_y * scene->zoom.pixel_height;
+					} else if (scene->zoom.level > old_zoom.level) {
 						// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
-						scene->camera.x -= center_offset_x * level_image->um_per_pixel_x * 0.5f;
-						scene->camera.y -= center_offset_y * level_image->um_per_pixel_y * 0.5f;
+						scene->camera.x -= center_offset_x * scene->zoom.pixel_width * 0.5f;
+						scene->camera.y -= center_offset_y * scene->zoom.pixel_height * 0.5f;
 					}
 #endif
 				}
@@ -1069,7 +1093,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// TODO: fix/rewrite
 		// Spring/bounce effect
-		float d_zoom = (float) scene->current_level - scene->zoom_position;
+#if 0
+		float d_zoom = (float) scene->zoom.pos - scene->zoom_position;
 		float abs_d_zoom = fabsf(d_zoom);
 		if (abs_d_zoom > 1e-5f) {
 			app_state->allow_idling_next_frame = false;
@@ -1083,11 +1108,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 		scene->zoom_position += d_zoom;
 
-		scene->pixel_width = powf(2.0f, scene->zoom_position) * image->mpp_x;
-		scene->pixel_height = powf(2.0f, scene->zoom_position) * image->mpp_y;
-
-		float r_minus_l = scene->pixel_width * (float) client_width;
-		float t_minus_b = scene->pixel_height * (float) client_height;
+		scene->pixel_width = exp2f(scene->zoom_position) * image->mpp_x;
+		scene->pixel_height = exp2f(scene->zoom_position) * image->mpp_y;
+#endif
+		float r_minus_l = scene->zoom.pixel_width * (float) client_width;
+		float t_minus_b = scene->zoom.pixel_height * (float) client_height;
 
 		bounds2f camera_bounds = {
 				.left = scene->camera.x - r_minus_l * 0.5f,
@@ -1097,13 +1122,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		};
 
 
-		draw_annotations(&scene->annotation_set, camera_bounds.min, scene->pixel_width);
+		draw_annotations(&scene->annotation_set, camera_bounds.min, scene->zoom.pixel_width);
 
 		scene->mouse = scene->camera;
 		if (input) {
 
-			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->pixel_width;
-			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->pixel_height;
+			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
 
 			/*if (was_key_pressed(input, 'O')) {
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
@@ -1146,7 +1171,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 #endif
 
 			// Panning should be faster when zoomed in very far.
-			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - scene->zoom_position) / (float) max_level;
+			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - scene->zoom.pos) / (float) max_level;
 			if (is_key_down(input, KEYCODE_SHIFT)) {
 				panning_multiplier *= 0.25f;
 			}
@@ -1154,26 +1179,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
 			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
-				scene->camera.y += level_image->um_per_pixel_y * panning_speed;
+				scene->camera.y += scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
 			if (input->keyboard.action_up.down || is_key_down(input, 'W')) {
-				scene->camera.y -= level_image->um_per_pixel_y * panning_speed;
+				scene->camera.y -= scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
 			if (input->keyboard.action_right.down || is_key_down(input, 'D')) {
-				scene->camera.x += level_image->um_per_pixel_x * panning_speed;
+				scene->camera.x += scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
 			if (input->keyboard.action_left.down || is_key_down(input, 'A')) {
-				scene->camera.x -= level_image->um_per_pixel_x * panning_speed;
+				scene->camera.x -= scene->zoom.pixel_width * panning_speed;
 				mouse_hide();
 			}
 
 			if (app_state->mouse_mode == MODE_VIEW) {
 				if (scene->is_dragging) {
-					scene->camera.x -= current_drag_vector.x * level_image->um_per_pixel_x * panning_multiplier;
-					scene->camera.y -= current_drag_vector.y * level_image->um_per_pixel_y * panning_multiplier;
+					scene->camera.x -= current_drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
+					scene->camera.y -= current_drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
 				}
 
 				if (!gui_want_capture_mouse) {
@@ -1219,7 +1244,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				points[2] = (v2f) { bounds.right, bounds.bottom };
 				points[3] = (v2f) { bounds.right, bounds.top };
 				for (i32 i = 0; i < 4; ++i) {
-					points[i] = world_pos_to_screen_pos(points[i], camera_bounds.min, scene->pixel_width);
+					points[i] = world_pos_to_screen_pos(points[i], camera_bounds.min, scene->zoom.pixel_width);
 				}
 				rgba_t rgba = {0, 0, 0, 128};
 				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
@@ -1244,7 +1269,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// The lowest needed level might be lower than the actual current downsampling level,
 		// because some levels may not have image data available (-> need to fall back to lower level).
 		i32 highest_visible_level = image->level_count - 1;
-		i32 lowest_visible_level = scene->current_level;
+		i32 lowest_visible_level = scene->zoom.level;
 		lowest_visible_level = ATMOST(highest_visible_level, lowest_visible_level);
 		for (; lowest_visible_level > 0; --lowest_visible_level) {
 			if (image->level_images[lowest_visible_level].exists) {
@@ -1406,9 +1431,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			glUniform1f(basic_shader_u_white_level, 1.0f);
 		}
 
-		i32 num_levels_above_current = image->level_count - scene->current_level - 1;
-		ASSERT(num_levels_above_current >= 0);
-
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
 		if (scene->is_cropped) {
@@ -1452,7 +1474,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// Draw all levels within the viewport, up to the current zoom factor
 		for (i32 level = lowest_visible_level; level <= highest_visible_level; ++level) {
-//		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
 			if (!drawn_level->exists) {
 				continue;

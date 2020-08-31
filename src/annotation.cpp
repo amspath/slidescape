@@ -138,10 +138,10 @@ i32 select_annotation(scene_t* scene, bool32 additive) {
 
 	i32 nearest_annotation_index = find_nearest_annotation(annotation_set, scene->mouse.x, scene->mouse.y, &distance);
 	if (nearest_annotation_index >= 0) {
-		ASSERT(scene->pixel_width > 0.0f);
+		ASSERT(scene->zoom.pixel_width > 0.0f);
 
 		// have to click somewhat close to a coordinate, otherwise treat as unselect
-		float pixel_distance = distance / scene->pixel_width;
+		float pixel_distance = distance / scene->zoom.pixel_width;
 		if (pixel_distance < 500.0f) {
 			annotation_t* annotation = annotation_set->annotations + nearest_annotation_index;
 			annotation->selected = !annotation->selected;

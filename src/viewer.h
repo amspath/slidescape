@@ -177,15 +177,30 @@ typedef struct entity_t {
 
 #define MAX_ENTITIES 1000
 
+
+typedef struct zoom_state_t {
+	float pos;
+	i32 level;
+	i32 notches;
+	float notch_size;
+	float pixel_width;
+	float pixel_height;
+	float downsample_factor;
+	float base_pixel_width;
+	float base_pixel_height;
+} zoom_state_t;
+
 typedef struct scene_t {
 	rect2i viewport;
 	v2f camera;
 	//v2f camera_min;
 	v2f mouse;
-	float pixel_width;
-	float pixel_height;
-	float zoom_position;
-	i32 current_level;
+//	float pixel_width;
+//	float pixel_height;
+//	float zoom_position;
+//	i32 current_zoom_level;
+	zoom_state_t zoom;
+	v2f level_pixel_size;
 	v4f clear_color;
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
@@ -201,6 +216,7 @@ typedef struct scene_t {
 	bool8 is_cropped;
 	bool8 initialized;
 } scene_t;
+
 
 typedef struct app_state_t {
 	u8* temp_storage_memory;
@@ -226,7 +242,6 @@ typedef struct app_state_t {
 
 //  prototypes
 void unload_all_images(app_state_t* app_state);
-void reset_scene(image_t* image, scene_t* scene);
 void add_image_from_tiff(app_state_t* app_state, tiff_t tiff);
 bool32 load_generic_file(app_state_t* app_state, const char* filename);
 bool32 load_image_from_file(app_state_t* app_state, const char* filename);
