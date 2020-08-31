@@ -124,3 +124,23 @@ bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, f
 	return result;
 }
 
+
+bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b) {
+	bounds2f bounds = {
+			.left = center.x - r_minus_l * 0.5f,
+			.top = center.y - t_minus_b * 0.5f,
+			.right = center.x + r_minus_l * 0.5f,
+			.bottom = center.y + t_minus_b * 0.5f,
+	};
+	return bounds;
+}
+
+bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minus_l, float t_minus_b) {
+	bounds2f bounds = {
+			.left = pivot.x - r_minus_l * pivot_relative_pos.x,
+			.top = pivot.y - t_minus_b * pivot_relative_pos.y,
+			.right = pivot.x + r_minus_l * (1.0f - pivot_relative_pos.x),
+			.bottom = pivot.y + t_minus_b * (1.0f - pivot_relative_pos.y),
+	};
+	return bounds;
+}

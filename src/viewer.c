@@ -776,7 +776,7 @@ int priority_cmp_func (const void* a, const void* b) {
 }
 
 
-void zoom_set_pos(zoom_state_t* zoom, float pos) {
+void zoom_update_pos(zoom_state_t* zoom, float pos) {
 	zoom->pos = pos;
 	zoom->downsample_factor = exp2f(zoom->pos);
 	zoom->pixel_width = zoom->downsample_factor * zoom->base_pixel_width;
@@ -792,7 +792,7 @@ void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, 
 	zoom->base_pixel_height = base_pixel_height;
 	zoom->base_pixel_width = base_pixel_width;
 	zoom->notch_size = notch_size;
-	zoom_set_pos(zoom, zoom_position);
+	zoom_update_pos(zoom, zoom_position);
 }
 
 
@@ -998,7 +998,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			float times_larger_x = (float)image->width_in_pixels / (float)client_width;
 			float times_larger_y = (float)image->height_in_pixels / (float)client_height;
 			float times_larger = MAX(times_larger_x, times_larger_y);
-			float desired_zoom_pos = log2f(times_larger * 1.5f);
+			float desired_zoom_pos = ceilf(log2f(times_larger * 1.5f));
 
 			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, image->mpp_x, image->mpp_y);
 			scene->camera.x = image->width_in_um / 2.0f;
@@ -1008,13 +1008,20 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		zoom_state_t old_zoom = scene->zoom;
-		i32 center_offset_x = 0;
-		i32 center_offset_y = 0;
 
 		i32 max_level = 10;//image->level_count - 1;
 
-		// TODO: move all input handling code together
+		float r_minus_l = scene->zoom.pixel_width * (float) client_width;
+		float t_minus_b = scene->zoom.pixel_height * (float) client_height;
+
+		bounds2f camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
+
+		scene->mouse = scene->camera;
+
 		if (input) {
+
+			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
 
 			i32 dlevel = 0;
 			bool32 used_mouse_to_zoom = false;
@@ -1065,110 +1072,64 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (dlevel != 0) {
 //		        printf("mouse_z = %d\n", input->mouse_z);
-				i32 new_level = CLAMP(scene->zoom.level + dlevel, 0, max_level);
-				zoom_set_pos(&scene->zoom, (float) new_level);
 
-				if (scene->zoom.level != old_zoom.level && used_mouse_to_zoom) {
-#if 1
-					center_offset_x = input->mouse_xy.x - client_width / 2;
-					center_offset_y = (input->mouse_xy.y - client_height / 2);
+				i32 new_level = scene->zoom.level + dlevel;
+				if (scene->need_zoom_animation) {
+					i32 residual_dlevel = scene->zoom_target_state.level - scene->zoom.level;
+					new_level += residual_dlevel;
+				}
+				new_level = CLAMP(new_level, 0, max_level);
+				zoom_state_t new_zoom = scene->zoom;
+				zoom_update_pos(&new_zoom, (float) new_level);
 
-					if (scene->zoom.level < old_zoom.level) {
-						// Zoom in, while keeping the area around the mouse cursor in the same place on the screen.
-						scene->camera.x += center_offset_x * scene->zoom.pixel_width;
-						scene->camera.y += center_offset_y * scene->zoom.pixel_height;
-					} else if (scene->zoom.level > old_zoom.level) {
-						// Zoom out, while keeping the area around the mouse cursor in the same place on the screen.
-						scene->camera.x -= center_offset_x * scene->zoom.pixel_width * 0.5f;
-						scene->camera.y -= center_offset_y * scene->zoom.pixel_height * 0.5f;
+				if (new_zoom.level != old_zoom.level) {
+					if (used_mouse_to_zoom) {
+						scene->zoom_pivot = scene->mouse;
+					} else {
+						scene->zoom_pivot = scene->camera;
 					}
-#endif
+					scene->zoom_target_state = new_zoom;
+					scene->need_zoom_animation = true;
 				}
+
 			}
 
-		}
+			if (scene->need_zoom_animation) {
+				float d_zoom = scene->zoom_target_state.pos - scene->zoom.pos;
 
-
-
-
-		// TODO: fix/rewrite
-		// Spring/bounce effect
-#if 0
-		float d_zoom = (float) scene->zoom.pos - scene->zoom_position;
-		float abs_d_zoom = fabsf(d_zoom);
-		if (abs_d_zoom > 1e-5f) {
-			app_state->allow_idling_next_frame = false;
-		}
-		float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-		float linear_catch_up_speed = 10.0f * delta_t;
-		float exponential_catch_up_speed = 18.0f * delta_t;
-		if (abs_d_zoom > linear_catch_up_speed) {
-			d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
-			         sign_d_zoom;
-		}
-		scene->zoom_position += d_zoom;
-
-		scene->pixel_width = exp2f(scene->zoom_position) * image->mpp_x;
-		scene->pixel_height = exp2f(scene->zoom_position) * image->mpp_y;
-#endif
-		float r_minus_l = scene->zoom.pixel_width * (float) client_width;
-		float t_minus_b = scene->zoom.pixel_height * (float) client_height;
-
-		bounds2f camera_bounds = {
-				.left = scene->camera.x - r_minus_l * 0.5f,
-				.top = scene->camera.y - t_minus_b * 0.5f,
-				.right = scene->camera.x + r_minus_l * 0.5f,
-				.bottom = scene->camera.y + t_minus_b * 0.5f,
-		};
-
-
-		draw_annotations(&scene->annotation_set, camera_bounds.min, scene->zoom.pixel_width);
-
-		scene->mouse = scene->camera;
-		if (input) {
-
-			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
-
-			/*if (was_key_pressed(input, 'O')) {
-				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
-//				printf("switching to creation mode\n");
-			}*/
-
-			if (was_key_pressed(input, 'P')) {
-				app_state->use_image_adjustments = !app_state->use_image_adjustments;
-			}
-#if 0
-
-			// Experimental code for exporting regions of the wsi to a raw image file.
-			if (input->mouse_buttons[1].down && input->mouse_buttons[1].transition_count > 0) {
-				DUMMY_STATEMENT;
-				i32 click_x = (camera_rect_x1 + input->mouse_xy.x * level_image->um_per_pixel_x) / wsi->mpp_x;
-				i32 click_y = (camera_rect_y2 - input->mouse_xy.y * level_image->um_per_pixel_y) / wsi->mpp_y;
-				printf("Clicked screen x=%d y=%d; image x=%d y=%d\n",
-						input->mouse_xy.x, input->mouse_xy.y, click_x, click_y);
-			}
-
-			{
-				button_state_t* button = &input->keyboard.keys['E'];
-				if (button->down && button->transition_count > 0) {
-					v2i p1 = { 101456, 30736 };
-					v2i p2 = { 134784
-				, 61384 };
-					i64 w = p2.x - p1.x;
-					i64 h = p2.y - p1.y;
-					size_t export_size = w * h * BYTES_PER_PIXEL;
-					u32* temp_memory = malloc(export_size);
-					openslide.openslide_read_region(wsi->osr, temp_memory, p1.x, p1.y, 0, w, h);
-					FILE* fp = fopen("export.raw", "wb");
-					fwrite(temp_memory, export_size, 1, fp);
-					fclose(fp);
-					free(temp_memory);
-					printf("Exported region, width %d height %d\n", w, h);
-
+				float abs_d_zoom = fabsf(d_zoom);
+				if (abs_d_zoom < 1e-5f) {
+					scene->need_zoom_animation = false;
 				}
+				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
+				float linear_catch_up_speed = 10.0f * delta_t;
+				float exponential_catch_up_speed = 18.0f * delta_t;
+				if (abs_d_zoom > linear_catch_up_speed) {
+					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
+					         sign_d_zoom;
+				}
+
+				zoom_update_pos(&scene->zoom, scene->zoom.pos + d_zoom);
+
+				// get the relative position of the pivot point on the screen (with x and y between 0 and 1)
+				v2f pivot_relative_to_screen = scene->zoom_pivot;
+				pivot_relative_to_screen.x -= camera_bounds.min.x;
+				pivot_relative_to_screen.y -= camera_bounds.min.y;
+				pivot_relative_to_screen.x /= (float)r_minus_l;
+				pivot_relative_to_screen.y /= (float)t_minus_b;
+
+				// recalculate the camera position
+				r_minus_l = scene->zoom.pixel_width * (float) client_width;
+				t_minus_b = scene->zoom.pixel_height * (float) client_height;
+				camera_bounds = bounds_from_pivot_point(scene->zoom_pivot, pivot_relative_to_screen, r_minus_l, t_minus_b);
+				scene->camera.x = (camera_bounds.right + camera_bounds.left) / 2.0f;
+				scene->camera.y = (camera_bounds.top + camera_bounds.bottom) / 2.0f;
+
+				// camera updated, need to updated mouse position
+				scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+				scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+
 			}
-#endif
 
 			// Panning should be faster when zoomed in very far.
 			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - scene->zoom.pos) / (float) max_level;
@@ -1195,10 +1156,33 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				mouse_hide();
 			}
 
+			// camera has been updated (now we need to recalculate some things)
+			r_minus_l = scene->zoom.pixel_width * (float) client_width;
+			t_minus_b = scene->zoom.pixel_height * (float) client_height;
+			camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
+			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+
+
+			/*if (was_key_pressed(input, 'O')) {
+				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
+//				printf("switching to creation mode\n");
+			}*/
+
+			if (was_key_pressed(input, 'P')) {
+				app_state->use_image_adjustments = !app_state->use_image_adjustments;
+			}
+
+
 			if (app_state->mouse_mode == MODE_VIEW) {
 				if (scene->is_dragging) {
 					scene->camera.x -= current_drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
 					scene->camera.y -= current_drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
+
+					// camera has been updated (now we need to recalculate some things)
+					camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
+					scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+					scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
 				}
 
 				if (!gui_want_capture_mouse) {
@@ -1258,7 +1242,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		}
 
-		// TODO: transform screen rect and cropped rect to tile bounds.
+		draw_annotations(&scene->annotation_set, camera_bounds.min, scene->zoom.pixel_width);
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 

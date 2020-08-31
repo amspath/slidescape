@@ -193,13 +193,11 @@ typedef struct zoom_state_t {
 typedef struct scene_t {
 	rect2i viewport;
 	v2f camera;
-	//v2f camera_min;
 	v2f mouse;
-//	float pixel_width;
-//	float pixel_height;
-//	float zoom_position;
-//	i32 current_zoom_level;
 	zoom_state_t zoom;
+	bool8 need_zoom_animation;
+	v2f zoom_pivot;
+	zoom_state_t zoom_target_state;
 	v2f level_pixel_size;
 	v4f clear_color;
 	u32 entity_count;
