@@ -1498,11 +1498,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 						draw_rect(texture);
 					} else {
-						if (!tile->is_empty) {
-							++missing_tiles_on_this_level;
-						}
+						++missing_tiles_on_this_level;
 					}
-
 				}
 			}
 
