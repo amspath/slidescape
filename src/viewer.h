@@ -88,10 +88,15 @@ typedef struct {
 	u64 tile_count;
 	u32 width_in_tiles;
 	u32 height_in_tiles;
+	u32 tile_width;
+	u32 tile_height;
 	float x_tile_side_in_um;
 	float y_tile_side_in_um;
 	float um_per_pixel_x;
 	float um_per_pixel_y;
+	float downsample_factor;
+	i32 pyramid_image_index;
+	bool exists;
 } level_image_t;
 
 typedef struct {
@@ -114,13 +119,15 @@ typedef struct {
 		} wsi;
 	};
 	i32 level_count;
-	level_image_t* level_images;
+	u32 tile_width;
+	u32 tile_height;
+	level_image_t level_images[WSI_MAX_LEVELS];
 	float mpp_x;
 	float mpp_y;
 	i64 width_in_pixels;
-	i64 width_in_um;
+	float width_in_um;
 	i64 height_in_pixels;
-	i64 height_in_um;
+	float height_in_um;
 } image_t;
 
 typedef struct load_tile_task_t {

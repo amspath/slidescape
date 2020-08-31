@@ -96,7 +96,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				level_image_t* level_image = image->level_images + level;
 				tile_t* tile = task->tile;
 				i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
-				tiff_ifd_t* level_ifd = tiff->level_images + level;
+				tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 				u64 tile_offset = level_ifd->tile_offsets[tile_index];
 				u64 chunk_size = level_ifd->tile_byte_counts[tile_index];
 
@@ -131,7 +131,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						chunk_offset_in_read_buffer += chunk_sizes[i];
 
 						load_tile_task_t* task = batch->tile_tasks + i;
-						tiff_ifd_t* level_ifd = tiff->level_images + task->level;
+						level_image_t* level_image = image->level_images + task->level;
+						tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 						u8* jpeg_tables = level_ifd->jpeg_tables;
 						u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
 
@@ -198,7 +199,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	if (image->type == IMAGE_TYPE_TIFF) {
 		tiff_t* tiff = &image->tiff.tiff;
-		tiff_ifd_t* level_ifd = tiff->level_images + level;
+		tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 
 		u64 tile_offset = level_ifd->tile_offsets[tile_index];
 		u64 compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
@@ -483,22 +484,18 @@ void unload_image(image_t* image) {
 			tiff_destroy(&image->tiff.tiff);
 		}
 
-		if (image->level_images) {
-			for (i32 i = 0; i < image->level_count; ++i) {
-				level_image_t* level_image = image->level_images + i;
-				if (level_image->tiles) {
-					for (i32 j = 0; j < level_image->tile_count; ++j) {
-						tile_t* tile = level_image->tiles + j;
-						if (tile->texture != 0) {
-							unload_texture(tile->texture);
-						}
+		for (i32 i = 0; i < image->level_count; ++i) {
+			level_image_t* level_image = image->level_images + i;
+			if (level_image->tiles) {
+				for (i32 j = 0; j < level_image->tile_count; ++j) {
+					tile_t* tile = level_image->tiles + j;
+					if (tile->texture != 0) {
+						unload_texture(tile->texture);
 					}
 				}
-				free(level_image->tiles);
-				level_image->tiles = NULL;
 			}
-			free(image->level_images);
-			image->level_images = NULL;
+			free(level_image->tiles);
+			level_image->tiles = NULL;
 		}
 
 
@@ -526,38 +523,94 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 	new_image.is_freshly_loaded = true;
 	new_image.mpp_x = tiff.mpp_x;
 	new_image.mpp_y = tiff.mpp_y;
-	ASSERT(tiff.main_image);
-	new_image.width_in_pixels = tiff.main_image->image_width;
-	new_image.width_in_um = tiff.main_image->image_width * tiff.mpp_x;
-	new_image.height_in_pixels = tiff.main_image->image_height;
-	new_image.height_in_um = tiff.main_image->image_height * tiff.mpp_y;
+	ASSERT(tiff.main_image_ifd);
+	new_image.tile_width = tiff.main_image_ifd->tile_width;
+	new_image.tile_height = tiff.main_image_ifd->tile_height;
+	new_image.width_in_pixels = tiff.main_image_ifd->image_width;
+	new_image.width_in_um = tiff.main_image_ifd->image_width * tiff.mpp_x;
+	new_image.height_in_pixels = tiff.main_image_ifd->image_height;
+	new_image.height_in_um = tiff.main_image_ifd->image_height * tiff.mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
-	if (tiff.level_count > 0 && tiff.main_image->tile_width) {
+	if (tiff.level_image_ifd_count > 0 && tiff.main_image_ifd->tile_width) {
 
-		new_image.level_count = tiff.level_count;
-		new_image.level_images = (level_image_t*) calloc(1, tiff.level_count * sizeof(level_image_t));
+		memset(new_image.level_images, 0, sizeof(new_image.level_images));
+		new_image.level_count = tiff.max_downsample_level + 1;
 
-		for (i32 i = 0; i < tiff.level_count; ++i) {
-			level_image_t* level_image = new_image.level_images + i;
-			tiff_ifd_t* ifd = tiff.level_images + i;
-			level_image->tile_count = ifd->tile_count;
-			level_image->width_in_tiles = ifd->width_in_tiles;
-			level_image->height_in_tiles = ifd->height_in_tiles;
-			level_image->um_per_pixel_x = ifd->um_per_pixel_x;
-			level_image->um_per_pixel_y = ifd->um_per_pixel_y;
-			level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
-			level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
-			level_image->tiles = (tile_t*) calloc(1, ifd->tile_count * sizeof(tile_t));
-			ASSERT(ifd->tile_byte_counts != NULL);
-			ASSERT(ifd->tile_offsets != NULL);
-			// mark the empty tiles, so that we can skip loading them later on
-			for (i32 j = 0; j < level_image->tile_count; ++j) {
-				tile_t* tile = level_image->tiles + j;
-				u64 tile_byte_count = ifd->tile_byte_counts[j];
-				if (tile_byte_count == 0) {
-					tile->is_empty = true;
+		if (tiff.level_image_ifd_count > new_image.level_count) {
+			panic();
+		}
+		if (new_image.level_count > WSI_MAX_LEVELS) {
+			panic();
+		}
+
+		i32 ifd_index = 0;
+		i32 next_ifd_index_to_check_for_match = 0;
+		tiff_ifd_t* ifd = tiff.level_images_ifd + ifd_index;
+		for (i32 level_index = 0; level_index < new_image.level_count; ++level_index) {
+			level_image_t* level_image = new_image.level_images + level_index;
+
+			i32 wanted_downsample_level = level_index;
+			bool found_ifd = false;
+			for (ifd_index = next_ifd_index_to_check_for_match; ifd_index < tiff.level_image_ifd_count; ++ifd_index) {
+				ifd = tiff.level_images_ifd + ifd_index;
+				if (ifd->downsample_level == wanted_downsample_level) {
+					// match!
+					found_ifd = true;
+					next_ifd_index_to_check_for_match = ifd_index + 1; // next iteration, don't reuse the same IFD!
+					break;
 				}
 			}
+
+			if (found_ifd) {
+				// The current downsampling level is backed by a corresponding IFD level image in the TIFF.
+				level_image->exists = true;
+				level_image->pyramid_image_index = ifd_index;
+				level_image->downsample_factor = ifd->downsample_factor;
+				level_image->tile_count = ifd->tile_count;
+				level_image->width_in_tiles = ifd->width_in_tiles;
+				level_image->height_in_tiles = ifd->height_in_tiles;
+				level_image->tile_width = ifd->tile_width;
+				level_image->tile_height = ifd->tile_height;
+#if DO_DEBUG
+				if (level_image->tile_width != new_image.tile_width) {
+					printf("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
+				}
+				if (level_image->tile_height != new_image.tile_height) {
+					printf("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
+				}
+#endif
+				level_image->um_per_pixel_x = ifd->um_per_pixel_x;
+				level_image->um_per_pixel_y = ifd->um_per_pixel_y;
+				level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
+				level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
+				level_image->tiles = (tile_t*) calloc(1, ifd->tile_count * sizeof(tile_t));
+				ASSERT(ifd->tile_byte_counts != NULL);
+				ASSERT(ifd->tile_offsets != NULL);
+				// mark the empty tiles, so that we can skip loading them later on
+				for (i32 i = 0; i < level_image->tile_count; ++i) {
+					tile_t* tile = level_image->tiles + i;
+					u64 tile_byte_count = ifd->tile_byte_counts[i];
+					if (tile_byte_count == 0) {
+						tile->is_empty = true;
+					}
+				}
+			} else {
+				// The current downsampling level has no corresponding IFD level image :(
+				// So we need only some placeholder information.
+				level_image->exists = false;
+				level_image->downsample_factor = exp2f((float)wanted_downsample_level);
+				// Just in case anyone tries to divide by zero:
+				level_image->tile_width = new_image.tile_width;
+				level_image->tile_height = new_image.tile_height;
+				level_image->um_per_pixel_x = new_image.mpp_x * level_image->downsample_factor;
+				level_image->um_per_pixel_y = new_image.mpp_y * level_image->downsample_factor;
+				level_image->x_tile_side_in_um = ifd->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
+				level_image->y_tile_side_in_um = ifd->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
+			}
+
+			DUMMY_STATEMENT;
+
+
 		}
 	}
 	reset_scene(&new_image, &app_state->scene);
@@ -662,7 +715,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
 
 				image.level_count = wsi->level_count;
-				image.level_images = (level_image_t*) calloc(1, wsi->level_count * sizeof(level_image_t));
+				memset(image.level_images, 0, sizeof(image.level_images));
 
 				for (i32 i = 0; i < wsi->level_count; ++i) {
 					level_image_t* level_image = image.level_images + i;
@@ -1186,14 +1239,29 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// IO
 
+
+		// Determine the highest and lowest levels with image data that need to be loaded and rendered.
+		// The lowest needed level might be lower than the actual current downsampling level,
+		// because some levels may not have image data available (-> need to fall back to lower level).
+		i32 highest_visible_level = image->level_count - 1;
+		i32 lowest_visible_level = scene->current_level;
+		lowest_visible_level = ATMOST(highest_visible_level, lowest_visible_level);
+		for (; lowest_visible_level > 0; --lowest_visible_level) {
+			if (image->level_images[lowest_visible_level].exists) {
+				break; // done, no need to go lower
+			}
+		}
+
 		// Create a 'wishlist' of tiles to request
 		load_tile_task_t tile_wishlist[32];
 		i32 num_tasks_on_wishlist = 0;
 		float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
 
-		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
+		for (i32 level = highest_visible_level; level >= lowest_visible_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
-
+			if (!drawn_level->exists) {
+				continue; // no image data
+			}
 
 			bounds2i level_tiles_bounds = {
 					.left = 0,
@@ -1383,9 +1451,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 		// Draw all levels within the viewport, up to the current zoom factor
-		for (i32 level = scene->current_level; level < image->level_count; ++level) {
+		for (i32 level = lowest_visible_level; level <= highest_visible_level; ++level) {
 //		for (i32 level = image->level_count - 1; level >= scene->current_level; --level) {
 			level_image_t *drawn_level = image->level_images + level;
+			if (!drawn_level->exists) {
+				continue;
+			}
 
 			bounds2i level_tiles_bounds = {
 					.left = 0,
@@ -1402,6 +1473,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
 			}
 
+			i32 missing_tiles_on_this_level = 0;
 			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
 				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
 
@@ -1420,9 +1492,17 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
 						draw_rect(texture);
+					} else {
+						if (!tile->is_empty) {
+							++missing_tiles_on_this_level;
+						}
 					}
 
 				}
+			}
+
+			if (missing_tiles_on_this_level == 0) {
+				break; // don't need to bother drawing the next level, there are no gaps left to fill in!
 			}
 
 		}

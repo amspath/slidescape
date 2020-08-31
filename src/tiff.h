@@ -51,12 +51,18 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_SAMPLES_PER_PIXEL = 277,
 	TIFF_TAG_ROWS_PER_STRIP = 278,
 	TIFF_TAG_STRIP_BYTE_COUNTS = 279,
+	TIFF_TAG_X_RESOLUTION = 282,
+	TIFF_TAG_Y_RESOLUTION = 283,
 	TIFF_TAG_PLANAR_CONFIGURATION = 284,
+	TIFF_TAG_RESOLUTION_UNIT = 296,
 	TIFF_TAG_SOFTWARE = 305,
 	TIFF_TAG_TILE_WIDTH = 322,
 	TIFF_TAG_TILE_LENGTH = 323,
 	TIFF_TAG_TILE_OFFSETS = 324,
 	TIFF_TAG_TILE_BYTE_COUNTS = 325,
+	TIFF_TAG_SAMPLE_FORMAT = 339,
+	TIFF_TAG_S_MIN_SAMPLE_VALUE = 340,
+	TIFF_TAG_S_MAX_SAMPLE_VALUE = 341,
 	TIFF_TAG_JPEG_TABLES = 347,
 	TIFF_TAG_YCBCRSUBSAMPLING = 530,
 	TIFF_TAG_REFERENCEBLACKWHITE = 532,
@@ -87,9 +93,15 @@ enum tiff_subfiletype_enum {
 	TIFF_FILETYPE_MASK = 4,
 };
 
+typedef enum tiff_resunit_enum {
+	TIFF_RESUNIT_NONE = 1,
+	TIFF_RESUNIT_INCH = 2,
+	TIFF_RESUNIT_CENTIMETER = 3,
+} tiff_resunit_enum;
+
 #pragma pack(push, 1)
 
-typedef struct {
+typedef struct tiff_rational_t {
 	i32 a, b;
 } tiff_rational_t;
 
@@ -210,10 +222,15 @@ typedef struct tiff_ifd_t {
 	float um_per_pixel_y;
 	float x_tile_side_in_um;
 	float y_tile_side_in_um;
+	float downsample_factor;
+	i32 downsample_level;
 	u16 chroma_subsampling_horizontal;
 	u16 chroma_subsampling_vertical;
 	u64 reference_black_white_rational_count;
 	tiff_rational_t* reference_black_white;
+	tiff_rational_t x_resolution;
+	tiff_rational_t y_resolution;
+	tiff_resunit_enum resolution_unit;
 } tiff_ifd_t;
 
 
@@ -234,19 +251,20 @@ struct tiff_t {
 	u32 bytesize_of_offsets;
 	u64 ifd_count;
 	tiff_ifd_t* ifds; // sb
-	tiff_ifd_t* main_image; // level 0 of the WSI; in Philips TIFF it's typically the first IFD
-	u64 main_image_index;
+	tiff_ifd_t* main_image_ifd; // level 0 of the WSI; in Philips TIFF it's typically the first IFD
+	u64 main_image_ifd_index;
 	tiff_ifd_t* macro_image; // in Philips TIFF: typically the second-to-last IFD
 	u64 macro_image_index;
 	tiff_ifd_t* label_image; // in Philips TIFF: typically the last IFD
 	u64 label_image_index;
-	u64 level_count;
-	tiff_ifd_t* level_images;
-	u64 level_image_index;
+	u64 level_image_ifd_count;
+	tiff_ifd_t* level_images_ifd;
+	u64 level_images_ifd_index;
 	bool8 is_bigtiff;
 	bool8 is_big_endian;
 	float mpp_x;
 	float mpp_y;
+	i32 max_downsample_level;
 };
 
 #pragma pack(push, 1)
@@ -256,7 +274,7 @@ typedef struct {
 	u64 main_image_index; // level 0 of the WSI; in Philips TIFF it's typically the first IFD
 	u64 macro_image_index; // in Philips TIFF: typically the second-to-last IFD
 	u64 label_image_index; // in Philips TIFF: typically the last IFD
-	u64 level_count;
+	u64 level_image_ifd_count;
 	u64 level_image_index;
 	u32 bytesize_of_offsets;
 	bool8 is_bigtiff;

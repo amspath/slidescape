@@ -22,11 +22,10 @@
 #include <glad/glad.h>
 #endif
 
-#define TIFF_VERBOSE 0
-
 #include <stdio.h>
 #include <sys/stat.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "lz4.h"
 
@@ -81,12 +80,18 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_SAMPLES_PER_PIXEL: result = "SamplesPerPixel"; break;
 		case TIFF_TAG_ROWS_PER_STRIP: result = "RowsPerStrip"; break;
 		case TIFF_TAG_STRIP_BYTE_COUNTS: result = "StripByteCounts"; break;
+		case TIFF_TAG_X_RESOLUTION: result = "XResolution"; break;
+		case TIFF_TAG_Y_RESOLUTION: result = "YResolution"; break;
 		case TIFF_TAG_PLANAR_CONFIGURATION: result = "PlanarConfiguration"; break;
+		case TIFF_TAG_RESOLUTION_UNIT: result = "ResolutionUnit"; break;
 		case TIFF_TAG_SOFTWARE: result = "Software"; break;
 		case TIFF_TAG_TILE_WIDTH: result = "TileWidth"; break;
 		case TIFF_TAG_TILE_LENGTH: result = "TileLength"; break;
 		case TIFF_TAG_TILE_OFFSETS: result = "TileOffsets"; break;
 		case TIFF_TAG_TILE_BYTE_COUNTS: result = "TileByteCounts"; break;
+		case TIFF_TAG_SAMPLE_FORMAT: result = "SampleFormat"; break;
+		case TIFF_TAG_S_MIN_SAMPLE_VALUE: result = "SMinSampleValue"; break;
+		case TIFF_TAG_S_MAX_SAMPLE_VALUE: result = "SMaxSampleValue"; break;
 		case TIFF_TAG_JPEG_TABLES: result = "JPEGTables"; break;
 		case TIFF_TAG_YCBCRSUBSAMPLING: result = "YCbCrSubSampling"; break;
 		case TIFF_TAG_REFERENCEBLACKWHITE: result = "ReferenceBlackWhite"; break;
@@ -190,8 +195,7 @@ tiff_rational_t* tiff_read_field_rationals(tiff_t* tiff, tiff_tag_t* tag) {
 		file_read_at_offset(rationals, tiff->fp, tag->offset, tag->data_count * sizeof(tiff_rational_t));
 	} else {
 		// data is inlined
-		rationals = (tiff_rational_t*) malloc(sizeof(u64));
-		rationals[0] = *(tiff_rational_t*) tag->data_u64;
+		rationals[0] = *(tiff_rational_t*) &tag->data_u64;
 	}
 
 	if (tiff->is_big_endian) {
@@ -203,6 +207,25 @@ tiff_rational_t* tiff_read_field_rationals(tiff_t* tiff, tiff_tag_t* tag) {
 	}
 
 	return rationals;
+}
+
+// read only one rational
+tiff_rational_t tiff_read_field_rational(tiff_t* tiff, tiff_tag_t* tag) {
+	tiff_rational_t result = {};
+	if (tag->data_is_offset) {
+		tiff_rational_t* rational = tiff_read_field_rationals(tiff, tag);
+		ASSERT(rational);
+		result = *rational;
+		free(rational);
+	} else {
+		result = *(tiff_rational_t*) &tag->data_u64;
+	}
+	return result;
+}
+
+float tiff_rational_to_float(tiff_rational_t rational) {
+	float result = ((float)(u32)rational.a) / ((float)(u32)rational.b);
+	return result;
 }
 
 bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
@@ -323,6 +346,23 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				printf("%.500s\n", ifd->image_description);
 #endif
 			} break;
+			case TIFF_TAG_X_RESOLUTION: {
+				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
+				ifd->x_resolution = resolution;
+#if TIFF_VERBOSE
+				printf("   %g\n", tiff_rational_to_float(resolution));
+#endif
+			} break;
+			case TIFF_TAG_Y_RESOLUTION: {
+				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
+				ifd->y_resolution = resolution;
+#if TIFF_VERBOSE
+				printf("   %g\n", tiff_rational_to_float(resolution));
+#endif
+			} break;
+			case TIFF_TAG_RESOLUTION_UNIT: {
+				ifd->resolution_unit = tag->data_u16; //
+			} break;
 			case TIFF_TAG_TILE_WIDTH: {
 				ifd->tile_width = tag->data_u32;
 			} break;
@@ -367,7 +407,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			} break;
 			case TIFF_TAG_REFERENCEBLACKWHITE: {
 				ifd->reference_black_white_rational_count = tag->data_count;
-				ifd->reference_black_white = tiff_read_field_rationals(tiff, tag); //TODO: free, add to serialized format
+				ifd->reference_black_white = tiff_read_field_rationals(tiff, tag); //TODO: add to serialized format
 				if (ifd->reference_black_white == NULL) {
 					free(tags);
 					return false; // failed
@@ -484,41 +524,48 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				}
 
 				// TODO: make more robust
-				// Assume the first IFD is the main image, and also level 0
-				tiff->main_image = tiff->ifds;
-				tiff->main_image_index = 0;
-				tiff->level_images = tiff->main_image;
-				tiff->level_image_index = 0;
+				// Assume the first IFD is the main image, and also level 0.
+				// (Are there any counterexamples out there?)
+				tiff->main_image_ifd = tiff->ifds;
+				tiff->main_image_ifd_index = 0;
+				tiff->level_images_ifd = tiff->main_image_ifd;
+				tiff->level_images_ifd_index = 0;
 
-				// TODO: make more robust
-				u64 level_counter = 0;
-				for (i32 i = 0; i < tiff->ifd_count; ++i) {
-					tiff_ifd_t* ifd = tiff->ifds + i;
-					if (ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) ++level_counter;
-				}
-				tiff->level_count = level_counter;
-
-				// TODO: make more robust
+				// Determine the resolution of the base level
 				tiff->mpp_x = tiff->mpp_y = 0.25f;
-				float um_per_pixel = 0.25f;
-				for (i32 i = 0; i < tiff->level_count; ++i) {
-					tiff_ifd_t* ifd = tiff->level_images + i;
-					// TODO: allow other tile sizes?
-					ASSERT(ifd->tile_width == 512);
-					ASSERT(ifd->tile_height == 512);
-					ifd->um_per_pixel_x = um_per_pixel;
-					ifd->um_per_pixel_y = um_per_pixel;
+				tiff_ifd_t* main_image = tiff->main_image_ifd;
+				if (main_image->x_resolution.b > 0 && main_image->y_resolution.b > 0) {
+					if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
+						float pixels_per_centimeter_x = tiff_rational_to_float(main_image->x_resolution);
+						float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
+						tiff->mpp_x = 10000.0f / pixels_per_centimeter_x;
+						tiff->mpp_y = 10000.0f / pixels_per_centimeter_y;
+					}
+				}
+
+				float main_image_width = (float) main_image->image_width;
+				tiff->max_downsample_level = 0;
+				tiff->level_image_ifd_count = 0;
+				for (i32 ifd_index = 0; ifd_index < tiff->ifd_count; ++ifd_index) {
+					tiff_ifd_t* ifd = tiff->ifds + ifd_index;
+					if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
+						++tiff->level_image_ifd_count;
+					}
+
+					float level_width = (float)ifd->image_width;
+					float raw_downsample_factor = main_image_width / level_width;
+					float raw_downsample_level = log2f(raw_downsample_factor);
+					ifd->downsample_level = roundf(raw_downsample_level);
+					ifd->downsample_factor = exp2f((float)ifd->downsample_level);
+					tiff->max_downsample_level = MAX(ifd->downsample_level, tiff->max_downsample_level);
+					ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
+					ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
 					ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
 					ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
-
-					um_per_pixel *= 2.0f; // downsample, so at higher levels there are more pixels per micrometer
+					DUMMY_STATEMENT;
 				}
-
-
 				success = true;
-
 			}
-
 		}
 		// TODO: better error handling than this crap
 		fail:;
@@ -573,11 +620,11 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 	tiff_serial_header_t serial_header = (tiff_serial_header_t){
 			.filesize = tiff->filesize,
 			.ifd_count = tiff->ifd_count,
-			.main_image_index = tiff->main_image_index,
+			.main_image_index = tiff->main_image_ifd_index,
 			.macro_image_index = tiff->macro_image_index,
 			.label_image_index = tiff->label_image_index,
-			.level_count = tiff->level_count,
-			.level_image_index = tiff->level_image_index,
+			.level_image_ifd_count = tiff->level_image_ifd_count,
+			.level_image_index = tiff->level_images_ifd_index,
 			.bytesize_of_offsets = tiff->bytesize_of_offsets,
 			.is_bigtiff = tiff->is_bigtiff,
 			.is_big_endian = tiff->is_big_endian,
@@ -802,15 +849,15 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	tiff->bytesize_of_offsets = serial_header->bytesize_of_offsets;
 	tiff->ifd_count = serial_header->ifd_count;
 	tiff->ifds = NULL; // set later
-	tiff->main_image = NULL; // set later
-	tiff->main_image_index = serial_header->main_image_index;
+	tiff->main_image_ifd = NULL; // set later
+	tiff->main_image_ifd_index = serial_header->main_image_index;
 	tiff->macro_image = NULL; // set later
 	tiff->macro_image_index = serial_header->macro_image_index;
 	tiff->label_image = NULL; // set later
 	tiff->label_image_index = serial_header->label_image_index;
-	tiff->level_count = serial_header->level_count;
-	tiff->level_images = NULL; // set later
-	tiff->level_image_index = 0; // set later
+	tiff->level_image_ifd_count = serial_header->level_image_ifd_count;
+	tiff->level_images_ifd = NULL; // set later
+	tiff->level_images_ifd_index = 0; // set later
 	tiff->is_bigtiff = serial_header->is_bigtiff;
 	tiff->is_big_endian = serial_header->is_big_endian;
 	tiff->mpp_x = serial_header->mpp_x;
@@ -939,9 +986,9 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 
 	// make some remaining assumptions
-	tiff->main_image = 	tiff->ifds + tiff->main_image_index;
+	tiff->main_image_ifd = tiff->ifds + tiff->main_image_ifd_index;
 	tiff->macro_image = tiff->ifds + tiff->macro_image_index; // TODO: might not exist??
-	tiff->level_images = tiff->ifds + tiff->level_image_index; // TODO: might not exist??
+	tiff->level_images_ifd = tiff->ifds + tiff->level_images_ifd_index; // TODO: might not exist??
 
 	// todo: flag empty tiles so they don't need to be loaded
 
