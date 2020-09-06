@@ -1,8 +1,5 @@
 #include "common.h"
 
-#include <stdio.h>
-#include <sys/stat.h>
-
 #include "platform.h"
 
 
@@ -37,6 +34,21 @@ mem_t* platform_read_entire_file(const char* filename) {
 		}
 		fclose(fp);
 	}
+	return result;
+}
+
+
+u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
+	fpos_t prev_read_pos = {0}; // NOTE: fpos_t may be a struct!
+	int ret = fgetpos64(fp, &prev_read_pos); // for restoring the file position later
+	ASSERT(ret == 0); (void)ret;
+
+	fseeko64(fp, offset, SEEK_SET);
+	u64 result = fread(dest, num_bytes, 1, fp);
+
+	ret = fsetpos64(fp, &prev_read_pos); // restore previous file position
+	ASSERT(ret == 0); (void)ret;
+
 	return result;
 }
 

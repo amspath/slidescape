@@ -19,37 +19,32 @@ include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
 
-set(JPEG_SOURCE_FILES deps/jpeg/jerror.c
-        deps/jpeg/jcapimin.c
-        deps/jpeg/jcomapi.c
-        deps/jpeg/jdapimin.c
-        deps/jpeg/jdapistd.c
-        deps/jpeg/jmemmgr.c
-        deps/jpeg/jmemnobs.c
-        deps/jpeg/jcmarker.c
-        deps/jpeg/jdmarker.c
-        deps/jpeg/jdinput.c
-        deps/jpeg/jdapistd.c
-        deps/jpeg/jdmaster.c
-        deps/jpeg/jutils.c
-        deps/jpeg/jquant1.c
-        deps/jpeg/jquant2.c
-        deps/jpeg/jdmerge.c
-        deps/jpeg/jdcolor.c
-        deps/jpeg/jdsample.c
-        deps/jpeg/jdpostct.c
-        deps/jpeg/jddctmgr.c
-        deps/jpeg/jdarith.c
-        deps/jpeg/jdhuff.c
-        deps/jpeg/jdcoefct.c
-        deps/jpeg/jdmainct.c
-        deps/jpeg/jidctflt.c
-        deps/jpeg/jidctfst.c
-        deps/jpeg/jidctred.c
-        deps/jpeg/jidctint.c
-        deps/jpeg/jaricom.c
-        deps/jpeg/jdphuff.c
+# libjpeg-turbo requires these files for JPEG decoding support
+set(JPEG_SOURCE_FILES
+        jerror.c    jaricom.c   jcapimin.c  jcmarker.c  jcomapi.c
+        jdapimin.c  jdapistd.c  jdapistd.c  jdarith.c   jdcoefct.c
+        jdcolor.c   jddctmgr.c  jdhuff.c    jdinput.c   jdmainct.c
+        jdmarker.c  jdmaster.c  jdmerge.c   jdphuff.c   jdpostct.c
+        jdsample.c  jidctflt.c  jidctfst.c  jidctint.c  jidctred.c
+        jmemmgr.c   jmemnobs.c  jquant1.c   jquant2.c   jutils.c
 )
+
+# extra files needed for JPEG compression support
+set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES}
+        jcapistd.c  jdatadst.c  jcparam.c   jcinit.c    jcmaster.c
+        jccolor.c   jcsample.c  jcprepct.c  jcdctmgr.c  jcarith.c
+        jctrans.c   jchuff.c    jccoefct.c  jcmainct.c  jcphuff.c
+        jfdctflt.c  jfdctfst.c  jfdctint.c
+)
+
+# https://stackoverflow.com/questions/13103018/how-to-prepend-cmake-current-source-dir-to-all-files-in-variable
+function(prepend_path SOURCE_FILES PREFIX)
+    foreach(SOURCE_FILE ${${SOURCE_FILES}})
+        set(MODIFIED ${MODIFIED} ${PREFIX}/${SOURCE_FILE})
+    endforeach()
+    set(${SOURCE_FILES} ${MODIFIED} PARENT_SCOPE)
+endfunction()
+prepend_path(JPEG_SOURCE_FILES deps/jpeg)
 
 set(WITH_SIMD 1) # Set to 0 to disable the SIMD code for libjpeg-turbo
 add_subdirectory(deps/jpeg/simd)
@@ -59,46 +54,50 @@ else()
     set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} deps/jpeg/jsimd_none.c)
 endif()
 
+set(VIEWER_SOURCE_FILES
+        win32_main.c
+        platform.c
+        viewer.c
+        glad.c
+        stringutils.c
+        mathutils.c
+        shader.c
+        tiff.c
+        tiff_write.c
+        caselist.c
+        annotation.cpp
+        openslide.c
+        imgui.cpp
+        imgui_demo.cpp
+        imgui_draw.cpp
+        imgui_widgets.cpp
+        imgui_impl_opengl3.cpp
+        imgui_impl_win32.cpp
+        gui.cpp
+        jpeg_decoder.c
+        tlsclient.c
+        lz4.c
+        parson.c
+        yxml.c
+)
+prepend_path(VIEWER_SOURCE_FILES src)
+
 # client only supported on Windows x64 for now
 if (WIN32)
-add_executable(slideviewer
-        src/win32_main.c
-        src/platform.c
-        src/viewer.c
-        src/glad.c
-        src/stringutils.c
-        src/mathutils.c
-        src/shader.c
-        src/tiff.c
-        src/caselist.c
-        src/annotation.cpp
-        src/openslide.c
-        src/imgui.cpp
-        src/imgui_demo.cpp
-        src/imgui_draw.cpp
-        src/imgui_widgets.cpp
-        src/imgui_impl_opengl3.cpp
-        src/imgui_impl_win32.cpp
-        src/gui.cpp
-        src/jpeg_decoder.c
-        src/tlsclient.c
-        ${JPEG_SOURCE_FILES}
-        src/lz4.c
-        src/parson.c
-        src/yxml.c
-)
+add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES})
 target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 endif(WIN32)
 
-add_executable(slideserver
-        src/platform.c
-        src/server.c
-        src/tiff.c
-        src/jpeg_decoder.c
-        ${JPEG_SOURCE_FILES}
-        src/lz4.c
-        src/stringutils.c
+set(SERVER_SOURCE_FILES
+        platform.c
+        server.c
+        tiff.c
+        jpeg_decoder.c
+        lz4.c
+        stringutils.c
 )
+prepend_path(SERVER_SOURCE_FILES src)
+add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES})
 target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
 if (WIN32)

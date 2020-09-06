@@ -20,7 +20,6 @@
 #include "platform.h"
 
 #include <glad/glad.h>
-#include <stdio.h>
 
 #include "stringutils.h"
 #include "../stringified_shaders.c"

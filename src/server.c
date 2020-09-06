@@ -38,7 +38,7 @@
 #define socklen_t int
 #else
 #include <sys/socket.h>
-    #include <arpa/inet.h>
+#include <arpa/inet.h>
 #endif
 
 #define LTM_DESC

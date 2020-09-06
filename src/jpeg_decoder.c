@@ -1,6 +1,4 @@
 #include "common.h"
-#include <stdio.h>
-#include <stdlib.h>
 
 #ifdef TARGET_EMSCRIPTEN
 #include <emscripten/emscripten.h>
@@ -62,6 +60,45 @@ void setup_jpeg_source(j_decompress_ptr cinfo, uint8_t *input_ptr, uint32_t inpu
 	src->next_input_byte = input_ptr;
 }
 
+
+// https://www.ridgesolutions.ie/index.php/2019/12/10/libjpeg-example-encode-jpeg-to-memory-buffer-instead-of-file/
+
+
+void encode_tile(u8* pixels, i32 width, i32 height, i32 quality,
+				 u8** tables_buffer, u32* tables_size_ptr, u8** jpeg_buffer, u32* jpeg_size_ptr) {
+	struct jpeg_compress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+
+	cinfo.err = jpeg_std_error(&jerr);
+
+	jpeg_create_compress(&cinfo);
+	cinfo.image_width = width;
+	cinfo.image_height = height;
+
+	cinfo.input_components = 4;
+	cinfo.in_color_space = JCS_EXT_BGRA;
+
+	jpeg_set_defaults(&cinfo);
+	jpeg_set_quality(&cinfo, quality, TRUE);
+
+	jpeg_mem_dest(&cinfo, tables_buffer, (unsigned long*) tables_size_ptr); // libjpeg-turbo will allocate the buffer
+	jpeg_write_tables(&cinfo);
+
+	jpeg_mem_dest(&cinfo, jpeg_buffer, (unsigned long*) jpeg_size_ptr); // libjpeg-turbo will allocate the buffer
+	jpeg_start_compress(&cinfo, FALSE);
+
+	i32 row_stride = width * cinfo.input_components;
+	JSAMPROW row_pointer[1];
+	while (cinfo.next_scanline < cinfo.image_height) {
+		row_pointer[0] = pixels + (cinfo.next_scanline * row_stride);
+		jpeg_write_scanlines(&cinfo, row_pointer, 1);
+	}
+
+	jpeg_finish_compress(&cinfo);
+	jpeg_destroy_compress(&cinfo);
+
+}
+
 EMSCRIPTEN_KEEPALIVE
 boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool32 is_YCbCr) {
 	struct jpeg_decompress_struct cinfo;
@@ -90,7 +127,7 @@ boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_pt
 	}
 
 	cinfo.jpeg_color_space = is_YCbCr ? JCS_YCbCr : JCS_RGB;
-	cinfo.out_color_space = JCS_RGB;
+	cinfo.out_color_space = JCS_EXT_BGRA;
 
 	jpeg_start_decompress(&cinfo);
 
@@ -100,22 +137,9 @@ boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_pt
 	JSAMPARRAY buffer = (*cinfo.mem->alloc_sarray)
 			((j_common_ptr) &cinfo, JPOOL_IMAGE, source_row_stride, 1);
 
-	int source_offset;
-	int target_offset;
 	while (cinfo.output_scanline < cinfo.output_height) {
 		(void) jpeg_read_scanlines(&cinfo, buffer, 1);
-
-		for (int i = 0; i < row_width; i++) {
-			source_offset = i * 3;
-			target_offset = i * 4;
-
-			// TODO: what to do here, BGRA or RGBA?
-			output_ptr[target_offset + 0] = buffer[0][source_offset + 2];
-			output_ptr[target_offset + 1] = buffer[0][source_offset + 1];
-			output_ptr[target_offset + 2] = buffer[0][source_offset + 0];
-			output_ptr[target_offset + 3] = 255;
-		}
-
+		memcpy(output_ptr, buffer[0], target_row_stride);
 		output_ptr += target_row_stride;
 	}
 

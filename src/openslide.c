@@ -25,7 +25,6 @@
 #ifdef _WIN32
 #include <windows.h>
 #include "win32_main.h" // for win32_diagnostic()
-#include <stdio.h>
 
 bool32 init_openslide() {
 	i64 debug_start = get_clock();

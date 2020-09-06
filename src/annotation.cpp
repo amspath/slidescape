@@ -23,8 +23,6 @@
 #include "gui.h"
 #include "yxml.h"
 
-#include <math.h>
-
 #include "imgui.h"
 #include "imgui_internal.h"
 

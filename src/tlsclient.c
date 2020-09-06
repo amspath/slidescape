@@ -20,8 +20,6 @@
 #undef MIN
 #undef MAX // these are redefined by TLSe
 
-#include <stdio.h>
-#include <sys/types.h>
 #ifdef _WIN32
     #include <winsock2.h>
     #define socklen_t int

@@ -19,7 +19,6 @@
 #include "common.h"
 #define MATHUTILS_IMPL
 #include "mathutils.h"
-#include <math.h>
 
 rect2i clip_rect(rect2i* first, rect2i* second) {
 	i32 x0 = MAX(first->x, second->x);

@@ -19,8 +19,6 @@
 #include "common.h"
 #include "stringutils.h"
 
-#include <string.h>
-
 void dots_to_underscores(char* s, i32 max) {
 	for (char* pos = s; pos < s + max; ++pos) {
 		char c = *pos;

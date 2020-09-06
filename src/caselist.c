@@ -18,8 +18,6 @@
 
 #include "common.h"
 
-#include <stdio.h>
-
 #include "platform.h"
 #include "parson.h"
 #include "stringutils.h"

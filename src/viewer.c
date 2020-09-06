@@ -1452,6 +1452,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			glStencilMask(0x00);
 			glStencilFunc(GL_EQUAL, 1, 0xFF);
 		} else {
+			// TODO: do not draw beyond the borders of the image (instead of cropping the tiles themselves)
 			glDisable(GL_STENCIL_TEST);
 		}
 

@@ -286,6 +286,7 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
 mem_t* platform_allocate_mem_buffer(size_t capacity);
 mem_t* platform_read_entire_file(const char* filename);
+u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 
 void mouse_show();
 void mouse_hide();

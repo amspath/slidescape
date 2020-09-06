@@ -17,15 +17,11 @@
 */
 
 #include "common.h"
+#include "mathutils.h"
 
 #ifndef IS_SERVER
 #include <glad/glad.h>
 #endif
-
-#include <stdio.h>
-#include <sys/stat.h>
-#include <stdlib.h>
-#include <math.h>
 
 #include "lz4.h"
 
@@ -97,20 +93,6 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_REFERENCEBLACKWHITE: result = "ReferenceBlackWhite"; break;
 		default: break;
 	}
-	return result;
-}
-
-u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
-	fpos_t prev_read_pos = {0}; // NOTE: fpos_t may be a struct!
-	int ret = fgetpos64(fp, &prev_read_pos); // for restoring the file position later
-	ASSERT(ret == 0); (void)ret;
-
-	fseeko64(fp, offset, SEEK_SET);
-	u64 result = fread(dest, num_bytes, 1, fp);
-
-	ret = fsetpos64(fp, &prev_read_pos); // restore previous file position
-	ASSERT(ret == 0); (void)ret;
-
 	return result;
 }
 

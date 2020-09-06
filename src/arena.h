@@ -22,9 +22,9 @@ static void init_arena(arena_t* arena, size_t size, void* base) {
 	};
 }
 
-#define push_struct(arena, type) (type*)push_size_((arena), sizeof(type))
-#define push_array(arena, count, type) (type*) push_size_((arena), (count)* sizeof(type))
-#define push_size(arena, size) push_size_((arena), (size))
+#define arena_push_struct(arena, type) (type*)push_size_((arena), sizeof(type))
+#define arena_push_array(arena, count, type) (type*) push_size_((arena), (count)* sizeof(type))
+#define arena_push_size(arena, size) push_size_((arena), (size))
 static void* push_size_(arena_t* arena, size_t size) {
 	ASSERT((arena->used + size) <= arena->size);
 	void* result = arena->base + arena->used;

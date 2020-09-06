@@ -29,9 +29,6 @@
 
 #include "viewer.h"
 
-#include <stdio.h>
-#include <sys/stat.h>
-
 //#define WIN32_LEAN_AND_MEAN
 //#define VC_EXTRALEAN
 #include <windows.h>
@@ -1201,7 +1198,7 @@ void echo_task(int logical_thread_index, void* userdata) {
 
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
-	i32 worker_thread_count = total_thread_count - 1;
+	i32 worker_thread_count = 1;//total_thread_count - 1;
 	work_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
 
 	// NOTE: the main thread is considered thread 0.
