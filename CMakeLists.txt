@@ -25,12 +25,12 @@ set(JPEG_SOURCE_FILES deps/jpeg/jerror.c
         deps/jpeg/jdapimin.c
         deps/jpeg/jdapistd.c
         deps/jpeg/jmemmgr.c
+        deps/jpeg/jmemnobs.c
         deps/jpeg/jcmarker.c
         deps/jpeg/jdmarker.c
         deps/jpeg/jdinput.c
         deps/jpeg/jdapistd.c
         deps/jpeg/jdmaster.c
-        deps/jpeg/jmemansi.c
         deps/jpeg/jutils.c
         deps/jpeg/jquant1.c
         deps/jpeg/jquant2.c
@@ -45,9 +45,19 @@ set(JPEG_SOURCE_FILES deps/jpeg/jerror.c
         deps/jpeg/jdmainct.c
         deps/jpeg/jidctflt.c
         deps/jpeg/jidctfst.c
+        deps/jpeg/jidctred.c
         deps/jpeg/jidctint.c
         deps/jpeg/jaricom.c
+        deps/jpeg/jdphuff.c
 )
+
+set(WITH_SIMD 1) # Set to 0 to disable the SIMD code for libjpeg-turbo
+add_subdirectory(deps/jpeg/simd)
+if (WITH_SIMD EQUAL 1)
+    set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} $<TARGET_OBJECTS:simd> ${SIMD_OBJS})
+else()
+    set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} deps/jpeg/jsimd_none.c)
+endif()
 
 # client only supported on Windows x64 for now
 if (WIN32)
@@ -69,7 +79,6 @@ add_executable(slideviewer
         src/imgui_widgets.cpp
         src/imgui_impl_opengl3.cpp
         src/imgui_impl_win32.cpp
-#        src/cimgui.cpp
         src/gui.cpp
         src/jpeg_decoder.c
         src/tlsclient.c
