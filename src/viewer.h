@@ -239,6 +239,7 @@ typedef struct app_state_t {
 
 
 //  prototypes
+tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
 void unload_all_images(app_state_t* app_state);
 void add_image_from_tiff(app_state_t* app_state, tiff_t tiff);
 bool32 load_generic_file(app_state_t* app_state, const char* filename);
@@ -268,6 +269,13 @@ void init_opengl_stuff();
 #endif
 
 extern app_state_t global_app_state;
+
+extern i64 zoom_in_key_hold_down_start_time;
+extern i64 zoom_in_key_times_zoomed_while_holding;
+extern i64 zoom_out_key_hold_down_start_time;
+extern i64 zoom_out_key_times_zoomed_while_holding;
+
+extern v2f simple_view_pos; // used by simple images (remove?)
 
 #undef INIT
 #undef extern

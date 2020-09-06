@@ -16,13 +16,6 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#pragma once
-#include "common.h"
-#include "viewer.h"
-
-#include "shader.h"
-#include "stretchy_buffer.h"
-
 
 static u32 vbo_rect;
 static u32 ebo_rect;
@@ -105,6 +98,11 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	return texture;
 }
 
+
+void unload_texture(u32 texture) {
+	glDeleteTextures(1, &texture);
+}
+
 void init_opengl_stuff() {
 
 	basic_shader = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
@@ -126,36 +124,4 @@ void init_opengl_stuff() {
 	u32 dummy_texture_color = MAKE_BGRA(255, 255, 0, 255);
 	dummy_texture = load_texture(&dummy_texture_color, 1, 1);
 
-}
-
-
-typedef struct render_group_t {
-	u32 max_pushbuffer_size;
-	u32 pushbuffer_size;
-	u8* pushbuffer_base;
-
-} render_group_t;
-
-typedef struct render_basis_t {
-
-} render_basis_t;
-
-
-/*
-render_group_t* allocate_render_group(arena_t* arena, u32 max_pushbuffer_size) {
-	render_group_t* result = push_struct(arena, render_group_t);
-	*result = (render_group_t) {
-		.pushbuffer_base = (u8*) push_size(arena, max_pushbuffer_size),
-	};
-}
-*/
-
-void* push_render_entry(render_group_t* group, u32 size) {
-	void* result = NULL;
-	if (group->pushbuffer_size + size < group->max_pushbuffer_size) {
-		result = group->pushbuffer_base + group->pushbuffer_size;
-	} else {
-		panic();
-	}
-	return result;
 }
