@@ -1070,18 +1070,35 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 
 
 bool32 add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
-	// Circular FIFO buffer
-	i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
-	if (new_next_entry_to_submit == queue->next_entry_to_execute) {
-		printf("Warning: work queue is overflowing - job is cancelled\n");
-		return false;
+
+	for (i32 tries = 0; tries < 1000; ++tries) {
+		// Circular FIFO buffer
+		i32 original_next_entry_to_submit = queue->next_entry_to_submit;
+		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
+		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
+			printf("Warning: work queue is overflowing - job is cancelled\n");
+			return false;
+		}
+
+		i32 entry_to_submit = interlocked_compare_exchange(&queue->next_entry_to_submit,
+		                                                   new_next_entry_to_submit, original_next_entry_to_submit);
+		if (entry_to_submit == original_next_entry_to_submit) {
+//		    printf("exhange succeeded\n");
+			queue->entries[entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
+			write_barrier;
+			queue->entries[entry_to_submit].is_valid = true;
+			write_barrier;
+			interlocked_increment(&queue->completion_goal);
+//		    queue->next_entry_to_submit = new_next_entry_to_submit;
+			ReleaseSemaphore(queue->semaphore_handle, 1, NULL);
+			return true;
+		} else {
+//			printf("exchange failed, retrying (try #%d)\n", tries);
+			continue;
+		}
+
 	}
-	queue->entries[queue->next_entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
-	++queue->completion_goal;
-	write_barrier;
-	queue->next_entry_to_submit = new_next_entry_to_submit;
-	ReleaseSemaphore(queue->semaphore_handle, 1, NULL);
-	return true;
+	return false;
 }
 
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
@@ -1089,16 +1106,25 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 
 	i32 original_entry_to_execute = queue->next_entry_to_execute;
 	i32 new_next_entry_to_execute = (original_entry_to_execute + 1) % COUNT(queue->entries);
-	if (original_entry_to_execute != queue->next_entry_to_submit) {
+
+	// don't even try to execute a task if it is not yet submitted, or not yet fully submitted
+	if ((original_entry_to_execute != queue->next_entry_to_submit) && (queue->entries[original_entry_to_execute].is_valid)) {
 		i32 entry_index = interlocked_compare_exchange(&queue->next_entry_to_execute,
 		                                               new_next_entry_to_execute, original_entry_to_execute);
 		if (entry_index == original_entry_to_execute) {
+			// We have dibs to execute this task!
+			queue->entries[original_entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
 			result.data = queue->entries[entry_index].data;
 			result.callback = queue->entries[entry_index].callback;
+			if (!result.callback) {
+				printf("Error: encountered a work entry with a missing callback routine\n");
+				panic();
+			}
 			result.is_valid = true;
 			read_barrier;
 		}
 	}
+
 	return result;
 }
 

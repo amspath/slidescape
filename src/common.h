@@ -125,11 +125,13 @@ typedef int8_t bool8;
 #endif
 
 static inline void panic() {
+	printf("A fatal error occurred (aborting).\n");
+#if DO_DEBUG
 #if COMPILER_GCC
 	__builtin_trap();
-#else
-	abort();
 #endif
+#endif
+	abort();
 }
 
 #ifndef NDEBUG
