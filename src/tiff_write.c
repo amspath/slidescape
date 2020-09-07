@@ -96,15 +96,15 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 			raw_bigtiff_tag_t tag_software = {TIFF_TAG_SOFTWARE, TIFF_ASCII, software_length, software_offset};
 			raw_bigtiff_tag_t tag_tile_width = {TIFF_TAG_TILE_WIDTH, TIFF_UINT16, 1, export_tile_width};
 			raw_bigtiff_tag_t tag_tile_length = {TIFF_TAG_TILE_LENGTH, TIFF_UINT16, 1, export_tile_width};
-			u64 tile_offsets_offset; // TODO
+			u64 tile_offsets_offset = 0; // TODO
 			u64 tile_offsets_length = 0;
 			raw_bigtiff_tag_t tag_tile_offsets = {TIFF_TAG_TILE_OFFSETS, TIFF_UINT32, tile_offsets_length, tile_offsets_offset};
-			u64 tile_byte_counts_offset; // TODO
+			u64 tile_byte_counts_offset = 0; // TODO
 			u64 tile_byte_counts_length = 0;
 			raw_bigtiff_tag_t tag_tile_byte_counts = {TIFF_TAG_TILE_BYTE_COUNTS, TIFF_UINT32, tile_byte_counts_length, tile_byte_counts_offset};
 			// unused tag: SMinSampleValue
 			// unused tag: SMaxSampleValue
-			u64 jpeg_tables_offset; // TODO
+			u64 jpeg_tables_offset = 0; // TODO
 			u64 jpeg_tables_length = 0;
 			raw_bigtiff_tag_t tag_jpeg_tables = {TIFF_TAG_JPEG_TABLES, TIFF_UNDEFINED, jpeg_tables_length, jpeg_tables_offset};
 			u16 chroma_subsampling[4] = {2, 2, 0, 0};

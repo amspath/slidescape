@@ -698,6 +698,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// IO
 
+		// Retrieve completed tasks from the worker threads
+		while (is_queue_work_in_progress(&thread_message_queue)) {
+			do_worker_work(&thread_message_queue, 0);
+		}
+
 
 		// Determine the highest and lowest levels with image data that need to be loaded and rendered.
 		// The lowest needed level might be lower than the actual current downsampling level,

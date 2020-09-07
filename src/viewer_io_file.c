@@ -16,6 +16,19 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+void notify_load_tile_completed(int logical_thread_index, void* userdata) {
+	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
+	if (task_data->pixel_memory) {
+		if (task_data->tile) {
+			u32 new_texture = load_texture(task_data->pixel_memory, TILE_DIM, TILE_DIM);
+			task_data->tile->texture = new_texture;
+		}
+		free(task_data->pixel_memory);
+	}
+
+//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, task_data->level, task_data->tile_x, task_data->tile_y);
+	free(userdata);
+}
 
 void load_tile_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
@@ -34,9 +47,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
-	u8* temp_memory = (u8*) thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+	u8* temp_memory = malloc(WSI_BLOCK_SIZE);//(u8*) thread_memory->aligned_rest_of_thread_memory;
 	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
-	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory + WSI_BLOCK_SIZE;
+	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory;// + WSI_BLOCK_SIZE;
 
 
 	if (image->type == IMAGE_TYPE_TIFF) {
@@ -162,21 +175,29 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	}
 
 
-//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
+
 
 	finish_up:;
-	glEnable(GL_TEXTURE_2D);
-	u32 new_texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
-	glFinish(); // Block thread execution until all OpenGL operations have finished.
-	write_barrier;
-	tile->texture = new_texture;
-	free(task_data);
+
+	task_data->pixel_memory = temp_memory;
+	task_data->pixel_memory_size = WSI_BLOCK_SIZE;
+	//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
+	add_work_queue_entry(&thread_message_queue, notify_load_tile_completed, userdata);
+//	free(task_data);
 
 }
 
 bool32 enqueue_load_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
 	load_tile_task_t* task_data = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-	*task_data = (load_tile_task_t){ .image = image, .tile = NULL, .level = level, .tile_x = tile_x, .tile_y = tile_y };
+	*task_data = (load_tile_task_t){
+		.image = image,
+		.tile = NULL,
+		.level = level,
+		.tile_x = tile_x,
+		.tile_y = tile_y,
+		.pixel_memory = NULL, // TODO: alloc from buffer?
+		.pixel_memory_size = 0,
+	};
 
 	return add_work_queue_entry(&work_queue, load_tile_func, task_data);
 

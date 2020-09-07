@@ -958,6 +958,7 @@ void win32_init_opengl(HWND window) {
 
 
 	// Create separate OpenGL contexts for each worker thread, so that they can load textures (etc.) on the fly
+#if 0
 	ASSERT(logical_cpu_count > 0);
 	for (i32 thread_index = 1; thread_index < total_thread_count; ++thread_index) {
 		HGLRC glrc = wglCreateContextAttribsARB(dc, glrcs[0], context_attribs);
@@ -972,6 +973,7 @@ void win32_init_opengl(HWND window) {
 		}*/
 		glrcs[thread_index] = glrc;
 	}
+#endif
 
 	// Try to enable debug output on the main thread.
 #if USE_OPENGL_DEBUG_CONTEXT
@@ -1116,7 +1118,7 @@ bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
 
 
 bool32 is_queue_work_in_progress(work_queue_t* queue) {
-	bool32 result = (queue->completion_goal < queue->completion_count);
+	bool32 result = (queue->completion_goal > queue->completion_count);
 	return result;
 }
 
@@ -1141,6 +1143,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
+#if 0
 	ASSERT(main_window);
 	HDC dc = 0;
 	for (;;) {
@@ -1177,6 +1180,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
 #endif
+#endif
 
 //	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
@@ -1191,15 +1195,26 @@ DWORD WINAPI thread_proc(void* parameter) {
 
 //#define TEST_THREAD_QUEUE
 #ifdef TEST_THREAD_QUEUE
+void echo_task_completed(int logical_thread_index, void* userdata) {
+	printf("thread %d completed: %s\n", logical_thread_index, (char*) userdata);
+}
+
 void echo_task(int logical_thread_index, void* userdata) {
 	printf("thread %d: %s\n", logical_thread_index, (char*) userdata);
+
+	add_work_queue_entry(&thread_message_queue, echo_task_completed, userdata);
 }
 #endif
 
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
-	i32 worker_thread_count = 1;//total_thread_count - 1;
+	i32 worker_thread_count = total_thread_count - 1;
+
+	// Queue for newly submitted tasks
 	work_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
+
+	// Message queue for completed tasks
+	thread_message_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
@@ -1227,10 +1242,14 @@ void win32_init_multithreading() {
 	add_work_queue_entry(&work_queue, echo_task, "string 10");
 	add_work_queue_entry(&work_queue, echo_task, "string 11");
 
-	while (is_queue_work_in_progress(&work_queue)) {
-		do_worker_work(&work_queue, total_thread_count);
+//	while (is_queue_work_in_progress(&work_queue)) {
+//		do_worker_work(&work_queue, 0);
+//	}
+	while (is_queue_work_in_progress(&work_queue) || is_queue_work_in_progress((&thread_message_queue))) {
+		do_worker_work(&thread_message_queue, 0);
 	}
 #endif
+
 
 
 }

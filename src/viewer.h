@@ -137,6 +137,8 @@ typedef struct load_tile_task_t {
 	i32 tile_x;
 	i32 tile_y;
 	i32 priority;
+	u8* pixel_memory;
+	u64 pixel_memory_size;
 } load_tile_task_t;
 
 #define TILE_LOAD_BATCH_MAX 8
