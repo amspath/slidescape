@@ -983,6 +983,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	autosave(app_state, false);
 	last_section = profiler_end_section(last_section, "autosave", 10.0f);
 
+	glFinish();
+
 	float update_and_render_time = get_seconds_elapsed(app_state->last_frame_start, get_clock());
 //	printf("Frame time: %g ms\n", update_and_render_time * 1000.0f);
 

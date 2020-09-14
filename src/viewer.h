@@ -251,6 +251,7 @@ void unload_all_images(app_state_t* app_state);
 void add_image_from_tiff(app_state_t* app_state, tiff_t tiff);
 bool32 load_generic_file(app_state_t* app_state, const char* filename);
 bool32 load_image_from_file(app_state_t* app_state, const char* filename);
+void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
 bool32 was_button_pressed(button_state_t* button);

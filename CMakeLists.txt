@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse2 ${GCC_WARN_OPTIONS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 ${GCC_WARN_OPTIONS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 ${GCC_WARN_OPTIONS} -Wno-class-memaccess")
 
 # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
 set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
@@ -66,13 +66,15 @@ set(VIEWER_SOURCE_FILES
         tiff_write.c
         caselist.c
         annotation.cpp
-        openslide.c
+        openslide_api.c
         imgui.cpp
         imgui_demo.cpp
         imgui_draw.cpp
         imgui_widgets.cpp
         imgui_impl_opengl3.cpp
         imgui_impl_win32.cpp
+        imgui_freetype.cpp
+        freetype_api.c
         gui.cpp
         jpeg_decoder.c
         tlsclient.c

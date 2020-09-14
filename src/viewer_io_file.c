@@ -198,8 +198,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 void load_wsi(wsi_t* wsi, const char* filename) {
 	if (!is_openslide_loading_done) {
-		// TODO: hack! queue abused, may cause conflicts
+#if DO_DEBUG
 		printf("Waiting for OpenSlide to finish loading...\n");
+#endif
 		while (is_queue_work_in_progress(&work_queue)) {
 			do_worker_work(&work_queue, 0);
 		}

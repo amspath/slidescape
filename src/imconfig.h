@@ -24,7 +24,7 @@
 //#define IMGUI_API __declspec( dllimport )
 
 //---- Don't define obsolete functions/enums/behaviors. Consider enabling from time to time after updating to avoid using soon-to-be obsolete function/names.
-//#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 
 //---- Disable all of Dear ImGui or don't implement standard windows.
 // It is very strongly recommended to NOT disable the demo windows during development. Please read comments in imgui_demo.cpp.
@@ -87,18 +87,19 @@
 //#define ImDrawCallback MyImDrawCallback
 
 //---- Debug Tools: Macro to break in Debugger
+#ifndef NDEBUG
 // (use 'Metrics->Tools->Item Picker' to pick widgets with the mouse and break into them for easy debugging.)
 //#define IM_DEBUG_BREAK  IM_ASSERT(0)
-//#define IM_DEBUG_BREAK  __debugbreak()
+#define IM_DEBUG_BREAK()  __debugbreak()
+//#define IM_DEBUG_BREAK() __asm__ volatile("int $0x03")
 
 //---- Debug Tools: Have the Item Picker break in the ItemAdd() function instead of ItemHoverable(),
 // (which comes earlier in the code, will catch a few extra items, allow picking items other than Hovered one.)
 // This adds a small runtime cost which is why it is not enabled by default.
-//#define IMGUI_DEBUG_TOOL_ITEM_PICKER_EX
-
+#define IMGUI_DEBUG_TOOL_ITEM_PICKER_EX
 //---- Debug Tools: Enable slower asserts
 //#define IMGUI_DEBUG_PARANOID
-
+#endif
 //---- Tip: You can add extra functions within the ImGui:: namespace, here or in your own headers files.
 /*
 namespace ImGui
