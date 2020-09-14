@@ -1388,8 +1388,11 @@ int main(int argc, char** argv) {
 	while (is_program_running) {
 
 		i64 current_clock = get_clock();
+		app_state->last_frame_start = current_clock;
+
 		float delta_t = (float)(current_clock - last_clock) / (float)performance_counter_frequency;
 		last_clock = current_clock;
+		delta_t = ATMOST(2.0f / 60.0f, delta_t); // prevent physics overshoot at lag spikes
 
 		bool did_idle = win32_process_input(main_window, app_state);
 		if (did_idle) {
@@ -1401,12 +1404,7 @@ int main(int argc, char** argv) {
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 		section_end = profiler_end_section(section_end, "viewer update and render", 20.0f);
 
-		gui_draw(app_state, curr_input, dimension.width, dimension.height);
-		section_end = profiler_end_section(section_end, "gui draw", 10.0f);
-
-
-		autosave(app_state, false);
-
+		Sleep(0);
 		wglSwapBuffers(glrc_hdc);
 		section_end = profiler_end_section(section_end, "end frame", 100.0f);
 

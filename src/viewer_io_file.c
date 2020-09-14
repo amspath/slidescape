@@ -16,8 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-void notify_load_tile_completed(int logical_thread_index, void* userdata) {
-	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
+typedef struct viewer_notify_tile_completed_task_t {
+	u8* pixel_memory;
+	tile_t* tile;
+	i32 tile_width;
+} viewer_notify_tile_completed_task_t;
+
+void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
+	viewer_notify_tile_completed_task_t* task_data = (viewer_notify_tile_completed_task_t*) userdata;
 	if (task_data->pixel_memory) {
 		if (task_data->tile) {
 			u32 new_texture = load_texture(task_data->pixel_memory, TILE_DIM, TILE_DIM);
@@ -62,8 +68,6 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		// We need to check for this situation and chicken out if this is the case.
 		if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
 			printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-			// TODO: Make one single 'empty' tile texture and simply reuse that
-//		    memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 			goto finish_up;
 		}
 		u8* jpeg_tables = level_ifd->jpeg_tables;
@@ -179,27 +183,16 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	finish_up:;
 
-	task_data->pixel_memory = temp_memory;
-	task_data->pixel_memory_size = WSI_BLOCK_SIZE;
+	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
+	completion_task->pixel_memory = temp_memory;
+	completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
+	completion_task->tile = task_data->tile;
+
 	//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	add_work_queue_entry(&thread_message_queue, notify_load_tile_completed, userdata);
-//	free(task_data);
+	ASSERT(task_data->completion_callback);
+	add_work_queue_entry(&thread_message_queue, task_data->completion_callback, completion_task);
 
-}
-
-bool32 enqueue_load_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
-	load_tile_task_t* task_data = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-	*task_data = (load_tile_task_t){
-		.image = image,
-		.tile = NULL,
-		.level = level,
-		.tile_x = tile_x,
-		.tile_y = tile_y,
-		.pixel_memory = NULL, // TODO: alloc from buffer?
-		.pixel_memory_size = 0,
-	};
-
-	return add_work_queue_entry(&work_queue, load_tile_func, task_data);
+	free(userdata);
 
 }
 

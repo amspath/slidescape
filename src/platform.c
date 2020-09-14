@@ -55,3 +55,47 @@ u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
 bool file_exists(const char* filename) {
 	return (access(filename, F_OK) != -1);
 }
+
+void memrw_maybe_grow(memrw_t* buffer, u64 new_size) {
+	if (new_size > buffer->capacity) {
+		u64 new_capacity = next_pow2(new_size);
+		void* new_ptr = realloc(buffer->data, new_capacity);
+		if (!new_ptr) panic();
+		buffer->data = new_ptr;
+#if DO_DEBUG
+		printf("memrw_push(): expanded buffer size from %u to %u\n", buffer->capacity, new_capacity);
+#endif
+		buffer->capacity = new_capacity;
+	}
+}
+
+u64 memrw_push(memrw_t* buffer, void* data, u64 size) {
+	u64 new_size = buffer->used_size + size;
+	memrw_maybe_grow(buffer, new_size);
+	u64 write_offset = buffer->used_size;
+	void* write_pos = buffer->data + write_offset;
+	if (data) {
+		memcpy(write_pos, data, size);
+	} else {
+		memset(write_pos, 0, size);
+	}
+	buffer->used_size += size;
+	return write_offset;
+}
+
+void memrw_init(memrw_t* buffer, u64 capacity) {
+	memset(buffer, 0, sizeof(*memset));
+	buffer->data = (u8*) malloc(capacity);
+	buffer->capacity = capacity;
+}
+
+memrw_t memrw_create(u64 capacity) {
+	memrw_t result = {};
+	memrw_init(&result, capacity);
+	return result;
+}
+
+void memrw_destroy(memrw_t* buffer) {
+	if (buffer->data) free(buffer->data);
+	memset(buffer, 0, sizeof(*buffer));
+}

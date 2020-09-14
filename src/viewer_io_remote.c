@@ -24,9 +24,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
-	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
-	u8* temp_memory = (u8*) thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
-	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+//	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
+//	u8* temp_memory = (u8*) thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
+//	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 
 
 	if (image->type == IMAGE_TYPE_TIFF) {
@@ -62,7 +62,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 			}
 
 
-			u32 new_textures[TILE_LOAD_BATCH_MAX] = {0};
+//			u32 new_textures[TILE_LOAD_BATCH_MAX] = {0};
 
 			// Note: First download everything, then decode and upload everything to the GPU.
 			// It would be faster to pipeline this somehow.
@@ -79,6 +79,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 					i64 chunk_offset_in_read_buffer = 0;
 					for (i32 i = 0; i < batch_size; ++i) {
+						u8* pixel_memory = malloc(WSI_BLOCK_SIZE);
+						memset(pixel_memory, 0xFF, WSI_BLOCK_SIZE);
+
 						u8* current_chunk = content + chunk_offset_in_read_buffer;
 						chunk_offset_in_read_buffer += chunk_sizes[i];
 
@@ -92,20 +95,29 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 							// JPEG stream is empty
 						} else {
 							if (decode_tile(jpeg_tables, jpeg_tables_length, current_chunk, chunk_sizes[i],
-							                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+							                pixel_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
 //		                    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 							} else {
 								printf("[thread %d] failed to decode level %d, tile (%d, %d)\n", logical_thread_index, task->level, task->tile_x, task->tile_y);
 							}
 						}
 
-						new_textures[i] = load_texture(temp_memory, TILE_DIM, TILE_DIM);
+						viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
+						completion_task->pixel_memory = pixel_memory;
+						completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
+						completion_task->tile = task->tile;
+
+						ASSERT(task->completion_callback);
+						add_work_queue_entry(&thread_message_queue, task->completion_callback, completion_task);
+
+						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM);
 					}
 
 				}
 
 			}
 
+#if 0
 			// Note: setting task->tile->texture to the texture handle lets the main thread know that the texture
 			// is ready for use. However, the texture may still not *actually* be available until OpenGL has done its
 			// magic, so to be 100% sure we need to call glFinish() before setting task->tile->texture
@@ -119,10 +131,13 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				load_tile_task_t* task = batch->tile_tasks + i;
 				task->tile->texture = new_textures[i];
 			}
+#endif
 
 			free(read_buffer);
 		}
 
 	}
+
+	free(userdata);
 
 }

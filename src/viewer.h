@@ -83,6 +83,11 @@ typedef struct tile_t {
 	bool8 is_empty;
 } tile_t;
 
+typedef struct cached_tile_t {
+	i32 tile_width;
+	u8* pixels;
+} cached_tile_t;
+
 typedef struct {
 	tile_t* tiles;
 	u64 tile_count;
@@ -137,8 +142,7 @@ typedef struct load_tile_task_t {
 	i32 tile_x;
 	i32 tile_y;
 	i32 priority;
-	u8* pixel_memory;
-	u64 pixel_memory_size;
+	work_queue_callback_t* completion_callback;
 } load_tile_task_t;
 
 #define TILE_LOAD_BATCH_MAX 8
@@ -237,6 +241,7 @@ typedef struct app_state_t {
 	bool allow_idling_next_frame;
 	u32 mouse_mode;
 	u32 mouse_tool;
+	i64 last_frame_start;
 } app_state_t;
 
 

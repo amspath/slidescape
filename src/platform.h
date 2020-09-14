@@ -40,6 +40,12 @@ typedef struct mem_t {
 	u8 data[0];
 } mem_t;
 
+typedef struct memrw_t {
+	u8* data;
+	u64 used_size;
+	u64 capacity;
+} memrw_t;
+
 typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
 
 typedef struct work_queue_entry_t {
@@ -298,6 +304,12 @@ bool32 is_queue_work_in_progress(work_queue_t* queue);
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);
 
 bool file_exists(const char* filename);
+
+void memrw_maybe_grow(memrw_t* buffer, u64 new_size);
+u64 memrw_push(memrw_t* buffer, void* data, u64 size);
+void memrw_init(memrw_t* buffer, u64 capacity);
+memrw_t memrw_create(u64 capacity);
+void memrw_destroy(memrw_t* buffer);
 
 // globals
 #if defined(WIN32_MAIN_IMPL)

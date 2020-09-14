@@ -449,6 +449,97 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	return true; // success
 }
 
+// Calculate various derived values (better name for this procedure??)
+void tiff_post_init(tiff_t* tiff) {
+	// TODO: make more robust
+	// Assume the first IFD is the main image, and also level 0.
+	// (Are there any counterexamples out there?)
+	tiff->main_image_ifd = tiff->ifds;
+	tiff->main_image_ifd_index = 0;
+	tiff->level_images_ifd = tiff->main_image_ifd;
+	tiff->level_images_ifd_index = 0;
+
+	// Determine the resolution of the base level
+	tiff->mpp_x = tiff->mpp_y = 0.25f;
+	tiff_ifd_t* main_image = tiff->main_image_ifd;
+	if (main_image->x_resolution.b > 0 && main_image->y_resolution.b > 0) {
+		if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
+			float pixels_per_centimeter_x = tiff_rational_to_float(main_image->x_resolution);
+			float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
+			tiff->mpp_x = 10000.0f / pixels_per_centimeter_x;
+			tiff->mpp_y = 10000.0f / pixels_per_centimeter_y;
+		}
+	}
+
+	float main_image_width = (float) main_image->image_width;
+	float main_image_height = (float) main_image->image_height;
+	tiff->max_downsample_level = 0;
+	i32 last_downsample_level = 0;
+	tiff->level_image_ifd_count = 0;
+	for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+		tiff_ifd_t* ifd = tiff->ifds + ifd_index;
+		if (ifd->tile_count == 0) {
+			break; // not a tiled image, so cannot be part of the pyramid (could be macro or label image)
+		}
+		if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
+			++tiff->level_image_ifd_count;
+		}
+
+		float level_width = (float)ifd->image_width;
+		float raw_downsample_factor = main_image_width / level_width;
+		float raw_downsample_level = log2f(raw_downsample_factor);
+		i32 downsample_level = (i32) roundf(raw_downsample_level);
+
+		// Some TIFF files have the width/height set to an integer multiple of the tile size.
+		// For the most zoomed out levels, this makes it harder to calculate the actual downsampling level
+		// (because we might underestimate it). So we need to do extra work to deduce the downsampling
+		// level in these corner cases.
+		if (ifd->image_width % ifd->tile_width == 0) {
+			if (ifd->width_in_tiles >= 1 && ifd->height_in_tiles >= 1) {
+				u32 min_possible_width = ifd->tile_width * (ifd->width_in_tiles-1) + 1;
+				u32 max_possible_width = ifd->tile_width * (ifd->width_in_tiles) ;
+				float downsample_factor_upper_bound = main_image_width / (float)min_possible_width;
+				float downsample_factor_lower_bound = main_image_width / (float)max_possible_width;
+
+				if (ifd->image_height % ifd->tile_height == 0) {
+					// constrain further based on the vertical tile count
+					u32 min_possible_height = ifd->tile_height * (ifd->height_in_tiles-1) + 1;
+					u32 max_possible_height = ifd->tile_height * (ifd->height_in_tiles);
+
+					float downsample_factor_y_upper_bound = main_image_height / (float)min_possible_height;
+					float downsample_factor_y_lower_bound = main_image_height / (float)max_possible_height;
+
+					downsample_factor_upper_bound = MIN(downsample_factor_upper_bound, downsample_factor_y_upper_bound);
+					downsample_factor_lower_bound = MAX(downsample_factor_lower_bound, downsample_factor_y_lower_bound);
+				}
+
+				float level_lower_bound = log2f(downsample_factor_lower_bound);
+				float level_upper_bound = log2f(downsample_factor_upper_bound);
+
+				i32 discrete_level_lower_bound = (i32) ceilf(level_lower_bound);
+				i32 discrete_level_upper_bound = (i32) floorf(level_upper_bound);
+
+				if (discrete_level_lower_bound == discrete_level_upper_bound) {
+					downsample_level = discrete_level_lower_bound;
+				} else {
+					// ambiguity could not be resolved. Use last resort.
+					downsample_level = MIN(discrete_level_lower_bound, last_downsample_level + 1);
+				}
+				DUMMY_STATEMENT;
+			}
+		}
+
+		ifd->downsample_level = last_downsample_level = downsample_level;
+		ifd->downsample_factor = exp2f((float)ifd->downsample_level);
+		tiff->max_downsample_level = MAX(ifd->downsample_level, tiff->max_downsample_level);
+		ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
+		ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
+		ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
+		ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
+		DUMMY_STATEMENT;
+	}
+}
+
 bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 #if TIFF_VERBOSE
 	printf("Opening TIFF file %s\n", filename);
@@ -505,93 +596,8 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					tiff->ifd_count += 1;
 				}
 
-				// TODO: make more robust
-				// Assume the first IFD is the main image, and also level 0.
-				// (Are there any counterexamples out there?)
-				tiff->main_image_ifd = tiff->ifds;
-				tiff->main_image_ifd_index = 0;
-				tiff->level_images_ifd = tiff->main_image_ifd;
-				tiff->level_images_ifd_index = 0;
+				tiff_post_init(tiff);
 
-				// Determine the resolution of the base level
-				tiff->mpp_x = tiff->mpp_y = 0.25f;
-				tiff_ifd_t* main_image = tiff->main_image_ifd;
-				if (main_image->x_resolution.b > 0 && main_image->y_resolution.b > 0) {
-					if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
-						float pixels_per_centimeter_x = tiff_rational_to_float(main_image->x_resolution);
-						float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
-						tiff->mpp_x = 10000.0f / pixels_per_centimeter_x;
-						tiff->mpp_y = 10000.0f / pixels_per_centimeter_y;
-					}
-				}
-
-				float main_image_width = (float) main_image->image_width;
-				float main_image_height = (float) main_image->image_height;
-				tiff->max_downsample_level = 0;
-				i32 last_downsample_level = 0;
-				tiff->level_image_ifd_count = 0;
-				for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
-					tiff_ifd_t* ifd = tiff->ifds + ifd_index;
-					if (ifd->tile_count == 0) {
-						break; // not a tiled image, so cannot be part of the pyramid (could be macro or label image)
-					}
-					if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
-						++tiff->level_image_ifd_count;
-					}
-
-					float level_width = (float)ifd->image_width;
-					float raw_downsample_factor = main_image_width / level_width;
-					float raw_downsample_level = log2f(raw_downsample_factor);
-					i32 downsample_level = (i32) roundf(raw_downsample_level);
-
-					// Some TIFF files have the width/height set to an integer multiple of the tile size.
-					// For the most zoomed out levels, this makes it harder to calculate the actual downsampling level
-					// (because we might underestimate it). So we need to do extra work to deduce the downsampling
-					// level in these corner cases.
-					if (ifd->image_width % ifd->tile_width == 0) {
-						if (ifd->width_in_tiles >= 1 && ifd->height_in_tiles >= 1) {
-							u32 min_possible_width = ifd->tile_width * (ifd->width_in_tiles-1) + 1;
-							u32 max_possible_width = ifd->tile_width * (ifd->width_in_tiles) ;
-							float downsample_factor_upper_bound = main_image_width / (float)min_possible_width;
-							float downsample_factor_lower_bound = main_image_width / (float)max_possible_width;
-
-							if (ifd->image_height % ifd->tile_height == 0) {
-								// constrain further based on the vertical tile count
-								u32 min_possible_height = ifd->tile_height * (ifd->height_in_tiles-1) + 1;
-								u32 max_possible_height = ifd->tile_height * (ifd->height_in_tiles);
-
-								float downsample_factor_y_upper_bound = main_image_height / (float)min_possible_height;
-								float downsample_factor_y_lower_bound = main_image_height / (float)max_possible_height;
-
-								downsample_factor_upper_bound = MIN(downsample_factor_upper_bound, downsample_factor_y_upper_bound);
-								downsample_factor_lower_bound = MAX(downsample_factor_lower_bound, downsample_factor_y_lower_bound);
-							}
-
-							float level_lower_bound = log2f(downsample_factor_lower_bound);
-							float level_upper_bound = log2f(downsample_factor_upper_bound);
-
-							i32 discrete_level_lower_bound = (i32) ceilf(level_lower_bound);
-							i32 discrete_level_upper_bound = (i32) floorf(level_upper_bound);
-
-							if (discrete_level_lower_bound == discrete_level_upper_bound) {
-								downsample_level = discrete_level_lower_bound;
-							} else {
-								// ambiguity could not be resolved. Use last resort.
-								downsample_level = MIN(discrete_level_lower_bound, last_downsample_level + 1);
-							}
-							DUMMY_STATEMENT;
-						}
-					}
-
-					ifd->downsample_level = last_downsample_level = downsample_level;
-					ifd->downsample_factor = exp2f((float)ifd->downsample_level);
-					tiff->max_downsample_level = MAX(ifd->downsample_level, tiff->max_downsample_level);
-					ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
-					ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
-					ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
-					ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
-					DUMMY_STATEMENT;
-				}
 				success = true;
 			}
 		}
@@ -621,30 +627,19 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 }
 
 
-
-
-void push_size(push_buffer_t* buffer, u8* data, u64 size) {
-	if (buffer->used_size + size > buffer->capacity) {
-		printf("push_size(): buffer overflow\n");
-		exit(1);
-	}
-	memcpy(buffer->data + buffer->used_size, data, size);
-	buffer->used_size += size;
-}
-
-void push_block(push_buffer_t* buffer, u32 block_type, u32 index, u64 block_length) {
+void memrw_push_tiff_block(memrw_t* buffer, u32 block_type, u32 index, u64 block_length) {
 	serial_block_t block = { .block_type = block_type, .index = index, .length = block_length };
-	push_size(buffer, (u8*)&block, sizeof(block));
+	memrw_push(buffer, (u8*) &block, sizeof(block));
 }
 
 #define INCLUDE_IMAGE_DESCRIPTION 1
 
-push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
+memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 
-	u64 total_size = 0;
+	u64 uncompressed_size = 0;
 
 	// block: general TIFF header / meta
-	total_size += sizeof(serial_block_t);
+	uncompressed_size += sizeof(serial_block_t);
 	tiff_serial_header_t serial_header = (tiff_serial_header_t){
 			.filesize = tiff->filesize,
 			.ifd_count = tiff->ifd_count,
@@ -659,10 +654,10 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 			.mpp_x = tiff->mpp_x,
 			.mpp_y = tiff->mpp_y,
 	};
-	total_size += sizeof(serial_header);
+	uncompressed_size += sizeof(serial_header);
 
 	// block: IFD's
-	total_size += sizeof(serial_block_t);
+	uncompressed_size += sizeof(serial_block_t);
 	u64 serial_ifds_block_size = tiff->ifd_count * sizeof(tiff_serial_ifd_t);
 	tiff_serial_ifd_t* serial_ifds = (tiff_serial_ifd_t*) alloca(serial_ifds_block_size);
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
@@ -690,90 +685,74 @@ push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer) {
 			.subimage_type = ifd->subimage_type,
 		};
 #if INCLUDE_IMAGE_DESCRIPTION
-		total_size += ifd->image_description_length;
+		uncompressed_size += ifd->image_description_length;
 #endif
-		total_size += ifd->jpeg_tables_length;
-		total_size += ifd->tile_count * sizeof(ifd->tile_offsets[0]);
-		total_size += ifd->tile_count * sizeof(ifd->tile_byte_counts[0]);
+		uncompressed_size += ifd->jpeg_tables_length;
+		uncompressed_size += ifd->tile_count * sizeof(ifd->tile_offsets[0]);
+		uncompressed_size += ifd->tile_count * sizeof(ifd->tile_byte_counts[0]);
 	}
-	total_size += tiff->ifd_count * sizeof(tiff_serial_ifd_t);
+	uncompressed_size += tiff->ifd_count * sizeof(tiff_serial_ifd_t);
 
 	// blocks: need separate blocks for each IFD's image descriptions, tile offsets, tile byte counts, jpeg tables
 #if INCLUDE_IMAGE_DESCRIPTION
-	total_size += tiff->ifd_count * sizeof(serial_block_t);
+	uncompressed_size += tiff->ifd_count * sizeof(serial_block_t);
 #endif
-	total_size += tiff->ifd_count * sizeof(serial_block_t);
-	total_size += tiff->ifd_count * sizeof(serial_block_t);
-	total_size += tiff->ifd_count * sizeof(serial_block_t);
+	uncompressed_size += tiff->ifd_count * sizeof(serial_block_t);
+	uncompressed_size += tiff->ifd_count * sizeof(serial_block_t);
+	uncompressed_size += tiff->ifd_count * sizeof(serial_block_t);
 
 	// block: terminator (end of stream marker)
-	total_size += sizeof(serial_block_t);
+	uncompressed_size += sizeof(serial_block_t);
 
-	// Now we know the total size of our uncompressed payload (although if compressed we'll need to rewrite the headers)
-	char http_headers[4096];
-	snprintf(http_headers, sizeof(http_headers),
-	         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %-16llu\r\n\r\n",
-	         total_size);
-	u64 http_headers_size = strlen(http_headers);
+	// Allocate space, and start pushing the data onto the buffer
+	memrw_maybe_grow(buffer, uncompressed_size);
 
-	// Hack: we prepend the HTTP headers to the 'normal' buffer, so that we can immediately send everything
-	// in one go once we are done serializing.
-	buffer->raw_memory = (u8*) malloc(http_headers_size + total_size);
-	memcpy(buffer->raw_memory, http_headers, http_headers_size);
-//	((char*)buffer->raw_memory)[http_headers_size] = '\0';
+	memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_HEADER_AND_META, 0, sizeof(serial_block_t));
+	memrw_push(buffer, &serial_header, sizeof(serial_header));
 
-	buffer->data = buffer->raw_memory + http_headers_size;
-	buffer->used_size = 0;
-	buffer->capacity = total_size;
-
-	push_block(buffer, SERIAL_BLOCK_TIFF_HEADER_AND_META, 0,  sizeof(serial_block_t));
-	push_size(buffer, (u8*)&serial_header, sizeof(serial_header));
-
-	push_block(buffer, SERIAL_BLOCK_TIFF_IFDS, 0, serial_ifds_block_size);
-	push_size(buffer, (u8*)serial_ifds, serial_ifds_block_size);
+	memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_IFDS, 0, serial_ifds_block_size);
+	memrw_push(buffer, serial_ifds, serial_ifds_block_size);
 
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
 #if INCLUDE_IMAGE_DESCRIPTION
-		push_block(buffer, SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION, i, ifd->image_description_length);
-		push_size(buffer, (u8*)ifd->image_description, ifd->image_description_length);
+		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION, i, ifd->image_description_length);
+		memrw_push(buffer, ifd->image_description, ifd->image_description_length);
 #endif
 		u64 tile_offsets_size = ifd->tile_count * sizeof(ifd->tile_offsets[0]);
-		push_block(buffer, SERIAL_BLOCK_TIFF_TILE_OFFSETS, i, tile_offsets_size);
-		push_size(buffer, (u8*)ifd->tile_offsets, tile_offsets_size);
+		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_TILE_OFFSETS, i, tile_offsets_size);
+		memrw_push(buffer, ifd->tile_offsets, tile_offsets_size);
 
 		u64 tile_byte_counts_size = ifd->tile_count * sizeof(ifd->tile_byte_counts[0]);
-		push_block(buffer, SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS, i, tile_byte_counts_size);
-		push_size(buffer, (u8*)ifd->tile_byte_counts, tile_byte_counts_size);
+		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS, i, tile_byte_counts_size);
+		memrw_push(buffer, ifd->tile_byte_counts, tile_byte_counts_size);
 
-		push_block(buffer, SERIAL_BLOCK_TIFF_JPEG_TABLES, i, ifd->jpeg_tables_length);
-		push_size(buffer, ifd->jpeg_tables, ifd->jpeg_tables_length);
+		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_JPEG_TABLES, i, ifd->jpeg_tables_length);
+		memrw_push(buffer, ifd->jpeg_tables, ifd->jpeg_tables_length);
 
 	}
 
-	push_block(buffer, SERIAL_BLOCK_TERMINATOR, 0, 0);
+	memrw_push_tiff_block(buffer, SERIAL_BLOCK_TERMINATOR, 0, 0);
 
 //	printf("buffer has %llu used bytes, out of %llu capacity\n", buffer->used_size, buffer->capacity);
 
 	// Additional compression step
 #if 1
-	i32 compression_size_bound = LZ4_COMPRESSBOUND(total_size);
+	ASSERT(buffer->used_size == uncompressed_size);
+	i32 compression_size_bound = LZ4_COMPRESSBOUND(buffer->used_size);
 	u8* compression_buffer = (u8*) malloc(compression_size_bound);
-	ASSERT(buffer->used_size == total_size);
-	i32 compressed_size = LZ4_compress_default((char*)buffer->data, (char*)compression_buffer, buffer->used_size, compression_size_bound);
+	i32 compressed_size = LZ4_compress_default((char*)buffer->data, (char*)compression_buffer,
+	                                           buffer->used_size, compression_size_bound);
 	if (compressed_size > 0) {
 		// success! We can replace the buffer contents with the compressed data
-		buffer->used_size = 0;
-		push_block(buffer, SERIAL_BLOCK_LZ4_COMPRESSED_DATA, total_size, compressed_size);
-		push_size(buffer, compression_buffer, compressed_size);
-
-		// rewrite the HTTP headers at the start, the Content-Length now isn't correct
-		snprintf(http_headers, sizeof(http_headers),
-		         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %-16llu\r\n\r\n",
-		         total_size);
-		ASSERT(strlen(http_headers) == http_headers_size); // We should be able to assume this because of the padding spaces for the Content-length header field.
-		memcpy(buffer->raw_memory, http_headers, http_headers_size);
+		buffer->used_size = 0; // rewind
+		memrw_push_tiff_block(buffer, SERIAL_BLOCK_LZ4_COMPRESSED_DATA, uncompressed_size, compressed_size);
+		memrw_push(buffer, compression_buffer, compressed_size);
+	} else {
+		printf("Warning: tiff_serialize(): payload LZ4 compression failed\n");
 	}
+
+	free(compression_buffer);
 #endif
 
 	return buffer;
@@ -1012,13 +991,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 	if (decompressed_buffer != NULL) free(decompressed_buffer);
 
-
-	// make some remaining assumptions
-	tiff->main_image_ifd = tiff->ifds + tiff->main_image_ifd_index;
-	tiff->macro_image = tiff->ifds + tiff->macro_image_index; // TODO: might not exist??
-	tiff->level_images_ifd = tiff->ifds + tiff->level_images_ifd_index; // TODO: might not exist??
-
-	// todo: flag empty tiles so they don't need to be loaded
+	tiff_post_init(tiff);
 
 	return success;
 

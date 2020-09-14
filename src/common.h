@@ -156,5 +156,11 @@ static inline u64 next_pow2(u64 x) {
 	return x + 1;
 }
 
+static inline i32 div_floor(i32 a, i32 b) {
+	return a / b - (a % b < 0);
+}
+
+
+
 
 #endif

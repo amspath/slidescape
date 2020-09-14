@@ -401,16 +401,27 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 
 				tiff_t tiff = {0};
 				if (open_tiff_file(&tiff, path_buffer)) {
-					push_buffer_t buffer = {0};
-					tiff_serialize(&tiff, &buffer);
-					u64 send_size = ((u64)buffer.data - (u64)buffer.raw_memory) + buffer.used_size;
-					u8* send_buffer = buffer.raw_memory;
+					memrw_t payload_buffer = {};
+					tiff_serialize(&tiff, &payload_buffer);
+
+					// rewrite the HTTP headers at the start, the Content-Length now isn't correct
+					char http_headers[4096];
+					snprintf(http_headers, sizeof(http_headers),
+					         "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: application/octet-stream\r\nContent-length: %-16llu\r\n\r\n",
+					         payload_buffer.used_size);
+					u64 http_headers_size = strlen(http_headers);
+
+					u64 send_size = http_headers_size + payload_buffer.used_size;
+					u8* send_buffer = malloc(send_size);
+					memcpy(send_buffer, http_headers, http_headers_size);
+					memcpy(send_buffer + http_headers_size, payload_buffer.data, payload_buffer.used_size);
 					success = send_buffer_to_client(context, client_sock, send_buffer, send_size);
 
 //				    tls_close_notify(context);
 //				    send_pending(client_sock, context);
+					free(send_buffer);
+					memrw_destroy(&payload_buffer);
 					tiff_destroy(&tiff);
-					free(buffer.raw_memory);
 				} else {
 					fprintf(stderr, "Couldn't open TIFF file %s\n", path_buffer);
 					success = false;

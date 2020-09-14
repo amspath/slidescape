@@ -315,7 +315,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	ASSERT(image_count >= 0);
 
 	if (image_count == 0) {
-		return; // nothing to draw
+		goto after_scene_render;
 	}
 
 	image_t* image = app_state->loaded_images + app_state->displayed_image;
@@ -701,6 +701,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// Retrieve completed tasks from the worker threads
 		while (is_queue_work_in_progress(&thread_message_queue)) {
 			do_worker_work(&thread_message_queue, 0);
+			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+			if (time_elapsed > 0.005f) break;
 		}
 
 
@@ -774,6 +776,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
 							.image = image, .tile = tile, .level = level, .tile_x = tile_x, .tile_y = tile_y,
 							.priority = tile_priority,
+							.completion_callback = viewer_notify_load_tile_completed,
 					};
 
 				}
@@ -971,6 +974,17 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
 
 	}
+
+	after_scene_render:
+
+	gui_draw(app_state, curr_input, client_width, client_height);
+	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
+
+	autosave(app_state, false);
+	last_section = profiler_end_section(last_section, "autosave", 10.0f);
+
+	float update_and_render_time = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+//	printf("Frame time: %g ms\n", update_and_render_time * 1000.0f);
 
 }
 

@@ -24,7 +24,7 @@ extern "C" {
 
 
 #include "common.h"
-#include "stdio.h"
+#include "platform.h"
 
 #ifndef IS_SERVER
 #define IS_SERVER 0
@@ -345,14 +345,6 @@ typedef struct {
 
 #pragma pack(pop)
 
-typedef struct {
-	u8* raw_memory;
-	u8* data;
-	u64 used_size;
-	u64 capacity;
-} push_buffer_t;
-
-
 // see:
 // https://stackoverflow.com/questions/41770887/cross-platform-definition-of-byteswap-uint64-and-byteswap-ulong
 // byte swap operations adapted from this code:
@@ -454,7 +446,7 @@ static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
 
 u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 bool32 open_tiff_file(tiff_t* tiff, const char* filename);
-push_buffer_t* tiff_serialize(tiff_t* tiff, push_buffer_t* buffer);
+memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer);
 i64 find_end_of_http_headers(u8* str, u64 len);
 bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size);
 void tiff_destroy(tiff_t* tiff);
