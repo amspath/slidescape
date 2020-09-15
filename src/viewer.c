@@ -482,7 +482,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				used_mouse_to_zoom = true;
 			}
 
-			float key_repeat_interval = 0.2f; // in seconds
+			float key_repeat_interval = 0.15f; // in seconds
 
 			// Zoom out using Z or /
 			if (is_key_down(input, 'Z') || is_key_down(input, KEYCODE_OEM_2 /* '/' */)) {
@@ -552,8 +552,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->need_zoom_animation = false;
 				}
 				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-				float linear_catch_up_speed = 10.0f * delta_t;
-				float exponential_catch_up_speed = 18.0f * delta_t;
+				float linear_catch_up_speed = 12.0f * delta_t;
+				float exponential_catch_up_speed = 15.0f * delta_t;
 				if (abs_d_zoom > linear_catch_up_speed) {
 					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
 					         sign_d_zoom;

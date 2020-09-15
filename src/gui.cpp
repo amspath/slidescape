@@ -41,7 +41,6 @@
 #include "gui.h"
 #include "annotation.h"
 #include "stringutils.h"
-#include "freetype_api.h"
 
 void gui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -501,14 +500,6 @@ void win32_init_gui(HWND hwnd) {
 	ImGui_ImplWin32_Init(hwnd);
 	ImGui_ImplOpenGL3_Init(NULL);
 
-	if (!is_freetype_loading_done) {
-#if DO_DEBUG
-		printf("Waiting for FreeType to finish loading...\n");
-#endif
-		while (is_queue_work_in_progress(&work_queue)) {
-			do_worker_work(&work_queue, 0);
-		}
-	}
 
 	// Load Fonts
 	// - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
@@ -525,12 +516,7 @@ void win32_init_gui(HWND hwnd) {
 //	font_config.OversampleH = 3;
 //	font_config.OversampleV = 2;
 //	font_config.RasterizerMultiply = 1.2f;
-	float system_font_size;
-	if (is_freetype_available) {
-		system_font_size = 17.0f;
-	} else {
-		system_font_size = 17.5f;
-	}
+	float system_font_size = 17.0f;
 	ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", system_font_size,
 											 &font_config, io.Fonts->GetGlyphRangesJapanese());
 	if (!font) {
@@ -539,10 +525,10 @@ void win32_init_gui(HWND hwnd) {
 	io.Fonts->AddFontDefault();
 //	IM_ASSERT(font != NULL);
 
-	if (is_freetype_available) {
-		unsigned int flags = ImGuiFreeType::MonoHinting;
-		ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
-	}
+
+	unsigned int flags = ImGuiFreeType::MonoHinting;
+	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
+
 
 	is_fullscreen = win32_is_fullscreen(main_window);
 

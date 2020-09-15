@@ -18,6 +18,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
+include_directories("${CMAKE_SOURCE_DIR}/deps/freetype/src")
 
 # libjpeg-turbo requires these files for JPEG decoding support
 set(JPEG_SOURCE_FILES
@@ -54,6 +55,21 @@ else()
     set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} deps/jpeg/jsimd_none.c)
 endif()
 
+set(FREETYPE_SOURCE_FILES
+        autofit/autofit.c   base/ftbbox.c   base/ftbase.c       base/ftbdf.c        base/ftbitmap.c
+        base/ftcid.c        base/ftfstype.c base/ftgasp.c       base/ftglyph.c      base/ftgxval.c
+        base/ftinit.c       base/ftmm.c     base/ftotval.c      base/ftpatent.c     base/ftpfr.c
+        base/ftstroke.c     base/ftsynth.c  base/fttype1.c      base/ftwinfnt.c     bdf/bdf.c
+        cache/ftcache.c     cff/cff.c       cid/type1cid.c      pcf/pcf.c           pfr/pfr.c
+        psaux/psaux.c   pshinter/pshinter.c psnames/psnames.c   raster/raster.c     sfnt/sfnt.c
+        smooth/smooth.c truetype/truetype.c type1/type1.c       type42/type42.c     winfonts/winfnt.c
+        base/ftsystem.c
+)
+prepend_path(FREETYPE_SOURCE_FILES deps/freetype/src)
+if (WIN32)
+    set(FREETYPE_SOURCE_FILES ${FREETYPE_SOURCE_FILES} deps/freetype/builds/windows/ftdebug.c)
+endif()
+
 set(VIEWER_SOURCE_FILES
         win32_main.c
         platform.c
@@ -74,7 +90,6 @@ set(VIEWER_SOURCE_FILES
         imgui_impl_opengl3.cpp
         imgui_impl_win32.cpp
         imgui_freetype.cpp
-        freetype_api.c
         gui.cpp
         jpeg_decoder.c
         tlsclient.c
@@ -86,7 +101,7 @@ prepend_path(VIEWER_SOURCE_FILES src)
 
 # client only supported on Windows x64 for now
 if (WIN32)
-add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES})
+add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
 target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 endif(WIN32)
 

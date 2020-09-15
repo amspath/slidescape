@@ -27,7 +27,6 @@
 //#define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
 
-#include "freetype_api.h"
 
 #include "viewer.h"
 
@@ -92,11 +91,6 @@ void win32_diagnostic(const char* prefix) {
 void load_openslide_task(int logical_thread_index, void* userdata) {
 	is_openslide_available = init_openslide();
 	is_openslide_loading_done = true;
-}
-
-void load_freetype_task(int logical_thread_index, void* userdata) {
-	is_freetype_available = init_freetype();
-	is_freetype_loading_done = true;
 }
 
 u8* platform_alloc(size_t size) {
@@ -1368,10 +1362,8 @@ int main(int argc, char** argv) {
 	// Load OpenSlide in the background, we might not need it immediately.
 #if 1
 	add_work_queue_entry(&work_queue, load_openslide_task, NULL);
-	add_work_queue_entry(&work_queue, load_freetype_task, NULL);
 #else
     load_openslide_task(0, NULL);
-    load_freetype_task(0, NULL);
 #endif
 	win32_init_input();
 	init_networking();
