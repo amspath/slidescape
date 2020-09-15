@@ -51,7 +51,7 @@
 
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
-#if 1
+#if 0
 // If both dedicated GPU and integrated graphics are available -> choose dedicated
 // see:
 // https://stackoverflow.com/questions/6036292/select-a-graphic-device-in-windows-opengl
@@ -1417,9 +1417,14 @@ int main(int argc, char** argv) {
 
 	i64 last_clock = get_clock();
 	while (is_program_running) {
-
 		i64 current_clock = get_clock();
 		app_state->last_frame_start = current_clock;
+
+		int refresh_rate = GetDeviceCaps(glrc_hdc, VREFRESH);
+		if (refresh_rate <= 1) {
+			refresh_rate = 60; // guess
+		}
+		float predicted_frame_ms = 1000.0f / (float)refresh_rate;
 
 		float delta_t = (float)(current_clock - last_clock) / (float)performance_counter_frequency;
 		last_clock = current_clock;
@@ -1435,7 +1440,13 @@ int main(int argc, char** argv) {
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 		section_end = profiler_end_section(section_end, "viewer update and render", 20.0f);
 
-		Sleep(0);
+		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;
+		float ms_left = predicted_frame_ms - frame_ms;
+		float sleep_time = ms_left - 2.0f;
+		if (sleep_time >= 1.0f) {
+			Sleep((DWORD)sleep_time);
+		}
+
 		wglSwapBuffers(glrc_hdc);
 		section_end = profiler_end_section(section_end, "end frame", 100.0f);
 
