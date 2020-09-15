@@ -51,7 +51,7 @@
 
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
-#if 0
+#if 1
 // If both dedicated GPU and integrated graphics are available -> choose dedicated
 // see:
 // https://stackoverflow.com/questions/6036292/select-a-graphic-device-in-windows-opengl
@@ -757,9 +757,40 @@ void* gl_get_proc_address(const char *name) {
 void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                               const char* message, const void* user_param)
 {
-	printf("GL CALLBACK: %s type = 0x%x, severity = 0x%x, message = %s\n",
-	       ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
-	       type, severity, message );
+	char severity_unknown_string[32];
+	const char* severity_string = NULL;
+	switch (severity) {
+		case GL_DEBUG_SEVERITY_HIGH: severity_string =  "HIGH"; break;
+		case GL_DEBUG_SEVERITY_MEDIUM: severity_string = "MEDIUM"; break;
+		case GL_DEBUG_SEVERITY_LOW: severity_string = "LOW"; break;
+		case GL_DEBUG_SEVERITY_NOTIFICATION: severity_string = "NOTIFICATION"; break;
+		default: {
+			snprintf(severity_unknown_string, sizeof(severity_unknown_string), "0x%x", severity);
+			severity_string = severity_unknown_string;
+		} break;
+	}
+
+	char type_unknown_string[32];
+	const char* type_string = NULL;
+	switch (type) {
+		case GL_DEBUG_TYPE_ERROR: type_string = "ERROR"; break;
+		case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: type_string = "DEPRECATED_BEHAVIOR"; break;
+		case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR: type_string = "UNDEFINED_BEHAVIOR"; break;
+		case GL_DEBUG_TYPE_PORTABILITY: type_string = "PORTABILITY"; break;
+		case GL_DEBUG_TYPE_PERFORMANCE: type_string = "PERFORMANCE"; break;
+		case GL_DEBUG_TYPE_OTHER: type_string = "OTHER"; break;
+		case GL_DEBUG_TYPE_MARKER: type_string = "MARKER"; break;
+		case GL_DEBUG_TYPE_PUSH_GROUP: type_string = "PUSH_GROUP"; break;
+		case GL_DEBUG_TYPE_POP_GROUP: type_string = "POP_GROUP"; break;
+		default: {
+			snprintf(type_unknown_string, sizeof(type_unknown_string), "0x%x", type);
+			type_string = type_unknown_string;
+		} break;
+	}
+
+
+	printf("GL CALLBACK: type = %s, severity = %s, message = %s\n",
+	       type_string, severity_string, message );
 }
 #endif
 

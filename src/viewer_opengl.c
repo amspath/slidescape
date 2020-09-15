@@ -169,10 +169,19 @@ void init_opengl_stuff(app_state_t* app_state) {
 #ifdef STRINGIFY_SHADERS
 	write_stringified_shaders();
 #endif
-	glEnable(GL_TEXTURE_2D);
-
 	init_draw_rect();
 	u32 dummy_texture_color = MAKE_BGRA(255, 255, 0, 255);
 	dummy_texture = load_texture(&dummy_texture_color, 1, 1);
+
+	// Make sure NVIDIA drivers don't complain about undefined base level for texture 0.
+	glEnable(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_BGRA, GL_UNSIGNED_BYTE, &dummy_texture_color);
 
 }
