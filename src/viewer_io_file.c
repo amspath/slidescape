@@ -16,6 +16,28 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
+	load_tile_task_t* task = (load_tile_task_t*) userdata;
+	tile_t* tile = task->tile;
+	if (tile->is_cached && tile->pixels) {
+		if (tile->need_gpu_residency) {
+			// TODO: use PBO's instead
+			u32 new_texture = load_texture(tile->pixels, TILE_DIM, TILE_DIM);
+			tile->texture = new_texture;
+		} else {
+			ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
+		}
+
+		if (!task->need_keep_in_cache) {
+			free(tile->pixels);
+			tile->pixels = NULL;
+			tile->is_cached = false;
+		}
+	} else {
+		printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+	}
+}
+
 typedef struct viewer_notify_tile_completed_task_t {
 	u8* pixel_memory;
 	tile_t* tile;
@@ -23,13 +45,25 @@ typedef struct viewer_notify_tile_completed_task_t {
 } viewer_notify_tile_completed_task_t;
 
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
-	viewer_notify_tile_completed_task_t* task_data = (viewer_notify_tile_completed_task_t*) userdata;
-	if (task_data->pixel_memory) {
-		if (task_data->tile) {
-			u32 new_texture = load_texture(task_data->pixel_memory, TILE_DIM, TILE_DIM);
-			task_data->tile->texture = new_texture;
+	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) userdata;
+	if (task->pixel_memory) {
+		bool need_free_pixel_memory = true;
+		if (task->tile) {
+			tile_t* tile = task->tile;
+			if (tile->need_gpu_residency) {
+				// TODO: use PBO's instead
+				u32 new_texture = load_texture(task->pixel_memory, TILE_DIM, TILE_DIM);
+				tile->texture = new_texture;
+			}
+			if (tile->need_keep_in_cache) {
+				need_free_pixel_memory = false;
+				tile->pixels = task->pixel_memory;
+				tile->is_cached = true;
+			}
 		}
-		free(task_data->pixel_memory);
+		if (need_free_pixel_memory) {
+			free(task->pixel_memory);
+		}
 	}
 
 //	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, task_data->level, task_data->tile_x, task_data->tile_y);
@@ -37,13 +71,12 @@ void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata)
 }
 
 void load_tile_func(i32 logical_thread_index, void* userdata) {
-	load_tile_task_t* task_data = (load_tile_task_t*) userdata;
-	i32 level = task_data->level;
-	i32 tile_x = task_data->tile_x;
-	i32 tile_y = task_data->tile_y;
-	image_t* image = task_data->image;
+	load_tile_task_t* task = (load_tile_task_t*) userdata;
+	i32 level = task->level;
+	i32 tile_x = task->tile_x;
+	i32 tile_y = task->tile_y;
+	image_t* image = task->image;
 	level_image_t* level_image = image->level_images + level;
-	tile_t* tile = get_tile(level_image, tile_x, tile_y);
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
 	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
 	float tile_world_pos_y_end = (tile_y + 1) * level_image->y_tile_side_in_um;
@@ -186,11 +219,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
 	completion_task->pixel_memory = temp_memory;
 	completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
-	completion_task->tile = task_data->tile;
+	completion_task->tile = task->tile;
 
 	//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	ASSERT(task_data->completion_callback);
-	add_work_queue_entry(&thread_message_queue, task_data->completion_callback, completion_task);
+	ASSERT(task->completion_callback);
+	add_work_queue_entry(&thread_message_queue, task->completion_callback, completion_task);
 
 	free(userdata);
 

@@ -277,6 +277,66 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 }
 
 
+void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
+	if (tiles_to_load > 0){
+		app_state->allow_idling_next_frame = false;
+
+
+
+		if (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) {
+			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
+			// (to reduce load on the server)
+			static u32 intermittent = 0;
+			++intermittent;
+			u32 intermittent_interval = 1;
+			intermittent_interval = 5; // reduce load on remote server; can be tweaked
+			if (intermittent % intermittent_interval == 0) {
+				load_tile_task_batch_t* batch = (load_tile_task_batch_t*) calloc(1, sizeof(load_tile_task_batch_t));
+				batch->task_count = ATMOST(COUNT(batch->tile_tasks), tiles_to_load);
+				memcpy(batch->tile_tasks, wishlist, batch->task_count * sizeof(load_tile_task_t));
+				if (add_work_queue_entry(&work_queue, tiff_load_tile_batch_func, batch)) {
+					// success
+					for (i32 i = 0; i < batch->task_count; ++i) {
+						load_tile_task_t* task = batch->tile_tasks + i;
+						tile_t* tile = task->tile;
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task->need_gpu_residency;
+						tile->need_keep_in_cache = task->need_keep_in_cache;
+					}
+				}
+			}
+		} else {
+			// regular file loading
+			for (i32 i = 0; i < tiles_to_load; ++i) {
+				load_tile_task_t* task = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
+				*task = wishlist[i];
+
+				tile_t* tile = task->tile;
+				if (tile->is_cached && tile->texture == 0 && task->need_gpu_residency) {
+					// only GPU upload needed
+					if (add_work_queue_entry(&thread_message_queue, viewer_upload_already_cached_tile_to_gpu, task)) {
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task->need_gpu_residency;
+						tile->need_keep_in_cache = task->need_keep_in_cache;
+					}
+				} else {
+					if (add_work_queue_entry(&work_queue, load_tile_func, task)) {
+						// TODO: should we even allow this to fail?
+						// success
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task->need_gpu_residency;
+						tile->need_keep_in_cache = task->need_keep_in_cache;
+					}
+				}
+
+
+			}
+		}
+
+
+	}
+}
+
 
 // TODO: refactor delta_t
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
@@ -581,6 +641,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			}
 
+			if (scene->need_zoom_animation) {
+				app_state->allow_idling_next_frame = false;
+			}
+
 			// Panning should be faster when zoomed in very far.
 			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - scene->zoom.pos) / (float) max_level;
 			if (is_key_down(input, KEYCODE_SHIFT)) {
@@ -702,6 +766,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		while (is_queue_work_in_progress(&thread_message_queue)) {
 			do_worker_work(&thread_message_queue, 0);
 			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+			// TODO: use PBO's to reduce texture loading time
 			if (time_elapsed > 0.005f) break;
 		}
 
@@ -776,6 +841,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
 							.image = image, .tile = tile, .level = level, .tile_x = tile_x, .tile_y = tile_y,
 							.priority = tile_priority,
+							.need_gpu_residency = true,
+							.need_keep_in_cache = tile->need_keep_in_cache,
 							.completion_callback = viewer_notify_load_tile_completed,
 					};
 
@@ -789,47 +856,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
+		i32 max_tiles_to_load = (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
+		i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
-		if (num_tasks_on_wishlist > 0){
-			app_state->allow_idling_next_frame = false;
-
-			if (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) {
-				// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
-				// (to reduce load on the server)
-				static u32 intermittent = 0;
-				++intermittent;
-				u32 intermittent_interval = 1;
-				intermittent_interval = 5; // reduce load on remote server; can be tweaked
-				if (intermittent % intermittent_interval == 0) {
-					i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 3); // can be tweaked
-
-					load_tile_task_batch_t* batch = (load_tile_task_batch_t*) calloc(1, sizeof(load_tile_task_batch_t));
-					batch->task_count = ATMOST(COUNT(batch->tile_tasks), max_tiles_to_load);
-					memcpy(batch->tile_tasks, tile_wishlist, batch->task_count * sizeof(load_tile_task_t));
-					if (add_work_queue_entry(&work_queue, tiff_load_tile_batch_func, batch)) {
-						// success
-						for (i32 i = 0; i < batch->task_count; ++i) {
-							load_tile_task_t* task = batch->tile_tasks + i;
-							task->tile->is_submitted_for_loading = true;
-						}
-					}
-				}
-			} else {
-				// regular file loading
-				i32 max_tiles_to_load = ATMOST(num_tasks_on_wishlist, 10);
-				for (i32 i = 0; i < max_tiles_to_load; ++i) {
-					load_tile_task_t* the_task = &tile_wishlist[i];
-					load_tile_task_t* task_data = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-					*task_data = *the_task;
-					if (add_work_queue_entry(&work_queue, load_tile_func, task_data)) {
-						// success
-						task_data->tile->is_submitted_for_loading = true;
-					}
-				}
-			}
-
-
-		}
+		request_tiles(app_state, image, tile_wishlist, tiles_to_load);
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 
@@ -943,6 +973,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
 					if (tile->texture) {
+						tile->time_last_drawn = app_state->frame_counter;
 						u32 texture = get_texture_for_tile(image, level, tile_x, tile_y);
 
 						float tile_pos_x = drawn_level->x_tile_side_in_um * tile_x;
@@ -988,5 +1019,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	float update_and_render_time = get_seconds_elapsed(app_state->last_frame_start, get_clock());
 //	printf("Frame time: %g ms\n", update_and_render_time * 1000.0f);
 
+	++app_state->frame_counter;
 }
 
