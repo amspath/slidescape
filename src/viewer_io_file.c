@@ -17,25 +17,7 @@
 */
 
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
-	load_tile_task_t* task = (load_tile_task_t*) userdata;
-	tile_t* tile = task->tile;
-	if (tile->is_cached && tile->pixels) {
-		if (tile->need_gpu_residency) {
-			// TODO: use PBO's instead
-			u32 new_texture = load_texture(tile->pixels, TILE_DIM, TILE_DIM);
-			tile->texture = new_texture;
-		} else {
-			ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
-		}
-
-		if (!task->need_keep_in_cache) {
-			free(tile->pixels);
-			tile->pixels = NULL;
-			tile->is_cached = false;
-		}
-	} else {
-		printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
-	}
+	ASSERT(!"viewer_upload_already_cached_tile_to_gpu() is a dummy, it should not be called");
 }
 
 typedef struct viewer_notify_tile_completed_task_t {
@@ -45,29 +27,7 @@ typedef struct viewer_notify_tile_completed_task_t {
 } viewer_notify_tile_completed_task_t;
 
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
-	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) userdata;
-	if (task->pixel_memory) {
-		bool need_free_pixel_memory = true;
-		if (task->tile) {
-			tile_t* tile = task->tile;
-			if (tile->need_gpu_residency) {
-				// TODO: use PBO's instead
-				u32 new_texture = load_texture(task->pixel_memory, TILE_DIM, TILE_DIM);
-				tile->texture = new_texture;
-			}
-			if (tile->need_keep_in_cache) {
-				need_free_pixel_memory = false;
-				tile->pixels = task->pixel_memory;
-				tile->is_cached = true;
-			}
-		}
-		if (need_free_pixel_memory) {
-			free(task->pixel_memory);
-		}
-	}
-
-//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, task_data->level, task_data->tile_x, task_data->tile_y);
-	free(userdata);
+	ASSERT(!"viewer_notify_load_tile_completed() is a dummy, it should not be called");
 }
 
 void load_tile_func(i32 logical_thread_index, void* userdata) {

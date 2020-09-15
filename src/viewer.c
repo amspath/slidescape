@@ -268,6 +268,15 @@ void init_app_state(app_state_t* app_state) {
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
+
+	for (i32 i = 0; i < COUNT(app_state->pixel_transfer_states); ++i) {
+		pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + i;
+		u32 pbo = 0;
+		glGenBuffers(1, &pbo);
+		transfer_state->pbo = pbo;
+		transfer_state->initialized = true;
+	}
+
 	app_state->initialized = true;
 }
 
@@ -762,13 +771,101 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// IO
 
-		// Retrieve completed tasks from the worker threads
-		while (is_queue_work_in_progress(&thread_message_queue)) {
-			do_worker_work(&thread_message_queue, 0);
+#if 0
+		// Finalize textures that were uploaded via PBO the previous frame
+		for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
+			pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
+			if (transfer_state->need_finalization) {
+				finalize_texture_upload_using_pbo(transfer_state);
+				transfer_state->need_finalization = false;
+				tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
+				tile->texture = transfer_state->texture;
+			}
 			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-			// TODO: use PBO's to reduce texture loading time
-			if (time_elapsed > 0.005f) break;
+//			if (time_elapsed > 0.005f) {
+//				printf("Warning: texture finalization is taking too much time\n");
+//				break;
+//			}
 		}
+
+		float time_elapsed = get_seconds_elapsed(last_section, get_clock());
+		if (time_elapsed > 0.005f) {
+			printf("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
+		}
+
+		last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
+#endif
+
+		// Retrieve completed tasks from the worker threads
+		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
+		while (is_queue_work_in_progress(&thread_message_queue)) {
+			work_queue_entry_t entry = get_next_work_queue_entry(&thread_message_queue);
+			if (entry.is_valid) {
+				if (!entry.callback) panic();
+				mark_queue_entry_completed(&thread_message_queue);
+
+				if (entry.callback == viewer_notify_load_tile_completed) {
+					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
+					if (task->pixel_memory) {
+						bool need_free_pixel_memory = true;
+						if (task->tile) {
+							tile_t* tile = task->tile;
+							if (tile->need_gpu_residency) {
+								pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width, 4, task->pixel_memory);
+								finalize_texture_upload_using_pbo(transfer_state);
+								tile->texture = transfer_state->texture;
+							}
+							if (tile->need_keep_in_cache) {
+								need_free_pixel_memory = false;
+								tile->pixels = task->pixel_memory;
+								tile->is_cached = true;
+							}
+						}
+						if (need_free_pixel_memory) {
+							free(task->pixel_memory);
+						}
+					}
+
+					free(entry.data);
+				} else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
+					load_tile_task_t* task = (load_tile_task_t*) entry.data;
+					tile_t* tile = task->tile;
+					if (tile->is_cached && tile->pixels) {
+						if (tile->need_gpu_residency) {
+							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM, TILE_DIM, 4, tile->pixels);
+							finalize_texture_upload_using_pbo(transfer_state);
+							tile->texture = transfer_state->texture;
+						} else {
+							ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
+						}
+
+						if (!task->need_keep_in_cache) {
+							free(tile->pixels);
+							tile->pixels = NULL;
+							tile->is_cached = false;
+						}
+					} else {
+						printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+					}
+				}
+			}
+
+			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+			if (time_elapsed > 0.007f) {
+//				printf("Warning: texture submission is taking too much time\n");
+				break;
+			}
+
+			if (pixel_transfer_index_start == app_state->next_pixel_transfer_to_submit) {
+//				printf("Warning: not enough PBO's to do all the pixel transfers\n");
+				break;
+			}
+		}
+
+		/*float time_elapsed = get_seconds_elapsed(last_section, get_clock());
+		if (time_elapsed > 0.005f) {
+			printf("Warning: texture submission took %g ms\n", time_elapsed * 1000.0f);
+		}*/
 
 
 		// Determine the highest and lowest levels with image data that need to be loaded and rendered.

@@ -228,6 +228,14 @@ typedef struct scene_t {
 	bool8 initialized;
 } scene_t;
 
+typedef struct pixel_transfer_state_t {
+	u32 pbo;
+	u32 texture;
+	i32 texture_width;
+	i32 texture_height;
+	bool8 need_finalization;
+	bool8 initialized;
+} pixel_transfer_state_t;
 
 typedef struct app_state_t {
 	u8* temp_storage_memory;
@@ -250,6 +258,9 @@ typedef struct app_state_t {
 	u32 mouse_tool;
 	i64 last_frame_start;
 	i64 frame_counter;
+	u32 tile_pbos[16];
+	pixel_transfer_state_t pixel_transfer_states[32];
+	u32 next_pixel_transfer_to_submit;
 } app_state_t;
 
 
@@ -272,7 +283,7 @@ void autosave(app_state_t* app_state, bool force_ignore_delay);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 
 u32 load_texture(void* pixels, i32 width, i32 height);
-void init_opengl_stuff();
+void init_opengl_stuff(app_state_t* app_state);
 
 
 // globals

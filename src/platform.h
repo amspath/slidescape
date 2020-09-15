@@ -301,6 +301,8 @@ void message_box(const char* message);
 
 bool32 add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
 bool32 is_queue_work_in_progress(work_queue_t* queue);
+work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
+void mark_queue_entry_completed(work_queue_t* queue);
 bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);
 
 bool file_exists(const char* filename);

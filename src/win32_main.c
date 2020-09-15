@@ -1129,7 +1129,7 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	return result;
 }
 
-void win32_mark_queue_entry_completed(work_queue_t* queue) {
+void mark_queue_entry_completed(work_queue_t* queue) {
 	interlocked_increment(&queue->completion_count);
 }
 
@@ -1138,7 +1138,7 @@ bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
 	if (entry.is_valid) {
 		if (!entry.callback) panic();
 		entry.callback(logical_thread_index, entry.data);
-		win32_mark_queue_entry_completed(queue);
+		mark_queue_entry_completed(queue);
 	}
 	return entry.is_valid;
 }
@@ -1330,15 +1330,14 @@ void win32_init_main_window() {
 bool profiling = false;
 
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms) {
-	if (!profiling) return -1;
-	else {
-		i64 end = get_clock();
+	i64 end = get_clock();
+	if (profiling) {
 		float ms_elapsed = get_seconds_elapsed(start, end) * 1000.0f;
 		if (ms_elapsed > report_threshold_ms) {
 			printf("[profiler] %s: %g ms\n", name, ms_elapsed);
 		}
-		return end;
 	}
+	return end;
 }
 
 
@@ -1370,7 +1369,7 @@ int main(int argc, char** argv) {
 
 	is_program_running = true;
 
-	init_opengl_stuff();
+	init_opengl_stuff(&global_app_state);
 	win32_init_gui(main_window);
 
 	app_state_t* app_state = &global_app_state;
