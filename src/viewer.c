@@ -407,7 +407,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		if (was_key_pressed(input, 'W') && is_key_down(input, KEYCODE_CONTROL)) {
 			menu_close_file(app_state);
-			return;
+			goto after_scene_render;
 		}
 
 		if (was_button_released(&input->mouse_buttons[0])) {
@@ -775,29 +775,36 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// IO
 
+        float time_elapsed;
 #if 0
-		// Finalize textures that were uploaded via PBO the previous frame
-		for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
-			pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
-			if (transfer_state->need_finalization) {
-				finalize_texture_upload_using_pbo(transfer_state);
-				transfer_state->need_finalization = false;
-				tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
-				tile->texture = transfer_state->texture;
-			}
-			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-//			if (time_elapsed > 0.005f) {
-//				printf("Warning: texture finalization is taking too much time\n");
-//				break;
-//			}
-		}
+        if (!finalize_textures_immediately) {
+            // Finalize textures that were uploaded via PBO the previous frame
+            for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
+                pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
+                if (transfer_state->need_finalization) {
+                    finalize_texture_upload_using_pbo(transfer_state);
+                    tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
+                    tile->texture = transfer_state->texture;
+                }
+                float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+			    if (time_elapsed > 0.005f) {
+//			    	printf("Warning: texture finalization is taking too much time\n");
+			    	break;
+			    }
+            }
 
-		float time_elapsed = get_seconds_elapsed(last_section, get_clock());
-		if (time_elapsed > 0.005f) {
-			printf("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
-		}
 
-		last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
+
+        }
+
+        time_elapsed = get_seconds_elapsed(last_section, get_clock());
+        if (time_elapsed > 0.005f) {
+            printf("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
+        }
+
+        last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
+
+
 #endif
 
 		// Retrieve completed tasks from the worker threads
@@ -815,9 +822,15 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						if (task->tile) {
 							tile_t* tile = task->tile;
 							if (tile->need_gpu_residency) {
-								pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width, 4, task->pixel_memory);
-								finalize_texture_upload_using_pbo(transfer_state);
-								tile->texture = transfer_state->texture;
+								pixel_transfer_state_t* transfer_state =
+								        submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
+                                                                      4, task->pixel_memory, finalize_textures_immediately);
+								if (finalize_textures_immediately) {
+                                    tile->texture = transfer_state->texture;
+								} else {
+                                    transfer_state->userdata = (void*) tile;
+								}
+
 							}
 							if (tile->need_keep_in_cache) {
 								need_free_pixel_memory = false;
@@ -836,8 +849,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					tile_t* tile = task->tile;
 					if (tile->is_cached && tile->pixels) {
 						if (tile->need_gpu_residency) {
-							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM, TILE_DIM, 4, tile->pixels);
-							finalize_texture_upload_using_pbo(transfer_state);
+							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM,
+                                                                                                   TILE_DIM, 4,
+                                                                                                   tile->pixels, finalize_textures_immediately);
 							tile->texture = transfer_state->texture;
 						} else {
 							ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
@@ -855,7 +869,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-			if (time_elapsed > 0.007f) {
+			if (time_elapsed > 0.005f) {
 //				printf("Warning: texture submission is taking too much time\n");
 				break;
 			}
@@ -866,7 +880,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 		}
 
-		/*float time_elapsed = get_seconds_elapsed(last_section, get_clock());
+		/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
 		if (time_elapsed > 0.005f) {
 			printf("Warning: texture submission took %g ms\n", time_elapsed * 1000.0f);
 		}*/

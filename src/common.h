@@ -150,7 +150,7 @@ static inline void panic() {
 
 #ifndef NDEBUG
 #define DO_DEBUG 1
-#define ASSERT(expr) if (!(expr)) panic();
+#define ASSERT(expr) do {if (!(expr)) panic();} while(0)
 #else
 #define DO_DEBUG 0
 #define ASSERT(expr)

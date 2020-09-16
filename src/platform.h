@@ -370,6 +370,7 @@ extern i32 total_thread_count;
 extern i32 physical_cpu_count;
 extern i32 logical_cpu_count;
 extern bool is_vsync_enabled;
+extern bool is_nvidia_gpu;
 extern work_queue_t work_queue;
 extern work_queue_t thread_message_queue;
 

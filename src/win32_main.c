@@ -878,6 +878,10 @@ void win32_init_opengl(HWND window) {
 	char* version_string = (char*)temp_glGetString(GL_VERSION);
 	printf("OpenGL supported version: %s\n", version_string);
 
+	if (strstr(version_string, "NVIDIA")) {
+	    is_nvidia_gpu = true;
+	}
+
 	// Now try to load the extensions we will need.
 
 #define GET_WGL_PROC(proc, type) do { proc = (type) wglGetProcAddress_alt(#proc); } while(0)
@@ -1414,7 +1418,7 @@ int main(int argc, const char** argv) {
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
 
-	is_vsync_enabled = true;
+	is_vsync_enabled = is_nvidia_gpu ? 0 : 1; // NVIDIA drivers don't seem to work well with Vsync for now
 	set_swap_interval(is_vsync_enabled ? 1 : 0);
 
 	i64 last_clock = get_clock();
@@ -1444,7 +1448,8 @@ int main(int argc, const char** argv) {
 
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;
 		float ms_left = predicted_frame_ms - frame_ms;
-		float sleep_time = ms_left - 2.0f;
+		float time_margin = is_vsync_enabled ? 2.0f : 0.0f;
+		float sleep_time = ms_left - time_margin;
 		if (sleep_time >= 1.0f) {
 			Sleep((DWORD)sleep_time);
 		}

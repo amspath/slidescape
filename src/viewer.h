@@ -235,6 +235,7 @@ typedef struct pixel_transfer_state_t {
 	i32 texture_width;
 	i32 texture_height;
 	bool8 need_finalization;
+	void* userdata;
 	bool8 initialized;
 } pixel_transfer_state_t;
 
