@@ -13,23 +13,30 @@
 #import <OpenGL/gl.h>
 #import <OpenGL/glu.h>
 
+//#include "viewer.h"
+
 #include <sys/sysctl.h>
 
 //-----------------------------------------------------------------------------------
 // ImGuiExampleView
 //-----------------------------------------------------------------------------------
 
-@interface ImGuiExampleView : NSOpenGLView
+@interface SlideviewerView : NSOpenGLView
 {
     NSTimer*    animationTimer;
 }
 @end
 
-@implementation ImGuiExampleView
+@implementation SlideviewerView
 
 -(void)animationTimerFired:(NSTimer*)timer
 {
     [self setNeedsDisplay:YES];
+}
+
+-(void)setSwapInterval:(int)interval
+{
+	[[self openGLContext] setValues:&interval forParameter:NSOpenGLCPSwapInterval];
 }
 
 -(void)prepareOpenGL
@@ -168,6 +175,8 @@
 
 @end
 
+SlideviewerView* g_view;
+
 //-----------------------------------------------------------------------------------
 // ImGuiExampleAppDelegate
 //-----------------------------------------------------------------------------------
@@ -274,7 +283,8 @@
 		}
 	}
 
-    ImGuiExampleView* view = [[ImGuiExampleView alloc] initWithFrame:self.window.frame pixelFormat:format];
+    SlideviewerView* view = [[SlideviewerView alloc] initWithFrame:self.window.frame pixelFormat:format];
+	g_view = view;
     format = nil;
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     if (floor(NSAppKitVersionNumber) > NSAppKitVersionNumber10_6)
@@ -284,6 +294,8 @@
 
     if ([view openGLContext] == nil)
         NSLog(@"No OpenGL Context!");
+
+//    init_app_state(&global_app_state, view);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -324,17 +336,68 @@
 @end
 
 i64 get_clock() {
-	panic();
+	fprintf(stderr, "unimplemented: get_clock()\n");
 	return 0; // stub
 }
 
 float get_seconds_elapsed(i64 start, i64 end) {
-	panic();
+	fprintf(stderr, "unimplemented: get_seconds_elapsed()\n");
 	return 0; // stub
 }
 
 void message_box(const char* message) {
-	panic();
+	fprintf(stderr, "[message box] %s\n", message);
+	fprintf(stderr, "unimplemented: message_box()\n");
+}
+
+void set_swap_interval(int interval) {
+	[g_view setSwapInterval:interval];
+}
+
+void mouse_show() {
+	fprintf(stderr, "unimplemented: mouse_show()\n");
+}
+
+void mouse_hide() {
+	fprintf(stderr, "unimplemented: mouse_hide()\n");
+}
+
+void open_file_dialog(window_handle_t window_handle) {
+	fprintf(stderr, "unimplemented: open_file_dialog()\n");
+}
+
+void toggle_fullscreen(window_handle_t window_handle) {
+	fprintf(stderr, "unimplemented: toggle_fullscreen()\n");
+}
+
+bool check_fullscreen(window_handle_t window_handle) {
+	fprintf(stderr, "unimplemented: check_fullscreen()\n");
+	return false; // stub
+}
+
+bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
+	fprintf(stderr, "unimplemented: add_work_queue_entry()\n");
+	return false;
+}
+
+bool is_queue_work_in_progress(work_queue_t* queue) {
+	fprintf(stderr, "unimplemented: is_queue_work_in_progress()\n");
+	return false;
+}
+
+work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
+	work_queue_entry_t result = {};
+	fprintf(stderr, "unimplemented: get_next_work_queue_entry()\n");
+	return result;
+}
+
+void mark_queue_entry_completed(work_queue_t* queue) {
+	fprintf(stderr, "unimplemented: mark_queue_entry_completed()\n");
+}
+
+bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
+	fprintf(stderr, "unimplemented: do_worker_work()\n");
+	return false;
 }
 
 void get_cpu_info() {

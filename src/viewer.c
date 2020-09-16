@@ -258,10 +258,12 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->initialized = true;
 }
 
-void init_app_state(app_state_t* app_state) {
+void init_app_state(app_state_t* app_state, window_handle_t main_window) {
 	ASSERT(!app_state->initialized); // check sanity
 	ASSERT(app_state->temp_storage_memory == NULL);
 	memset(app_state, 0, sizeof(app_state_t));
+
+	app_state->main_window = main_window;
 
 	size_t temp_storage_size = MEGABYTES(16); // Note: what is a good size to use here?
 	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
@@ -356,7 +358,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	i64 last_section = get_clock(); // start profiler section
 
-	if (!app_state->initialized) init_app_state(app_state);
+//	if (!app_state->initialized) init_app_state(app_state);
 	// Note: the window might get resized, so need to update this every frame
 	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
 

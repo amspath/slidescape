@@ -148,7 +148,11 @@ typedef struct input_t {
 
 } input_t;
 
-
+#if WINDOWS
+typedef HWND window_handle_t;
+#else
+typedef void* window_handle_t;
+#endif
 
 // virtual keycodes
 #define KEYCODE_LBUTTON 0x01
@@ -332,13 +336,17 @@ u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 void mouse_show();
 void mouse_hide();
 
+void open_file_dialog(window_handle_t window_handle);
+void toggle_fullscreen(window_handle_t window_handle);
+bool check_fullscreen(window_handle_t window_handle);
+
 void message_box(const char* message);
 
-bool32 add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
-bool32 is_queue_work_in_progress(work_queue_t* queue);
+bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
+bool is_queue_work_in_progress(work_queue_t* queue);
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
 void mark_queue_entry_completed(work_queue_t* queue);
-bool32 do_worker_work(work_queue_t* queue, int logical_thread_index);
+bool do_worker_work(work_queue_t* queue, int logical_thread_index);
 
 bool file_exists(const char* filename);
 

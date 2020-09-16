@@ -47,24 +47,7 @@ typedef struct {
 	int height;
 } win32_window_dimension_t;
 
-/*
-typedef struct win32_thread_info_t {
-	i32 logical_thread_index;
-	work_queue_t* queue;
-} win32_thread_info_t;
 
-typedef struct {
-	HANDLE async_io_event;
-	OVERLAPPED overlapped;
-	u64 thread_memory_raw_size;
-	u64 thread_memory_usable_size; // free space from aligned_rest_of_thread_memory onward
-	void* aligned_rest_of_thread_memory;
-} thread_memory_t;*/
-
-
-void win32_open_file_dialog(HWND window);
-void win32_toggle_fullscreen(HWND window);
-bool32 win32_is_fullscreen(HWND window);
 void win32_diagnostic(const char* prefix);
 
 // globals

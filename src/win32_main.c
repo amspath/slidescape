@@ -193,13 +193,13 @@ win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
 }
 
-bool32 win32_is_fullscreen(HWND window) {
+bool check_fullscreen(window_handle_t window_handle) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
 	bool32 result = !(style & WS_OVERLAPPEDWINDOW);
 	return result;
 }
 
-void win32_toggle_fullscreen(HWND window) {
+void toggle_fullscreen(window_handle_t window_handle) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
 	if (style & WS_OVERLAPPEDWINDOW) {
 		MONITORINFO monitor_info = { .cbSize = sizeof(monitor_info) };
@@ -222,7 +222,7 @@ void win32_toggle_fullscreen(HWND window) {
 	}
 }
 
-void win32_open_file_dialog(HWND window) {
+void open_file_dialog(window_handle_t window_handle) {
 	// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
 	OPENFILENAME ofn = {};       // common dialog box structure
 	char filename[4096];       // buffer for file name
@@ -1111,7 +1111,7 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 
 
 
-bool32 add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
+bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
 
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer
@@ -1174,7 +1174,7 @@ void mark_queue_entry_completed(work_queue_t* queue) {
 	interlocked_increment(&queue->completion_count);
 }
 
-bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
+bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 	work_queue_entry_t entry = get_next_work_queue_entry(queue);
 	if (entry.is_valid) {
 		if (!entry.callback) panic();
@@ -1185,8 +1185,8 @@ bool32 do_worker_work(work_queue_t* queue, int logical_thread_index) {
 }
 
 
-bool32 is_queue_work_in_progress(work_queue_t* queue) {
-	bool32 result = (queue->completion_goal > queue->completion_count);
+bool is_queue_work_in_progress(work_queue_t* queue) {
+	bool result = (queue->completion_goal > queue->completion_count);
 	return result;
 }
 

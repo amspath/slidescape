@@ -263,6 +263,7 @@ typedef struct app_state_t {
 	u32 tile_pbos[16];
 	pixel_transfer_state_t pixel_transfer_states[32];
 	u32 next_pixel_transfer_to_submit;
+	window_handle_t main_window;
 } app_state_t;
 
 
@@ -280,7 +281,7 @@ bool32 was_button_released(button_state_t* button);
 bool32 was_key_pressed(input_t* input, i32 keycode);
 bool32 is_key_down(input_t* input, i32 keycode);
 void init_scene(app_state_t *app_state, scene_t *scene);
-void init_app_state(app_state_t* app_state);
+void init_app_state(app_state_t* app_state, window_handle_t main_window);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 

@@ -120,7 +120,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
-			prev_fullscreen = is_fullscreen = win32_is_fullscreen(main_window); // double-check just in case...
+			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
 			ImGui::Separator();
@@ -146,15 +146,15 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		if (menu_items_clicked.exit_program) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
-			win32_open_file_dialog(main_window);
+			open_file_dialog(app_state->main_window);
 		} else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (prev_fullscreen != is_fullscreen) {
-			bool currently_fullscreen = win32_is_fullscreen(main_window);
+			bool currently_fullscreen = check_fullscreen(app_state->main_window);
 			if (currently_fullscreen != is_fullscreen) {
-				win32_toggle_fullscreen(main_window);
+				toggle_fullscreen(app_state->main_window);
 			}
 		} else if(menu_items_clicked.save_annotations) {
 			save_asap_xml_annotations(&app_state->scene.annotation_set, "test_out.xml");

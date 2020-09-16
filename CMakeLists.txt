@@ -126,7 +126,7 @@ elseif(APPLE)
             src/mathutils.c
             src/shader.c
             src/tiff.c
-#            src/tiff_write.c
+            src/tiff_write.c
 #            src/caselist.c
 #            src/annotation.cpp
             src/openslide_api.c
@@ -147,7 +147,7 @@ elseif(APPLE)
             src/parson.c
             src/yxml.c
     )
-    target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL")
+    target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
 endif(WIN32)
 
 set(SERVER_SOURCE_FILES
