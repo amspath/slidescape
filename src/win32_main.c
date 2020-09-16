@@ -992,6 +992,12 @@ void win32_init_opengl(HWND window) {
 		panic();
 	}
 
+	// Hack: Enabling synchronous debug output (on NVIDIA drivers) apparently disables OpenGL driver multithreading.
+	// We badly want to disable this, because we are already heavily using threads in the program!
+	glEnable(GL_DEBUG_OUTPUT);
+	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+
+
 
 	// Create separate OpenGL contexts for each worker thread, so that they can load textures (etc.) on the fly
 #if 0
@@ -1418,7 +1424,7 @@ int main(int argc, const char** argv) {
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
 
-	is_vsync_enabled = is_nvidia_gpu ? 0 : 1; // NVIDIA drivers don't seem to work well with Vsync for now
+	is_vsync_enabled = true;
 	set_swap_interval(is_vsync_enabled ? 1 : 0);
 
 	i64 last_clock = get_clock();
@@ -1431,6 +1437,7 @@ int main(int argc, const char** argv) {
 			refresh_rate = 60; // guess
 		}
 		float predicted_frame_ms = 1000.0f / (float)refresh_rate;
+		if (!is_vsync_enabled) predicted_frame_ms *= 0.5f; // try to hit twice the refresh rate
 
 		float delta_t = (float)(current_clock - last_clock) / (float)performance_counter_frequency;
 		last_clock = current_clock;
@@ -1451,7 +1458,10 @@ int main(int argc, const char** argv) {
 		float time_margin = is_vsync_enabled ? 2.0f : 0.0f;
 		float sleep_time = ms_left - time_margin;
 		if (sleep_time >= 1.0f) {
-			Sleep((DWORD)sleep_time);
+			// Sleep seems to cause Vsync stutter on some NVIDIA gpus. (?)
+			if (!(is_nvidia_gpu && is_vsync_enabled)) {
+				Sleep((DWORD)sleep_time);
+			}
 		}
 
 		wglSwapBuffers(glrc_hdc);
