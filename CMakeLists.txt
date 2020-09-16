@@ -61,11 +61,11 @@ else()
 endif()
 
 set(FREETYPE_SOURCE_FILES
-        autofit/autofit.c   base/ftbbox.c   base/ftbase.c           base/ftbdf.c        base/ftbitmap.c
-        base/ftcid.c        base/ftfstype.c base/ftgasp.c           base/ftglyph.c      base/ftgxval.c
-        base/ftinit.c       base/ftmm.c     base/ftotval.c          base/ftpatent.c     base/ftpfr.c
-        base/ftstroke.c     base/ftsynth.c  base/fttype1.c          base/ftwinfnt.c     bdf/bdf.c
-        cache/ftcache.c     cff/cff.c       cid/type1cid.c          pcf/pcf.c           pfr/pfr.c
+        autofit/autofit.c   base/ftbbox.c       base/ftbase.c       base/ftbdf.c        base/ftbitmap.c
+        base/ftcid.c        base/ftfstype.c     base/ftgasp.c       base/ftglyph.c      base/ftgxval.c
+        base/ftinit.c       base/ftmm.c         base/ftotval.c      base/ftpatent.c     base/ftpfr.c
+        base/ftstroke.c     base/ftsynth.c      base/fttype1.c      base/ftwinfnt.c     bdf/bdf.c
+        cache/ftcache.c     cff/cff.c           cid/type1cid.c      pcf/pcf.c           pfr/pfr.c
         psaux/psaux.c       pshinter/pshinter.c psnames/psnames.c   raster/raster.c     sfnt/sfnt.c
         smooth/smooth.c     truetype/truetype.c type1/type1.c       type42/type42.c     winfonts/winfnt.c
         base/ftsystem.c
@@ -78,11 +78,8 @@ else()
 endif()
 
 set(VIEWER_SOURCE_FILES
-        win32_main.c
-        win32_gui.cpp
         platform.c
         viewer.c
-        glad.c
         stringutils.c
         mathutils.c
         shader.c
@@ -96,7 +93,6 @@ set(VIEWER_SOURCE_FILES
         imgui_draw.cpp
         imgui_widgets.cpp
         imgui_impl_opengl3.cpp
-        imgui_impl_win32.cpp
         imgui_freetype.cpp
         gui.cpp
         jpeg_decoder.c
@@ -105,6 +101,15 @@ set(VIEWER_SOURCE_FILES
         parson.c
         yxml.c
 )
+if (WIN32)
+    set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
+            win32_main.c    win32_gui.cpp   imgui_impl_win32.cpp     glad.c
+    )
+elseif(APPLE)
+    set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
+            macos_main.mm   imgui_impl_osx.mm
+    )
+endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
 # client only supported on Windows x64 for now
@@ -112,41 +117,7 @@ if (WIN32)
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 elseif(APPLE)
-    add_executable(slideviewer
-            ${JPEG_SOURCE_FILES}
-            ${FREETYPE_SOURCE_FILES}
-
-#            src/win32_main.c
-            src/macos_main.mm
-
-            src/platform.c
-#            src/viewer.c
-#            src/glad.c
-            src/stringutils.c
-            src/mathutils.c
-            src/shader.c
-            src/tiff.c
-            src/tiff_write.c
-#            src/caselist.c
-#            src/annotation.cpp
-            src/openslide_api.c
-            src/imgui.cpp
-            src/imgui_demo.cpp
-            src/imgui_draw.cpp
-            src/imgui_widgets.cpp
-            src/imgui_impl_opengl3.cpp
-
-#            src/imgui_impl_win32.cpp
-            src/imgui_impl_osx.mm
-
-            src/imgui_freetype.cpp
-#            src/gui.cpp
-            src/jpeg_decoder.c
-#            src/tlsclient.c
-            src/lz4.c
-            src/parson.c
-            src/yxml.c
-    )
+    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
 endif(WIN32)
 

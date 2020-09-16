@@ -13,7 +13,8 @@
 #import <OpenGL/gl.h>
 #import <OpenGL/glu.h>
 
-//#include "viewer.h"
+#include "viewer.h"
+#include "gui.h"
 
 #include <sys/sysctl.h>
 
@@ -58,15 +59,6 @@
 	ImGui_ImplOSX_NewFrame(self);
     ImGui::NewFrame();
 
-    // Global data for the demo
-    static bool show_demo_window = true;
-    static bool show_another_window = false;
-    static ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-    // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-    if (show_demo_window)
-        ImGui::ShowDemoWindow(&show_demo_window);
-
     // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
     {
         static float f = 0.0f;
@@ -76,10 +68,8 @@
 
         ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
         ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-        ImGui::Checkbox("Another Window", &show_another_window);
 
         ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-        ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
 
         if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
             counter++;
@@ -90,30 +80,14 @@
         ImGui::End();
     }
 
-    // 3. Show another simple window.
-    if (show_another_window)
-    {
-        ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-        ImGui::Text("Hello from another window!");
-        if (ImGui::Button("Close Me"))
-            show_another_window = false;
-        ImGui::End();
-    }
-
-	// Rendering
-	ImGui::Render();
-	[[self openGLContext] makeCurrentContext];
-
-    ImDrawData* draw_data = ImGui::GetDrawData();
-    GLsizei width  = (GLsizei)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-    GLsizei height = (GLsizei)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
-    glViewport(0, 0, width, height);
-
+	v4f clear_color = global_app_state.clear_color;
 	glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-	glClear(GL_COLOR_BUFFER_BIT);
-	ImGui_ImplOpenGL3_RenderDrawData(draw_data);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-	glFinish();
+	i32 width = (i32)[self bounds].size.width;
+    i32 height = (i32)[self bounds].size.height;
+
+	gui_draw(&global_app_state, curr_input, width, height);
 
     // Present
     [[self openGLContext] flushBuffer];
@@ -295,7 +269,7 @@ SlideviewerView* g_view;
     if ([view openGLContext] == nil)
         NSLog(@"No OpenGL Context!");
 
-//    init_app_state(&global_app_state, view);
+    init_app_state(&global_app_state, view);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -335,6 +309,13 @@ SlideviewerView* g_view;
 
 @end
 
+extern "C"
+void gui_new_frame() {
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplOSX_NewFrame(g_view);
+	ImGui::NewFrame();
+}
+
 i64 get_clock() {
 	fprintf(stderr, "unimplemented: get_clock()\n");
 	return 0; // stub
@@ -352,6 +333,15 @@ void message_box(const char* message) {
 
 void set_swap_interval(int interval) {
 	[g_view setSwapInterval:interval];
+}
+
+u8* platform_alloc(size_t size) {
+	u8* result = (u8*) malloc(size);
+	if (!result) {
+		printf("Error: memory allocation failed!\n");
+		panic();
+	}
+	return result;
 }
 
 void mouse_show() {

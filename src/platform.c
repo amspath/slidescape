@@ -118,3 +118,18 @@ void memrw_destroy(memrw_t* buffer) {
 	if (buffer->data) free(buffer->data);
 	memset(buffer, 0, sizeof(*buffer));
 }
+
+
+//TODO: move this
+bool profiling = false;
+
+i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms) {
+	i64 end = get_clock();
+	if (profiling) {
+		float ms_elapsed = get_seconds_elapsed(start, end) * 1000.0f;
+		if (ms_elapsed > report_threshold_ms) {
+			printf("[profiler] %s: %g ms\n", name, ms_elapsed);
+		}
+	}
+	return end;
+}
