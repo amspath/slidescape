@@ -4,15 +4,21 @@ project(slideviewer)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing")
+set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-unknown-warning-option -Wno-shift-negative-value")
+if (APPLE)
+    set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations")
+endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse2 ${GCC_WARN_OPTIONS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 ${GCC_WARN_OPTIONS} -Wno-class-memaccess")
 
-# In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
-set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
-set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
+if (NOT(APPLE))
+    # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
+    set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
 
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 include_directories("${CMAKE_SOURCE_DIR}/deps")
@@ -67,6 +73,8 @@ set(FREETYPE_SOURCE_FILES
 prepend_path(FREETYPE_SOURCE_FILES deps/freetype/src)
 if (WIN32)
     set(FREETYPE_SOURCE_FILES ${FREETYPE_SOURCE_FILES} deps/freetype/builds/windows/ftdebug.c)
+else()
+    set(FREETYPE_SOURCE_FILES ${FREETYPE_SOURCE_FILES} deps/freetype/src/base/ftdebug.c)
 endif()
 
 set(VIEWER_SOURCE_FILES
@@ -100,8 +108,57 @@ prepend_path(VIEWER_SOURCE_FILES src)
 
 # client only supported on Windows x64 for now
 if (WIN32)
-add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
-target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
+    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
+    target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
+elseif(APPLE)
+    add_executable(slideviewer
+            ${JPEG_SOURCE_FILES}
+            ${FREETYPE_SOURCE_FILES}
+
+#            src/win32_main.c
+            src/macos_main.mm
+
+            src/platform.c
+#            src/viewer.c
+#            src/glad.c
+            src/stringutils.c
+            src/mathutils.c
+            src/shader.c
+            src/tiff.c
+#            src/tiff_write.c
+#            src/caselist.c
+#            src/annotation.cpp
+            src/openslide_api.c
+            src/imgui.cpp
+            src/imgui_demo.cpp
+            src/imgui_draw.cpp
+            src/imgui_widgets.cpp
+            src/imgui_impl_opengl3.cpp
+
+#            src/imgui_impl_win32.cpp
+            src/imgui_impl_osx.mm
+
+            src/imgui_freetype.cpp
+#            src/gui.cpp
+            src/jpeg_decoder.c
+#            src/tlsclient.c
+            src/lz4.c
+            src/parson.c
+            src/yxml.c
+    )
+    target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL")
+    add_executable(imgui_test ${FREETYPE_SOURCE_FILES}
+            src/macos_main.mm src/imgui_impl_osx.mm
+            src/imgui_impl_opengl2.cpp
+            src/imgui_impl_opengl3.cpp
+                       src/imgui.cpp
+                       src/imgui_demo.cpp
+                       src/imgui_draw.cpp
+                       src/imgui_widgets.cpp
+                       src/imgui_freetype.cpp
+
+            )
+    target_link_libraries(imgui_test "-framework Cocoa" "-framework Quartz" "-framework OpenGL")
 endif(WIN32)
 
 set(SERVER_SOURCE_FILES

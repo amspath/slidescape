@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 #include "common.h"
+#include "platform.h"
 #include "mathutils.h"
 #include "arena.h"
 #include "tiff.h"

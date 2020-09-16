@@ -27,7 +27,8 @@
 #else
     #include <sys/socket.h>
     #include <netinet/in.h>
-    #include <netdb.h> 
+    #include <netdb.h>
+	#define closesocket close
 #endif
 #define LTM_DESC
 #define TLS_AMALGAMATION
@@ -180,6 +181,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 	for (;;) {
 		receive_size = recv(sockfd, (char*)receive_buffer, sizeof(receive_buffer), 0);
 		if (receive_size < 0) {
+#if WINDOWS
 			int error_id = WSAGetLastError();
 			char* prefix = "do_http_request";
 			char* message_buffer;
@@ -187,6 +189,9 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 			                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
 			printf("[thread %d] %s: (error code 0x%x) %s\n", thread_id, prefix, (u32)error_id, message_buffer);
 			LocalFree(message_buffer);
+#else
+			// TODO
+#endif
 			break;
 		} else if (receive_size == 0) {
 #if REMOTE_CLIENT_VERBOSE

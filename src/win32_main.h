@@ -48,16 +48,6 @@ typedef struct {
 } win32_window_dimension_t;
 
 
-typedef struct work_queue_t {
-	HANDLE semaphore_handle;
-	i32 volatile next_entry_to_submit;
-	i32 volatile next_entry_to_execute;
-	i32 volatile completion_count;
-	i32 volatile completion_goal;
-	work_queue_entry_t entries[256];
-} work_queue_t;
-
-
 typedef struct win32_thread_info_t {
 	i32 logical_thread_index;
 	work_queue_t* queue;
@@ -88,11 +78,6 @@ void win32_diagnostic(const char* prefix);
 
 extern HWND main_window;
 extern SYSTEM_INFO system_info;
-extern u32 os_page_size;
-extern i32 total_thread_count;
-extern i32 logical_cpu_count;
-extern work_queue_t work_queue;
-extern work_queue_t thread_message_queue;
 
 
 #undef INIT

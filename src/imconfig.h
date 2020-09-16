@@ -90,7 +90,9 @@
 #ifndef NDEBUG
 // (use 'Metrics->Tools->Item Picker' to pick widgets with the mouse and break into them for easy debugging.)
 //#define IM_DEBUG_BREAK  IM_ASSERT(0)
+#if WINDOWS
 #define IM_DEBUG_BREAK()  __debugbreak()
+#endif
 //#define IM_DEBUG_BREAK() __asm__ volatile("int $0x03")
 
 //---- Debug Tools: Have the Item Picker break in the ItemAdd() function instead of ItemHoverable(),
@@ -110,7 +112,11 @@ namespace ImGui
 
 #include "config.h" // for USE_OPENGL_DEBUG_CONTEXT
 
+#ifdef _WIN32
 #define IMGUI_IMPL_OPENGL_LOADER_GLAD
 #define IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
+#elif defined(__APPLE__)
+#define IMGUI_IMPL_OPENGL_LOADER_CUSTOM <OpenGL/gl3.h>
+#endif
 #define IMGUI_IMPL_API extern "C"
 #define CIMGUI_NO_EXPORT

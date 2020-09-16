@@ -609,6 +609,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		tiff->fp = NULL;
 
 #if !IS_SERVER
+#if WINDOWS
 		// TODO: make async I/O platform agnostic
 		// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 		// http://vec3.ca/using-win32-asynchronous-io/
@@ -616,6 +617,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		                                                 FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
 		                                                 /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
 		                                                 NULL);
+#endif
 #endif
 
 
@@ -850,7 +852,11 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	tiff->location = (network_location_t){}; // set later
 	tiff->fp = NULL;
 #if !IS_SERVER
+#if WINDOWS
 	tiff->win32_file_handle = NULL;
+#else
+	// TODO
+#endif
 #endif
 	tiff->filesize = serial_header->filesize;
 	tiff->bytesize_of_offsets = serial_header->bytesize_of_offsets;
@@ -1007,9 +1013,13 @@ void tiff_destroy(tiff_t* tiff) {
 		tiff->fp = NULL;
 	}
 #if !IS_SERVER
+#if WINDOWS
 	if (tiff->win32_file_handle) {
 		CloseHandle(tiff->win32_file_handle);
 	}
+#else
+	// TODO
+#endif
 #endif
 
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {

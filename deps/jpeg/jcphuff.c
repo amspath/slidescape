@@ -24,7 +24,7 @@
 #include <limits.h>
 
 #ifdef HAVE_INTRIN_H
-#include <intrin.h>
+#include <immintrin.h>
 #ifdef _MSC_VER
 #ifdef HAVE_BITSCANFORWARD64
 #pragma intrinsic(_BitScanForward64)

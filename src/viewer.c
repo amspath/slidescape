@@ -18,15 +18,19 @@
 
 #include "common.h"
 
+#if WINDOWS
 #include "win32_main.h"
+#include <io.h>
+#include <glad/glad.h>
+#elif APPLE
+#include <OpenGL/gl3.h>
+#endif
 #include "platform.h"
 #include "intrinsics.h"
 #include "stringutils.h"
 
 #include "openslide_api.h"
-#include <glad/glad.h>
 #include <linmath.h>
-#include <io.h>
 
 #include "arena.h"
 #include "arena.c"

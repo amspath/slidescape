@@ -100,6 +100,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			}
 			free(read_buffer);
 		} else {
+#if WINDOWS
 			// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 			// offset in the file where we want to do the read operation
 			LARGE_INTEGER offset = {.QuadPart = (i64)tile_offset};
@@ -126,7 +127,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
 				win32_diagnostic("WaitForSingleObject");
 			}
-
+#else
+			// TODO
+#endif
 
 			if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
 				// JPEG stream is empty

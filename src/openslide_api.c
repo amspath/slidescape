@@ -66,6 +66,11 @@ bool32 init_openslide() {
 
 }
 
-#else
-#error "Dynamic loading of OpenSlide is not yet supported on this platform"
+#else //_WIN32
+
+bool32 init_openslide() {
+	// stub
+	return false;
+}
+
 #endif

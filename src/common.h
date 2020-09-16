@@ -38,6 +38,12 @@
 #define WINDOWS 0
 #endif
 
+#ifdef __APPLE__
+#define APPLE 1
+#else
+#define APPLE 0
+#endif
+
 // Compiler detection
 #ifdef _MSC_VER
 #define COMPILER_MSVC 1
@@ -61,6 +67,14 @@
 // Use 64-bit file offsets for fopen, etc.
 #ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
+#endif
+
+#if APPLE
+#include <unistd.h> // for access(), F_OK
+#define fseeko64 fseek
+#define fopen64 fopen
+#define fgetpos64 fgetpos
+#define fsetpos64 fsetpos
 #endif
 
 #include <stdint.h>

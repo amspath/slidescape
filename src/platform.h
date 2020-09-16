@@ -21,6 +21,12 @@
 #include "common.h"
 #include "mathutils.h"
 
+#if WINDOWS
+#include "windows.h"
+#elif APPLE
+#include <semaphore.h>
+#endif
+
 #ifdef TARGET_EMSCRIPTEN
 #include <emscripten/emscripten.h>
 #else
@@ -54,7 +60,35 @@ typedef struct work_queue_entry_t {
 	bool32 is_valid;
 } work_queue_entry_t;
 
-typedef struct work_queue_t work_queue_t;
+typedef struct work_queue_t {
+#if WINDOWS
+	HANDLE semaphore_handle;
+#elif APPLE
+	sem_t semaphore_handle;
+#endif
+	i32 volatile next_entry_to_submit;
+	i32 volatile next_entry_to_execute;
+	i32 volatile completion_count;
+	i32 volatile completion_goal;
+	work_queue_entry_t entries[256];
+} work_queue_t;
+
+typedef struct win32_thread_info_t {
+	i32 logical_thread_index;
+	work_queue_t* queue;
+} win32_thread_info_t;
+
+typedef struct {
+#if WINDOWS
+	HANDLE async_io_event;
+	OVERLAPPED overlapped;
+#else
+	// TODO: implement this
+#endif
+	u64 thread_memory_raw_size;
+	u64 thread_memory_usable_size; // free space from aligned_rest_of_thread_memory onward
+	void* aligned_rest_of_thread_memory;
+} thread_memory_t;
 
 typedef struct button_state_t {
 	bool8 down;
@@ -314,7 +348,7 @@ memrw_t memrw_create(u64 capacity);
 void memrw_destroy(memrw_t* buffer);
 
 // globals
-#if defined(WIN32_MAIN_IMPL)
+#if defined(PLATFORM_IMPL)
 #define INIT(...) __VA_ARGS__
 #define extern
 #else
@@ -323,13 +357,19 @@ void memrw_destroy(memrw_t* buffer);
 #endif
 
 extern int g_argc;
-extern char** g_argv;
+extern const char** g_argv;
 extern bool is_fullscreen;
 extern bool is_program_running;
 extern void* thread_local_storage[MAX_THREAD_COUNT];
 extern input_t inputs[2];
 extern input_t *old_input;
 extern input_t *curr_input;
+extern u32 os_page_size;
+extern i32 total_thread_count;
+extern i32 physical_cpu_count;
+extern i32 logical_cpu_count;
+extern work_queue_t work_queue;
+extern work_queue_t thread_message_queue;
 
 #undef INIT
 #undef extern

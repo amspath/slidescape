@@ -30,7 +30,11 @@ extern "C" {
 #define IS_SERVER 0
 #endif
 #if !IS_SERVER
+#if WINDOWS
 #include "win32_main.h"
+#elif APPLE
+
+#endif
 #endif
 
 #define TIFF_LITTLE_ENDIAN 0x4949
@@ -261,7 +265,10 @@ struct tiff_t {
 	network_location_t location;
 	FILE* fp;
 #if !IS_SERVER
+	// TODO: platform independent file handle?
+#if WINDOWS
 	HANDLE win32_file_handle;
+#endif
 #endif
 	i64 filesize;
 	u32 bytesize_of_offsets;
