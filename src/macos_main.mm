@@ -362,15 +362,15 @@ void mouse_hide() {
 	fprintf(stderr, "unimplemented: mouse_hide()\n");
 }
 
-void open_file_dialog(window_handle_t window_handle) {
+void open_file_dialog(window_handle_t window) {
 	fprintf(stderr, "unimplemented: open_file_dialog()\n");
 }
 
-void toggle_fullscreen(window_handle_t window_handle) {
+void toggle_fullscreen(window_handle_t window) {
 	fprintf(stderr, "unimplemented: toggle_fullscreen()\n");
 }
 
-bool check_fullscreen(window_handle_t window_handle) {
+bool check_fullscreen(window_handle_t window) {
 	fprintf(stderr, "unimplemented: check_fullscreen()\n");
 	return false; // stub
 }

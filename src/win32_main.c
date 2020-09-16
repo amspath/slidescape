@@ -51,7 +51,7 @@
 
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
-#if 0
+#if PREFER_DEDICATED_GRAPHICS
 // If both dedicated GPU and integrated graphics are available -> choose dedicated
 // see:
 // https://stackoverflow.com/questions/6036292/select-a-graphic-device-in-windows-opengl
@@ -193,13 +193,13 @@ win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
 }
 
-bool check_fullscreen(window_handle_t window_handle) {
+bool check_fullscreen(window_handle_t window) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
 	bool32 result = !(style & WS_OVERLAPPEDWINDOW);
 	return result;
 }
 
-void toggle_fullscreen(window_handle_t window_handle) {
+void toggle_fullscreen(window_handle_t window) {
 	LONG style = GetWindowLong(window, GWL_STYLE);
 	if (style & WS_OVERLAPPEDWINDOW) {
 		MONITORINFO monitor_info = { .cbSize = sizeof(monitor_info) };
@@ -222,7 +222,7 @@ void toggle_fullscreen(window_handle_t window_handle) {
 	}
 }
 
-void open_file_dialog(window_handle_t window_handle) {
+void open_file_dialog(window_handle_t window) {
 	// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
 	OPENFILENAME ofn = {};       // common dialog box structure
 	char filename[4096];       // buffer for file name
@@ -500,13 +500,13 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 					case 'O': {
 						if (is_down && ctrl_down) {
-							win32_open_file_dialog(window);
+							open_file_dialog(window);
 						}
 					} break;
 
 					case VK_F11: {
 						if (is_down && message.hwnd) {
-							win32_toggle_fullscreen(message.hwnd);
+							toggle_fullscreen(message.hwnd);
 						}
 					} break;
 				}
@@ -1000,7 +1000,7 @@ void win32_init_opengl(HWND window) {
 
 
 	// Create separate OpenGL contexts for each worker thread, so that they can load textures (etc.) on the fly
-#if 0
+#if USE_MULTIPLE_OPENGL_CONTEXTS
 	ASSERT(logical_cpu_count > 0);
 	for (i32 thread_index = 1; thread_index < total_thread_count; ++thread_index) {
 		HGLRC glrc = wglCreateContextAttribsARB(dc, glrcs[0], context_attribs);
@@ -1211,7 +1211,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
-#if 0
+#if USE_MULTIPLE_OPENGL_CONTEXTS
 	ASSERT(main_window);
 	HDC dc = 0;
 	for (;;) {
@@ -1234,6 +1234,10 @@ DWORD WINAPI thread_proc(void* parameter) {
 	}
 	ReleaseDC(main_window, dc);
 
+	// Hack: make sure the OpenGL driver doesn't spawn any more threads
+	glEnable(GL_DEBUG_OUTPUT);
+	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+
 #if USE_OPENGL_DEBUG_CONTEXT
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
@@ -1248,7 +1252,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, NULL, true);
 	}
 #endif
-#endif
+#endif//USE_MULTIPLE_OPENGL_CONTEXTS
 
 //	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
@@ -1413,7 +1417,7 @@ int main(int argc, const char** argv) {
 	win32_init_gui(main_window);
 
 	app_state_t* app_state = &global_app_state;
-	init_app_state(app_state);
+	init_app_state(app_state, main_window);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	// TODO: give the viewer the option to do this without referring to the g_argc which it does not need to know!

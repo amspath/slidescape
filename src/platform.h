@@ -88,6 +88,7 @@ typedef struct {
 	u64 thread_memory_raw_size;
 	u64 thread_memory_usable_size; // free space from aligned_rest_of_thread_memory onward
 	void* aligned_rest_of_thread_memory;
+	u32 pbo;
 } thread_memory_t;
 
 typedef struct button_state_t {
@@ -337,8 +338,8 @@ void mouse_show();
 void mouse_hide();
 
 void open_file_dialog(window_handle_t window_handle);
-void toggle_fullscreen(window_handle_t window_handle);
-bool check_fullscreen(window_handle_t window_handle);
+void toggle_fullscreen(window_handle_t window);
+bool check_fullscreen(window_handle_t window);
 
 void message_box(const char* message);
 

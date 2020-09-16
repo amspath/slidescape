@@ -179,6 +179,55 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	finish_up:;
 
+	i32 width = TILE_DIM;
+	i32 height = TILE_DIM;
+
+#if USE_MULTIPLE_OPENGL_CONTEXTS
+#if 1
+	glEnable(GL_TEXTURE_2D);
+	if (!thread_memory->pbo) {
+		glGenBuffers(1, &thread_memory->pbo);
+	}
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, thread_memory->pbo);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * 4, NULL, GL_STREAM_DRAW);
+
+	void* mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+
+//write data into the mapped buffer, possibly in another thread.
+	memcpy(mapped_buffer, temp_memory, buffer_size);
+	free(temp_memory);
+
+// after reading is complete back on the main thread
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, thread_memory->pbo);
+	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+
+	Sleep(5);
+
+	u32 texture = 0; //gl_gen_texture();
+//        glEnable(GL_TEXTURE_2D);
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+	glFinish(); // Block thread execution until all OpenGL operations have finished.
+#else
+	glEnable(GL_TEXTURE_2D);
+	u32 texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
+	glFinish(); // Block thread execution until all OpenGL operations have finished.
+#endif
+	write_barrier;
+	task->tile->texture = texture;
+
+#else//USE_MULTIPLE_OPENGL_CONTEXTS
+
 	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
 	completion_task->pixel_memory = temp_memory;
 	completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
@@ -188,8 +237,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	ASSERT(task->completion_callback);
 	add_work_queue_entry(&thread_message_queue, task->completion_callback, completion_task);
 
-	free(userdata);
+#endif
 
+	free(userdata);
 }
 
 void load_wsi(wsi_t* wsi, const char* filename) {
