@@ -322,6 +322,7 @@ i64 get_clock();
 float get_seconds_elapsed(i64 start, i64 end);
 void platform_sleep(u32 ms);
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
+void set_swap_interval(int interval);
 
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
 mem_t* platform_allocate_mem_buffer(size_t capacity);
@@ -368,6 +369,7 @@ extern u32 os_page_size;
 extern i32 total_thread_count;
 extern i32 physical_cpu_count;
 extern i32 logical_cpu_count;
+extern bool is_vsync_enabled;
 extern work_queue_t work_queue;
 extern work_queue_t thread_message_queue;
 

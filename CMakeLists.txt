@@ -147,18 +147,6 @@ elseif(APPLE)
             src/yxml.c
     )
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL")
-    add_executable(imgui_test ${FREETYPE_SOURCE_FILES}
-            src/macos_main.mm src/imgui_impl_osx.mm
-            src/imgui_impl_opengl2.cpp
-            src/imgui_impl_opengl3.cpp
-                       src/imgui.cpp
-                       src/imgui_demo.cpp
-                       src/imgui_draw.cpp
-                       src/imgui_widgets.cpp
-                       src/imgui_freetype.cpp
-
-            )
-    target_link_libraries(imgui_test "-framework Cocoa" "-framework Quartz" "-framework OpenGL")
 endif(WIN32)
 
 set(SERVER_SOURCE_FILES

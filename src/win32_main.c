@@ -732,7 +732,7 @@ bool win32_wgl_extension_supported(const char *extension_name) {
 }
 
 
-void win32_gl_swap_interval(int interval) {
+void set_swap_interval(int interval) {
 	if (wglSwapIntervalEXT) {
 		wglSwapIntervalEXT(interval);
 	}
@@ -1351,7 +1351,6 @@ void win32_init_main_window() {
 	}
 
 	win32_init_opengl(main_window);
-	win32_gl_swap_interval(1);
 
 	ShowWindow(main_window, SW_MAXIMIZE);
 
@@ -1372,7 +1371,7 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 }
 
 
-int main(int argc, char** argv) {
+int main(int argc, const char** argv) {
 	g_instance = GetModuleHandle(NULL);
 	g_cmdline = GetCommandLine();
 	g_argc = argc;
@@ -1409,11 +1408,14 @@ int main(int argc, char** argv) {
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	// TODO: give the viewer the option to do this without referring to the g_argc which it does not need to know!
 	if (g_argc > 1) {
-		char* filename = g_argv[1];
+		const char* filename = g_argv[1];
 		load_generic_file(app_state, filename);
 	}
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
+
+	is_vsync_enabled = true;
+	set_swap_interval(is_vsync_enabled ? 1 : 0);
 
 	i64 last_clock = get_clock();
 	while (is_program_running) {

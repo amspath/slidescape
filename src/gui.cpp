@@ -103,6 +103,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
+		bool prev_is_vsync_enabled = is_vsync_enabled;
 		bool prev_fullscreen = is_fullscreen;
 
 		if (ImGui::BeginMenu("File")) {
@@ -142,6 +143,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
+				if (ImGui::MenuItem("Enable Vsync", NULL, &is_vsync_enabled)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -183,6 +185,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				app_state->scene.is_cropped = false;
 				app_state->scene.has_selection_box = false;
 			}
+		} else if (prev_is_vsync_enabled != is_vsync_enabled) {
+			set_swap_interval(is_vsync_enabled ? 1 : 0);
 		}
 	}
 
