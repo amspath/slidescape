@@ -777,7 +777,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// IO
 
         float time_elapsed;
-#if 0
+#if 1
         if (!finalize_textures_immediately) {
             // Finalize textures that were uploaded via PBO the previous frame
             for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
@@ -798,10 +798,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
         }
 
-        time_elapsed = get_seconds_elapsed(last_section, get_clock());
+        /*time_elapsed = get_seconds_elapsed(last_section, get_clock());
         if (time_elapsed > 0.005f) {
             printf("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
-        }
+        }*/
 
         last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
 

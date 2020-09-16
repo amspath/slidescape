@@ -89,7 +89,11 @@ pixel_transfer_state_t* submit_texture_upload_via_pbo(app_state_t *app_state, i3
 	app_state->next_pixel_transfer_to_submit = (app_state->next_pixel_transfer_to_submit + 1) % COUNT(app_state->pixel_transfer_states);
 	i64 buffer_size = width * height * bytes_per_pixel;
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, transfer_state->pbo);
-	glBufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, pixels, GL_STREAM_DRAW);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, buffer_size, NULL, GL_STREAM_DRAW);
+	void* mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+	memcpy(mapped_buffer, pixels, buffer_size);
+	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+
 	if (!finalize) {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         transfer_state->texture_width = width;
