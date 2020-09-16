@@ -79,6 +79,7 @@ endif()
 
 set(VIEWER_SOURCE_FILES
         win32_main.c
+        win32_gui.cpp
         platform.c
         viewer.c
         glad.c

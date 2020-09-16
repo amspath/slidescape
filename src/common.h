@@ -34,12 +34,19 @@
 #define WINDOWS 1
 #define _WIN32_WINNT 0x0600
 #define WINVER 0x0600
+#define OPENGL_H <glad/glad.h>
 #else
 #define WINDOWS 0
 #endif
 
 #ifdef __APPLE__
 #define APPLE 1
+#include <unistd.h> // for access(), F_OK
+#define fseeko64 fseek
+#define fopen64 fopen
+#define fgetpos64 fgetpos
+#define fsetpos64 fsetpos
+#define OPENGL_H <OpenGL/gl3.h>
 #else
 #define APPLE 0
 #endif
@@ -67,14 +74,6 @@
 // Use 64-bit file offsets for fopen, etc.
 #ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
-#endif
-
-#if APPLE
-#include <unistd.h> // for access(), F_OK
-#define fseeko64 fseek
-#define fopen64 fopen
-#define fgetpos64 fgetpos
-#define fsetpos64 fsetpos
 #endif
 
 #include <stdint.h>

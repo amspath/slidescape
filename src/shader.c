@@ -19,11 +19,7 @@
 #include "common.h"
 #include "platform.h"
 
-#if WINDOWS
-#include <glad/glad.h>
-#elif APPLE
-#include <OpenGL/gl3.h>
-#endif
+#include OPENGL_H
 
 #include "stringutils.h"
 #include "../stringified_shaders.c"

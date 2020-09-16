@@ -21,10 +21,9 @@
 #if WINDOWS
 #include "win32_main.h"
 #include <io.h>
-#include <glad/glad.h>
-#elif APPLE
-#include <OpenGL/gl3.h>
 #endif
+#include OPENGL_H
+
 #include "platform.h"
 #include "intrinsics.h"
 #include "stringutils.h"
