@@ -389,6 +389,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	ASSERT(image_count >= 0);
 
 	if (image_count == 0) {
+		//load_generic_file(app_state, "test.jpeg");
 		goto after_scene_render;
 	}
 
@@ -424,7 +425,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (input->mouse_buttons[0].transition_count != 0) {
 				// Don't start dragging if clicked outside the window
 				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
-				if (is_point_inside_rect2i(valid_drag_start_rect, input->mouse_xy)) {
+				if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){input->mouse_xy.x, input->mouse_xy.y})) {
 					scene->is_dragging = true; // drag start
 					scene->drag_started = true;
 					scene->cumulative_drag_vector = (v2i){};

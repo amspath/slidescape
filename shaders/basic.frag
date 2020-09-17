@@ -9,6 +9,8 @@ uniform sampler2D the_texture;
 uniform float black_level;
 uniform float white_level;
 
+out vec4 fragColor;
+
 void main() {
     vec4 the_texture_rgba = texture(the_texture, fs_in.tex_coord);
 
@@ -16,5 +18,5 @@ void main() {
     vec3 color = the_texture_rgba.rgb;
     color = (color - black_level) * (1.0f / (white_level - black_level));
 
-    gl_FragColor = vec4(opacity * color + (1.0f-opacity) * bg_color, opacity);
+    fragColor = vec4(opacity * color + (1.0f-opacity) * bg_color, opacity);
 }

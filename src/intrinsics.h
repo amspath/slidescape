@@ -28,7 +28,16 @@
 
 #define interlocked_increment(x) InterlockedIncrement((volatile long*)(x))
 #define interlocked_compare_exchange(destination, exchange, comparand) \
-  InterlockedCompareExchange((volatile long*)(destination), (exchange), (comparand))
+  (InterlockedCompareExchange((volatile long*)(destination), (exchange), (comparand)) == (comparand))
+
+#elif APPLE
+#define OSATOMIC_USE_INLINED 1
+#include <libkern/OSAtomic.h>
+
+#define write_barrier
+#define read_barrier
+#define interlocked_increment(x) OSAtomicIncrement32((x))
+#define interlocked_compare_exchange(destination, exchange, comparand) OSAtomicCompareAndSwap32((comparand), (exchange), (destination))
 
 #else
 //TODO: implement

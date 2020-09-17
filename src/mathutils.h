@@ -44,9 +44,12 @@ typedef struct rgba_t {
 	u8 r, g, b, a;
 } rgba_t;
 
+#ifndef V2F_DEFINED
+#define V2F_DEFINED
 typedef struct v2f {
 	float x, y;
 } v2f;
+#endif
 
 typedef struct v3f {
 	union {
@@ -55,13 +58,15 @@ typedef struct v3f {
 	};
 } v3f;
 
+#ifndef V4F_DEFINED
+#define V4F_DEFINED
 typedef struct v4f {
 	union {
 		struct {float r, g, b, a; };
 		struct {float x, y, z, w; };
 	};
 } v4f;
-
+#endif
 
 typedef struct bounds2i {
 	union {

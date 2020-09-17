@@ -663,7 +663,7 @@ void *connection_handler(void *socket_desc) {
 }
 
 
-void* worker(void* arg_ptr) {
+void* worker_thread(void* arg_ptr) {
 
 	for (;;) {
 		/* thread code blocks here until work is available */
@@ -716,7 +716,7 @@ int main(int argc , char *argv[]) {
 	pthread_mutex_lock(&work_mutex);
 
 	for (i64 i = 1; i < COUNT(threads); ++i) {
-		if (pthread_create(threads + i, NULL, &worker, (void*)i) != 0) {
+		if (pthread_create(threads + i, NULL, &worker_thread, (void*)i) != 0) {
 			fprintf(stderr, "Error creating thread\n");
 			return 1;
 		}

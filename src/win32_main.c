@@ -75,7 +75,7 @@ surface_t backbuffer;
 
 WNDCLASSA main_window_class;
 
-win32_thread_info_t thread_infos[MAX_THREAD_COUNT];
+platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
 
 
@@ -1071,10 +1071,13 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	curr_input->drag_vector = old_input->drag_vector;
 
 
+	// TODO: retrieve subpixel mouse coordinates?
+	// https://stackoverflow.com/questions/11179572/why-is-it-not-possible-to-obtain-mouse-coordinates-as-floating-point-values
+	// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmousemovepointsex?redirectedfrom=MSDN
 	POINT cursor_pos;
 	GetCursorPos(&cursor_pos);
 	ScreenToClient(window, &cursor_pos);
-	curr_input->mouse_xy = (v2i){ cursor_pos.x, cursor_pos.y };
+	curr_input->mouse_xy = (v2f){ (float)cursor_pos.x, (float)cursor_pos.y };
 	curr_input->mouse_z = 0;
 
 	// NOTE: should we call GetAsyncKeyState or GetKeyState?
@@ -1115,16 +1118,16 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer
-		i32 original_next_entry_to_submit = queue->next_entry_to_submit;
+		i32 entry_to_submit = queue->next_entry_to_submit;
 		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
 		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
 			printf("Warning: work queue is overflowing - job is cancelled\n");
 			return false;
 		}
 
-		i32 entry_to_submit = interlocked_compare_exchange(&queue->next_entry_to_submit,
-		                                                   new_next_entry_to_submit, original_next_entry_to_submit);
-		if (entry_to_submit == original_next_entry_to_submit) {
+		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_submit,
+		                                                   new_next_entry_to_submit, entry_to_submit);
+		if (succeeded) {
 //		    printf("exhange succeeded\n");
 			queue->entries[entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
 			write_barrier;
@@ -1146,18 +1149,18 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {};
 
-	i32 original_entry_to_execute = queue->next_entry_to_execute;
-	i32 new_next_entry_to_execute = (original_entry_to_execute + 1) % COUNT(queue->entries);
+	i32 entry_to_execute = queue->next_entry_to_execute;
+	i32 new_next_entry_to_execute = (entry_to_execute + 1) % COUNT(queue->entries);
 
 	// don't even try to execute a task if it is not yet submitted, or not yet fully submitted
-	if ((original_entry_to_execute != queue->next_entry_to_submit) && (queue->entries[original_entry_to_execute].is_valid)) {
-		i32 entry_index = interlocked_compare_exchange(&queue->next_entry_to_execute,
-		                                               new_next_entry_to_execute, original_entry_to_execute);
-		if (entry_index == original_entry_to_execute) {
+	if ((entry_to_execute != queue->next_entry_to_submit) && (queue->entries[entry_to_execute].is_valid)) {
+		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_execute,
+		                                               new_next_entry_to_execute, entry_to_execute);
+		if (succeeded) {
 			// We have dibs to execute this task!
-			queue->entries[original_entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
-			result.data = queue->entries[entry_index].data;
-			result.callback = queue->entries[entry_index].callback;
+			queue->entries[entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
+			result.data = queue->entries[entry_to_execute].data;
+			result.callback = queue->entries[entry_to_execute].callback;
 			if (!result.callback) {
 				printf("Error: encountered a work entry with a missing callback routine\n");
 				panic();

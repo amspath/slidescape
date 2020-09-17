@@ -1,6 +1,7 @@
 
 #include "common.h"
 #include "platform.h"
+#include "intrinsics.h"
 #include "macos_main.h"
 #include "stringutils.h"
 
@@ -13,10 +14,23 @@
 #import <OpenGL/gl.h>
 #import <OpenGL/glu.h>
 
+#import <pthread.h>
+#import <semaphore.h>
+
 #include "viewer.h"
 #include "gui.h"
 
 #include <sys/sysctl.h>
+#include <mach/mach_time.h>
+
+
+// Prototypes
+void macos_process_button_event(button_state_t* new_state, bool32 down);
+bool macos_process_input();
+
+
+bool want_toggle_fullscreen;
+float window_scale_factor = 1.0f;
 
 //-----------------------------------------------------------------------------------
 // ImGuiExampleView
@@ -54,45 +68,36 @@
 
 -(void)updateAndDrawDemoView
 {
-    // Start the Dear ImGui frame
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplOSX_NewFrame(self);
-    ImGui::NewFrame();
 
-    // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-    {
-        static float f = 0.0f;
-        static int counter = 0;
+	if (want_toggle_fullscreen) {
+		want_toggle_fullscreen = false;
+//		auto screenFrame = [[NSScreen mainScreen] frame];
+//		[self.window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
+//		[self.window setFrame:screenFrame display:YES];
+		[self.window toggleFullScreen:self];
+	}
 
-        ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+	i64 time_start = get_clock();
 
-        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-        ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-
-        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-
-        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text("counter = %d", counter);
-
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        ImGui::End();
-    }
-
-	v4f clear_color = global_app_state.clear_color;
-	glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	macos_process_input();
 
 	i32 width = (i32)[self bounds].size.width;
-    i32 height = (i32)[self bounds].size.height;
+	i32 height = (i32)[self bounds].size.height;
+	window_scale_factor = [[self window] backingScaleFactor];
+	i32 fb_width = (i32)(width * window_scale_factor);
+	i32 fb_height = (i32)(height * window_scale_factor);
 
-	gui_draw(&global_app_state, curr_input, width, height);
+	viewer_update_and_render(&global_app_state, curr_input, fb_width, fb_height, 0.17f);
+
 
     // Present
     [[self openGLContext] flushBuffer];
 
-    if (!animationTimer)
+	i64 time_end = get_clock();
+    float seconds_elapsed = get_seconds_elapsed(time_start, time_end);
+//    fprintf(stderr, "frame time: %g ms\n", seconds_elapsed * 1000.0f);
+
+	if (!animationTimer)
         animationTimer = [NSTimer scheduledTimerWithTimeInterval:0.017 target:self selector:@selector(animationTimerFired:) userInfo:nil repeats:YES];
 }
 
@@ -155,11 +160,11 @@ SlideviewerView* g_view;
 // ImGuiExampleAppDelegate
 //-----------------------------------------------------------------------------------
 
-@interface ImGuiExampleAppDelegate : NSObject <NSApplicationDelegate>
+@interface slideviewerAppDelegate : NSObject <NSApplicationDelegate>
 @property (nonatomic, readonly) NSWindow* window;
 @end
 
-@implementation ImGuiExampleAppDelegate
+@implementation slideviewerAppDelegate
 @synthesize window = _window;
 
 -(BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication
@@ -270,6 +275,7 @@ SlideviewerView* g_view;
         NSLog(@"No OpenGL Context!");
 
     init_app_state(&global_app_state, view);
+	init_opengl_stuff(&global_app_state);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -306,8 +312,9 @@ SlideviewerView* g_view;
 	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
 }
 
-
 @end
+
+slideviewerAppDelegate* g_delegate;
 
 extern "C"
 void gui_new_frame() {
@@ -317,16 +324,25 @@ void gui_new_frame() {
 }
 
 i64 get_clock() {
-	fprintf(stderr, "unimplemented: get_clock()\n");
-	return 0; // stub
+	i64 clock = (i64)mach_absolute_time();
+	return clock;
 }
 
 float get_seconds_elapsed(i64 start, i64 end) {
-	fprintf(stderr, "unimplemented: get_seconds_elapsed()\n");
-	return 0; // stub
+	i64 elapsed = end - start;
+	static mach_timebase_info_data_t timebase_info;
+	static u32 nanoseconds_per_clock;
+	if (nanoseconds_per_clock == 0) {
+		mach_timebase_info(&timebase_info);
+		nanoseconds_per_clock = timebase_info.numer / timebase_info.denom;
+	}
+	i64 elapsed_nano = elapsed * nanoseconds_per_clock;
+	float elapsed_seconds = ((float)elapsed_nano) / 1e9f;
+	return elapsed_seconds;
 }
 
 void message_box(const char* message) {
+//	NSRunAlertPanel(@"Title", @"This is your message.", @"OK", nil, nil);
 	fprintf(stderr, "[message box] %s\n", message);
 	fprintf(stderr, "unimplemented: message_box()\n");
 }
@@ -344,12 +360,19 @@ u8* platform_alloc(size_t size) {
 	return result;
 }
 
+bool cursor_hidden;
 void mouse_show() {
-	fprintf(stderr, "unimplemented: mouse_show()\n");
+	if (cursor_hidden) {
+		[NSCursor unhide];
+		cursor_hidden = false;
+	}
 }
 
 void mouse_hide() {
-	fprintf(stderr, "unimplemented: mouse_hide()\n");
+	if (!cursor_hidden) {
+		[NSCursor hide];
+		cursor_hidden = true;
+	}
 }
 
 void open_file_dialog(window_handle_t window) {
@@ -357,45 +380,267 @@ void open_file_dialog(window_handle_t window) {
 }
 
 void toggle_fullscreen(window_handle_t window) {
-	fprintf(stderr, "unimplemented: toggle_fullscreen()\n");
+	want_toggle_fullscreen = true;
 }
 
 bool check_fullscreen(window_handle_t window) {
-	fprintf(stderr, "unimplemented: check_fullscreen()\n");
-	return false; // stub
+	bool result = ((g_view.window.styleMask & NSFullScreenWindowMask) == NSFullScreenWindowMask);
+	return result;
 }
 
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
-	fprintf(stderr, "unimplemented: add_work_queue_entry()\n");
+	for (i32 tries = 0; tries < 1000; ++tries) {
+		// Circular FIFO buffer
+		i32 entry_to_submit = queue->next_entry_to_submit;
+		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
+		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
+			printf("Warning: work queue is overflowing - job is cancelled\n");
+			return false;
+		}
+
+		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_submit,
+		                                              new_next_entry_to_submit, entry_to_submit);
+		if (succeeded) {
+//		    printf("exhange succeeded\n");
+			queue->entries[entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
+			write_barrier;
+			queue->entries[entry_to_submit].is_valid = true;
+			write_barrier;
+			interlocked_increment(&queue->completion_goal);
+//		    queue->next_entry_to_submit = new_next_entry_to_submit;
+			sem_post(queue->semaphore_handle);
+			return true;
+		} else {
+//			printf("exchange failed, retrying (try #%d)\n", tries);
+			continue;
+		}
+
+	}
 	return false;
 }
 
 bool is_queue_work_in_progress(work_queue_t* queue) {
-	fprintf(stderr, "unimplemented: is_queue_work_in_progress()\n");
-	return false;
+	bool result = (queue->completion_goal > queue->completion_count);
+	return result;
 }
 
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {};
-	fprintf(stderr, "unimplemented: get_next_work_queue_entry()\n");
+
+	i32 entry_to_execute = queue->next_entry_to_execute;
+	i32 new_next_entry_to_execute = (entry_to_execute + 1) % COUNT(queue->entries);
+
+	// don't even try to execute a task if it is not yet submitted, or not yet fully submitted
+	if ((entry_to_execute != queue->next_entry_to_submit) && (queue->entries[entry_to_execute].is_valid)) {
+		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_execute,
+		                                              new_next_entry_to_execute, entry_to_execute);
+		if (succeeded) {
+			// We have dibs to execute this task!
+			queue->entries[entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
+			result.data = queue->entries[entry_to_execute].data;
+			result.callback = queue->entries[entry_to_execute].callback;
+			if (!result.callback) {
+				printf("Error: encountered a work entry with a missing callback routine\n");
+				panic();
+			}
+			result.is_valid = true;
+			read_barrier;
+		}
+	}
+
 	return result;
 }
 
 void mark_queue_entry_completed(work_queue_t* queue) {
-	fprintf(stderr, "unimplemented: mark_queue_entry_completed()\n");
+	interlocked_increment(&queue->completion_count);
 }
 
 bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
-	fprintf(stderr, "unimplemented: do_worker_work()\n");
-	return false;
+	work_queue_entry_t entry = get_next_work_queue_entry(queue);
+	if (entry.is_valid) {
+		if (!entry.callback) panic();
+		entry.callback(logical_thread_index, entry.data);
+		mark_queue_entry_completed(queue);
+	}
+	return entry.is_valid;
 }
 
-void get_cpu_info() {
+void get_system_info() {
 	size_t physical_cpu_count_len = sizeof(physical_cpu_count);
 	size_t logical_cpu_count_len = sizeof(logical_cpu_count);
 	sysctlbyname("hw.physicalcpu", &physical_cpu_count, &physical_cpu_count_len, NULL, 0);
 	sysctlbyname("hw.logicalcpu", &logical_cpu_count, &logical_cpu_count_len, NULL, 0);
 	fprintf(stderr,"There are %d physical, %d logical cpu cores\n", physical_cpu_count, logical_cpu_count);
+	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
+	os_page_size = (u32) getpagesize();
+}
+
+void* worker_thread(void* parameter) {
+	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
+
+//	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
+
+	// Allocate a private memory buffer
+	u64 thread_memory_size = MEGABYTES(16);
+	thread_local_storage[thread_info->logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
+	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[thread_info->logical_thread_index];
+	memset(thread_memory, 0, sizeof(thread_memory_t));
+#if 0
+	// TODO: implement this
+	thread_memory->async_io_event = CreateEventA(NULL, TRUE, FALSE, NULL);
+	if (!thread_memory->async_io_event) {
+		win32_diagnostic("CreateEvent");
+	}
+#endif
+	thread_memory->thread_memory_raw_size = thread_memory_size;
+
+	thread_memory->aligned_rest_of_thread_memory = (void*)
+			((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
+	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
+
+	for (;;) {
+		if (!is_queue_work_in_progress(thread_info->queue)) {
+			struct timespec tim, tim2;
+			tim.tv_sec = 0;
+			tim.tv_nsec = 1000;
+			nanosleep(&tim, &tim2);
+			sem_trywait(thread_info->queue->semaphore_handle);
+		}
+		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
+	}
+
+	return 0;
+}
+
+//#define TEST_THREAD_QUEUE
+#ifdef TEST_THREAD_QUEUE
+void echo_task_completed(int logical_thread_index, void* userdata) {
+	printf("thread %d completed: %s\n", logical_thread_index, (char*) userdata);
+}
+
+void echo_task(int logical_thread_index, void* userdata) {
+	printf("thread %d: %s\n", logical_thread_index, (char*) userdata);
+
+	add_work_queue_entry(&thread_message_queue, echo_task_completed, userdata);
+}
+#endif
+
+platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
+
+void macos_init_multithreading() {
+	i32 semaphore_initial_count = 0;
+	i32 worker_thread_count = total_thread_count - 1;
+	work_queue.semaphore_handle = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
+
+	pthread_t threads[MAX_THREAD_COUNT] = {};
+
+	// NOTE: the main thread is considered thread 0.
+	for (i32 i = 1; i < total_thread_count; ++i) {
+		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
+
+		if (pthread_create(threads + i, NULL, &worker_thread, (void*)(&thread_infos[i])) != 0) {
+			fprintf(stderr, "Error creating thread\n");
+		}
+
+	}
+
+#ifdef TEST_THREAD_QUEUE
+	add_work_queue_entry(&work_queue, echo_task, (void*)"NULL entry");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 0");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 1");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 2");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 3");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 4");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 5");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 6");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 7");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 8");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 9");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 10");
+	add_work_queue_entry(&work_queue, echo_task, (void*)"string 11");
+
+//	while (is_queue_work_in_progress(&work_queue)) {
+//		do_worker_work(&work_queue, 0);
+//	}
+	while (is_queue_work_in_progress(&work_queue) || is_queue_work_in_progress((&thread_message_queue))) {
+		do_worker_work(&thread_message_queue, 0);
+	}
+#endif
+
+
+}
+
+void macos_init_input() {
+	old_input = &inputs[0];
+	curr_input = &inputs[1];
+}
+
+void macos_process_button_event(button_state_t* new_state, bool32 down) {
+	down = (down != 0);
+	if (new_state->down != down) {
+		new_state->down = (bool8)down;
+		++new_state->transition_count;
+	}
+}
+
+bool macos_process_input() {
+	// Swap
+	input_t* temp = old_input;
+	old_input = curr_input;
+	curr_input = temp;
+
+
+	// reset the transition counts.
+
+
+
+	curr_input->drag_start_xy = old_input->drag_start_xy;
+	curr_input->drag_vector = old_input->drag_vector;
+
+	ImGuiIO& io = ImGui::GetIO();
+	curr_input->mouse_xy = io.MousePos;
+
+	i32 button_count = MIN(COUNT(curr_input->mouse_buttons), COUNT(io.MouseDown));
+	memset_zero(&curr_input->mouse_buttons);
+	for (i32 i = 0; i < button_count; ++i) {
+		curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
+		macos_process_button_event(&curr_input->mouse_buttons[i], io.MouseDown[i]);
+	}
+
+	memset_zero(&curr_input->keyboard);
+	for (i32 i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+		curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
+
+	}
+	i32 key_count = MIN(COUNT(curr_input->keyboard.keys), COUNT(io.KeysDown));
+	for (i32 i = 0; i < key_count; ++i) {
+		curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
+		macos_process_button_event(&curr_input->keyboard.keys[i], io.KeysDown[i]);
+	}
+
+
+	// TODO: process input events here? what is the chronological order in macOS?
+
+	v2f mouse_delta = io.MouseDelta;
+	mouse_delta.x *= window_scale_factor;
+	mouse_delta.y *= window_scale_factor;
+	curr_input->drag_vector = (v2i){(i32)mouse_delta.x, (i32)mouse_delta.y};
+
+
+	curr_input->are_any_buttons_down = false;
+	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.buttons[i].down;
+	}
+	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.keys[i].down;
+	}
+	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->mouse_buttons[i].down;
+	}
+
+
+	bool did_idle = false;
+	return did_idle;
 }
 
 int main(int argc, const char* argv[])
@@ -403,13 +648,15 @@ int main(int argc, const char* argv[])
 	g_argc = argc;
 	g_argv = argv;
 	fprintf(stderr, "Starting up...\n");
-	get_cpu_info();
-
+	get_system_info();
+	macos_init_multithreading();
+	macos_init_input();
 
 	@autoreleasepool
 	{
 		NSApp = [NSApplication sharedApplication];
-		ImGuiExampleAppDelegate* delegate = [[ImGuiExampleAppDelegate alloc] init];
+		slideviewerAppDelegate* delegate = [[slideviewerAppDelegate alloc] init];
+		g_delegate = delegate;
 		[[NSApplication sharedApplication] setDelegate:delegate];
 		[NSApp run];
 	}

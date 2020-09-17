@@ -57,14 +57,14 @@ typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
 typedef struct work_queue_entry_t {
 	void* data;
 	work_queue_callback_t* callback;
-	bool32 is_valid;
+	bool is_valid;
 } work_queue_entry_t;
 
 typedef struct work_queue_t {
 #if WINDOWS
 	HANDLE semaphore_handle;
 #elif APPLE
-	sem_t semaphore_handle;
+	sem_t* semaphore_handle;
 #endif
 	i32 volatile next_entry_to_submit;
 	i32 volatile next_entry_to_execute;
@@ -73,10 +73,10 @@ typedef struct work_queue_t {
 	work_queue_entry_t entries[256];
 } work_queue_t;
 
-typedef struct win32_thread_info_t {
+typedef struct platform_thread_info_t {
 	i32 logical_thread_index;
 	work_queue_t* queue;
-} win32_thread_info_t;
+} platform_thread_info_t;
 
 typedef struct {
 #if WINDOWS
@@ -136,7 +136,7 @@ typedef struct input_t {
 	i32 mouse_z;
 	v2i drag_start_xy;
 	v2i drag_vector;
-	v2i mouse_xy;
+	v2f mouse_xy;
 	float delta_t;
 	union {
 		controller_input_t abstract_controllers[5];
