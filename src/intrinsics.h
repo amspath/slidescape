@@ -43,11 +43,11 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 #define read_barrier
 
 static inline void atomic_increment(volatile i32* x) {
-	OSAtomicIncrement32((volatile long*)x);
+	OSAtomicIncrement32(x);
 }
 
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
-	bool result = OSAtomicCompareAndSwap32(comparand, exchange, (volatile long*)destination);
+	bool result = OSAtomicCompareAndSwap32(comparand, exchange, destination);
 	return result;
 }
 

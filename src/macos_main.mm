@@ -30,6 +30,7 @@ bool macos_process_input();
 
 
 bool want_toggle_fullscreen;
+bool want_open_file_dialog;
 float window_scale_factor = 1.0f;
 
 //-----------------------------------------------------------------------------------
@@ -46,6 +47,47 @@ float window_scale_factor = 1.0f;
 
 -(void)animationTimerFired:(NSTimer*)timer
 {
+	if (want_open_file_dialog) {
+		want_open_file_dialog = false;
+		// https://stackoverflow.com/questions/1640419/open-file-dialog-box
+		// Create the File Open Dialog class.
+		NSOpenPanel* openDlg = [NSOpenPanel openPanel];
+
+		// Enable the selection of files in the dialog.
+		[openDlg setCanChooseFiles:YES];
+
+		// Multiple files not allowed
+		[openDlg setAllowsMultipleSelection:NO];
+
+		// Can't select a directory
+		[openDlg setCanChooseDirectories:NO];
+
+		// Display the dialog. If the OK button was pressed,
+		// process the files.
+		if ( [openDlg runModal] == NSModalResponseOK )
+		{
+			// Get an array containing the full filenames of all
+			// files and directories selected.
+			NSArray* urls = [openDlg URLs];
+
+			// Loop through all the files and process them.
+			for(int i = 0; i < [urls count]; i++ )
+			{
+				NSURL* url = urls[i];
+				NSString *filename = [url path];
+				load_generic_file(&global_app_state, [filename UTF8String]);
+			}
+		}
+	}
+
+	if (want_toggle_fullscreen) {
+		want_toggle_fullscreen = false;
+//		auto screenFrame = [[NSScreen mainScreen] frame];
+//		[self.window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
+//		[self.window setFrame:screenFrame display:YES];
+		[self.window toggleFullScreen:self];
+	}
+
     [self setNeedsDisplay:YES];
 }
 
@@ -68,14 +110,6 @@ float window_scale_factor = 1.0f;
 
 -(void)updateAndDrawDemoView
 {
-
-	if (want_toggle_fullscreen) {
-		want_toggle_fullscreen = false;
-//		auto screenFrame = [[NSScreen mainScreen] frame];
-//		[self.window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
-//		[self.window setFrame:screenFrame display:YES];
-		[self.window toggleFullScreen:self];
-	}
 
 	i64 time_start = get_clock();
 
@@ -152,6 +186,25 @@ float window_scale_factor = 1.0f;
 -(void)otherMouseDragged:(NSEvent *)event   { ImGui_ImplOSX_HandleEvent(event, self); }
 -(void)scrollWheel:(NSEvent *)event         { ImGui_ImplOSX_HandleEvent(event, self); }
 
+- (NSDragOperation)draggingEntered:(id < NSDraggingInfo >)sender {
+	return NSDragOperationCopy;
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+	return NSDragOperationCopy;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+	NSPasteboard *pboard = [sender draggingPasteboard];
+	NSArray *filenames = [pboard propertyListForType:NSFilenamesPboardType];
+
+	if (1 == filenames.count)
+		if ([[NSApp delegate] respondsToSelector:@selector(application:openFile:)])
+			return [[NSApp delegate] application:NSApp openFile:[filenames lastObject]];
+
+	return NO;
+}
+
 @end
 
 SlideviewerView* g_view;
@@ -160,11 +213,11 @@ SlideviewerView* g_view;
 // ImGuiExampleAppDelegate
 //-----------------------------------------------------------------------------------
 
-@interface slideviewerAppDelegate : NSObject <NSApplicationDelegate>
+@interface SlideviewerAppDelegate : NSObject <NSApplicationDelegate>
 @property (nonatomic, readonly) NSWindow* window;
 @end
 
-@implementation slideviewerAppDelegate
+@implementation SlideviewerAppDelegate
 @synthesize window = _window;
 
 -(BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication
@@ -184,8 +237,10 @@ SlideviewerView* g_view;
     [_window setAcceptsMouseMovedEvents:YES];
     [_window setOpaque:YES];
     [_window makeKeyAndOrderFront:NSApp];
+	[_window registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
 
-    return (_window);
+
+	return (_window);
 }
 
 -(void)setupMenu
@@ -271,10 +326,13 @@ SlideviewerView* g_view;
 #endif // MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
     [self.window setContentView:view];
 
-    if ([view openGLContext] == nil)
-        NSLog(@"No OpenGL Context!");
+    if ([view openGLContext] == nil) {
+	    NSLog(@"No OpenGL Context!");
+    }
 
-    init_app_state(&global_app_state, view);
+	[view registerForDraggedTypes:@[NSFilenamesPboardType]];
+
+	init_app_state(&global_app_state, view);
 	init_opengl_stuff(&global_app_state);
 
     // Setup Dear ImGui context
@@ -312,9 +370,17 @@ SlideviewerView* g_view;
 	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
 }
 
+- (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename
+{
+
+	NSLog(@"Opening %@\n", filename);
+	load_generic_file(&global_app_state, [filename UTF8String]);
+	return YES;
+}
+
 @end
 
-slideviewerAppDelegate* g_delegate;
+SlideviewerAppDelegate* g_delegate;
 
 extern "C"
 void gui_new_frame() {
@@ -383,7 +449,7 @@ void mouse_hide() {
 }
 
 void open_file_dialog(window_handle_t window) {
-	fprintf(stderr, "unimplemented: open_file_dialog()\n");
+	want_open_file_dialog = true;
 }
 
 void toggle_fullscreen(window_handle_t window) {
@@ -433,7 +499,7 @@ void* worker_thread(void* parameter) {
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
 			platform_sleep(1);
-			sem_trywait(thread_info->queue->semaphore_handle);
+			sem_trywait(thread_info->queue->semaphore);
 		}
 		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
 	}
@@ -446,7 +512,7 @@ platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 void macos_init_multithreading() {
 	i32 semaphore_initial_count = 0;
 	i32 worker_thread_count = total_thread_count - 1;
-	work_queue.semaphore_handle = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
+	work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
 
 	pthread_t threads[MAX_THREAD_COUNT] = {};
 
@@ -519,8 +585,7 @@ bool macos_process_input() {
 	v2f mouse_delta = io.MouseDelta;
 	mouse_delta.x *= window_scale_factor;
 	mouse_delta.y *= window_scale_factor;
-	curr_input->drag_vector = (v2i){(i32)mouse_delta.x, (i32)mouse_delta.y};
-
+	curr_input->drag_vector = mouse_delta;
 
 	curr_input->are_any_buttons_down = false;
 	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
@@ -550,7 +615,7 @@ int main(int argc, const char* argv[])
 	@autoreleasepool
 	{
 		NSApp = [NSApplication sharedApplication];
-		slideviewerAppDelegate* delegate = [[slideviewerAppDelegate alloc] init];
+		SlideviewerAppDelegate* delegate = [[SlideviewerAppDelegate alloc] init];
 		g_delegate = delegate;
 		[[NSApplication sharedApplication] setDelegate:delegate];
 		[NSApp run];
