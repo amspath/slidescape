@@ -20,6 +20,9 @@
 
 #define PLATFORM_IMPL
 #include "platform.h"
+#include "intrinsics.h"
+
+#include "work_queue.c"
 
 
 mem_t* platform_allocate_mem_buffer(size_t capacity) {

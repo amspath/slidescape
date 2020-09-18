@@ -387,7 +387,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 	bool32 result = false;
 	const char* ext = get_file_extension(filename);
 
-	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") || strcasecmp(ext, "jpeg")== 0) {
+	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
 		// Load using stb_image
 		image_t image = (image_t){};
 		image.type = IMAGE_TYPE_SIMPLE;

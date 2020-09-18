@@ -223,7 +223,7 @@ typedef struct scene_t {
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
 	rect2f selection_box;
 	bool8 has_selection_box;
-	v2i cumulative_drag_vector;
+	v2f cumulative_drag_vector;
 	bounds2f crop_bounds;
 	bool8 is_cropped;
 	bool8 initialized;

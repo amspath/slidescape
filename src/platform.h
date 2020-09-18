@@ -60,12 +60,14 @@ typedef struct work_queue_entry_t {
 	bool is_valid;
 } work_queue_entry_t;
 
-typedef struct work_queue_t {
 #if WINDOWS
-	HANDLE semaphore_handle;
+typedef HANDLE semaphore_handle_t;
 #elif APPLE
-	sem_t* semaphore_handle;
+typedef sem_t* semaphore_handle_t;
 #endif
+
+typedef struct work_queue_t {
+	semaphore_handle_t semaphore;
 	i32 volatile next_entry_to_submit;
 	i32 volatile next_entry_to_execute;
 	i32 volatile completion_count;
@@ -134,8 +136,8 @@ typedef struct controller_input_t {
 typedef struct input_t {
 	button_state_t mouse_buttons[5];
 	i32 mouse_z;
-	v2i drag_start_xy;
-	v2i drag_vector;
+	v2f drag_start_xy;
+	v2f drag_vector;
 	v2f mouse_xy;
 	float delta_t;
 	union {
@@ -348,6 +350,7 @@ bool is_queue_work_in_progress(work_queue_t* queue);
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
 void mark_queue_entry_completed(work_queue_t* queue);
 bool do_worker_work(work_queue_t* queue, int logical_thread_index);
+void test_multithreading_work_queue();
 
 bool file_exists(const char* filename);
 

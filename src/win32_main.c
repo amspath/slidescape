@@ -447,15 +447,15 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 				if (raw->header.dwType == RIM_TYPEMOUSE)
 				{
 					if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-						curr_input->drag_vector = (v2i){};
+						curr_input->drag_vector = (v2f){};
 						curr_input->drag_start_xy = curr_input->mouse_xy;
 					}
 
 					// We want relative mouse movement
 					if (!(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
 						if (curr_input->mouse_buttons[0].down) {
-							curr_input->drag_vector.x += raw->data.mouse.lLastX;
-							curr_input->drag_vector.y += raw->data.mouse.lLastY;
+							curr_input->drag_vector.x += (float)raw->data.mouse.lLastX;
+							curr_input->drag_vector.y += (float)raw->data.mouse.lLastY;
 //						    printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
 						} else {
 							// not dragging
@@ -1113,88 +1113,8 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 }
 
 
-
-bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
-
-	for (i32 tries = 0; tries < 1000; ++tries) {
-		// Circular FIFO buffer
-		i32 entry_to_submit = queue->next_entry_to_submit;
-		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
-		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
-			printf("Warning: work queue is overflowing - job is cancelled\n");
-			return false;
-		}
-
-		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_submit,
-		                                                   new_next_entry_to_submit, entry_to_submit);
-		if (succeeded) {
-//		    printf("exhange succeeded\n");
-			queue->entries[entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
-			write_barrier;
-			queue->entries[entry_to_submit].is_valid = true;
-			write_barrier;
-			interlocked_increment(&queue->completion_goal);
-//		    queue->next_entry_to_submit = new_next_entry_to_submit;
-			ReleaseSemaphore(queue->semaphore_handle, 1, NULL);
-			return true;
-		} else {
-//			printf("exchange failed, retrying (try #%d)\n", tries);
-			continue;
-		}
-
-	}
-	return false;
-}
-
-work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
-	work_queue_entry_t result = {};
-
-	i32 entry_to_execute = queue->next_entry_to_execute;
-	i32 new_next_entry_to_execute = (entry_to_execute + 1) % COUNT(queue->entries);
-
-	// don't even try to execute a task if it is not yet submitted, or not yet fully submitted
-	if ((entry_to_execute != queue->next_entry_to_submit) && (queue->entries[entry_to_execute].is_valid)) {
-		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_execute,
-		                                               new_next_entry_to_execute, entry_to_execute);
-		if (succeeded) {
-			// We have dibs to execute this task!
-			queue->entries[entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
-			result.data = queue->entries[entry_to_execute].data;
-			result.callback = queue->entries[entry_to_execute].callback;
-			if (!result.callback) {
-				printf("Error: encountered a work entry with a missing callback routine\n");
-				panic();
-			}
-			result.is_valid = true;
-			read_barrier;
-		}
-	}
-
-	return result;
-}
-
-void mark_queue_entry_completed(work_queue_t* queue) {
-	interlocked_increment(&queue->completion_count);
-}
-
-bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
-	work_queue_entry_t entry = get_next_work_queue_entry(queue);
-	if (entry.is_valid) {
-		if (!entry.callback) panic();
-		entry.callback(logical_thread_index, entry.data);
-		mark_queue_entry_completed(queue);
-	}
-	return entry.is_valid;
-}
-
-
-bool is_queue_work_in_progress(work_queue_t* queue) {
-	bool result = (queue->completion_goal > queue->completion_count);
-	return result;
-}
-
 DWORD WINAPI thread_proc(void* parameter) {
-	win32_thread_info_t* thread_info = (win32_thread_info_t*) parameter;
+	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
 	// Allocate a private memory buffer
@@ -1262,38 +1182,25 @@ DWORD WINAPI thread_proc(void* parameter) {
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
 			Sleep(1);
-			WaitForSingleObjectEx(thread_info->queue->semaphore_handle, 1, FALSE);
+			WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
 		}
 		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
 	}
 }
-
-//#define TEST_THREAD_QUEUE
-#ifdef TEST_THREAD_QUEUE
-void echo_task_completed(int logical_thread_index, void* userdata) {
-	printf("thread %d completed: %s\n", logical_thread_index, (char*) userdata);
-}
-
-void echo_task(int logical_thread_index, void* userdata) {
-	printf("thread %d: %s\n", logical_thread_index, (char*) userdata);
-
-	add_work_queue_entry(&thread_message_queue, echo_task_completed, userdata);
-}
-#endif
 
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
 	i32 worker_thread_count = total_thread_count - 1;
 
 	// Queue for newly submitted tasks
-	work_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
+	work_queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
 
 	// Message queue for completed tasks
-	thread_message_queue.semaphore_handle = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
+	thread_message_queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
-		thread_infos[i] = (win32_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
+		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
 
 		DWORD thread_id;
 		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
@@ -1301,31 +1208,7 @@ void win32_init_multithreading() {
 
 	}
 
-
-#ifdef TEST_THREAD_QUEUE
-	add_work_queue_entry(&work_queue, echo_task, "NULL entry");
-	add_work_queue_entry(&work_queue, echo_task, "string 0");
-	add_work_queue_entry(&work_queue, echo_task, "string 1");
-	add_work_queue_entry(&work_queue, echo_task, "string 2");
-	add_work_queue_entry(&work_queue, echo_task, "string 3");
-	add_work_queue_entry(&work_queue, echo_task, "string 4");
-	add_work_queue_entry(&work_queue, echo_task, "string 5");
-	add_work_queue_entry(&work_queue, echo_task, "string 6");
-	add_work_queue_entry(&work_queue, echo_task, "string 7");
-	add_work_queue_entry(&work_queue, echo_task, "string 8");
-	add_work_queue_entry(&work_queue, echo_task, "string 9");
-	add_work_queue_entry(&work_queue, echo_task, "string 10");
-	add_work_queue_entry(&work_queue, echo_task, "string 11");
-
-//	while (is_queue_work_in_progress(&work_queue)) {
-//		do_worker_work(&work_queue, 0);
-//	}
-	while (is_queue_work_in_progress(&work_queue) || is_queue_work_in_progress((&thread_message_queue))) {
-		do_worker_work(&thread_message_queue, 0);
-	}
-#endif
-
-
+	test_multithreading_work_queue();
 
 }
 
@@ -1381,6 +1264,8 @@ int main(int argc, const char** argv) {
 	g_argv = argv;
 
 	printf("Starting up...\n");
+
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
 	GetSystemInfo(&system_info);
 	logical_cpu_count = (i32)system_info.dwNumberOfProcessors;

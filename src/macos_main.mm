@@ -341,6 +341,13 @@ float get_seconds_elapsed(i64 start, i64 end) {
 	return elapsed_seconds;
 }
 
+void platform_sleep(u32 ms) {
+	struct timespec tim, tim2;
+	tim.tv_sec = 0;
+	tim.tv_nsec = 1000;
+	nanosleep(&tim, &tim2);
+}
+
 void message_box(const char* message) {
 //	NSRunAlertPanel(@"Title", @"This is your message.", @"OK", nil, nil);
 	fprintf(stderr, "[message box] %s\n", message);
@@ -388,82 +395,7 @@ bool check_fullscreen(window_handle_t window) {
 	return result;
 }
 
-bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
-	for (i32 tries = 0; tries < 1000; ++tries) {
-		// Circular FIFO buffer
-		i32 entry_to_submit = queue->next_entry_to_submit;
-		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
-		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
-			printf("Warning: work queue is overflowing - job is cancelled\n");
-			return false;
-		}
 
-		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_submit,
-		                                              new_next_entry_to_submit, entry_to_submit);
-		if (succeeded) {
-//		    printf("exhange succeeded\n");
-			queue->entries[entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
-			write_barrier;
-			queue->entries[entry_to_submit].is_valid = true;
-			write_barrier;
-			interlocked_increment(&queue->completion_goal);
-//		    queue->next_entry_to_submit = new_next_entry_to_submit;
-			sem_post(queue->semaphore_handle);
-			return true;
-		} else {
-//			printf("exchange failed, retrying (try #%d)\n", tries);
-			continue;
-		}
-
-	}
-	return false;
-}
-
-bool is_queue_work_in_progress(work_queue_t* queue) {
-	bool result = (queue->completion_goal > queue->completion_count);
-	return result;
-}
-
-work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
-	work_queue_entry_t result = {};
-
-	i32 entry_to_execute = queue->next_entry_to_execute;
-	i32 new_next_entry_to_execute = (entry_to_execute + 1) % COUNT(queue->entries);
-
-	// don't even try to execute a task if it is not yet submitted, or not yet fully submitted
-	if ((entry_to_execute != queue->next_entry_to_submit) && (queue->entries[entry_to_execute].is_valid)) {
-		bool succeeded = interlocked_compare_exchange(&queue->next_entry_to_execute,
-		                                              new_next_entry_to_execute, entry_to_execute);
-		if (succeeded) {
-			// We have dibs to execute this task!
-			queue->entries[entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
-			result.data = queue->entries[entry_to_execute].data;
-			result.callback = queue->entries[entry_to_execute].callback;
-			if (!result.callback) {
-				printf("Error: encountered a work entry with a missing callback routine\n");
-				panic();
-			}
-			result.is_valid = true;
-			read_barrier;
-		}
-	}
-
-	return result;
-}
-
-void mark_queue_entry_completed(work_queue_t* queue) {
-	interlocked_increment(&queue->completion_count);
-}
-
-bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
-	work_queue_entry_t entry = get_next_work_queue_entry(queue);
-	if (entry.is_valid) {
-		if (!entry.callback) panic();
-		entry.callback(logical_thread_index, entry.data);
-		mark_queue_entry_completed(queue);
-	}
-	return entry.is_valid;
-}
 
 void get_system_info() {
 	size_t physical_cpu_count_len = sizeof(physical_cpu_count);
@@ -500,10 +432,7 @@ void* worker_thread(void* parameter) {
 
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
-			struct timespec tim, tim2;
-			tim.tv_sec = 0;
-			tim.tv_nsec = 1000;
-			nanosleep(&tim, &tim2);
+			platform_sleep(1);
 			sem_trywait(thread_info->queue->semaphore_handle);
 		}
 		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
@@ -511,19 +440,6 @@ void* worker_thread(void* parameter) {
 
 	return 0;
 }
-
-//#define TEST_THREAD_QUEUE
-#ifdef TEST_THREAD_QUEUE
-void echo_task_completed(int logical_thread_index, void* userdata) {
-	printf("thread %d completed: %s\n", logical_thread_index, (char*) userdata);
-}
-
-void echo_task(int logical_thread_index, void* userdata) {
-	printf("thread %d: %s\n", logical_thread_index, (char*) userdata);
-
-	add_work_queue_entry(&thread_message_queue, echo_task_completed, userdata);
-}
-#endif
 
 platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 
@@ -544,28 +460,7 @@ void macos_init_multithreading() {
 
 	}
 
-#ifdef TEST_THREAD_QUEUE
-	add_work_queue_entry(&work_queue, echo_task, (void*)"NULL entry");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 0");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 1");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 2");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 3");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 4");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 5");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 6");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 7");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 8");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 9");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 10");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 11");
-
-//	while (is_queue_work_in_progress(&work_queue)) {
-//		do_worker_work(&work_queue, 0);
-//	}
-	while (is_queue_work_in_progress(&work_queue) || is_queue_work_in_progress((&thread_message_queue))) {
-		do_worker_work(&thread_message_queue, 0);
-	}
-#endif
+	test_multithreading_work_queue();
 
 
 }

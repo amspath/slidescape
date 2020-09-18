@@ -400,7 +400,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	// TODO: mutate state here
 
 	// todo: process even more of the mouse/keyboard input here?
-	v2i current_drag_vector = {};
+	v2f current_drag_vector = {};
 	scene->clicked = false;
 	scene->drag_started = false;
 	scene->drag_ended = false;
@@ -413,7 +413,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		if (was_button_released(&input->mouse_buttons[0])) {
-			float drag_distance = v2i_distance(scene->cumulative_drag_vector);
+			float drag_distance = v2f_distance(scene->cumulative_drag_vector);
 			// TODO: tweak this
 			if (drag_distance < 2.0f) {
 				scene->clicked = true;
@@ -428,7 +428,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){input->mouse_xy.x, input->mouse_xy.y})) {
 					scene->is_dragging = true; // drag start
 					scene->drag_started = true;
-					scene->cumulative_drag_vector = (v2i){};
+					scene->cumulative_drag_vector = (v2f){};
 //					printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
 			} else if (scene->is_dragging) {
@@ -437,7 +437,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				scene->cumulative_drag_vector.x += current_drag_vector.x;
 				scene->cumulative_drag_vector.y += current_drag_vector.y;
 			}
-			input->drag_vector = (v2i){};
+			input->drag_vector = (v2f){};
 			mouse_hide();
 		} else {
 			if (input->mouse_buttons[0].transition_count != 0) {

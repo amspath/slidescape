@@ -26,9 +26,14 @@
 #define write_barrier do { _WriteBarrier(); _mm_sfence(); } while (0)
 #define read_barrier _ReadBarrier()
 
-#define interlocked_increment(x) InterlockedIncrement((volatile long*)(x))
-#define interlocked_compare_exchange(destination, exchange, comparand) \
-  (InterlockedCompareExchange((volatile long*)(destination), (exchange), (comparand)) == (comparand))
+static inline void atomic_increment(volatile i32* x) {
+	InterlockedIncrement((volatile long*)x);
+}
+
+static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
+	i32 read_value = InterlockedCompareExchange((volatile long*)destination, exchange, comparand);
+	return (read_value == comparand);
+}
 
 #elif APPLE
 #define OSATOMIC_USE_INLINED 1
@@ -36,15 +41,22 @@
 
 #define write_barrier
 #define read_barrier
-#define interlocked_increment(x) OSAtomicIncrement32((x))
-#define interlocked_compare_exchange(destination, exchange, comparand) OSAtomicCompareAndSwap32((comparand), (exchange), (destination))
+
+static inline void atomic_increment(volatile i32* x) {
+	OSAtomicIncrement32((volatile long*)x);
+}
+
+static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
+	bool result = OSAtomicCompareAndSwap32(comparand, exchange, (volatile long*)destination);
+	return result;
+}
 
 #else
 //TODO: implement
 #define write_barrier
 #define read_barrier
-#define interlocked_increment(x)
-#define interlocked_compare_exchange(x)
+#define atomic_increment(x)
+#define atomic_compare_exchange(x)
 #endif
 
 
