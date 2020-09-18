@@ -112,12 +112,13 @@ elseif(APPLE)
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
-# client only supported on Windows x64 for now
+# client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
 elseif(APPLE)
-    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
+    add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES})
+    set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
 endif(WIN32)
 
