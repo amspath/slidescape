@@ -778,6 +778,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// IO
 
         float time_elapsed;
+        float max_texture_load_time = 0.007f; // TODO: pin to frame time
 #if 1
         if (!finalize_textures_immediately) {
             // Finalize textures that were uploaded via PBO the previous frame
@@ -789,7 +790,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
                     tile->texture = transfer_state->texture;
                 }
                 float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-			    if (time_elapsed > 0.005f) {
+			    if (time_elapsed > max_texture_load_time) {
 //			    	printf("Warning: texture finalization is taking too much time\n");
 			    	break;
 			    }
@@ -808,6 +809,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 #endif
+
+        // TODO: take into account priorities here as well
 
 		// Retrieve completed tasks from the worker threads
 		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
@@ -871,7 +874,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-			if (time_elapsed > 0.005f) {
+			if (time_elapsed > max_texture_load_time) {
 //				printf("Warning: texture submission is taking too much time\n");
 				break;
 			}

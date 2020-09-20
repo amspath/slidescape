@@ -102,6 +102,7 @@ u64 memrw_push(memrw_t* buffer, void* data, u64 size) {
 		memset(write_pos, 0, size);
 	}
 	buffer->used_size += size;
+	buffer->used_count += 1;
 	return write_offset;
 }
 
@@ -115,6 +116,11 @@ memrw_t memrw_create(u64 capacity) {
 	memrw_t result = {};
 	memrw_init(&result, capacity);
 	return result;
+}
+
+void memrw_rewind(memrw_t* buffer) {
+	buffer->used_size = 0;
+	buffer->used_count = 0;
 }
 
 void memrw_destroy(memrw_t* buffer) {

@@ -22,6 +22,30 @@
 #include "tiff.h"
 #include "viewer.h"
 
+#include "jpeg_decoder.h"
+
+
+enum export_region_format_enum {
+	EXPORT_REGION_FORMAT_BIGTIFF = 0,
+	EXPORT_REGION_FORMAT_JPEG = 1,
+	EXPORT_REGION_FORMAT_PNG = 2,
+};
+
+typedef struct export_region_task_t {
+	image_t* image;
+	bounds2f bounds;
+	u32 export_region_format;
+} export_region_task_t;
+
+typedef struct export_bigtiff_task_t {
+	image_t* image;
+	bounds2f bounds;
+	tiff_t* tiff;
+	const char* filename;
+	u32 export_tile_width;
+	u16 desired_photometric_interpretation;
+} export_bigtiff_task_t;
+
 
 typedef struct encode_tile_task_t {
 	image_t* image;
@@ -77,13 +101,16 @@ void encode_tile_func(i32 logical_thread_index, void* userdata) {
 }
 
 typedef struct offset_fixup_t {
-	u64* offset_to_fix;
+	u64 offset_to_fix;
 	u64 offset_from_unknown_base;
 } offset_fixup_t;
 
-static inline void add_fixup(offset_fixup_t* fixups, u64* offset_to_fix, u64 offset_from_unknown_base) {
+static inline void add_fixup(memrw_t* fixups_buffer, u64 offset_to_fix, u64 offset_from_unknown_base) {
+	// NOTE: 'offset_to_fix' can't be a direct pointer to the value that needs to be fixed up, because
+	// pointers to the destination buffer might be unstable because the destination buffer might resize.
+	// so instead we are storing it as an offset from the start of the destination buffer.
 	offset_fixup_t new_fixup = {offset_to_fix, offset_from_unknown_base};
-	sb_push(fixups, new_fixup);
+	memrw_push(fixups_buffer, &new_fixup, sizeof(new_fixup));
 }
 
 static inline raw_bigtiff_tag_t* memrw_push_bigtiff_tag(memrw_t* buffer, raw_bigtiff_tag_t* tag) {
@@ -92,10 +119,13 @@ static inline raw_bigtiff_tag_t* memrw_push_bigtiff_tag(memrw_t* buffer, raw_big
 	return result;
 }
 
-static raw_bigtiff_tag_t* add_large_bigtiff_tag(memrw_t* tag_buffer, memrw_t* data_buffer, offset_fixup_t* fixups, u16 tag_code, u16 tag_type, u64 tag_data_size, void* tag_data) {
+static raw_bigtiff_tag_t* add_large_bigtiff_tag(memrw_t* tag_buffer, memrw_t* data_buffer, memrw_t* fixups_buffer,
+                                                u16 tag_code, u16 tag_type, u64 tag_data_count, void* tag_data) {
 	// NOTE: tag_data is allowed to be NULL, in that case we are only pushing placeholder data (zeroes)
+	u32 field_size = get_tiff_field_size(tag_type);
+	u64 tag_data_size = field_size * tag_data_count;
 	if (tag_data_size <= 8) {
-		raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_size, 0};
+		raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_count, .data_u64 = 0};
 		if (tag_data) {
 			memcpy(tag.data, tag_data, tag_data_size);
 		}
@@ -103,15 +133,17 @@ static raw_bigtiff_tag_t* add_large_bigtiff_tag(memrw_t* tag_buffer, memrw_t* da
 		return stored_tag;
 	} else {
 		u64 data_offset = memrw_push(data_buffer, tag_data, tag_data_size);
-		raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_size, data_offset};
+		raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_count, .offset = data_offset};
 		raw_bigtiff_tag_t* stored_tag = memrw_push_bigtiff_tag(tag_buffer, &tag);
-		add_fixup(fixups, &stored_tag->offset, data_offset);
+		// NOTE: we cannot store a raw pointer to the offset we need to fix later, because the buffer
+		// might resize (pointer is unstable).
+		add_fixup(fixups_buffer, (u64)((u8*)&stored_tag->offset - tag_buffer->data), data_offset);
 		return stored_tag;
 	}
 }
 
 bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, const char* filename,
-							  u32 export_tile_width, u16 desired_photometric_interpretation) {
+							  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
 	if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
 		return false;
 	}
@@ -156,16 +188,16 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 		memrw_t tag_buffer = memrw_create(KILOBYTES(64));
 		// temporary buffer for all data >8 bytes not fitting in the raw TIFF tags (leaving out the pixel data)
 		memrw_t small_data_buffer = memrw_create(MEGABYTES(1));
+		// temporary buffer tracking the offsets that we need to fix after writing all the IFDs
+		memrw_t fixups_buffer = memrw_create(1024);
 
-		offset_fixup_t* fixups = NULL; // sb
-
+		// Write the TIFF header (except the offset to the first IFD, which we will push when iterating over the IFDs)
 		tiff_header_t header = {};
-		header.byte_order_indication = 0x4D4D; // little-endian
+		header.byte_order_indication = 0x4949; // little-endian
 		header.filetype = 0x002B; // BigTIFF
 		header.bigtiff.offset_size = 0x0008;
 		header.bigtiff.always_zero = 0;
-		header.bigtiff.first_ifd_offset = 16;
-		memrw_push(&tag_buffer, &header, 16);
+		memrw_push(&tag_buffer, &header, 8);
 
 		// NOTE: the downsampling level does not necessarily equal the ifd index.
 		i32 level = 0;
@@ -173,20 +205,21 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 		tiff_ifd_t* source_ifd = source_level0_ifd;
 
 		// Tags that are the same for all image levels
-		raw_bigtiff_tag_t tag_new_subfile_type = {TIFF_TAG_NEW_SUBFILE_TYPE, TIFF_UINT32, 1, TIFF_FILETYPE_REDUCEDIMAGE};
+		raw_bigtiff_tag_t tag_new_subfile_type = {TIFF_TAG_NEW_SUBFILE_TYPE, TIFF_UINT32, 1, .offset = TIFF_FILETYPE_REDUCEDIMAGE};
 		u16 bits_per_sample[4] = {8, 8, 8, 0};
-		raw_bigtiff_tag_t tag_bits_per_sample = {TIFF_TAG_BITS_PER_SAMPLE, TIFF_UINT16, 3, *(u64*)bits_per_sample};
-		raw_bigtiff_tag_t tag_compression = {TIFF_TAG_COMPRESSION, TIFF_UINT16, 1, TIFF_COMPRESSION_JPEG};
-		raw_bigtiff_tag_t tag_photometric_interpretation = {TIFF_TAG_PHOTOMETRIC_INTERPRETATION, TIFF_UINT16, 1, desired_photometric_interpretation};
-		raw_bigtiff_tag_t tag_orientation = {TIFF_TAG_ORIENTATION, TIFF_UINT16, 1, TIFF_ORIENTATION_TOPLEFT};
-		raw_bigtiff_tag_t tag_samples_per_pixel = {TIFF_TAG_SAMPLES_PER_PIXEL, TIFF_UINT16, 1, 3};
-		raw_bigtiff_tag_t tag_tile_width = {TIFF_TAG_TILE_WIDTH, TIFF_UINT16, 1, export_tile_width};
-		raw_bigtiff_tag_t tag_tile_length = {TIFF_TAG_TILE_LENGTH, TIFF_UINT16, 1, export_tile_width};
+		raw_bigtiff_tag_t tag_bits_per_sample = {TIFF_TAG_BITS_PER_SAMPLE, TIFF_UINT16, 3, .offset = *(u64*)bits_per_sample};
+		raw_bigtiff_tag_t tag_compression = {TIFF_TAG_COMPRESSION, TIFF_UINT16, 1, .offset = TIFF_COMPRESSION_JPEG};
+		raw_bigtiff_tag_t tag_photometric_interpretation = {TIFF_TAG_PHOTOMETRIC_INTERPRETATION, TIFF_UINT16, 1, .offset = desired_photometric_interpretation};
+		raw_bigtiff_tag_t tag_orientation = {TIFF_TAG_ORIENTATION, TIFF_UINT16, 1, .offset = TIFF_ORIENTATION_TOPLEFT};
+		raw_bigtiff_tag_t tag_samples_per_pixel = {TIFF_TAG_SAMPLES_PER_PIXEL, TIFF_UINT16, 1, .offset = 3};
+		raw_bigtiff_tag_t tag_tile_width = {TIFF_TAG_TILE_WIDTH, TIFF_UINT16, 1, .offset = export_tile_width};
+		raw_bigtiff_tag_t tag_tile_length = {TIFF_TAG_TILE_LENGTH, TIFF_UINT16, 1, .offset = export_tile_width};
 		u16 chroma_subsampling[4] = {2, 2, 0, 0};
-		raw_bigtiff_tag_t tag_chroma_subsampling = {TIFF_TAG_YCBCRSUBSAMPLING, TIFF_UINT16, 2, *(u64*)(chroma_subsampling)};
+		raw_bigtiff_tag_t tag_chroma_subsampling = {TIFF_TAG_YCBCRSUBSAMPLING, TIFF_UINT16, 2, .offset = *(u64*)(chroma_subsampling)};
 
 		bool reached_level_with_only_one_tile_in_it = false;
 		for (; level < image->level_count && !reached_level_with_only_one_tile_in_it; ++level) {
+
 
 			// Find an IFD for this downsampling level
 			if (source_ifd->downsample_level != level) {
@@ -194,7 +227,7 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 				bool found = false;
 				for (i32 i = source_ifd_index; i < tiff->level_image_ifd_count; ++i) {
 					tiff_ifd_t* ifd = tiff->level_images_ifd + i;
-					if (source_ifd->downsample_level == level) {
+					if (ifd->downsample_level == level) {
 						found = true;
 						source_ifd_index = i;
 						source_ifd = ifd;
@@ -208,6 +241,14 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 					continue;
 				}
 			}
+
+
+			// Offset to the beginning of the next IFD (= 8 bytes directly after the current offset)
+			u64 next_ifd_offset = tag_buffer.used_size + sizeof(u64);
+			memrw_push(&tag_buffer, &next_ifd_offset, sizeof(u64));
+
+			u64 tag_count_for_ifd = 0;
+			u64 tag_count_for_ifd_offset = memrw_push(&tag_buffer, &tag_count_for_ifd, sizeof(u64));
 
 			// Calculate dimensions for the current downsampling level
 			bounds2i pixel_bounds = level0_pixel_bounds;
@@ -228,6 +269,7 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 			}
 
 			// TODO: Create the encoding jobs
+#if 0
 			for (i32 export_tile_y = 0; export_tile_y < export_height_in_tiles; ++export_tile_y) {
 				for (i32 export_tile_x = 0; export_tile_x < export_width_in_tiles; ++export_tile_x) {
 					encode_tile_task_t task = {
@@ -245,99 +287,114 @@ bool32 export_cropped_bigtiff(image_t* image, tiff_t* tiff, bounds2f bounds, con
 
 				}
 			}
+#endif
 
 			// Include the NewSubfileType tag in every IFD except the first one
 			if (level > 0) {
 				memrw_push(&tag_buffer, &tag_new_subfile_type, sizeof(raw_bigtiff_tag_t));
+				++tag_count_for_ifd;
 			}
 
-			raw_bigtiff_tag_t tag_image_width = {TIFF_TAG_IMAGE_WIDTH, TIFF_UINT32, 1, export_width_in_pixels};
-			raw_bigtiff_tag_t tag_image_length = {TIFF_TAG_IMAGE_LENGTH, TIFF_UINT32, 1, export_height_in_pixels};
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_image_width);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_image_length);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_bits_per_sample);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_compression);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_photometric_interpretation);
+			raw_bigtiff_tag_t tag_image_width = {TIFF_TAG_IMAGE_WIDTH, TIFF_UINT32, 1, .offset = export_width_in_pixels};
+			raw_bigtiff_tag_t tag_image_length = {TIFF_TAG_IMAGE_LENGTH, TIFF_UINT32, 1, .offset = export_height_in_pixels};
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_image_width); ++tag_count_for_ifd;
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_image_length); ++tag_count_for_ifd;
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_bits_per_sample); ++tag_count_for_ifd;
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_compression); ++tag_count_for_ifd;
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_photometric_interpretation); ++tag_count_for_ifd;
 
 			// Image description will be copied verbatim from the source
-			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, fixups, TIFF_TAG_IMAGE_DESCRIPTION,
+			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer, TIFF_TAG_IMAGE_DESCRIPTION,
 			                      TIFF_ASCII, source_ifd->image_description_length, source_ifd->image_description);
-			/*{
-				void* tag_data = (void*) source_ifd->image_description;
-				u64 tag_data_size = source_ifd->image_description_length;
-				u16 tag_code = TIFF_TAG_IMAGE_DESCRIPTION;
-				u16 tag_type = TIFF_ASCII;
-				if (tag_data_size <= tag_data_max_inlined_size) {
-					raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_size, 0};
-					memcpy(tag.data, tag_data, tag_data_size);
-					memrw_push(&tiff_tags_buffer, &tag, sizeof(raw_bigtiff_tag_t));
-				} else {
-					u64 data_offset = memrw_push(&tiff_small_data_buffer, tag_data, tag_data_size);
-					raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_size, data_offset};
-					u64 tag_offset = memrw_push(&tiff_tags_buffer, &tag, sizeof(raw_bigtiff_tag_t));
-					raw_bigtiff_tag_t* stored_tag = (raw_bigtiff_tag_t*) (tiff_tags_buffer.data + tag_offset);
-					add_fixup(fixups, &stored_tag->offset, data_offset);
-				}
-			}*/
-
-
-
+			++tag_count_for_ifd;
 			// unused tag: strip offsets
 
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_orientation);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_samples_per_pixel);
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_orientation); ++tag_count_for_ifd;
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_samples_per_pixel); ++tag_count_for_ifd;
 
 			// unused tag: rows per strip
 			// unused tag: strip byte counts
 
-			raw_bigtiff_tag_t tag_x_resolution = {TIFF_TAG_X_RESOLUTION, TIFF_RATIONAL, 1, *(u64*)(&source_ifd->x_resolution)};
-			raw_bigtiff_tag_t tag_y_resolution = {TIFF_TAG_Y_RESOLUTION, TIFF_RATIONAL, 1, *(u64*)(&source_ifd->y_resolution)};
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
-
+			if (source_ifd->x_resolution.b > 0) {
+				raw_bigtiff_tag_t tag_x_resolution = {TIFF_TAG_X_RESOLUTION, TIFF_RATIONAL, 1, .offset = *(u64*)(&source_ifd->x_resolution)};
+				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
+				++tag_count_for_ifd;
+			}
+			if (source_ifd->x_resolution.b > 0) {
+				raw_bigtiff_tag_t tag_y_resolution = {TIFF_TAG_Y_RESOLUTION, TIFF_RATIONAL, 1, .offset = *(u64*) (&source_ifd->y_resolution)};
+				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
+				++tag_count_for_ifd;
+			}
 //			u64 software_offset = 0; // TODO
 //			u64 software_length = 0; // TODO
 //			raw_bigtiff_tag_t tag_software = {TIFF_TAG_SOFTWARE, TIFF_ASCII, software_length, software_offset};
 
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_width);
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_length);
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_width); ++tag_count_for_ifd;
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_length); ++tag_count_for_ifd;
 
 			// TODO: actually write the tiles...
 
 
-			u64 tile_offsets_length = export_tile_count * sizeof(u64);
-			raw_bigtiff_tag_t* stored_tile_offsets_tag = add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, fixups,
-			                      TIFF_TAG_TILE_OFFSETS, TIFF_UINT64, tile_offsets_length, NULL);
-//			raw_bigtiff_tag_t tag_tile_offsets = {TIFF_TAG_TILE_OFFSETS, TIFF_UINT64, tile_offsets_length, tile_offsets_offset};
-//			pushed_tag = memrw_push(&tiff_tags_buffer, &tag_tile_offsets, sizeof(raw_bigtiff_tag_t));
-//			add_fixup(fixups, &pushed_tag->offset, tile_offsets_offset);
+			raw_bigtiff_tag_t* stored_tile_offsets_tag = add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
+			                      TIFF_TAG_TILE_OFFSETS, TIFF_UINT64, export_tile_count, NULL);
+			++tag_count_for_ifd;
 
-			raw_bigtiff_tag_t* stored_tile_bytecounts_tag = add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, fixups,
-			                      TIFF_TAG_TILE_BYTE_COUNTS, TIFF_UINT64, tile_offsets_length, NULL);
-
-//			u64 tile_byte_counts_offset = 0; // TODO
-//			u64 tile_byte_counts_length = 0;
-//			raw_bigtiff_tag_t tag_tile_byte_counts = {TIFF_TAG_TILE_BYTE_COUNTS, TIFF_UINT64, tile_byte_counts_length, tile_byte_counts_offset};
-//			pushed_tag = memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_byte_counts);
-//			add_fixup(fixups, &pushed_tag->offset, tile_byte_counts_offset);
+			raw_bigtiff_tag_t* stored_tile_bytecounts_tag = add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
+			                      TIFF_TAG_TILE_BYTE_COUNTS, TIFF_UINT64, export_tile_count, NULL);
+			++tag_count_for_ifd;
 
 			// unused tag: SMinSampleValue
 			// unused tag: SMaxSampleValue
-			u64 jpeg_tables_offset = 0; // TODO
-			u64 jpeg_tables_length = 0;
-			raw_bigtiff_tag_t tag_jpeg_tables = {TIFF_TAG_JPEG_TABLES, TIFF_UNDEFINED, jpeg_tables_length, jpeg_tables_offset};
 
+			u64 jpeg_tables_length = 0;
+			u8* tables_buffer = NULL;
+			u32 tables_size = 0;
+			encode_tile(NULL, export_tile_width, export_tile_width, quality, &tables_buffer, &tables_size, NULL, NULL);
+			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
+			                      TIFF_TAG_JPEG_TABLES, TIFF_UNDEFINED, jpeg_tables_length, tables_buffer);
+			++tag_count_for_ifd;
+			if (tables_buffer) free(tables_buffer);
 
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_chroma_subsampling);
+			++tag_count_for_ifd;
 
+			// Update the tag count, which was written incorrectly as a placeholder at the beginning of the IFD
+			*(u64*)(tag_buffer.data + tag_count_for_ifd_offset) = tag_count_for_ifd;
 
-			if (need_reuse_tiles && level == 0) {
+			/*if (need_reuse_tiles && level == 0) {
 				u32 tile_offset_x = level0_pixel_bounds.left / tile_width;
 				u32 tile_offset_y = level0_pixel_bounds.top / tile_height;
-			}
+			}*/
 
 		}
 
+		u64 next_ifd_offset_terminator = 0;
+		memrw_push(&tag_buffer, &next_ifd_offset_terminator, sizeof(u64));
+
+		// TODO: macro/label images
+
+		// Adjust the offsets in the TIFF tags, so that they are counted from the beginning of the file.
+		u64 data_buffer_base_offset = tag_buffer.used_size;
+		offset_fixup_t* fixups = (offset_fixup_t*)fixups_buffer.data;
+		u64 fixup_count = fixups_buffer.used_count;
+		for (i32 i = 0; i < fixup_count; ++i) {
+			offset_fixup_t* fixup = fixups + i;
+			u64 fixed_offset = fixup->offset_from_unknown_base + data_buffer_base_offset;
+			*(u64*)(tag_buffer.data + fixup->offset_to_fix) = fixed_offset;
+		}
+
+		fwrite(tag_buffer.data, tag_buffer.used_size, 1, fp);
+		fwrite(small_data_buffer.data, small_data_buffer.used_size, 1,fp);
+		u64 image_data_base_offset = tag_buffer.used_size + small_data_buffer.used_size;
+
+
+		fclose(fp);
+
+		memrw_destroy(&tag_buffer);
+		memrw_destroy(&small_data_buffer);
+		memrw_destroy(&fixups_buffer);
+
 	}
+
 	return success;
 }

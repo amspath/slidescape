@@ -1337,7 +1337,8 @@ int main(int argc, const char** argv) {
 		float sleep_time = ms_left - time_margin;
 		if (sleep_time >= 1.0f) {
 			// Sleep seems to cause Vsync stutter on some NVIDIA gpus. (?)
-			if (!(is_nvidia_gpu && is_vsync_enabled)) {
+			// Also, Intel integrated graphics seems to perform worse when Sleep is used (unsure)
+			if (!(is_vsync_enabled)) {
 				Sleep((DWORD)sleep_time);
 			}
 		}

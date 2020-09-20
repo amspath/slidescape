@@ -30,6 +30,7 @@
 #include "viewer.h"
 #include "tlsclient.h"
 #include "caselist.h"
+#include "tiff_write.h"
 
 #define GUI_IMPL
 #include "gui.h"
@@ -79,6 +80,19 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	bool ret = ImGui::BeginMainMenuBar();
 	ImGui::PopStyleVar(1);
 	if (ret) {
+		scene_t* scene = &app_state->scene;
+		bounds2f export_bounds;
+
+		bool can_export = true;
+		if (scene->has_selection_box) {
+			rect2f final_crop_rect = rect2f_recanonicalize(&scene->selection_box);
+			export_bounds = rect2f_to_bounds(&final_crop_rect);
+		} else if (scene->is_cropped) {
+			export_bounds = scene->crop_bounds;
+		} else {
+			can_export = false;
+		}
+
 		static struct {
 			bool open_file;
 			bool close;
@@ -88,6 +102,9 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			bool select_region;
 			bool deselect;
 			bool crop_region;
+			bool export_region_as_bigtiff;
+			bool export_region_as_jpeg;
+			bool export_region_as_png;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -99,6 +116,14 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
+			ImGui::Separator();
+			if (ImGui::BeginMenu("Export", can_export)) {
+				bool enabled = app_state->scene.has_selection_box || app_state->scene.is_cropped;
+				if (ImGui::MenuItem("Export region as BigTIFF...", NULL, &menu_items_clicked.export_region_as_bigtiff,enabled)) {}
+				if (ImGui::MenuItem("Export region as JPEG...", NULL, &menu_items_clicked.export_region_as_jpeg,enabled)) {}
+				if (ImGui::MenuItem("Export region as PNG...", NULL, &menu_items_clicked.export_region_as_png,false)) {}
+				ImGui::EndMenu();
+			}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -143,6 +168,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		ImGui::EndMainMenuBar();
 
+
 		if (menu_items_clicked.exit_program) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
@@ -161,20 +187,36 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		} else if (menu_items_clicked.select_region) {
 			app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
 		} else if (menu_items_clicked.deselect) {
-			app_state->scene.has_selection_box = false;
+			scene->has_selection_box = false;
 		} else if (menu_items_clicked.crop_region) {
-			if (!app_state->scene.is_cropped) {
-				rect2f final_crop_rect = rect2f_recanonicalize(&app_state->scene.selection_box);
+			if (!scene->is_cropped) {
+				rect2f final_crop_rect = rect2f_recanonicalize(&scene->selection_box);
 				bounds2f bounds = rect2f_to_bounds(&final_crop_rect);
-				app_state->scene.crop_bounds = bounds;
-				app_state->scene.is_cropped = true;
-				app_state->scene.has_selection_box = false;
+				scene->crop_bounds = bounds;
+				scene->is_cropped = true;
+				scene->has_selection_box = false;
 			} else {
-				app_state->scene.is_cropped = false;
-				app_state->scene.has_selection_box = false;
+				scene->is_cropped = false;
+				scene->has_selection_box = false;
 			}
 		} else if (prev_is_vsync_enabled != is_vsync_enabled) {
 			set_swap_interval(is_vsync_enabled ? 1 : 0);
+		} else if (menu_items_clicked.export_region_as_bigtiff || menu_items_clicked.export_region_as_jpeg || menu_items_clicked.export_region_as_png) {
+
+			if (can_export) {
+				image_t* image = app_state->loaded_images + 0;
+				if (menu_items_clicked.export_region_as_bigtiff) {
+					export_cropped_bigtiff(image, &image->tiff.tiff, export_bounds, "test.ptif", 512, TIFF_PHOTOMETRIC_YCBCR);
+				} else if (menu_items_clicked.export_region_as_jpeg) {
+
+				} else if (menu_items_clicked.export_region_as_png) {
+
+				}
+			} else {
+				ASSERT(!"Trying to export a region without a selected region");
+			}
+
+
 		}
 	}
 

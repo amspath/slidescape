@@ -413,7 +413,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			//stbi_image_free(image->stbi.pixels);
 		}
 
-	} else if (app_state->use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0)) {
+	} else if (app_state->use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0 || strcasecmp(ext, "ptif") == 0)) {
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
 			add_image_from_tiff(app_state, tiff);

@@ -142,6 +142,10 @@ typedef struct {
 	union {
 		u8 data[8];
 		u64 offset;
+		u8 data_u8;
+		u16 data_u16;
+		u32 data_u32;
+		u64 data_u64;
 	};
 } raw_bigtiff_tag_t;
 
@@ -450,7 +454,7 @@ static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
 	return is_big_endian ? bswap_64(x) : x;
 }
 
-
+u32 get_tiff_field_size(u16 data_type);
 u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 bool32 open_tiff_file(tiff_t* tiff, const char* filename);
 memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer);

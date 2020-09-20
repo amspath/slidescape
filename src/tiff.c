@@ -747,7 +747,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 	                                           buffer->used_size, compression_size_bound);
 	if (compressed_size > 0) {
 		// success! We can replace the buffer contents with the compressed data
-		buffer->used_size = 0; // rewind
+		memrw_rewind(buffer);
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_LZ4_COMPRESSED_DATA, uncompressed_size, compressed_size);
 		memrw_push(buffer, compression_buffer, compressed_size);
 	} else {
