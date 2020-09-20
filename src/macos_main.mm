@@ -511,7 +511,7 @@ platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 
 void macos_init_multithreading() {
 	i32 semaphore_initial_count = 0;
-	i32 worker_thread_count = total_thread_count - 1;
+	worker_thread_count = total_thread_count - 1;
 	work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
 
 	pthread_t threads[MAX_THREAD_COUNT] = {};

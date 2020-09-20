@@ -174,6 +174,7 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				level_image->downsample_factor = ifd->downsample_factor;
 				level_image->tile_count = ifd->tile_count;
 				level_image->width_in_tiles = ifd->width_in_tiles;
+				ASSERT(level_image->width_in_tiles > 0);
 				level_image->height_in_tiles = ifd->height_in_tiles;
 				level_image->tile_width = ifd->tile_width;
 				level_image->tile_height = ifd->tile_height;
@@ -193,12 +194,20 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				ASSERT(ifd->tile_byte_counts != NULL);
 				ASSERT(ifd->tile_offsets != NULL);
 				// mark the empty tiles, so that we can skip loading them later on
-				for (i32 i = 0; i < level_image->tile_count; ++i) {
-					tile_t* tile = level_image->tiles + i;
-					u64 tile_byte_count = ifd->tile_byte_counts[i];
+				for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+					tile_t* tile = level_image->tiles + tile_index;
+					u64 tile_byte_count = ifd->tile_byte_counts[tile_index];
 					if (tile_byte_count == 0) {
 						tile->is_empty = true;
 					}
+					// Facilitate some introspection by storing self-referential information
+					// in the tile_t struct. This is needed for some specific cases where we
+					// pass around pointers to tile_t structs without caring exactly where they
+					// came from.
+					// (Specific example: we use this when exporting a selected region as BigTIFF)
+					tile->tile_index = tile_index;
+					tile->tile_x = tile_index % level_image->width_in_tiles;
+					tile->tile_y = tile_index / level_image->width_in_tiles;
 				}
 			} else {
 				// The current downsampling level has no corresponding IFD level image :(

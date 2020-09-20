@@ -120,7 +120,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (ImGui::BeginMenu("Export", can_export)) {
 				bool enabled = app_state->scene.has_selection_box || app_state->scene.is_cropped;
 				if (ImGui::MenuItem("Export region as BigTIFF...", NULL, &menu_items_clicked.export_region_as_bigtiff,enabled)) {}
-				if (ImGui::MenuItem("Export region as JPEG...", NULL, &menu_items_clicked.export_region_as_jpeg,enabled)) {}
+				if (ImGui::MenuItem("Export region as JPEG...", NULL, &menu_items_clicked.export_region_as_jpeg,false)) {}
 				if (ImGui::MenuItem("Export region as PNG...", NULL, &menu_items_clicked.export_region_as_png,false)) {}
 				ImGui::EndMenu();
 			}
@@ -206,7 +206,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			if (can_export) {
 				image_t* image = app_state->loaded_images + 0;
 				if (menu_items_clicked.export_region_as_bigtiff) {
-					export_cropped_bigtiff(image, &image->tiff.tiff, export_bounds, "test.ptif", 512, TIFF_PHOTOMETRIC_YCBCR);
+					export_cropped_bigtiff(app_state, image, &image->tiff.tiff, export_bounds, "test.ptif", 512, TIFF_PHOTOMETRIC_YCBCR, 80);
 				} else if (menu_items_clicked.export_region_as_jpeg) {
 
 				} else if (menu_items_clicked.export_region_as_png) {

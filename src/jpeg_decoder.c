@@ -126,8 +126,8 @@ void destroy_buffer(uint8_t *p) {
 	free(p);
 }
 
-void encode_tile(u8* pixels, i32 width, i32 height, i32 quality,
-                 u8** tables_buffer, u32* tables_size_ptr, u8** jpeg_buffer, u32* jpeg_size_ptr) {
+void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality,
+                      u8** tables_buffer, u32* tables_size_ptr, u8** jpeg_buffer, u32* jpeg_size_ptr) {
 	struct jpeg_compress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 
@@ -166,5 +166,38 @@ void encode_tile(u8* pixels, i32 width, i32 height, i32 quality,
 
 	jpeg_destroy_compress(&cinfo);
 
+}
+
+void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg_buffer, u32* jpeg_size_ptr) {
+	struct jpeg_compress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+
+	cinfo.err = jpeg_std_error(&jerr);
+
+	jpeg_create_compress(&cinfo);
+	cinfo.image_width = width;
+	cinfo.image_height = height;
+
+	cinfo.input_components = 4;
+	cinfo.in_color_space = JCS_EXT_BGRA;
+
+	jpeg_set_defaults(&cinfo);
+	jpeg_set_quality(&cinfo, quality, TRUE);
+
+	if (jpeg_buffer) {
+		jpeg_mem_dest(&cinfo, jpeg_buffer, (unsigned long*) jpeg_size_ptr); // libjpeg-turbo will allocate the buffer
+		jpeg_start_compress(&cinfo, TRUE);
+
+		i32 row_stride = width * cinfo.input_components;
+		JSAMPROW row_pointer[1];
+		while (cinfo.next_scanline < cinfo.image_height) {
+			row_pointer[0] = pixels + (cinfo.next_scanline * row_stride);
+			jpeg_write_scanlines(&cinfo, row_pointer, 1);
+		}
+
+		jpeg_finish_compress(&cinfo);
+	}
+
+	jpeg_destroy_compress(&cinfo);
 }
 

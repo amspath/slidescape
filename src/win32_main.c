@@ -1190,7 +1190,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
-	i32 worker_thread_count = total_thread_count - 1;
+	worker_thread_count = total_thread_count - 1;
 
 	// Queue for newly submitted tasks
 	work_queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);

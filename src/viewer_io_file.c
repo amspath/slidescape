@@ -20,11 +20,6 @@ void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* us
 	ASSERT(!"viewer_upload_already_cached_tile_to_gpu() is a dummy, it should not be called");
 }
 
-typedef struct viewer_notify_tile_completed_task_t {
-	u8* pixel_memory;
-	tile_t* tile;
-	i32 tile_width;
-} viewer_notify_tile_completed_task_t;
 
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
 	ASSERT(!"viewer_notify_load_tile_completed() is a dummy, it should not be called");
@@ -460,6 +455,17 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 					level_image->y_tile_side_in_um = wsi_level->y_tile_side_in_um;
 					level_image->tiles = (tile_t*) calloc(1, wsi_level->tile_count * sizeof(tile_t));
 					// Note: OpenSlide doesn't allow us to quickly check if tiles are empty or not.
+					for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+						tile_t* tile = level_image->tiles + tile_index;
+						// Facilitate some introspection by storing self-referential information
+						// in the tile_t struct. This is needed for some specific cases where we
+						// pass around pointers to tile_t structs without caring exactly where they
+						// came from.
+						// (Specific example: we use this when exporting a selected region as BigTIFF)
+						tile->tile_index = tile_index;
+						tile->tile_x = tile_index % level_image->width_in_tiles;
+						tile->tile_y = tile_index / level_image->width_in_tiles;
+					}
 				}
 			}
 
