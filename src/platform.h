@@ -341,6 +341,7 @@ void mouse_show();
 void mouse_hide();
 
 void open_file_dialog(window_handle_t window_handle);
+bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string);
 void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
 

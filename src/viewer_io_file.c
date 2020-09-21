@@ -55,7 +55,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
 		// We need to check for this situation and chicken out if this is the case.
 		if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
+#if DO_DEBUG
 			printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+#endif
 			goto finish_up;
 		}
 		u8* jpeg_tables = level_ifd->jpeg_tables;

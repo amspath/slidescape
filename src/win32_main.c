@@ -244,11 +244,40 @@ void open_file_dialog(window_handle_t window) {
 
 	// Display the Open dialog box.
 	mouse_show();
-	if (GetOpenFileName(&ofn)==TRUE) {
+	if (GetOpenFileNameA(&ofn)==TRUE) {
 		load_generic_file(&global_app_state, filename);
 	}
 }
 
+bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+	OPENFILENAME ofn = {};       // common dialog box structure
+	path_buffer[0] = '\0';
+	ASSERT(path_buffer_size > 1);
+
+	// Initialize OPENFILENAME
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = window;
+	ofn.lpstrFile = path_buffer;
+	ofn.nMaxFile = path_buffer_size-1;
+	ofn.lpstrFilter = filter_string;
+	ofn.nFilterIndex = 1;
+	ofn.lpstrFileTitle = NULL;
+	ofn.nMaxFileTitle = 0;
+	ofn.lpstrInitialDir = NULL;
+
+	// Display the Open dialog box.
+	mouse_show();
+	if (GetSaveFileNameA(&ofn)==TRUE) {
+//		printf("attempting to save as %s\n", path_buffer);
+		return true;
+	} else {
+#if DO_DEBUG
+		DWORD error = CommDlgExtendedError();
+		printf("Save file failed with error code %d\n", error);
+#endif
+		return false;
+	}
+}
 
 LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = ImGui_ImplWin32_WndProcHandler(window, message, wparam, lparam);
