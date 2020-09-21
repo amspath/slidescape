@@ -1331,7 +1331,7 @@ int main(int argc, const char** argv) {
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
 
-	is_vsync_enabled = true;
+	is_vsync_enabled = false;
 	set_swap_interval(is_vsync_enabled ? 1 : 0);
 
 	i64 last_clock = get_clock();
