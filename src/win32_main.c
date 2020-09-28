@@ -783,9 +783,16 @@ void* gl_get_proc_address(const char *name) {
 }
 
 #if USE_OPENGL_DEBUG_CONTEXT
+
+#define skip_if_already_encountered(x) { \
+	static bool id_##x##_already_encountered;\
+    if (id == x) { if (id_##x##_already_encountered) return; else  id_##x##_already_encountered = true; } }
+
 void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                               const char* message, const void* user_param)
 {
+	skip_if_already_encountered(131154); // (NVIDIA) Pixel-path performance warning: Pixel transfer is synchronized with 3D rendering.
+
 	char severity_unknown_string[32];
 	const char* severity_string = NULL;
 	switch (severity) {
@@ -817,9 +824,7 @@ void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint
 		} break;
 	}
 
-
-	printf("GL CALLBACK: type = %s, severity = %s, message = %s\n",
-	       type_string, severity_string, message );
+	printf("GL CALLBACK: type = %s, id = %d, severity = %s,\n    MESSAGE: %s\n", type_string, id, severity_string, message);
 }
 #endif
 
