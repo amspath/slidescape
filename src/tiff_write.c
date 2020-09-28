@@ -37,16 +37,6 @@ typedef struct export_region_task_t {
 	u32 export_region_format;
 } export_region_task_t;
 
-typedef struct export_bigtiff_task_t {
-	image_t* image;
-	bounds2f bounds;
-	tiff_t* tiff;
-	const char* filename;
-	u32 export_tile_width;
-	u16 desired_photometric_interpretation;
-} export_bigtiff_task_t;
-
-
 typedef struct encode_tile_task_t {
 	image_t* image;
 	tiff_t* tiff;
@@ -162,7 +152,9 @@ typedef struct export_task_data_t {
 	i32 max_level;
 	i32 source_tile_width;
 	i32 export_tile_width;
+	i32 quality;
 	u64 image_data_base_offset;
+	u64 current_image_data_write_offset;
 	FILE* fp;
 	bool is_valid;
 	export_level_task_data_t level_task_datas[WSI_MAX_LEVELS];
@@ -170,6 +162,377 @@ typedef struct export_task_data_t {
 
 void export_notify_load_tile_completed(int logical_thread_index, void* userdata) {
 	ASSERT(!"export_notify_load_tile_completed() is a dummy, it should not be called");
+}
+
+void construct_new_tile_from_source_tiles(export_task_data_t* export_task, export_level_task_data_t* level_task, i32 export_tile_x, i32 export_tile_y, u8** jpeg_buffer, u32* jpeg_size) {
+	u32 export_tile_width = export_task->export_tile_width;
+	i32 source_tile_width = export_task->source_tile_width;
+	u64 tile_size_in_bytes = SQUARE(export_tile_width) * BYTES_PER_PIXEL;
+	u8* dest = malloc(tile_size_in_bytes);
+	memset(dest, 0xFF, tile_size_in_bytes);
+
+	i32 source_tile_offset_x = level_task->pixel_bounds.left % source_tile_width;
+	i32 source_tile_offset_y = level_task->pixel_bounds.top % source_tile_width;
+	i32 remainder_x = (level_task->pixel_bounds.right - level_task->pixel_bounds.left) % export_tile_width;
+	i32 remainder_y = (level_task->pixel_bounds.bottom - level_task->pixel_bounds.top) % export_tile_width;
+	i32 extra_tiles_x = (source_tile_offset_x + export_tile_width - 1) / source_tile_width;
+	i32 extra_tiles_y = (source_tile_offset_y + export_tile_width - 1) / source_tile_width;
+	// TODO: Find a way that this makes more sense. We don't want to go out of bounds for the source tile!
+	if (extra_tiles_x > 0 && export_tile_x == level_task->export_width_in_tiles - 1) {
+		extra_tiles_x = (source_tile_offset_x + remainder_x - 1) / source_tile_width;
+	}
+	if (extra_tiles_y > 0 && export_tile_y == level_task->export_height_in_tiles - 1) {
+		extra_tiles_y = (source_tile_offset_y + remainder_y - 1) / source_tile_width;
+	}
+
+
+	i32 source_tile_index = export_tile_y * level_task->source_bounds_width_in_tiles + export_tile_x;
+//					i32 source_tile_x = source_tile_index % level_task->source_bounds_width_in_tiles;
+//					i32 source_tile_y = source_tile_index / level_task->source_bounds_width_in_tiles;
+
+	i32 source_pitch = source_tile_width * BYTES_PER_PIXEL;
+	i32 dest_pitch = export_task->export_tile_width * BYTES_PER_PIXEL;
+
+	i32 dest_left_section_width = source_tile_width - source_tile_offset_x;
+	i32 dest_top_section_height = source_tile_width - source_tile_offset_y;
+	i32 dest_right_section_width = export_tile_width - dest_left_section_width;
+	i32 dest_bottom_section_height = export_tile_width - dest_top_section_height;
+
+	// TODO: what if source tile size and export tile size are not the same?
+
+	i32 contributing_source_tiles_count = 0;
+
+	// Top-left source tile
+	{
+		tile_t* source_tile = level_task->source_tiles[source_tile_index];
+		if (source_tile && !source_tile->is_empty) {
+			++contributing_source_tiles_count;
+			ASSERT(source_tile->is_cached && source_tile->pixels);
+			u8* source_pos = source_tile->pixels +
+			                 source_tile_offset_y * source_pitch + source_tile_offset_x * BYTES_PER_PIXEL;
+			u8* dest_pos = dest;
+			for(i32 y = 0; y < dest_top_section_height; ++y) {
+				memcpy(dest_pos, source_pos, dest_left_section_width * BYTES_PER_PIXEL);
+				dest_pos += dest_pitch;
+				source_pos += source_pitch;
+			}
+		}
+	}
+
+	// Top-right source tile
+	if (extra_tiles_x == 1) {
+		tile_t* source_tile = level_task->source_tiles[source_tile_index + 1];
+		if (source_tile && !source_tile->is_empty) {
+			++contributing_source_tiles_count;
+			ASSERT(source_tile->is_cached && source_tile->pixels);
+			u8* source_pos = source_tile->pixels + source_tile_offset_y * source_pitch;
+			u8* dest_pos = dest + dest_left_section_width * BYTES_PER_PIXEL;
+			for(i32 y = 0; y < dest_top_section_height; ++y) {
+				memcpy(dest_pos, source_pos, dest_right_section_width * BYTES_PER_PIXEL);
+				dest_pos += dest_pitch;
+				source_pos += source_pitch;
+			}
+		}
+	}
+
+	// Bottom-left source tile
+	if (extra_tiles_y == 1) {
+		tile_t* source_tile = level_task->source_tiles[source_tile_index + level_task->source_bounds_width_in_tiles];
+		if (source_tile && !source_tile->is_empty) {
+			++contributing_source_tiles_count;
+			ASSERT(source_tile->is_cached && source_tile->pixels);
+			u8* source_pos = source_tile->pixels + source_tile_offset_x * BYTES_PER_PIXEL;
+			u8* dest_pos = dest + dest_top_section_height * dest_pitch;
+			for(i32 y = 0; y < dest_bottom_section_height; ++y) {
+				memcpy(dest_pos, source_pos, dest_left_section_width * BYTES_PER_PIXEL);
+				dest_pos += dest_pitch;
+				source_pos += source_pitch;
+			}
+		}
+	}
+
+	// Bottom-right source tile
+	if (extra_tiles_x == 1 && extra_tiles_y == 1) {
+		tile_t* source_tile = level_task->source_tiles[source_tile_index + level_task->source_bounds_width_in_tiles + 1];
+		if (source_tile && !source_tile->is_empty) {
+			++contributing_source_tiles_count;
+			ASSERT(source_tile->is_cached && source_tile->pixels);
+			u8* source_pos = source_tile->pixels;
+			u8* dest_pos = dest + dest_top_section_height * dest_pitch + dest_left_section_width * BYTES_PER_PIXEL;
+			for(i32 y = 0; y < dest_bottom_section_height; ++y) {
+				memcpy(dest_pos, source_pos, dest_right_section_width * BYTES_PER_PIXEL);
+				dest_pos += dest_pitch;
+				source_pos += source_pitch;
+			}
+		}
+	}
+
+		// Now we have a fully assembled tile.
+
+#if 0
+		static bool already_tested_jpeg_encode;
+					if (!already_tested_jpeg_encode) {
+						already_tested_jpeg_encode = true;
+						u8* jpeg_buffer = NULL;
+						u32 jpeg_size = 0;
+						jpeg_encode_image(dest, export_tile_width, export_tile_width, quality,
+						                  &jpeg_buffer, &jpeg_size);
+
+						FILE* test_fp = fopen("test.jpeg", "wb");
+						if (test_fp) {
+							fwrite(jpeg_buffer, jpeg_size, 1, test_fp);
+							fclose(test_fp);
+						}
+					}
+#endif
+
+	bool skip = (contributing_source_tiles_count == 0); // empty tiles would only waste space, so skip them
+	if (!skip) {
+		u8* compressed_buffer = NULL;
+		u32 compressed_size = 0;
+		jpeg_encode_tile(dest, export_tile_width, export_tile_width, export_task->quality, NULL, NULL,
+		                 &compressed_buffer, &compressed_size);
+
+		*jpeg_buffer = compressed_buffer;
+		*jpeg_size = compressed_size;
+	}
+
+	free(dest);
+}
+
+void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_task_data_t* export_task, i32 level) {
+	export_level_task_data_t* level_task = export_task->level_task_datas + level;
+	if (!level_task->is_represented) return;
+
+	u64* tile_offsets = calloc(level_task->export_tile_count, sizeof(u64));
+	u64* tile_bytecounts = calloc(level_task->export_tile_count, sizeof(u64));
+
+
+	u32 batch_size = ATLEAST(worker_thread_count, 1);
+	u32 batch_count = (level_task->export_tile_count + batch_size - 1) / batch_size;
+
+	// TODO: don't assume unaligned!
+//			bool x_aligned = level_task->export_width_in_tiles == level_task->source_bounds_width_in_tiles;
+//			bool y_aligned = level_task->export_height_in_tiles == level_task->source_bounds_height_in_tiles;
+
+	u32 export_tile_width = export_task->export_tile_width;
+	i32 source_tile_width = export_task->source_tile_width;
+	i32 source_tile_offset_x = level_task->pixel_bounds.left % source_tile_width;
+	i32 source_tile_offset_y = level_task->pixel_bounds.top % source_tile_width;
+	i32 remainder_x = (level_task->pixel_bounds.right - level_task->pixel_bounds.left) % export_tile_width;
+	i32 remainder_y = (level_task->pixel_bounds.bottom - level_task->pixel_bounds.top) % export_tile_width;
+	i32 extra_tiles_x = (source_tile_offset_x + export_tile_width - 1) / source_tile_width;
+	i32 extra_tiles_y = (source_tile_offset_y + export_tile_width - 1) / source_tile_width;
+
+	i32 source_tile_pitch = level_task->source_bounds_width_in_tiles;
+
+	for (i32 batch = 0; batch < batch_count; ++batch) {
+		u32 start_tile_index = batch * batch_size;
+		i32 tiles_left = level_task->export_tile_count - start_tile_index;
+		i32 current_batch_size = MIN(tiles_left, batch_size);
+//				bool is_last_batch = (tiles_left / batch_size) == 0;
+		u32 end_tile_index = start_tile_index + (current_batch_size - 1);
+		i32 start_tile_x = start_tile_index % level_task->export_width_in_tiles;
+		i32 start_tile_y = start_tile_index / level_task->export_width_in_tiles;
+		i32 end_tile_x = end_tile_index % level_task->export_width_in_tiles;
+		i32 end_tile_y = end_tile_index / level_task->export_width_in_tiles;
+
+		// TODO: Find a way that this makes more sense. We don't want to go out of bounds for the source tile!
+		/*if (end_tile_x == level_task->export_width_in_tiles - 1) {
+			extra_tiles_x = (source_tile_offset_x + remainder_x - 1) / source_tile_width;
+		}
+		if (end_tile_y == level_task->export_height_in_tiles - 1) {
+			extra_tiles_y = (source_tile_offset_y + remainder_y - 1) / source_tile_width;
+		}*/
+//				ASSERT(end_tile_x + extra_tiles_x < level_task->source_bounds_width_in_tiles);
+//				ASSERT(end_tile_y + extra_tiles_y < level_task->source_bounds_height_in_tiles);
+
+		u32 jpeg_compressed_sizes[MAX_THREAD_COUNT] = {};
+		u8* jpeg_compressed_buffers[MAX_THREAD_COUNT] = {};
+
+		i32 first_source_tile_needed = start_tile_y * source_tile_pitch + start_tile_x;
+		i32 last_source_tile_needed = (end_tile_y + extra_tiles_y) * source_tile_pitch + end_tile_x + extra_tiles_x;
+		last_source_tile_needed = ATMOST(last_source_tile_needed, level_task->source_tile_count - 1);
+		i32 source_tiles_needed = last_source_tile_needed - first_source_tile_needed + 1;
+
+		load_tile_task_t* wishlist = calloc(source_tiles_needed, sizeof(load_tile_task_t));
+		i32 tiles_to_load = 0;
+
+		for (i32 tile_index = 0; tile_index <= last_source_tile_needed; ++tile_index) {
+			tile_t* tile = level_task->source_tiles[tile_index];
+			if (tile_index < first_source_tile_needed) {
+				// Release tiles that are no longer needed.
+				if (tile && tile->is_cached && tile->pixels) {
+					tile_release_cache(tile);
+				}
+			} else {
+				// Load needed tiles into system cache.
+				if (tile) {
+					if (tile->is_empty) continue; // no need to load empty tiles
+					if (tile->is_cached && tile->pixels) {
+						continue; // already cached!
+					} else {
+						tile->need_keep_in_cache = true;
+						wishlist[tiles_to_load++] = (load_tile_task_t){
+								.image = image, .tile = tile, .level = level,
+								.tile_x = tile->tile_x,
+								.tile_y = tile->tile_y,
+								.need_gpu_residency = tile->need_gpu_residency,
+								.need_keep_in_cache = true,
+								.completion_callback = export_notify_load_tile_completed,
+						};
+					}
+				}
+			}
+		}
+
+		request_tiles(app_state, image, wishlist, tiles_to_load);
+		free(wishlist);
+		wishlist = NULL;
+
+		// TODO: fix the copy-pasta
+		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
+		while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress(&global_completion_queue)) {
+			work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
+			if (entry.is_valid) {
+				if (!entry.callback) panic();
+				mark_queue_entry_completed(&global_completion_queue);
+
+				if (entry.callback == export_notify_load_tile_completed) {
+					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
+					if (task->pixel_memory) {
+						bool need_free_pixel_memory = true;
+						if (task->tile) {
+							tile_t* tile = task->tile;
+							tile->is_submitted_for_loading = false;
+							if (tile->need_gpu_residency) {
+								/*pixel_transfer_state_t* transfer_state =
+										submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
+																	  4, task->pixel_memory, finalize_textures_immediately);
+								if (finalize_textures_immediately) {
+									tile->texture = transfer_state->texture;
+								} else {
+									transfer_state->userdata = (void*) tile;
+								}*/
+
+							}
+							if (tile->need_keep_in_cache) {
+								need_free_pixel_memory = false;
+								tile->pixels = task->pixel_memory;
+								tile->is_cached = true;
+							}
+						}
+						if (need_free_pixel_memory) {
+							free(task->pixel_memory);
+						}
+					}
+
+					free(entry.data);
+				} /*else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
+							load_tile_task_t* task = (load_tile_task_t*) entry.data;
+							tile_t* tile = task->tile;
+							if (tile->is_cached && tile->pixels) {
+								if (tile->need_gpu_residency) {
+									pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM,
+									                                                                       TILE_DIM, 4,
+									                                                                       tile->pixels, finalize_textures_immediately);
+									tile->texture = transfer_state->texture;
+								} else {
+									ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
+								}
+
+								if (!task->need_keep_in_cache) {
+									free(tile->pixels);
+									tile->pixels = NULL;
+									tile->is_cached = false;
+								}
+							} else {
+								printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+							}
+						}*/
+			}
+
+
+		}//end of while loop
+
+		// Verify that all tiles are now available
+		for (i32 tile_index = first_source_tile_needed; tile_index <= last_source_tile_needed; ++tile_index) {
+			tile_t* tile = level_task->source_tiles[tile_index];
+
+			if (tile) {
+				if (tile->is_empty) continue;
+				if (tile->is_cached && tile->pixels) {
+					continue; // already cached!
+				} else {
+					ASSERT(!"This tile should have been loaded!\n");
+				}
+			}
+
+		}
+
+
+
+		// Now we can proceed with constructing the new tiles from the source tiles,
+		// and writing them to disk.
+		// TODO: make this a multi-threaded task.
+
+		for (i32 tile_index = start_tile_index; tile_index <= end_tile_index; ++tile_index) {
+			i32 export_tile_x = tile_index % level_task->export_width_in_tiles;
+			i32 export_tile_y = tile_index / level_task->export_width_in_tiles;
+
+			i32 work_index = tile_index % batch_size;
+			u8** jpeg_buffer = &jpeg_compressed_buffers[work_index];
+			u32* jpeg_size = &jpeg_compressed_sizes[work_index];
+
+			construct_new_tile_from_source_tiles(export_task, level_task, export_tile_x, export_tile_y, jpeg_buffer, jpeg_size);
+
+		}
+
+		// batch completed.
+
+		fseeko64(export_task->fp, export_task->current_image_data_write_offset, SEEK_SET);
+
+		for (i32 work_index = 0; work_index < current_batch_size; ++work_index) {
+			u8* compressed_buffer = jpeg_compressed_buffers[work_index];
+			u32 compressed_size = jpeg_compressed_sizes[work_index];
+
+			i32 tile_index = start_tile_index + work_index;
+			tile_offsets[tile_index] = export_task->current_image_data_write_offset;
+			tile_bytecounts[tile_index] = compressed_size;
+
+			fwrite(compressed_buffer, compressed_size, 1, export_task->fp);
+			free(compressed_buffer);
+			jpeg_compressed_buffers[work_index] = NULL;
+			export_task->current_image_data_write_offset += compressed_size;
+
+		}
+
+
+	}
+	// level export completed
+
+	// Rewrite the tile offsets and tile bytecounts
+	fseeko64(export_task->fp, level_task->offset_of_tile_offsets, SEEK_SET);
+	fwrite(tile_offsets, sizeof(u64), level_task->export_tile_count, export_task->fp);
+
+	fseeko64(export_task->fp, level_task->offset_of_tile_bytecounts, SEEK_SET);
+	fwrite(tile_bytecounts, sizeof(u64), level_task->export_tile_count, export_task->fp);
+
+	free(tile_offsets);
+	free(tile_bytecounts);
+
+	for (i32 tile_index = 0; tile_index < level_task->source_tile_count; ++tile_index) {
+		tile_t* tile = level_task->source_tiles[tile_index];
+
+		if (tile) {
+			if (tile->is_cached && tile->pixels) {
+				tile_release_cache(tile);
+			}
+		}
+
+	}
+
+	free(level_task->source_tiles);
 }
 
 bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2f bounds, const char* filename,
@@ -204,6 +567,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	export_task_data_t export_task = {};
 	export_task.source_tile_width = tile_width;
 	export_task.export_tile_width = export_tile_width;
+	export_task.quality = quality;
 
 	FILE* fp = fopen64(filename, "wb");
 	bool32 success = false;
@@ -503,370 +867,10 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	// 'Part 2': doing the actual tile data
 	if (export_task.is_valid) {
 
-		u64 current_image_data_write_offset = export_task.image_data_base_offset;
+		export_task.current_image_data_write_offset = export_task.image_data_base_offset;
 
 		for (i32 level = 0; level <= export_task.max_level; ++level) {
-			export_level_task_data_t* level_task = export_task.level_task_datas + level;
-			if (!level_task->is_represented) continue;
-
-			u64* tile_offsets = calloc(level_task->export_tile_count, sizeof(u64));
-			u64* tile_bytecounts = calloc(level_task->export_tile_count, sizeof(u64));
-
-
-			u32 batch_size = ATLEAST(worker_thread_count, 1);
-			u32 batch_count = (level_task->export_tile_count + batch_size - 1) / batch_size;
-
-			// TODO: don't assume unaligned!
-//			bool x_aligned = level_task->export_width_in_tiles == level_task->source_bounds_width_in_tiles;
-//			bool y_aligned = level_task->export_height_in_tiles == level_task->source_bounds_height_in_tiles;
-
-			i32 source_tile_width = export_task.source_tile_width;
-			i32 source_tile_offset_x = level_task->pixel_bounds.left % source_tile_width;
-			i32 source_tile_offset_y = level_task->pixel_bounds.top % source_tile_width;
-			i32 remainder_x = (level_task->pixel_bounds.right - level_task->pixel_bounds.left) % export_tile_width;
-			i32 remainder_y = (level_task->pixel_bounds.bottom - level_task->pixel_bounds.top) % export_tile_width;
-			i32 extra_tiles_x = (source_tile_offset_x + export_tile_width - 1) / source_tile_width;
-			i32 extra_tiles_y = (source_tile_offset_y + export_tile_width - 1) / source_tile_width;
-
-			i32 source_tile_pitch = level_task->source_bounds_width_in_tiles;
-
-			for (i32 batch = 0; batch < batch_count; ++batch) {
-				u32 start_tile_index = batch * batch_size;
-				i32 tiles_left = level_task->export_tile_count - start_tile_index;
-				i32 current_batch_size = MIN(tiles_left, batch_size);
-//				bool is_last_batch = (tiles_left / batch_size) == 0;
-				u32 end_tile_index = start_tile_index + (current_batch_size - 1);
-				i32 start_tile_x = start_tile_index % level_task->export_width_in_tiles;
-				i32 start_tile_y = start_tile_index / level_task->export_width_in_tiles;
-				i32 end_tile_x = end_tile_index % level_task->export_width_in_tiles;
-				i32 end_tile_y = end_tile_index / level_task->export_width_in_tiles;
-
-				// TODO: Find a way that this makes more sense. We don't want to go out of bounds for the source tile!
-				/*if (end_tile_x == level_task->export_width_in_tiles - 1) {
-					extra_tiles_x = (source_tile_offset_x + remainder_x - 1) / source_tile_width;
-				}
-				if (end_tile_y == level_task->export_height_in_tiles - 1) {
-					extra_tiles_y = (source_tile_offset_y + remainder_y - 1) / source_tile_width;
-				}*/
-//				ASSERT(end_tile_x + extra_tiles_x < level_task->source_bounds_width_in_tiles);
-//				ASSERT(end_tile_y + extra_tiles_y < level_task->source_bounds_height_in_tiles);
-
-				u32 jpeg_compressed_sizes[MAX_THREAD_COUNT] = {};
-				u8* jpeg_compressed_buffers[MAX_THREAD_COUNT] = {};
-
-				i32 first_source_tile_needed = start_tile_y * source_tile_pitch + start_tile_x;
-				i32 last_source_tile_needed = (end_tile_y + extra_tiles_y) * source_tile_pitch + end_tile_x + extra_tiles_x;
-				last_source_tile_needed = ATMOST(last_source_tile_needed, level_task->source_tile_count - 1);
-				i32 source_tiles_needed = last_source_tile_needed - first_source_tile_needed + 1;
-
-				load_tile_task_t* wishlist = calloc(source_tiles_needed, sizeof(load_tile_task_t));
-				i32 tiles_to_load = 0;
-
-				for (i32 tile_index = 0; tile_index <= last_source_tile_needed; ++tile_index) {
-					tile_t* tile = level_task->source_tiles[tile_index];
-					if (tile_index < first_source_tile_needed) {
-						// Release tiles that are no longer needed.
-						if (tile && tile->is_cached && tile->pixels) {
-							tile_release_cache(tile);
-						}
-					} else {
-						// Load needed tiles into system cache.
-						if (tile) {
-							if (tile->is_empty) continue; // no need to load empty tiles
-							if (tile->is_cached && tile->pixels) {
-								continue; // already cached!
-							} else {
-								tile->need_keep_in_cache = true;
-								wishlist[tiles_to_load++] = (load_tile_task_t){
-										.image = image, .tile = tile, .level = level,
-										.tile_x = tile->tile_x,
-										.tile_y = tile->tile_y,
-										.need_gpu_residency = tile->need_gpu_residency,
-										.need_keep_in_cache = true,
-										.completion_callback = export_notify_load_tile_completed,
-								};
-							}
-						}
-					}
-				}
-
-				request_tiles(app_state, image, wishlist, tiles_to_load);
-				free(wishlist);
-				wishlist = NULL;
-
-				// TODO: fix the copy-pasta
-				i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
-				while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress(&global_completion_queue)) {
-					work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
-					if (entry.is_valid) {
-						if (!entry.callback) panic();
-						mark_queue_entry_completed(&global_completion_queue);
-
-						if (entry.callback == export_notify_load_tile_completed) {
-							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
-							if (task->pixel_memory) {
-								bool need_free_pixel_memory = true;
-								if (task->tile) {
-									tile_t* tile = task->tile;
-									tile->is_submitted_for_loading = false;
-									if (tile->need_gpu_residency) {
-										/*pixel_transfer_state_t* transfer_state =
-												submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
-												                              4, task->pixel_memory, finalize_textures_immediately);
-										if (finalize_textures_immediately) {
-											tile->texture = transfer_state->texture;
-										} else {
-											transfer_state->userdata = (void*) tile;
-										}*/
-
-									}
-									if (tile->need_keep_in_cache) {
-										need_free_pixel_memory = false;
-										tile->pixels = task->pixel_memory;
-										tile->is_cached = true;
-									}
-								}
-								if (need_free_pixel_memory) {
-									free(task->pixel_memory);
-								}
-							}
-
-							free(entry.data);
-						} /*else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
-							load_tile_task_t* task = (load_tile_task_t*) entry.data;
-							tile_t* tile = task->tile;
-							if (tile->is_cached && tile->pixels) {
-								if (tile->need_gpu_residency) {
-									pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM,
-									                                                                       TILE_DIM, 4,
-									                                                                       tile->pixels, finalize_textures_immediately);
-									tile->texture = transfer_state->texture;
-								} else {
-									ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
-								}
-
-								if (!task->need_keep_in_cache) {
-									free(tile->pixels);
-									tile->pixels = NULL;
-									tile->is_cached = false;
-								}
-							} else {
-								printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
-							}
-						}*/
-					}
-
-
-				}//end of while loop
-
-				// Verify that all tiles are now available
-				for (i32 tile_index = first_source_tile_needed; tile_index <= last_source_tile_needed; ++tile_index) {
-					tile_t* tile = level_task->source_tiles[tile_index];
-
-					if (tile) {
-						if (tile->is_empty) continue;
-						if (tile->is_cached && tile->pixels) {
-							continue; // already cached!
-						} else {
-							ASSERT(!"This tile should have been loaded!\n");
-						}
-					}
-
-				}
-
-
-
-				// Now we can proceed with constructing the new tiles from the source tiles,
-				// and writing them to disk.
-				// TODO: make this a multi-threaded task.
-
-				for (i32 tile_index = start_tile_index; tile_index <= end_tile_index; ++tile_index) {
-					i32 work_index = tile_index % batch_size;
-
-					i32 export_tile_x = tile_index % level_task->export_width_in_tiles;
-					i32 export_tile_y = tile_index / level_task->export_width_in_tiles;
-
-					u64 tile_size_in_bytes = SQUARE(export_task.export_tile_width) * BYTES_PER_PIXEL;
-					u8* dest = malloc(tile_size_in_bytes);
-					memset(dest, 0xFF, tile_size_in_bytes);
-
-					i32 source_tile_width = export_task.source_tile_width;
-					i32 source_tile_offset_x = level_task->pixel_bounds.left % source_tile_width;
-					i32 source_tile_offset_y = level_task->pixel_bounds.top % source_tile_width;
-					i32 remainder_x = (level_task->pixel_bounds.right - level_task->pixel_bounds.left) % export_tile_width;
-					i32 remainder_y = (level_task->pixel_bounds.bottom - level_task->pixel_bounds.top) % export_tile_width;
-					i32 extra_tiles_x = (source_tile_offset_x + export_tile_width - 1) / source_tile_width;
-					i32 extra_tiles_y = (source_tile_offset_y + export_tile_width - 1) / source_tile_width;
-					// TODO: Find a way that this makes more sense. We don't want to go out of bounds for the source tile!
-					if (extra_tiles_x > 0 && export_tile_x == level_task->export_width_in_tiles - 1) {
-						extra_tiles_x = (source_tile_offset_x + remainder_x - 1) / source_tile_width;
-					}
-					if (extra_tiles_y > 0 && export_tile_y == level_task->export_height_in_tiles - 1) {
-						extra_tiles_y = (source_tile_offset_y + remainder_y - 1) / source_tile_width;
-					}
-
-
-					i32 source_tile_index = export_tile_y * level_task->source_bounds_width_in_tiles + export_tile_x;
-//					i32 source_tile_x = source_tile_index % level_task->source_bounds_width_in_tiles;
-//					i32 source_tile_y = source_tile_index / level_task->source_bounds_width_in_tiles;
-
-					i32 source_pitch = source_tile_width * BYTES_PER_PIXEL;
-					i32 dest_pitch = export_task.export_tile_width * BYTES_PER_PIXEL;
-
-					i32 dest_left_section_width = source_tile_width - source_tile_offset_x;
-					i32 dest_top_section_height = source_tile_width - source_tile_offset_y;
-					i32 dest_right_section_width = export_tile_width - dest_left_section_width;
-					i32 dest_bottom_section_height = export_tile_width - dest_top_section_height;
-
-					// TODO: what if source tile size and export tile size are not the same?
-
-					i32 contributing_source_tiles_count = 0;
-
-					// Top-left source tile
-					{
-						tile_t* source_tile = level_task->source_tiles[source_tile_index];
-						if (source_tile && !source_tile->is_empty) {
-							++contributing_source_tiles_count;
-							ASSERT(source_tile->is_cached && source_tile->pixels);
-							u8* source_pos = source_tile->pixels +
-									source_tile_offset_y * source_pitch + source_tile_offset_x * BYTES_PER_PIXEL;
-							u8* dest_pos = dest;
-							for(i32 y = 0; y < dest_top_section_height; ++y) {
-								memcpy(dest_pos, source_pos, dest_left_section_width * BYTES_PER_PIXEL);
-								dest_pos += dest_pitch;
-								source_pos += source_pitch;
-							}
-						}
-					}
-
-					// Top-right source tile
-					if (extra_tiles_x == 1) {
-						tile_t* source_tile = level_task->source_tiles[source_tile_index + 1];
-						if (source_tile && !source_tile->is_empty) {
-							++contributing_source_tiles_count;
-							ASSERT(source_tile->is_cached && source_tile->pixels);
-							u8* source_pos = source_tile->pixels + source_tile_offset_y * source_pitch;
-							u8* dest_pos = dest + dest_left_section_width * BYTES_PER_PIXEL;
-							for(i32 y = 0; y < dest_top_section_height; ++y) {
-								memcpy(dest_pos, source_pos, dest_right_section_width * BYTES_PER_PIXEL);
-								dest_pos += dest_pitch;
-								source_pos += source_pitch;
-							}
-						}
-					}
-
-					// Bottom-left source tile
-					if (extra_tiles_y == 1) {
-						tile_t* source_tile = level_task->source_tiles[source_tile_index + level_task->source_bounds_width_in_tiles];
-						if (source_tile && !source_tile->is_empty) {
-							++contributing_source_tiles_count;
-							ASSERT(source_tile->is_cached && source_tile->pixels);
-							u8* source_pos = source_tile->pixels + source_tile_offset_x * BYTES_PER_PIXEL;
-							u8* dest_pos = dest + dest_top_section_height * dest_pitch;
-							for(i32 y = 0; y < dest_bottom_section_height; ++y) {
-								memcpy(dest_pos, source_pos, dest_left_section_width * BYTES_PER_PIXEL);
-								dest_pos += dest_pitch;
-								source_pos += source_pitch;
-							}
-						}
-					}
-
-					// Bottom-right source tile
-					if (extra_tiles_x == 1 && extra_tiles_y == 1) {
-						tile_t* source_tile = level_task->source_tiles[source_tile_index + level_task->source_bounds_width_in_tiles + 1];
-						if (source_tile && !source_tile->is_empty) {
-							++contributing_source_tiles_count;
-							ASSERT(source_tile->is_cached && source_tile->pixels);
-							u8* source_pos = source_tile->pixels;
-							u8* dest_pos = dest + dest_top_section_height * dest_pitch + dest_left_section_width * BYTES_PER_PIXEL;
-							for(i32 y = 0; y < dest_bottom_section_height; ++y) {
-								memcpy(dest_pos, source_pos, dest_right_section_width * BYTES_PER_PIXEL);
-								dest_pos += dest_pitch;
-								source_pos += source_pitch;
-							}
-						}
-					}
-
-					// Now we have a fully assembled tile.
-
-#if 0
-					static bool already_tested_jpeg_encode;
-					if (!already_tested_jpeg_encode) {
-						already_tested_jpeg_encode = true;
-						u8* jpeg_buffer = NULL;
-						u32 jpeg_size = 0;
-						jpeg_encode_image(dest, export_tile_width, export_tile_width, quality,
-						                  &jpeg_buffer, &jpeg_size);
-
-						FILE* test_fp = fopen("test.jpeg", "wb");
-						if (test_fp) {
-							fwrite(jpeg_buffer, jpeg_size, 1, test_fp);
-							fclose(test_fp);
-						}
-					}
-#endif
-
-					bool skip = (contributing_source_tiles_count == 0); // empty tiles would only waste space, so skip them
-					if (!skip) {
-						u8* compressed_buffer = NULL;
-						u32 compressed_size = 0;
-						jpeg_encode_tile(dest, export_tile_width, export_tile_width, quality, NULL, NULL,
-						                 &compressed_buffer, &compressed_size);
-
-						jpeg_compressed_buffers[work_index] = compressed_buffer;
-						jpeg_compressed_sizes[work_index] = compressed_size;
-					}
-
-					free(dest);
-
-				}
-
-				// batch completed.
-
-				fseeko64(export_task.fp, current_image_data_write_offset, SEEK_SET);
-
-				for (i32 work_index = 0; work_index < current_batch_size; ++work_index) {
-					u8* compressed_buffer = jpeg_compressed_buffers[work_index];
-					u32 compressed_size = jpeg_compressed_sizes[work_index];
-
-					i32 tile_index = start_tile_index + work_index;
-					tile_offsets[tile_index] = current_image_data_write_offset;
-					tile_bytecounts[tile_index] = compressed_size;
-
-					fwrite(compressed_buffer, compressed_size, 1, export_task.fp);
-					free(compressed_buffer);
-					jpeg_compressed_buffers[work_index] = NULL;
-					current_image_data_write_offset += compressed_size;
-
-				}
-
-
-			}
-			// level export completed
-
-			// Rewrite the tile offsets and tile bytecounts
-			fseeko64(export_task.fp, level_task->offset_of_tile_offsets, SEEK_SET);
-			fwrite(tile_offsets, sizeof(u64), level_task->export_tile_count, export_task.fp);
-
-			fseeko64(export_task.fp, level_task->offset_of_tile_bytecounts, SEEK_SET);
-			fwrite(tile_bytecounts, sizeof(u64), level_task->export_tile_count, export_task.fp);
-
-			free(tile_offsets);
-			free(tile_bytecounts);
-
-			for (i32 tile_index = 0; tile_index < level_task->source_tile_count; ++tile_index) {
-				tile_t* tile = level_task->source_tiles[tile_index];
-
-				if (tile) {
-					if (tile->is_cached && tile->pixels) {
-						tile_release_cache(tile);
-					}
-				}
-
-			}
-
-			free(level_task->source_tiles);
-
+			export_bigtiff_encode_level(app_state, image, &export_task, level);
 		}
 		fclose(export_task.fp);
 
