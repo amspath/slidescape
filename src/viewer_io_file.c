@@ -232,7 +232,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	ASSERT(task->completion_callback);
-	add_work_queue_entry(&thread_message_queue, task->completion_callback, completion_task);
+	add_work_queue_entry(&global_completion_queue, task->completion_callback, completion_task);
 
 #endif
 
@@ -244,8 +244,8 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 #if DO_DEBUG
 		printf("Waiting for OpenSlide to finish loading...\n");
 #endif
-		while (is_queue_work_in_progress(&work_queue)) {
-			do_worker_work(&work_queue, 0);
+		while (is_queue_work_in_progress(&global_work_queue)) {
+			do_worker_work(&global_work_queue, 0);
 		}
 	}
 
@@ -487,4 +487,12 @@ void unload_wsi(wsi_t* wsi) {
 		wsi->osr = NULL;
 	}
 
+}
+
+void tile_release_cache(tile_t* tile) {
+	ASSERT(tile);
+	if (tile->pixels) free(tile->pixels);
+	tile->pixels = NULL;
+	tile->is_cached = false;
+	tile->need_keep_in_cache = false;
 }

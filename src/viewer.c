@@ -317,7 +317,7 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 				load_tile_task_batch_t* batch = (load_tile_task_batch_t*) calloc(1, sizeof(load_tile_task_batch_t));
 				batch->task_count = ATMOST(COUNT(batch->tile_tasks), tiles_to_load);
 				memcpy(batch->tile_tasks, wishlist, batch->task_count * sizeof(load_tile_task_t));
-				if (add_work_queue_entry(&work_queue, tiff_load_tile_batch_func, batch)) {
+				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, batch)) {
 					// success
 					for (i32 i = 0; i < batch->task_count; ++i) {
 						load_tile_task_t* task = batch->tile_tasks + i;
@@ -337,13 +337,13 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 				tile_t* tile = task->tile;
 				if (tile->is_cached && tile->texture == 0 && task->need_gpu_residency) {
 					// only GPU upload needed
-					if (add_work_queue_entry(&thread_message_queue, viewer_upload_already_cached_tile_to_gpu, task)) {
+					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, task)) {
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task->need_gpu_residency;
 						tile->need_keep_in_cache = task->need_keep_in_cache;
 					}
 				} else {
-					if (add_work_queue_entry(&work_queue, load_tile_func, task)) {
+					if (add_work_queue_entry(&global_work_queue, load_tile_func, task)) {
 						// TODO: should we even allow this to fail?
 						// success
 						tile->is_submitted_for_loading = true;
@@ -823,34 +823,36 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		// Retrieve completed tasks from the worker threads
 		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
-		while (is_queue_work_in_progress(&thread_message_queue)) {
-			work_queue_entry_t entry = get_next_work_queue_entry(&thread_message_queue);
+		while (is_queue_work_in_progress(&global_completion_queue)) {
+			work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
 			if (entry.is_valid) {
 				if (!entry.callback) panic();
-				mark_queue_entry_completed(&thread_message_queue);
+				mark_queue_entry_completed(&global_completion_queue);
 
 				if (entry.callback == viewer_notify_load_tile_completed) {
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
+					tile_t* tile = task->tile;
+					ASSERT(tile);
+					tile->is_submitted_for_loading = false;
+
 					if (task->pixel_memory) {
 						bool need_free_pixel_memory = true;
-						if (task->tile) {
-							tile_t* tile = task->tile;
-							if (tile->need_gpu_residency) {
-								pixel_transfer_state_t* transfer_state =
-								        submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
-                                                                      4, task->pixel_memory, finalize_textures_immediately);
-								if (finalize_textures_immediately) {
-                                    tile->texture = transfer_state->texture;
-								} else {
-                                    transfer_state->userdata = (void*) tile;
-								}
+						if (tile->need_gpu_residency) {
+							pixel_transfer_state_t* transfer_state =
+							        submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
+                                                                  4, task->pixel_memory, finalize_textures_immediately);
+							if (finalize_textures_immediately) {
+                                tile->texture = transfer_state->texture;
+							} else {
+                                transfer_state->userdata = (void*) tile;
+								tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
+							}
 
-							}
-							if (tile->need_keep_in_cache) {
-								need_free_pixel_memory = false;
-								tile->pixels = task->pixel_memory;
-								tile->is_cached = true;
-							}
+						}
+						if (tile->need_keep_in_cache) {
+							need_free_pixel_memory = false;
+							tile->pixels = task->pixel_memory;
+							tile->is_cached = true;
 						}
 						if (need_free_pixel_memory) {
 							free(task->pixel_memory);
@@ -861,6 +863,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				} else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
 					load_tile_task_t* task = (load_tile_task_t*) entry.data;
 					tile_t* tile = task->tile;
+					ASSERT(tile);
+					tile->is_submitted_for_loading = false;
 					if (tile->is_cached && tile->pixels) {
 						if (tile->need_gpu_residency) {
 							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM,
@@ -872,9 +876,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						}
 
 						if (!task->need_keep_in_cache) {
-							free(tile->pixels);
-							tile->pixels = NULL;
-							tile->is_cached = false;
+							tile_release_cache(tile);
 						}
 					} else {
 						printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");

@@ -1217,19 +1217,21 @@ DWORD WINAPI thread_proc(void* parameter) {
 	}
 }
 
+void init_work_queue(work_queue_t* queue) {
+	i32 semaphore_initial_count = 0;
+	queue->semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
+}
+
 void win32_init_multithreading() {
 	i32 semaphore_initial_count = 0;
 	worker_thread_count = total_thread_count - 1;
 
-	// Queue for newly submitted tasks
-	work_queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
-
-	// Message queue for completed tasks
-	thread_message_queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
+	init_work_queue(&global_work_queue); // Queue for newly submitted tasks
+	init_work_queue(&global_completion_queue); // Message queue for completed tasks
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
-		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
+		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue};
 
 		DWORD thread_id;
 		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
@@ -1307,7 +1309,7 @@ int main(int argc, const char** argv) {
 	win32_init_multithreading();
 	// Load OpenSlide in the background, we might not need it immediately.
 #if 1
-	add_work_queue_entry(&work_queue, load_openslide_task, NULL);
+	add_work_queue_entry(&global_work_queue, load_openslide_task, NULL);
 #else
     load_openslide_task(0, NULL);
 #endif

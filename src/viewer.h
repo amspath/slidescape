@@ -286,6 +286,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char* filename);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
+void tile_release_cache(tile_t* tile);
 bool32 was_button_pressed(button_state_t* button);
 bool32 was_button_released(button_state_t* button);
 bool32 was_key_pressed(input_t* input, i32 keycode);
