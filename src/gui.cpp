@@ -63,19 +63,7 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickne
 	draw_list->AddPolyline((ImVec2*)points, count, color, true, thickness);
 }
 
-void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
-	ImGuiIO &io = ImGui::GetIO();
-
-	gui_want_capture_mouse = io.WantCaptureMouse;
-	gui_want_capture_keyboard = io.WantCaptureKeyboard;
-
-
-	// Start the Dear ImGui frame
-//	ImGui_ImplOpenGL3_NewFrame();
-//	ImGui_ImplWin32_NewFrame();
-//	ImGui::NewFrame();
-
-
+void gui_draw_main_menu_bar(app_state_t* app_state) {
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	bool ret = ImGui::BeginMainMenuBar();
 	ImGui::PopStyleVar(1);
@@ -222,6 +210,16 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		}
 	}
+
+}
+
+void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
+	ImGuiIO &io = ImGui::GetIO();
+
+	gui_want_capture_mouse = io.WantCaptureMouse;
+	gui_want_capture_keyboard = io.WantCaptureKeyboard;
+
+	if (!is_macos) gui_draw_main_menu_bar(app_state);
 
 	if (show_open_remote_window) {
 		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);

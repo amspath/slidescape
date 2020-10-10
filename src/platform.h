@@ -387,6 +387,7 @@ extern i32 physical_cpu_count;
 extern i32 logical_cpu_count;
 extern bool is_vsync_enabled;
 extern bool is_nvidia_gpu;
+extern bool is_macos;
 extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
 

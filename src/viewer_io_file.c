@@ -391,6 +391,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 		image.simple.channels = 4; // desired: RGBA
 		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
 		if (image.simple.pixels) {
+			// TODO: don't immediately upload freshly loaded images to prevent crashing
 			glEnable(GL_TEXTURE_2D);
 			glGenTextures(1, &image.simple.texture);
 			//glActiveTexture(GL_TEXTURE0);

@@ -31,6 +31,8 @@ bool macos_process_input();
 
 bool want_toggle_fullscreen;
 bool want_open_file_dialog;
+bool want_close;
+bool want_save_file_dialog;
 float window_scale_factor = 1.0f;
 
 //-----------------------------------------------------------------------------------
@@ -87,6 +89,9 @@ float window_scale_factor = 1.0f;
 //		[self.window setFrame:screenFrame display:YES];
 		[self.window toggleFullScreen:self];
 	}
+
+	// todo: move this to platform-agnostic code
+	if (want_close) menu_close_file(&global_app_state);
 
     [self setNeedsDisplay:YES];
 }
@@ -243,20 +248,121 @@ SlideviewerView* g_view;
 	return (_window);
 }
 
+-(void)menu_item_clicked_about              { show_about_window = true; }
+-(void)menu_item_clicked_preferences        { show_display_options_window = true; }
+-(void)menu_item_clicked_open               { want_open_file_dialog = true; }
+-(void)menu_item_clicked_close              { want_close = true; }
+-(void)menu_item_clicked_open_remote        { show_open_remote_window = true; }
+-(void)menu_item_clicked_export             { printf("clicked menu item: export\n"); }
+-(void)menu_item_clicked_select_region      { printf("clicked menu item: select region\n"); }
+-(void)menu_item_clicked_deselect_region    { printf("clicked menu item: deselect region\n"); }
+-(void)menu_item_clicked_crop               { printf("clicked menu item: crop\n"); }
+-(void)menu_item_clicked_annotations        { show_annotations_window = true; }
+-(void)menu_item_clicked_assign_group       { show_annotation_group_assignment_window = true; }
+-(void)menu_item_clicked_fullscreen         { want_toggle_fullscreen = true; }
+-(void)menu_item_clicked_image_adjustments  { show_image_adjustments_window = true; }
+-(void)menu_item_clicked_case_list          { show_slide_list_window = true; }
+-(void)menu_item_clicked_debug_window       { show_demo_window = true; }
+
 -(void)setupMenu
 {
 	NSMenu* mainMenuBar = [[NSMenu alloc] init];
-    NSMenu* appMenu;
     NSMenuItem* menuItem;
+    NSMenu* current_menu;
 
-    appMenu = [[NSMenu alloc] initWithTitle:@"Slideviewer"];
+    // App menu
+	NSMenuItem *appMenuItem = [mainMenuBar addItemWithTitle:@"" action:NULL keyEquivalent:@""];
+	NSMenu *appMenu = current_menu = [[NSMenu alloc] init];
+	[appMenuItem setSubmenu:appMenu];
+
+	[appMenu addItemWithTitle:@"About Slideviewer"
+	                    action:@selector(menu_item_clicked_about)
+	             keyEquivalent:@""];
+	[appMenu addItem:[NSMenuItem separatorItem]];
+	[[appMenu addItemWithTitle:@"Preferences"
+	                   action:@selector(menu_item_clicked_preferences)
+	            keyEquivalent:@","] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+	[appMenu addItem:[NSMenuItem separatorItem]];
     menuItem = [appMenu addItemWithTitle:@"Quit Slideviewer" action:@selector(terminate:) keyEquivalent:@"q"];
     [menuItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
 
-    menuItem = [[NSMenuItem alloc] init];
-    [menuItem setSubmenu:appMenu];
+//    menuItem = [[NSMenuItem alloc] init];
+//    [menuItem setSubmenu:appMenu];
 
-    [mainMenuBar addItem:menuItem];
+//    [mainMenuBar addItem:menuItem];
+
+	// File menu
+	NSMenuItem *fileMenuItem = [mainMenuBar addItemWithTitle:@"" action:NULL keyEquivalent:@""];
+	NSMenu *fileMenu = current_menu = [[NSMenu alloc] initWithTitle:@"File"];
+	[fileMenuItem setSubmenu:current_menu];
+
+	[[current_menu addItemWithTitle:@"Open..."
+	                    action:@selector(menu_item_clicked_open)
+	             keyEquivalent:@"O"] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+	[[current_menu addItemWithTitle:@"Close"
+	                     action:@selector(menu_item_clicked_close)
+	              keyEquivalent:@"W"] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+	[current_menu addItem:[NSMenuItem separatorItem]];
+	[current_menu addItemWithTitle:@"Open remote..."
+	                     action:@selector(menu_item_clicked_open_remote)
+	              keyEquivalent:@""];
+	[current_menu addItem:[NSMenuItem separatorItem]];
+	[current_menu addItemWithTitle:@"Export"
+	                    action:@selector(menu_item_clicked_export)
+	             keyEquivalent:@""];
+
+	// Edit menu
+	NSMenuItem *editMenuItem = [mainMenuBar addItemWithTitle:@"" action:NULL keyEquivalent:@""];
+	NSMenu *editMenu = current_menu = [[NSMenu alloc] initWithTitle:@"Edit"];
+	[editMenuItem setSubmenu:current_menu];
+
+	[current_menu addItemWithTitle:@"Select region"
+	                     action:@selector(menu_item_clicked_select_region)
+	              keyEquivalent:@""];
+	[current_menu addItemWithTitle:@"Deselect region"
+	                        action:@selector(menu_item_clicked_deselect_region)
+	                 keyEquivalent:@""];
+	[current_menu addItem:[NSMenuItem separatorItem]];
+	[current_menu addItemWithTitle:@"Crop view to region"
+	                        action:@selector(menu_item_clicked_crop)
+	                 keyEquivalent:@""];
+
+	// Annotation menu
+	NSMenuItem *annotationMenuItem = [mainMenuBar addItemWithTitle:@"" action:NULL keyEquivalent:@""];
+	NSMenu *annotationMenu = current_menu = [[NSMenu alloc] initWithTitle:@"Annotation"];
+	[annotationMenuItem setSubmenu:current_menu];
+
+	[current_menu addItemWithTitle:@"Load..."
+	                        action:@selector(menu_item_clicked_open)
+	                 keyEquivalent:@""];
+	[current_menu addItemWithTitle:@"Annotations..."
+	                        action:@selector(menu_item_clicked_annotations)
+	                 keyEquivalent:@""];
+	[current_menu addItem:[NSMenuItem separatorItem]];
+	[current_menu addItemWithTitle:@"Assign group..."
+	                        action:@selector(menu_item_clicked_assign_group)
+	                 keyEquivalent:@""];
+
+	// View menu
+	NSMenuItem *viewMenuItem = [mainMenuBar addItemWithTitle:@"" action:NULL keyEquivalent:@""];
+	NSMenu *viewMenu = current_menu = [[NSMenu alloc] initWithTitle:@"View"];
+	[viewMenuItem setSubmenu:current_menu];
+
+	[[current_menu addItemWithTitle:@"Fullscreen"
+	                        action:@selector(menu_item_clicked_fullscreen)
+	                 keyEquivalent:@"F"] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+	[current_menu addItemWithTitle:@"Image adjustments..."
+	                        action:@selector(menu_item_clicked_image_adjustments)
+	                 keyEquivalent:@""];
+	[current_menu addItem:[NSMenuItem separatorItem]];
+	[current_menu addItemWithTitle:@"Show case list"
+	                        action:@selector(menu_item_clicked_case_list)
+	                 keyEquivalent:@""];
+	[current_menu addItem:[NSMenuItem separatorItem]];
+	[current_menu addItemWithTitle:@"Show debug window"
+	                        action:@selector(menu_item_clicked_debug_window)
+	                 keyEquivalent:@""];
+
 
     appMenu = nil;
     [NSApp setMainMenu:mainMenuBar];
@@ -452,6 +558,11 @@ void open_file_dialog(window_handle_t window) {
 	want_open_file_dialog = true;
 }
 
+bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+	want_save_file_dialog = true;
+	return false;
+}
+
 void toggle_fullscreen(window_handle_t window) {
 	want_toggle_fullscreen = true;
 }
@@ -471,6 +582,7 @@ void get_system_info() {
 	fprintf(stderr,"There are %d physical, %d logical cpu cores\n", physical_cpu_count, logical_cpu_count);
 	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 	os_page_size = (u32) getpagesize();
+	is_macos = true;
 }
 
 void* worker_thread(void* parameter) {
@@ -512,13 +624,13 @@ platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 void macos_init_multithreading() {
 	i32 semaphore_initial_count = 0;
 	worker_thread_count = total_thread_count - 1;
-	work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
+	global_work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
 
 	pthread_t threads[MAX_THREAD_COUNT] = {};
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
-		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &work_queue};
+		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue};
 
 		if (pthread_create(threads + i, NULL, &worker_thread, (void*)(&thread_infos[i])) != 0) {
 			fprintf(stderr, "Error creating thread\n");
