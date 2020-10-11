@@ -142,7 +142,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 			if (ImGui::MenuItem("Options...", NULL, &show_display_options_window)) {}
 			if (ImGui::BeginMenu("Debug")) {
-				if (ImGui::MenuItem("Demo window", "F1", &show_demo_window)) {}
+				if (ImGui::MenuItem("Show console", "F3", &show_console_window)) {}
+				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				if (ImGui::MenuItem("Enable Vsync", NULL, &is_vsync_enabled)) {}
 				ImGui::EndMenu();
@@ -496,7 +497,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	}
 
 	if (show_console_window) {
-		draw_console_window("Console", &show_console_window);
+		draw_console_window(app_state, "Console", &show_console_window);
 	}
 
 
@@ -536,23 +537,34 @@ void console_clear_log() {
 }
 
 
-void draw_console_window(const char* window_title, bool* p_open) {
-	ImGui::SetNextWindowSize(ImVec2(520, 600), ImGuiCond_FirstUseEver);
-	if (!ImGui::Begin(window_title, p_open)) {
+void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open) {
+
+	static float desired_fraction_of_height = 0.33f;
+
+	float desired_width = (float) app_state->client_viewport.w;
+	float desired_height = roundf((float)app_state->client_viewport.h * desired_fraction_of_height);
+	ImGui::SetNextWindowSize(ImVec2(desired_width, desired_height), ImGuiCond_Always);
+	ImGui::SetNextWindowPos(ImVec2(0,app_state->client_viewport.h - desired_height), ImGuiCond_Always);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
+	if (!ImGui::Begin(window_title, p_open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
 		return;
 	}
+	ImGui::PopStyleVar(2);
 
+#if 0
 	if (ImGui::SmallButton("Add Debug Text"))  { console_print("%d some text\n", sb_count(console_log_items)); console_print("some more text\n"); console_print("display very important message here!\n"); } ImGui::SameLine();
 	if (ImGui::SmallButton("Add Debug Error")) { console_print_error("[error] something went wrong\n"); } ImGui::SameLine();
 	if (ImGui::SmallButton("Clear"))           { console_clear_log(); } ImGui::SameLine();
 	bool copy_to_clipboard = ImGui::SmallButton("Copy");
 	ImGui::Separator();
+#endif
 
 
 
 	// Reserve enough left-over height for 1 separator + 1 input text
-	const float footer_height_to_reserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
+	const float footer_height_to_reserve = 0.0f;//ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
 	ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false, ImGuiWindowFlags_HorizontalScrollbar);
 	if (ImGui::BeginPopupContextWindow())
 	{
@@ -591,7 +603,7 @@ void draw_console_window(const char* window_title, bool* p_open) {
 		ImGui::SetScrollHereY(0.0f);
 
 	ImGui::EndChild();
-	ImGui::Separator();
+//	ImGui::Separator();
 
 	// Command-line
 	/*bool reclaim_focus = false;

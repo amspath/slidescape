@@ -521,6 +521,13 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 						}
 					} break;
 
+					case VK_F3:
+					case VK_OEM_3 /* ` */: {
+						if (is_down) {
+							show_console_window = !show_console_window;
+						}
+					} break;
+
 					case VK_F4: {
 						if (is_down && alt_down) {
 							is_program_running = false;
