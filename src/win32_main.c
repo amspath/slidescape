@@ -1254,7 +1254,7 @@ void win32_init_main_window() {
 	main_window_class.lpfnWndProc = main_window_callback;
 	main_window_class.hInstance = g_instance;
 	main_window_class.hCursor = the_cursor;
-//	main_window_class.hIcon = ;
+	main_window_class.hIcon = LoadIconA(g_instance, MAKEINTRESOURCE(101));
 	main_window_class.lpszClassName = "SlideviewerMainWindow";
 	main_window_class.hbrBackground = NULL;
 
@@ -1292,12 +1292,81 @@ void win32_init_main_window() {
 
 }
 
+#define CREATE_ICO 0
+#if CREATE_ICO
+
+#pragma pack(push, 1)
+typedef struct icondirentry_t {
+	u8 width;
+	u8 height;
+	u8 num_colors; // 0 means 256
+	u8 reserved;
+	u16 color_planes;
+	u16 bits_per_pixel;
+	u32 data_size;
+	u32 data_offset;
+} icondirentry_t;
+#pragma pack(pop)
+
+void create_ico() {
+	mem_t* icon16 = platform_read_entire_file("resources/icon/icon16.png");
+	mem_t* icon24 = platform_read_entire_file("resources/icon/icon24.png");
+	mem_t* icon32 = platform_read_entire_file("resources/icon/icon32.png");
+	mem_t* icon64 = platform_read_entire_file("resources/icon/icon64.png");
+	mem_t* icon128 = platform_read_entire_file("resources/icon/icon128.png");
+	mem_t* icon256 = platform_read_entire_file("resources/icon/icon256.png");
+
+	u32 entries_offset = 6 + sizeof(icondirentry_t) * 6;
+	u32 data_offset = entries_offset;
+	icondirentry_t entry16 = {16, 16, 0, 0, 0, 32, icon16->len, data_offset};
+	data_offset += icon16->len;
+	icondirentry_t entry24 = {24, 24, 0, 0, 0, 32, icon24->len, data_offset};
+	data_offset += icon24->len;
+	icondirentry_t entry32 = {32, 32, 0, 0, 0, 32, icon32->len, data_offset};
+	data_offset += icon32->len;
+	icondirentry_t entry64 = {64, 64, 0, 0, 0, 32, icon64->len, data_offset};
+	data_offset += icon64->len;
+	icondirentry_t entry128 = {128, 128, 0, 0, 0, 32, icon128->len, data_offset};
+	data_offset += icon128->len;
+	icondirentry_t entry256 = {0, 0, 0, 0, 0, 32, icon256->len, data_offset};
+	data_offset += icon256->len;
+
+	FILE* fp = fopen("icon.ico", "wb");
+	u16 reserved = 0;
+	u16 image_type = 1; // 1 for icon (ICO), 2 for cursor (CUR)
+	u16 image_count = 6;
+	fwrite(&reserved, sizeof(u16), 1, fp);
+	fwrite(&image_type, sizeof(u16), 1, fp);
+	fwrite(&image_count, sizeof(u16), 1, fp);
+	fwrite(&entry16, sizeof(icondirentry_t), 1, fp);
+	fwrite(&entry24, sizeof(icondirentry_t), 1, fp);
+	fwrite(&entry32, sizeof(icondirentry_t), 1, fp);
+	fwrite(&entry64, sizeof(icondirentry_t), 1, fp);
+	fwrite(&entry128, sizeof(icondirentry_t), 1, fp);
+	fwrite(&entry256, sizeof(icondirentry_t), 1, fp);
+	fwrite(&icon16->data, icon16->len, 1, fp);
+	fwrite(&icon24->data, icon24->len, 1, fp);
+	fwrite(&icon32->data, icon32->len, 1, fp);
+	fwrite(&icon64->data, icon64->len, 1, fp);
+	fwrite(&icon128->data, icon128->len, 1, fp);
+	fwrite(&icon256->data, icon256->len, 1, fp);
+
+	fclose(fp);
+
+}
+
+#endif
+
 
 int main(int argc, const char** argv) {
 	g_instance = GetModuleHandle(NULL);
 	g_cmdline = GetCommandLine();
 	g_argc = argc;
 	g_argv = argv;
+
+#if CREATE_ICO
+	create_ico();
+#endif
 
 	console_print("Starting up...\n");
 
