@@ -912,6 +912,26 @@ void win32_init_opengl(HWND window) {
 	char* version_string = (char*)temp_glGetString(GL_VERSION);
 	console_print("OpenGL supported version: %s\n", version_string);
 
+	bool is_opengl_version_supported = false;
+	i32 major_required = 3;
+	i32 minor_required = 3;
+	if (strlen(version_string) >= 3) {
+		i32 major_version = version_string[0] - '0';
+		i32 minor_version = version_string[2] - '0';
+		if (major_version > major_required || (major_version == major_required && minor_version >= minor_required)) {
+			is_opengl_version_supported = true;
+		}
+	}
+
+	if (!is_opengl_version_supported) {
+		char buf[4096];
+		snprintf(buf, sizeof(buf), "Error: OpenGL version is insufficient.\n"
+							        "Required: %d.%d\n\n"
+		                           "Available on this system:\n%s", major_required, minor_required, version_string);
+		message_box(buf);
+		panic();
+	}
+
 	if (strstr(version_string, "NVIDIA")) {
 	    is_nvidia_gpu = true;
 	}
