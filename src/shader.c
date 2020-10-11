@@ -134,7 +134,7 @@ void load_shader(u32 shader, const char* source_filename) {
 	}
 
 	if (!shader_source) {
-		printf("Could not locate the shader source for %s.\n", source_filename);
+		console_print_error("Could not locate the shader source for %s.\n", source_filename);
 	}
 
 	const char* sources[] = { shader_source, };
@@ -145,12 +145,12 @@ void load_shader(u32 shader, const char* source_filename) {
 	i32 success = 0;
 	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 	if (success) {
-//		printf("Loaded %sshader: %s\n", source_from_file ? "" : "cached ", source_filename);
+//		console_print("Loaded %sshader: %s\n", source_from_file ? "" : "cached ", source_filename);
 	} else {
 		char info_log[2048];
 		glGetShaderInfoLog(shader, sizeof(info_log), NULL, info_log);
-		printf("Error: compilation of shader '%s' failed:\n%s", source_filename, info_log);
-		printf("Shader source: %s\n", shader_source);
+		console_print_error("Error: compilation of shader '%s' failed:\n%s", source_filename, info_log);
+		console_print_error("Shader source: %s\n", shader_source);
 	}
 
 
@@ -175,7 +175,7 @@ u32 load_basic_shader_program(const char* vert_filename, const char* frag_filena
 		if (!success) {
 			char info_log[2048];
 			glGetProgramInfoLog(shader_program, sizeof(info_log), NULL, info_log);
-			printf("Error: shader linking failed: %s", info_log);
+			console_print_error("Error: shader linking failed: %s", info_log);
 			panic();
 		}
 	}
@@ -189,14 +189,14 @@ u32 load_basic_shader_program(const char* vert_filename, const char* frag_filena
 i32 get_attrib(i32 program, const char *name) {
 	i32 attribute = glGetAttribLocation(program, name);
 	if(attribute == -1)
-		fprintf(stderr, "Could not get attribute location %s\n", name);
+		console_print_error("Could not get attribute location %s\n", name);
 	return attribute;
 }
 
 i32 get_uniform(i32 program, const char *name) {
 	i32 uniform = glGetUniformLocation(program, name);
 	if(uniform == -1)
-		fprintf(stderr, "Could not get uniform location %s\n", name);
+		console_print_error("Could not get uniform location %s\n", name);
 	return uniform;
 }
 

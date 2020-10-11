@@ -89,3 +89,30 @@ void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
 		++new_ext_pos;
 	}
 }
+
+char** split_into_lines(char* buffer, i64* num_lines) {
+	size_t lines_counted = 0;
+	size_t capacity = 0;
+	char** lines = NULL;
+	bool32 newline = true;
+	char* pos = buffer;
+	int c;
+	do {
+		c = *pos;
+		if (c == '\n' || c == '\r') {
+			*pos = '\0';
+			newline = true;
+		} else if (newline || c == '\0') {
+			size_t line_index = lines_counted++;
+			if (lines_counted > capacity) {
+				capacity = MAX(capacity, 8) * 2;
+				lines = (char**) realloc(lines, capacity * sizeof(char*));
+			}
+			lines[line_index] = pos;
+			newline = false;
+		}
+		++pos;
+	} while (c != '\0');
+	if (num_lines) *num_lines = lines_counted;
+	return lines;
+}

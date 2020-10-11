@@ -107,11 +107,11 @@ void init_networking() {
 		WSADATA wsa_data = {};
 		int err = WSAStartup(MAKEWORD(2, 2), &wsa_data);
 		if (err != 0) {
-			printf("WSAStartup failed with error: %d\n", err);
+			console_print_error("WSAStartup failed with error: %d\n", err);
 			return;
 		}
 		if (LOBYTE(wsa_data.wVersion) != 2 || HIBYTE(wsa_data.wVersion) != 2) {
-			printf("Warning: requested Winsock.dll version 2.2 but found %d.%d\n",
+			console_print_error("Warning: requested Winsock.dll version 2.2 but found %d.%d\n",
 					LOBYTE(wsa_data.wVersion), HIBYTE(wsa_data.wVersion));
 		}
 #else
@@ -132,7 +132,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 	i64 sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
 	if (sockfd < 0) {
-		printf("[thread %d] ERROR opening socket\n", thread_id);
+		console_print_error("[thread %d] ERROR opening socket\n", thread_id);
 		return NULL;
 	}
 	u32 timeout_ms = 5000;
@@ -142,7 +142,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 //	setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, (char*)&optval, sizeof(optval));
 	struct hostent* server = gethostbyname(hostname);
 	if (server == NULL) {
-		printf("[thread %d] ERROR, no such host\n", thread_id);
+		console_print_error("[thread %d] ERROR, no such host\n", thread_id);
 		closesocket(sockfd);
 		sockfd = 0;
 		return NULL;
@@ -151,7 +151,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 	memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
 	serv_addr.sin_port = htons(portno);
 	if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-		printf("[thread %d] ERROR connecting\n", thread_id);
+		console_print_error("[thread %d] ERROR connecting\n", thread_id);
 		closesocket(sockfd);
 		sockfd = 0;
 		return NULL;
@@ -161,12 +161,12 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 //	tls_make_exportable(tls_context, 1);
 	int ret = tls_client_connect(tls_context);
 	if (ret < 0) {
-		printf("[thread %d] tls_client_connect() failed with error %d\n", thread_id, ret);
+		console_print_error("[thread %d] tls_client_connect() failed with error %d\n", thread_id, ret);
 	}
-//	printf("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
+//	console_print("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
 	ret = send_pending(sockfd, tls_context);
 	if (ret < 0) {
-		printf("[thread %d] send_pending() returned error %d\n", thread_id, ret);
+		console_print_error("[thread %d] send_pending() returned error %d\n", thread_id, ret);
 	}
 
 	u8 receive_buffer[0xFFFF]; // receive in 64K byte chunks
@@ -187,7 +187,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 			char* message_buffer;
 			/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 			                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
-			printf("[thread %d] %s: (error code 0x%x) %s\n", thread_id, prefix, (u32)error_id, message_buffer);
+			console_print_error("[thread %d] %s: (error code 0x%x) %s\n", thread_id, prefix, (u32)error_id, message_buffer);
 			LocalFree(message_buffer);
 #else
 			// TODO
@@ -195,14 +195,14 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 			break;
 		} else if (receive_size == 0) {
 #if REMOTE_CLIENT_VERBOSE
-			printf("[thread %d] Gracefully closed\n", thread_id);
+			console_print("[thread %d] Gracefully closed\n", thread_id);
 #endif
 			break;
 		}
 		ret = tls_consume_stream(tls_context, receive_buffer, receive_size, validate_certificate);
 		if (ret < 0) {
 #if REMOTE_CLIENT_VERBOSE
-			printf("[thread %d] tls_consume_stream() returned error %d\n", thread_id, ret);
+			console_print_error("[thread %d] tls_consume_stream() returned error %d\n", thread_id, ret);
 #endif
 		}
 		send_pending(sockfd, tls_context);
@@ -241,7 +241,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 
 	// now we should have the whole HTTP response
 #if REMOTE_CLIENT_VERBOSE
-	printf("[thread %d] HTTP read finished, length = %d\n", thread_id, total_bytes_read);
+	console_print("[thread %d] HTTP read finished, length = %d\n", thread_id, total_bytes_read);
 #endif
 //	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
@@ -251,7 +251,7 @@ u8 *do_http_request(const char *hostname, i32 portno, const char *uri, i32 *byte
 
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
 #if REMOTE_CLIENT_VERBOSE
-	printf("[thread %d] Open remote took %g seconds\n", thread_id, seconds_elapsed);
+	console_print("[thread %d] Open remote took %g seconds\n", thread_id, seconds_elapsed);
 #endif
 
 	return read_buffer;
@@ -302,7 +302,7 @@ tls_connection_t* open_remote_connection(const char* hostname, i32 portno, void*
 		connection->start_clock = get_clock();
 		connection->sockfd = socket(AF_INET, SOCK_STREAM, 0);
 		if (connection->sockfd < 0) {
-			printf("ERROR opening socket\n");
+			console_print_error("ERROR opening socket\n");
 			return NULL;
 		}
 		// Set timeout interval
@@ -311,7 +311,7 @@ tls_connection_t* open_remote_connection(const char* hostname, i32 portno, void*
 		setsockopt(connection->sockfd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
 		struct hostent* server = gethostbyname(hostname);
 		if (server == NULL) {
-			printf("ERROR, no such host\n");
+			console_print_error("ERROR, no such host\n");
 			closesocket(connection->sockfd);
 			connection->sockfd = 0;
 			return NULL;
@@ -320,19 +320,19 @@ tls_connection_t* open_remote_connection(const char* hostname, i32 portno, void*
 		memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
 		serv_addr.sin_port = htons((u16)portno);
 		if (connect(connection->sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) {
-			printf("Error: couldn't connect to %s:%d\n", hostname, portno);
+			console_print_error("Error: couldn't connect to %s:%d\n", hostname, portno);
 			closesocket(connection->sockfd);
 			connection->sockfd = 0;
 			return NULL;
 		}
 		connection->tls_context = tls_create_context(0, TLS_V13);
 		if (!connection->tls_context) {
-			printf("Error: couldn't create TLS context\n");
+			console_print_error("Error: couldn't create TLS context\n");
 		}
 		// the next line is needed only if you want to serialize the connection context or kTLS is used
 //	tls_make_exportable(tls_context, 1);
 		tls_client_connect(connection->tls_context);
-//	printf("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
+//	console_print("TLS boilerplate is done in %g seconds\n", get_seconds_elapsed(start, get_clock()));
 		send_pending(connection->sockfd, connection->tls_context);
 	}
 
@@ -407,7 +407,7 @@ mem_t* download_remote_caselist(const char *hostname, i32 portno, const char *fi
 		float seconds_elapsed = close_remote_connection(connection);
 		if (read_ok) {
 			result = mem_buffer; // don't free (ownership passes to caller)
-			printf("Downloaded case list '%s' in %g seconds.\n", filename, seconds_elapsed);
+			console_print("Downloaded case list '%s' in %g seconds.\n", filename, seconds_elapsed);
 		} else {
 			free(mem_buffer);
 		}
@@ -437,7 +437,7 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 	if (read_ok) {
 		// now we should have the whole HTTP response
 #if REMOTE_CLIENT_VERBOSE
-		printf("HTTP read finished, length = %d\n", mem_buffer->len);
+		console_print("HTTP read finished, length = %d\n", mem_buffer->len);
 #endif
 //	fwrite(read_buffer, total_bytes_read, 1, stdout);
 
@@ -458,7 +458,7 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 
 
 //	float seconds_elapsed = close_remote_connection(connection);
-	printf("Open remote took %g seconds\n", seconds_elapsed);
+	console_print("Open remote took %g seconds\n", seconds_elapsed);
 	return success;
 }
 

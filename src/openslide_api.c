@@ -55,12 +55,12 @@ bool32 init_openslide() {
 		GET_PROC(openslide_get_version);
 #undef GET_PROC
 
-		printf("Initialized OpenSlide in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
+		console_print("Initialized OpenSlide in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 		return true;
 
 	} else failed: {
 		//win32_diagnostic("LoadLibraryA");
-		printf("OpenSlide not available: could not load libopenslide-0.dll\n");
+		console_print("OpenSlide not available: could not load libopenslide-0.dll\n");
 		return false;
 	}
 

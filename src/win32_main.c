@@ -84,7 +84,7 @@ void win32_diagnostic(const char* prefix) {
     char* message_buffer;
     /*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                                      NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
-    printf("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
+	console_print("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
     LocalFree(message_buffer);
 }
 
@@ -96,7 +96,7 @@ void load_openslide_task(int logical_thread_index, void* userdata) {
 u8* platform_alloc(size_t size) {
 	u8* result = (u8*) VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	if (!result) {
-		printf("Error: memory allocation failed!\n");
+		console_print("Error: memory allocation failed!\n");
 		panic();
 	}
 	return result;
@@ -228,7 +228,7 @@ void open_file_dialog(window_handle_t window) {
 	char filename[4096];       // buffer for file name
 	filename[0] = '\0';
 
-	printf("Attempting to open a file\n");
+	console_print("Attempting to open a file\n");
 
 	// Initialize OPENFILENAME
 	ofn.lStructSize = sizeof(ofn);
@@ -268,12 +268,12 @@ bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer
 	// Display the Open dialog box.
 	mouse_show();
 	if (GetSaveFileNameA(&ofn)==TRUE) {
-//		printf("attempting to save as %s\n", path_buffer);
+//		console_print("attempting to save as %s\n", path_buffer);
 		return true;
 	} else {
 #if DO_DEBUG
 		DWORD error = CommDlgExtendedError();
-		printf("Save file failed with error code %d\n", error);
+		console_print("Save file failed with error code %d\n", error);
 #endif
 		return false;
 	}
@@ -485,7 +485,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 						if (curr_input->mouse_buttons[0].down) {
 							curr_input->drag_vector.x += (float)raw->data.mouse.lLastX;
 							curr_input->drag_vector.y += (float)raw->data.mouse.lLastY;
-//						    printf("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
+//						    console_print("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
 						} else {
 							// not dragging
 							mouse_show();
@@ -604,14 +604,14 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 //		i64 message_process_end = get_clock();
 //		float ms_elapsed = get_seconds_elapsed(last_message_clock, message_process_end) * 1000.0f;
 //		if (ms_elapsed > 1.0f) {
-//			printf("Long message processing time (%g ms)! message = %x\n", ms_elapsed, message.message);
+//			console_print("Long message processing time (%g ms)! message = %x\n", ms_elapsed, message.message);
 //		}
 
 	} while (PeekMessageA(&message, 0, 0, 0, PM_REMOVE));
 
 //	float ms_elapsed = get_seconds_elapsed(begin, get_clock()) * 1000.0f;
 //	if (ms_elapsed > 20.0f) {
-//		printf("Long input handling time! Handled %d messages.\n", messages_processed);
+//		console_print("Long input handling time! Handled %d messages.\n", messages_processed);
 //	}
 	return did_idle;
 
@@ -776,7 +776,7 @@ void* gl_get_proc_address(const char *name) {
 	if (!proc) {
 		proc = (void*) wglGetProcAddress_alt(name);
 		if (!proc) {
-			printf("Error initalizing OpenGL: could not load proc '%s'.\n", name);
+			console_print("Error initalizing OpenGL: could not load proc '%s'.\n", name);
 		}
 	}
 	return proc;
@@ -824,7 +824,7 @@ void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint
 		} break;
 	}
 
-	printf("GL CALLBACK: type = %s, id = %d, severity = %s,\n    MESSAGE: %s\n", type_string, id, severity_string, message);
+	console_print("GL CALLBACK: type = %s, id = %d, severity = %s,\n    MESSAGE: %s\n", type_string, id, severity_string, message);
 }
 #endif
 
@@ -834,13 +834,13 @@ void win32_init_opengl(HWND window) {
 	opengl32_dll_handle = LoadLibraryA("opengl32.dll");
 	if (!opengl32_dll_handle) {
 		win32_diagnostic("LoadLibraryA");
-		printf("Error initializing OpenGL: failed to load opengl32.dll.\n");
+		console_print("Error initializing OpenGL: failed to load opengl32.dll.\n");
 	}
 
 	// Dynamically import all of the functions we need from opengl32.dll and all the wgl functions
 	wglGetProcAddress_alt = (PFNWGLGETPROCADDRESSPROC) GetProcAddress(opengl32_dll_handle, "wglGetProcAddress");
 	if (!wglGetProcAddress_alt) {
-		printf("Error initalizing OpenGL: could not load proc 'wglGetProcAddress'.\n");
+		console_print("Error initalizing OpenGL: could not load proc 'wglGetProcAddress'.\n");
 		panic();
 	}
 	wglCreateContext_alt = (PFNWGLCREATECONTEXTPROC) gl_get_proc_address("wglCreateContext");
@@ -910,7 +910,7 @@ void win32_init_opengl(HWND window) {
 	}
 
 	char* version_string = (char*)temp_glGetString(GL_VERSION);
-	printf("OpenGL supported version: %s\n", version_string);
+	console_print("OpenGL supported version: %s\n", version_string);
 
 	if (strstr(version_string, "NVIDIA")) {
 	    is_nvidia_gpu = true;
@@ -922,7 +922,7 @@ void win32_init_opengl(HWND window) {
 
 	GET_WGL_PROC(wglGetExtensionsStringEXT, PFNWGLGETEXTENSIONSSTRINGEXTPROC);
 	if (!wglGetExtensionsStringEXT) {
-		printf("Error: wglGetExtensionsStringEXT is unavailable\n");
+		console_print("Error: wglGetExtensionsStringEXT is unavailable\n");
 		panic();
 	}
 	wgl_extensions_string = wglGetExtensionsStringEXT();
@@ -932,21 +932,21 @@ void win32_init_opengl(HWND window) {
 		GET_WGL_PROC(wglSwapIntervalEXT, PFNWGLSWAPINTERVALEXTPROC);
 		GET_WGL_PROC(wglGetSwapIntervalEXT, PFNWGLGETSWAPINTERVALEXTPROC);
 	} else {
-		printf("Error: WGL_EXT_swap_control is unavailable\n");
+		console_print("Error: WGL_EXT_swap_control is unavailable\n");
 		panic();
 	}
 
 	if (win32_wgl_extension_supported("WGL_ARB_create_context")) {
 		GET_WGL_PROC(wglCreateContextAttribsARB, PFNWGLCREATECONTEXTATTRIBSARBPROC);
 	} else {
-		printf("Error: WGL_ARB_create_context is unavailable\n");
+		console_print("Error: WGL_ARB_create_context is unavailable\n");
 		panic();
 	}
 
 	if (win32_wgl_extension_supported("WGL_ARB_pixel_format")) {
 		GET_WGL_PROC(wglChoosePixelFormatARB, PFNWGLCHOOSEPIXELFORMATARBPROC);
 	} else {
-		printf("Error: WGL_ARB_pixel_format is unavailable\n");
+		console_print("Error: WGL_ARB_pixel_format is unavailable\n");
 		panic();
 	}
 
@@ -977,7 +977,7 @@ void win32_init_opengl(HWND window) {
 	memset_zero(&suggested_pixel_format);
 	bool32 status = wglChoosePixelFormatARB(dc, pixel_attribs, NULL, 1, &suggested_pixel_format_index, &num_formats);
 	if (!status || num_formats == 0) {
-		printf("wglChoosePixelFormatARB() failed.");
+		console_print("wglChoosePixelFormatARB() failed.");
 		panic();
 	}
 	wglDescribePixelFormat(dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
@@ -1004,7 +1004,7 @@ void win32_init_opengl(HWND window) {
 
 	glrcs[0] = wglCreateContextAttribsARB(dc, NULL, context_attribs);
 	if (glrcs[0] == NULL) {
-		printf("wglCreateContextAttribsARB() failed.");
+		console_print("wglCreateContextAttribsARB() failed.");
 		panic();
 	}
 
@@ -1022,7 +1022,7 @@ void win32_init_opengl(HWND window) {
 
 	// Now, get the OpenGL proc addresses using GLAD.
 	if (!gladLoadGLLoader((GLADloadproc) gl_get_proc_address)) {
-		printf("Error initializing OpenGL: failed to initialize GLAD.\n");
+		console_print("Error initializing OpenGL: failed to initialize GLAD.\n");
 		panic();
 	}
 
@@ -1039,11 +1039,11 @@ void win32_init_opengl(HWND window) {
 	for (i32 thread_index = 1; thread_index < total_thread_count; ++thread_index) {
 		HGLRC glrc = wglCreateContextAttribsARB(dc, glrcs[0], context_attribs);
 		if (!glrc) {
-			printf("Thread %d: wglCreateContextAttribsARB() failed.", thread_index);
+			console_print("Thread %d: wglCreateContextAttribsARB() failed.", thread_index);
 			panic();
 		}
 /*		if (!wglShareLists(glrcs[0], glrc)) {
-			printf("Thread %d: ", thread_index);
+			console_print("Thread %d: ", thread_index);
 			win32_diagnostic("wglShareLists");
 			panic();
 		}*/
@@ -1056,7 +1056,7 @@ void win32_init_opengl(HWND window) {
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
-//		printf("enabling debug output for thread %d...\n", 0);
+//		console_print("enabling debug output for thread %d...\n", 0);
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(opengl_debug_message_callback, 0);
@@ -1070,7 +1070,7 @@ void win32_init_opengl(HWND window) {
 #endif
 
 	// debug
-	printf("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
+	console_print("Initialized OpenGL in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
 
 	glDrawBuffer(GL_BACK);
 
@@ -1199,7 +1199,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 	i32 gl_context_flags;
 	glGetIntegerv(GL_CONTEXT_FLAGS, &gl_context_flags);
 	if (gl_context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
-//		printf("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
+//		console_print("enabling debug output for thread %d...\n", thread_info->logical_thread_index);
 		glEnable(GL_DEBUG_OUTPUT);
 		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 		glDebugMessageCallback(opengl_debug_message_callback, 0);
@@ -1211,7 +1211,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 #endif
 #endif//USE_MULTIPLE_OPENGL_CONTEXTS
 
-//	printf("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
+//	console_print("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
@@ -1299,7 +1299,7 @@ int main(int argc, const char** argv) {
 	g_argc = argc;
 	g_argv = argv;
 
-	printf("Starting up...\n");
+	console_print("Starting up...\n");
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 

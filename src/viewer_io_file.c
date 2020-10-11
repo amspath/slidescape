@@ -56,7 +56,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		// We need to check for this situation and chicken out if this is the case.
 		if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
 #if DO_DEBUG
-			printf("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			console_print("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 #endif
 			goto finish_up;
 		}
@@ -66,7 +66,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		// TODO: make async I/O code platform agnostic
 
 		if (tiff->is_remote) {
-			printf("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			console_print("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
 
 			i32 bytes_read = 0;
@@ -84,9 +84,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					} else {
 						if (decode_tile(jpeg_tables, jpeg_tables_length, content, compressed_tile_size_in_bytes,
 						                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		                    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+//		                    console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 						} else {
-							printf("[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+							console_print_error("[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 						}
 					}
 
@@ -133,9 +133,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			} else {
 				if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
 				                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		            printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+//		            console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 				} else {
-					printf("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 				}
 			}
 
@@ -167,7 +167,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		i64 y = (tile_y * TILE_DIM) << level;
 		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, level, TILE_DIM, TILE_DIM);
 	} else {
-		printf("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		console_print_error("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
 	}
 
@@ -230,7 +230,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
 	completion_task->tile = task->tile;
 
-	//	printf("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
+	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	ASSERT(task->completion_callback);
 	add_work_queue_entry(&global_completion_queue, task->completion_callback, completion_task);
 
@@ -242,7 +242,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 void load_wsi(wsi_t* wsi, const char* filename) {
 	if (!is_openslide_loading_done) {
 #if DO_DEBUG
-		printf("Waiting for OpenSlide to finish loading...\n");
+		console_print("Waiting for OpenSlide to finish loading...\n");
 #endif
 		while (is_queue_work_in_progress(&global_work_queue)) {
 			do_worker_work(&global_work_queue, 0);
@@ -261,14 +261,14 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 
 	wsi->osr = openslide.openslide_open(filename);
 	if (wsi->osr) {
-		printf("Openslide: opened %s\n", filename);
+		console_print("Openslide: opened %s\n", filename);
 
 		openslide.openslide_get_level0_dimensions(wsi->osr, &wsi->width, &wsi->height);
 		ASSERT(wsi->width > 0);
 		ASSERT(wsi->height > 0);
 
 		wsi->level_count = openslide.openslide_get_level_count(wsi->osr);
-		printf("Openslide: WSI has %d levels\n", wsi->level_count);
+		console_print("Openslide: WSI has %d levels\n", wsi->level_count);
 		if (wsi->level_count > WSI_MAX_LEVELS) {
 			panic();
 		}
@@ -281,7 +281,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			const char* property = wsi_properties[0];
 			for (; property != NULL; property = wsi_properties[++property_index]) {
 				const char* property_value = openslide.openslide_get_property_value(wsi->osr, property);
-				printf("%s = %s\n", property, property_value);
+				console_print("%s = %s\n", property, property_value);
 
 			}
 		}
@@ -335,7 +335,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 				i64 w = 0;
 				i64 h = 0;
 				openslide.openslide_get_associated_image_dimensions(wsi->osr, name, &w, &h);
-				printf("%s : w=%lld h=%lld\n", name, w, h);
+				console_print("%s : w=%lld h=%lld\n", name, w, h);
 
 			}
 		}
@@ -365,13 +365,13 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 			strncpy(temp_filename, filename, temp_size);
 			replace_file_extension(temp_filename, temp_size, "xml");
 			if (file_exists(temp_filename)) {
-				printf("Found XML annotations: %s\n", temp_filename);
+				console_print("Found XML annotations: %s\n", temp_filename);
 				load_asap_xml_annotations(app_state, temp_filename);
 			}
 			return true;
 
 		} else {
-			printf("Could not load '%s'\n", filename);
+			console_print_error("Could not load '%s'\n", filename);
 			return false;
 		}
 
@@ -407,13 +407,13 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 		} else {
 			tiff_destroy(&tiff);
 			result = false;
-			printf("Opening %s failed\n", filename);
+			console_print_error("Opening %s failed\n", filename);
 		}
 
 	} else {
 		// Try to load the file using OpenSlide
 		if (!is_openslide_available) {
-			printf("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
+			console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
 			return false;
 		}
 		image_t image = (image_t){};

@@ -31,7 +31,7 @@ u32 get_tiff_field_size(u16 data_type) {
 	u32 size = 0;
 	switch(data_type) {
 		default:
-			printf("Warning: encountered a TIFF field with an unrecognized data type (%d)\n", data_type);
+			console_print("Warning: encountered a TIFF field with an unrecognized data type (%d)\n", data_type);
 			break;
 		case TIFF_UINT8: case TIFF_INT8: case TIFF_ASCII: case TIFF_UNDEFINED: size = 1; break;
 		case TIFF_UINT16: case TIFF_INT16:                                     size = 2; break;
@@ -288,7 +288,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	for (i32 tag_index = 0; tag_index < tag_count; ++tag_index) {
 		tiff_tag_t* tag = tags + tag_index;
 #if TIFF_VERBOSE
-		printf("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
+		console_print("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
 		       tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
 #endif
 		switch(tag->code) {
@@ -310,7 +310,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				if (!tag->data_is_offset) {
 					for (i32 i = 0; i < tag->data_count; ++i) {
 						u16 bits = *(u16*)&tag->data[i*2];
-						printf("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
+						console_print("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
 					}
 				}
 #endif
@@ -325,21 +325,21 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->image_description = tiff_read_field_ascii(tiff, tag);
 				ifd->image_description_length = tag->data_count;
 #if TIFF_VERBOSE
-				printf("%.500s\n", ifd->image_description);
+				console_print("%.500s\n", ifd->image_description);
 #endif
 			} break;
 			case TIFF_TAG_X_RESOLUTION: {
 				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
 				ifd->x_resolution = resolution;
 #if TIFF_VERBOSE
-				printf("   %g\n", tiff_rational_to_float(resolution));
+				console_print("   %g\n", tiff_rational_to_float(resolution));
 #endif
 			} break;
 			case TIFF_TAG_Y_RESOLUTION: {
 				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
 				ifd->y_resolution = resolution;
 #if TIFF_VERBOSE
-				printf("   %g\n", tiff_rational_to_float(resolution));
+				console_print("   %g\n", tiff_rational_to_float(resolution));
 #endif
 			} break;
 			case TIFF_TAG_RESOLUTION_UNIT: {
@@ -364,7 +364,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				// Note: is it OK to assume that the TileByteCounts will always come after the TileOffsets?
 				if (tag->data_count != ifd->tile_count) {
 					ASSERT(tag->data_count != 0);
-					printf("Error: mismatch in the TIFF tile count reported by TileByteCounts and TileOffsets tags\n");
+					console_print("Error: mismatch in the TIFF tile count reported by TileByteCounts and TileOffsets tags\n");
 					free(tags);
 					return false; // failed;
 				}
@@ -383,7 +383,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->chroma_subsampling_horizontal = *(u16*)&tag->data[0];
 				ifd->chroma_subsampling_vertical = *(u16*)&tag->data[2];
 #if TIFF_VERBOSE
-				printf("   YCbCrSubsampleHoriz = %d, YCbCrSubsampleVert = %d\n", ifd->chroma_subsampling_horizontal, ifd->chroma_subsampling_vertical);
+				console_print("   YCbCrSubsampleHoriz = %d, YCbCrSubsampleVert = %d\n", ifd->chroma_subsampling_horizontal, ifd->chroma_subsampling_vertical);
 #endif
 
 			} break;
@@ -397,7 +397,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 #if TIFF_VERBOSE
 				for (i32 i = 0; i < tag->data_count; ++i) {
 					tiff_rational_t* reference_black_white = ifd->reference_black_white + i;
-					printf("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
+					console_print("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
 				}
 #endif
 			} break;
@@ -444,7 +444,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	// Read the next IFD
 	if (fread(next_ifd_offset, tiff->bytesize_of_offsets, 1, tiff->fp) != 1) return false;
 #if TIFF_VERBOSE
-	printf("next ifd offset = %lld\n", *next_ifd_offset);
+	console_print("next ifd offset = %lld\n", *next_ifd_offset);
 #endif
 	return true; // success
 }
@@ -542,7 +542,7 @@ void tiff_post_init(tiff_t* tiff) {
 
 bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 #if TIFF_VERBOSE
-	printf("Opening TIFF file %s\n", filename);
+	console_print("Opening TIFF file %s\n", filename);
 #endif
 	int ret = 0; (void)ret; // for checking return codes from fgetpos, fsetpos, etc
 	FILE* fp = fopen64(filename, "rb");
@@ -588,7 +588,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				// Read and process the IFDs
 				while (next_ifd_offset != 0) {
 #if TIFF_VERBOSE
-					printf("Reading IFD #%llu\n", tiff->ifd_count);
+					console_print("Reading IFD #%llu\n", tiff->ifd_count);
 #endif
 					tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
 					if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
@@ -736,7 +736,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 
 	memrw_push_tiff_block(buffer, SERIAL_BLOCK_TERMINATOR, 0, 0);
 
-//	printf("buffer has %llu used bytes, out of %llu capacity\n", buffer->used_size, buffer->capacity);
+//	console_print("buffer has %llu used bytes, out of %llu capacity\n", buffer->used_size, buffer->capacity);
 
 	// Additional compression step
 #if 1
@@ -751,7 +751,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_LZ4_COMPRESSED_DATA, uncompressed_size, compressed_size);
 		memrw_push(buffer, compression_buffer, compressed_size);
 	} else {
-		printf("Warning: tiff_serialize(): payload LZ4 compression failed\n");
+		console_print_error("Warning: tiff_serialize(): payload LZ4 compression failed\n");
 	}
 
 	free(compression_buffer);
@@ -763,7 +763,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 
 u8* pop_from_buffer(u8** pos, i64 size, i64* bytes_left) {
 	if (size > *bytes_left) {
-		printf("pop_from_buffer(): buffer empty\n");
+		console_print_error("pop_from_buffer(): buffer empty\n");
 		return NULL;
 	}
 	u8* old_pos = *pos;
@@ -830,7 +830,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 		i32 bytes_decompressed = LZ4_decompress_safe((char*)data, (char*)decompressed_buffer, compressed_size, decompressed_size);
 		if (bytes_decompressed > 0) {
 			if (bytes_decompressed != decompressed_size) {
-				printf("LZ4_decompress_safe() decompressed %d bytes, however the expected size was %d\n", bytes_decompressed, decompressed_size);
+				console_print_error("LZ4_decompress_safe() decompressed %d bytes, however the expected size was %d\n", bytes_decompressed, decompressed_size);
 			} else {
 				// success, switch over to the uncompressed buffer!
 				pos = decompressed_buffer;
@@ -839,7 +839,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			}
 
 		} else {
-			printf("LZ4_decompress_safe() failed (return value %d)\n", bytes_decompressed);
+			console_print_error("LZ4_decompress_safe() failed (return value %d)\n", bytes_decompressed);
 		}
 	}
 
@@ -935,7 +935,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 		u8* block_content = data;
 		// TODO: Need to think about this: are block index's (if present) always referring an IFD index, though? Or are there other use cases?
 		if (block->index >= tiff->ifd_count) {
-			printf("tiff_deserialize(): found block referencing a non-existent IFD\n");
+			console_print_error("tiff_deserialize(): found block referencing a non-existent IFD\n");
 			goto failed;
 		}
 		tiff_ifd_t* referenced_ifd = tiff->ifds + block->index;
@@ -944,7 +944,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 		switch (block->block_type) {
 			case SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION: {
 				if (referenced_ifd->image_description) {
-					printf("tiff_deserialize(): IFD %u already has an image description\n", block->index);
+					console_print_error("tiff_deserialize(): IFD %u already has an image description\n", block->index);
 					goto failed;
 				}
 				referenced_ifd->image_description = (char*) malloc(block->length + 1);
@@ -954,7 +954,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			} break;
 			case SERIAL_BLOCK_TIFF_TILE_OFFSETS: {
 				if (referenced_ifd->tile_offsets) {
-					printf("tiff_deserialize(): IFD %u already has tile offsets\n", block->index);
+					console_print_error("tiff_deserialize(): IFD %u already has tile offsets\n", block->index);
 					goto failed;
 				}
 				referenced_ifd->tile_offsets = (u64*) malloc(block->length);
@@ -962,7 +962,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			} break;
 			case SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS: {
 				if (referenced_ifd->tile_byte_counts) {
-					printf("tiff_deserialize(): IFD %u already has tile byte counts\n", block->index);
+					console_print_error("tiff_deserialize(): IFD %u already has tile byte counts\n", block->index);
 					goto failed;
 				}
 				referenced_ifd->tile_byte_counts = (u64*) malloc(block->length);
@@ -970,7 +970,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			} break;
 			case SERIAL_BLOCK_TIFF_JPEG_TABLES: {
 				if (referenced_ifd->jpeg_tables) {
-					printf("tiff_deserialize(): IFD %u already has JPEG tables\n", block->index);
+					console_print_error("tiff_deserialize(): IFD %u already has JPEG tables\n", block->index);
 					goto failed;
 				}
 				referenced_ifd->jpeg_tables = (u8*) malloc(block->length);
@@ -981,7 +981,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 			case SERIAL_BLOCK_TERMINATOR: {
 				// Reached the end
 #if REMOTE_CLIENT_VERBOSE
-				printf("tiff_deserialize(): found a terminator block\n");
+				console_print("tiff_deserialize(): found a terminator block\n");
 #endif
 				reached_end = true;
 				break;
@@ -991,7 +991,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	if (reached_end) {
 		success = true;
 #if REMOTE_CLIENT_VERBOSE
-		printf("tiff_deserialize(): bytes_left = %lld, content length = %lld, buffer size = %llu\n", bytes_left, content_length, buffer_size);
+		console_print("tiff_deserialize(): bytes_left = %lld, content length = %lld, buffer size = %llu\n", bytes_left, content_length, buffer_size);
 #endif
 	}
 

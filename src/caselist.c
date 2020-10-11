@@ -103,7 +103,7 @@ bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist
 					JSON_Object* json_case_obj = json_array_get_object(json_cases, (size_t) i);
 					the_case->name = json_object_get_string(json_case_obj, "name");
 					if (!the_case->name) {
-						printf("%s: case %d has no name element, defaulting to '(unnamed)'\n", caselist_name, i);
+						console_print("%s: case %d has no name element, defaulting to '(unnamed)'\n", caselist_name, i);
 						the_case->name = "(unnamed)";
 					}
 					caselist->names[i] = the_case->name; // for ImGui

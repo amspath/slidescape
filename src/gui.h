@@ -22,6 +22,8 @@
 #include "platform.h"
 
 #ifdef __cplusplus
+#include "imgui.h"
+#include "imgui_internal.h"
 extern "C" {
 #endif
 
@@ -35,7 +37,7 @@ void gui_new_frame();
 void menu_close_file(app_state_t* app_state);
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness);
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
-
+void draw_console_window(const char* window_title, bool* p_open);
 
 
 
@@ -57,12 +59,16 @@ extern bool show_annotations_window;
 extern bool show_annotation_group_assignment_window;
 extern bool show_display_options_window;
 extern bool show_about_window;
+extern bool show_console_window INIT(= true);
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 extern char remote_hostname[64] INIT(= "localhost");
 extern char remote_port[64] INIT(= "2000");
 extern char remote_filename[128] INIT(= "sample.tiff");
-
+#ifdef __cplusplus
+extern ImFont* global_main_font;
+extern ImFont* global_fixed_width_font;
+#endif
 
 #undef INIT
 #undef extern

@@ -31,6 +31,7 @@
 #include "imgui_impl_win32.h"
 
 #include "win32_gui.h"
+#include "gui.h"
 
 void gui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();
@@ -79,9 +80,11 @@ void win32_init_gui(HWND hwnd) {
 //	font_config.OversampleV = 2;
 //	font_config.RasterizerMultiply = 1.2f;
 	float system_font_size = 17.0f;
-	ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", system_font_size,
+	global_main_font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", system_font_size,
 											 &font_config, io.Fonts->GetGlyphRangesJapanese());
-	if (!font) {
+	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\consola.ttf", 14.0f,
+	                                                &font_config, io.Fonts->GetGlyphRangesJapanese());
+	if (!global_main_font) {
 		// could not load font
 	}
 	io.Fonts->AddFontDefault();

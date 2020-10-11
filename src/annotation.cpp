@@ -23,8 +23,6 @@
 #include "gui.h"
 #include "yxml.h"
 
-#include "imgui.h"
-#include "imgui_internal.h"
 
 // XML parsing using the yxml library.
 // Note: what is the optimal stack buffer size for yxml?
@@ -373,7 +371,7 @@ i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_na
 rgba_t asap_xml_parse_color(const char* value) {
 	rgba_t rgba = {0, 0, 0, 255};
 	if (strlen(value) != 7 || value[0] != '#') {
-		printf("annotation_set_attribute(): Color attribute \"%s\" not in form #rrggbb\n", value);
+		console_print("annotation_set_attribute(): Color attribute \"%s\" not in form #rrggbb\n", value);
 	} else {
 		char temp[3] = {};
 		temp[0] = value[1];
@@ -407,7 +405,7 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 		} else if (strcmp(value, "Polygon") == 0) {
 			annotation->type = ANNOTATION_POLYGON;
 		} else {
-			printf("Warning: annotation '%s' with unrecognized type '%s', defaulting to 'Polygon'.\n", annotation->name, value);
+			console_print("Warning: annotation '%s' with unrecognized type '%s', defaulting to 'Polygon'.\n", annotation->name, value);
 			annotation->type = ANNOTATION_POLYGON;
 		}
 	}
@@ -506,7 +504,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 					switch(r) {
 						case YXML_ELEMSTART: {
 							// start of an element: '<Tag ..'
-//						    printf("element start: %s\n", x->elem);
+//						    console_print("element start: %s\n", x->elem);
 							contentcur = contentbuf;
 							*contentcur = '\0';
 
@@ -537,7 +535,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						} break;
 						case YXML_CONTENT: {
 							// element content
-//						    printf("   element content: %s\n", x->elem);
+//						    console_print("   element content: %s\n", x->elem);
 							if (!contentcur) break;
 							char* tmp = x->data;
 							while (*tmp && contentbuf < contentbuf_end) {
@@ -545,17 +543,17 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							}
 							if (contentcur == contentbuf_end) {
 								// too long content
-								printf("load_asap_xml_annotations(): encountered a too long XML element content\n");
+								console_print("load_asap_xml_annotations(): encountered a too long XML element content\n");
 								goto failed;
 							}
 							*contentcur = '\0';
 						} break;
 						case YXML_ELEMEND: {
 							// end of an element: '.. />' or '</Tag>'
-//						    printf("element end: %s\n", x->elem);
+//						    console_print("element end: %s\n", x->elem);
 							if (contentcur) {
 								// NOTE: usually only whitespace (newlines and such)
-//							    printf("elem content: %s\n", contentbuf);
+//							    console_print("elem content: %s\n", contentbuf);
 							}
 							if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
 								annotation_group_t* parsed_group = &parse_state->current_group;
@@ -571,13 +569,13 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						} break;
 						case YXML_ATTRSTART: {
 							// attribute: 'Name=..'
-//						    printf("attr start: %s\n", x->attr);
+//						    console_print("attr start: %s\n", x->attr);
 							attrcur = attrbuf;
 							*attrcur = '\0';
 						} break;
 						case YXML_ATTRVAL: {
 							// attribute value
-//						    printf("   attr val: %s\n", x->attr);
+//						    console_print("   attr val: %s\n", x->attr);
 							if (!attrcur) break;
 							char* tmp = x->data;
 							while (*tmp && attrbuf < attrbuf_end) {
@@ -585,7 +583,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							}
 							if (attrcur == attrbuf_end) {
 								// too long attribute
-								printf("load_asap_xml_annotations(): encountered a too long XML attribute\n");
+								console_print("load_asap_xml_annotations(): encountered a too long XML attribute\n");
 								goto failed;
 							}
 							*attrcur = '\0';
@@ -593,7 +591,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						case YXML_ATTREND: {
 							// end of attribute '.."'
 							if (attrcur) {
-//							    printf("attr %s = %s\n", x->attr, attrbuf);
+//							    console_print("attr %s = %s\n", x->attr, attrbuf);
 								if (pass == ASAP_XML_PARSE_ANNOTATIONS && parse_state->element_type == ASAP_XML_ELEMENT_ANNOTATION) {
 									annotation_set_attribute(annotation_set, &sb_last(annotation_set->annotations), x->attr, attrbuf);
 								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && parse_state->element_type == ASAP_XML_ELEMENT_COORDINATE) {
@@ -608,7 +606,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						case YXML_PIEND:
 							break; // processing instructions (uninteresting, skip)
 						default: {
-							printf("yxml_parse(): unrecognized token (%d)\n", r);
+							console_print("yxml_parse(): unrecognized token (%d)\n", r);
 							goto failed;
 						}
 					}
@@ -621,7 +619,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	success = true;
 	annotation_set->enabled = true;
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
-	printf("Loaded annotations in %g seconds.\n", seconds_elapsed);
+	console_print("Loaded annotations in %g seconds.\n", seconds_elapsed);
 
 	goto cleanup;
 	// return success;

@@ -363,6 +363,15 @@ memrw_t memrw_create(u64 capacity);
 void memrw_rewind(memrw_t* buffer);
 void memrw_destroy(memrw_t* buffer);
 
+#if IS_SERVER
+#define console_print printf
+#define console_print_error(...) fprintf(stderr, __VA_ARGS__)
+#else
+void console_print(const char* fmt, ...); // defined in gui.cpp
+void console_print_error(const char* fmt, ...);
+#endif
+
+
 // globals
 #if defined(PLATFORM_IMPL)
 #define INIT(...) __VA_ARGS__

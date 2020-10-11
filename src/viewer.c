@@ -180,10 +180,10 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				level_image->tile_height = ifd->tile_height;
 #if DO_DEBUG
 				if (level_image->tile_width != new_image.tile_width) {
-					printf("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
+					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
 				}
 				if (level_image->tile_height != new_image.tile_height) {
-					printf("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
+					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
 				}
 #endif
 				level_image->um_per_pixel_x = ifd->um_per_pixel_x;
@@ -438,7 +438,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->is_dragging = true; // drag start
 					scene->drag_started = true;
 					scene->cumulative_drag_vector = (v2f){};
-//					printf("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+//					console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 				}
 			} else if (scene->is_dragging) {
 				// already started dragging on a previous frame
@@ -453,7 +453,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				mouse_show();
 				scene->is_dragging = false;
 				scene->drag_ended = true;
-//			        printf("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
+//			        console_print("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 			}
 		}
 	}
@@ -619,7 +619,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 			if (dlevel != 0) {
-//		        printf("mouse_z = %d\n", input->mouse_z);
+//		        console_print("mouse_z = %d\n", input->mouse_z);
 
 				i32 new_level = scene->zoom.level + dlevel;
 				if (scene->need_zoom_animation) {
@@ -718,7 +718,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			/*if (was_key_pressed(input, 'O')) {
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
-//				printf("switching to creation mode\n");
+//				console_print("switching to creation mode\n");
 			}*/
 
 			if (was_key_pressed(input, 'P')) {
@@ -744,7 +744,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 							i64 select_begin = get_clock();
 							select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
 //				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
-//			    	    	printf("Selecting took %g ms.\n", selection_ms);
+//			    	    	console_print("Selecting took %g ms.\n", selection_ms);
 						}
 					}
 
@@ -814,7 +814,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
                 }
                 float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
 			    if (time_elapsed > max_texture_load_time) {
-//			    	printf("Warning: texture finalization is taking too much time\n");
+//			    	console_print("Warning: texture finalization is taking too much time\n");
 			    	break;
 			    }
             }
@@ -825,7 +825,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
         /*time_elapsed = get_seconds_elapsed(last_section, get_clock());
         if (time_elapsed > 0.005f) {
-            printf("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
+            console_print("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
         }*/
 
         last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
@@ -893,26 +893,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 							tile_release_cache(tile);
 						}
 					} else {
-						printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+						console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
 					}
 				}
 			}
 
 			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
 			if (time_elapsed > max_texture_load_time) {
-//				printf("Warning: texture submission is taking too much time\n");
+//				console_print("Warning: texture submission is taking too much time\n");
 				break;
 			}
 
 			if (pixel_transfer_index_start == app_state->next_pixel_transfer_to_submit) {
-//				printf("Warning: not enough PBO's to do all the pixel transfers\n");
+//				console_print("Warning: not enough PBO's to do all the pixel transfers\n");
 				break;
 			}
 		}
 
 		/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
 		if (time_elapsed > 0.005f) {
-			printf("Warning: texture submission took %g ms\n", time_elapsed * 1000.0f);
+			console_print("Warning: texture submission took %g ms\n", time_elapsed * 1000.0f);
 		}*/
 
 
@@ -995,7 +995,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 		}
-//		printf("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
+//		console_print("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
 
 		qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
 
@@ -1162,8 +1162,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	glFinish();
 
 	float update_and_render_time = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-//	printf("Frame time: %g ms\n", update_and_render_time * 1000.0f);
+//	console_print("Frame time: %g ms\n", update_and_render_time * 1000.0f);
 
 	++app_state->frame_counter;
 }
-

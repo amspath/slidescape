@@ -96,9 +96,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						} else {
 							if (decode_tile(jpeg_tables, jpeg_tables_length, current_chunk, chunk_sizes[i],
 							                pixel_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		                    printf("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+//		                    console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 							} else {
-								printf("[thread %d] failed to decode level %d, tile (%d, %d)\n", logical_thread_index, task->level, task->tile_x, task->tile_y);
+								console_print_error("[thread %d] failed to decode level %d, tile (%d, %d)\n", logical_thread_index, task->level, task->tile_x, task->tile_y);
 							}
 						}
 

@@ -495,6 +495,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		ImGui::End();
 	}
 
+	if (show_console_window) {
+		draw_console_window("Console", &show_console_window);
+	}
+
 
 
 //}
@@ -511,3 +515,146 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 
 }
+
+struct console_log_item_t {
+	char* text;
+	bool has_color;
+	u32 item_type;
+};
+
+console_log_item_t* console_log_items; //sb
+
+void console_clear_log() {
+	for (int i = 0; i < sb_count(console_log_items); i++) {
+		console_log_item_t* item = console_log_items + i;
+		if (item->text) {
+			free(item->text);
+		}
+	}
+	sb_free(console_log_items);
+	console_log_items = NULL;
+}
+
+
+void draw_console_window(const char* window_title, bool* p_open) {
+	ImGui::SetNextWindowSize(ImVec2(520, 600), ImGuiCond_FirstUseEver);
+	if (!ImGui::Begin(window_title, p_open)) {
+		ImGui::End();
+		return;
+	}
+
+	if (ImGui::SmallButton("Add Debug Text"))  { console_print("%d some text\n", sb_count(console_log_items)); console_print("some more text\n"); console_print("display very important message here!\n"); } ImGui::SameLine();
+	if (ImGui::SmallButton("Add Debug Error")) { console_print_error("[error] something went wrong\n"); } ImGui::SameLine();
+	if (ImGui::SmallButton("Clear"))           { console_clear_log(); } ImGui::SameLine();
+	bool copy_to_clipboard = ImGui::SmallButton("Copy");
+	ImGui::Separator();
+
+
+
+	// Reserve enough left-over height for 1 separator + 1 input text
+	const float footer_height_to_reserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
+	ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false, ImGuiWindowFlags_HorizontalScrollbar);
+	if (ImGui::BeginPopupContextWindow())
+	{
+		if (ImGui::Selectable("Clear")) console_clear_log();
+		ImGui::EndPopup();
+	}
+	i32 item_count = sb_count(console_log_items);
+	if (item_count > 0) {
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
+		ImGui::PushFont(global_fixed_width_font);
+		ImGuiListClipper clipper(sb_count(console_log_items));
+		while (clipper.Step()) {
+			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+				console_log_item_t item = console_log_items[i];
+//				if (!Filter.PassFilter(item))
+//					continue;
+
+				// Normally you would store more information in your item than just a string.
+				// (e.g. make Items[] an array of structure, store color/type etc.)
+				ImVec4 color;
+				if (item.has_color) {
+					if (item.item_type == 1)          { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);}
+					else if (strncmp(item.text, "# ", 2) == 0) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f);  }
+					ImGui::PushStyleColor(ImGuiCol_Text, color);
+				}
+				ImGui::TextUnformatted(item.text);
+				if (item.has_color) {
+					ImGui::PopStyleColor();
+				}
+			}
+		}
+		ImGui::PopFont();
+		ImGui::PopStyleVar();
+	}
+	if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+		ImGui::SetScrollHereY(0.0f);
+
+	ImGui::EndChild();
+	ImGui::Separator();
+
+	// Command-line
+	/*bool reclaim_focus = false;
+	ImGuiInputTextFlags input_text_flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
+	if (ImGui::InputText("Input", InputBuf, IM_ARRAYSIZE(InputBuf), input_text_flags, &TextEditCallbackStub, (void*)this))
+	{
+		char* s = InputBuf;
+		Strtrim(s);
+		if (s[0])
+			ExecCommand(s);
+		strcpy(s, "");
+		reclaim_focus = true;
+	}
+
+	// Auto-focus on window apparition
+	ImGui::SetItemDefaultFocus();
+	if (reclaim_focus)
+		ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget*/
+
+	ImGui::End();
+}
+
+void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_type) {
+	i64 num_lines = 0;
+	char** lines = split_into_lines(raw, &num_lines);
+	if (lines) {
+		for (i32 i = 0; i < num_lines; ++i) {
+			char* line = lines[i];
+			if (line && strlen(line) > 0) {
+				console_log_item_t new_item = {};
+				new_item.text = strdup(line);
+				new_item.has_color = has_color;
+				new_item.item_type = item_type;
+				sb_push(console_log_items, new_item);
+			}
+		}
+		free(lines);
+	}
+}
+
+void console_print(const char* fmt, ...) {
+
+	char buf[4096];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	vprintf(fmt, args);
+	buf[sizeof(buf)-1] = 0;
+	va_end(args);
+
+	console_split_lines_and_add_log_item(buf, false, 0);
+}
+
+void console_print_error(const char* fmt, ...) {
+	char buf[4096];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	vfprintf(stderr, fmt, args);
+	buf[sizeof(buf)-1] = 0;
+	va_end(args);
+
+	console_split_lines_and_add_log_item(buf, true, 1);
+}
+
+

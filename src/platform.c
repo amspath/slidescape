@@ -85,7 +85,7 @@ void memrw_maybe_grow(memrw_t* buffer, u64 new_size) {
 		if (!new_ptr) panic();
 		buffer->data = new_ptr;
 #if DO_DEBUG
-		printf("memrw_push(): expanded buffer size from %u to %u\n", buffer->capacity, new_capacity);
+		console_print("memrw_push(): expanded buffer size from %u to %u\n", buffer->capacity, new_capacity);
 #endif
 		buffer->capacity = new_capacity;
 	}
@@ -137,7 +137,7 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 	if (profiling) {
 		float ms_elapsed = get_seconds_elapsed(start, end) * 1000.0f;
 		if (ms_elapsed > report_threshold_ms) {
-			printf("[profiler] %s: %g ms\n", name, ms_elapsed);
+			console_print("[profiler] %s: %g ms\n", name, ms_elapsed);
 		}
 	}
 	return end;

@@ -447,7 +447,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 									tile->is_cached = false;
 								}
 							} else {
-								printf("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+								console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
 							}
 						}*/
 			}
@@ -545,7 +545,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		case TIFF_PHOTOMETRIC_YCBCR: break;
 		case TIFF_PHOTOMETRIC_RGB: break;
 		default: {
-			printf("Error exporting BigTIFF: unsupported photometric interpretation (%d)\n", desired_photometric_interpretation);
+			console_print_error("Error exporting BigTIFF: unsupported photometric interpretation (%d)\n", desired_photometric_interpretation);
 		} return false;
 	}
 
@@ -636,7 +636,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 				}
 				if (!found) {
 #if DO_DEBUG
-					printf("Warning: source TIFF does not contain level %d, will be skipped\n", level);
+					console_print("Warning: source TIFF does not contain level %d, will be skipped\n", level);
 #endif
 					continue;
 				}

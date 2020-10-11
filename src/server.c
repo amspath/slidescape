@@ -20,6 +20,16 @@
 #define IS_SERVER 1 // should be defined by the command-line because we also need to compile e.g. tiff.c which is shared
 #endif
 
+#ifdef _WIN32
+#define _WIN32_WINNT 0x0600
+#define WINVER 0x0600
+#include <winsock2.h>
+#define socklen_t int
+#else
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#endif
+
 #include "common.h"
 #include "platform.h"
 #undef MIN
@@ -33,13 +43,7 @@
 #include <time.h>
 #include <errno.h>
 
-#ifdef _WIN32
-#include <winsock2.h>
-#define socklen_t int
-#else
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#endif
+
 
 #define LTM_DESC
 #define TLS_AMALGAMATION
@@ -167,33 +171,6 @@ int verify_signature(struct TLSContext *context, struct TLSCertificate **certifi
 		}
 	}
 	return no_error;
-}
-
-char** split_into_lines(char* buffer, i64* num_lines) {
-	size_t lines_counted = 0;
-	size_t capacity = 0;
-	char** lines = NULL;
-	bool32 newline = true;
-	char* pos = buffer;
-	int c;
-	do {
-		c = *pos;
-		if (c == '\n' || c == '\r') {
-			*pos = '\0';
-			newline = true;
-		} else if (newline || c == '\0') {
-			size_t line_index = lines_counted++;
-			if (lines_counted > capacity) {
-				capacity = MAX(capacity, 8) * 2;
-				lines = (char**) realloc(lines, capacity * sizeof(char*));
-			}
-			lines[line_index] = pos;
-			newline = false;
-		}
-		++pos;
-	} while (c != '\0');
-	if (num_lines) *num_lines = lines_counted;
-	return lines;
 }
 
 void strip_character(char* s, char character_to_strip) {

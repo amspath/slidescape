@@ -27,14 +27,14 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 		i32 entry_to_submit = queue->next_entry_to_submit;
 		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
 		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
-			printf("Warning: work queue is overflowing - job is cancelled\n");
+			console_print_error("Warning: work queue is overflowing - job is cancelled\n");
 			return false;
 		}
 
 		bool succeeded = atomic_compare_exchange(&queue->next_entry_to_submit,
 		                                         new_next_entry_to_submit, entry_to_submit);
 		if (succeeded) {
-//		    printf("exhange succeeded\n");
+//		    console_print("exhange succeeded\n");
 			queue->entries[entry_to_submit] = (work_queue_entry_t){ .data = userdata, .callback = callback };
 			write_barrier;
 			queue->entries[entry_to_submit].is_valid = true;
@@ -48,7 +48,7 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 #endif
 			return true;
 		} else {
-//			printf("exchange failed, retrying (try #%d)\n", tries);
+//			console_print_error("exchange failed, retrying (try #%d)\n", tries);
 			continue;
 		}
 
@@ -72,7 +72,7 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 			result.data = queue->entries[entry_to_execute].data;
 			result.callback = queue->entries[entry_to_execute].callback;
 			if (!result.callback) {
-				printf("Error: encountered a work entry with a missing callback routine\n");
+				console_print_error("Error: encountered a work entry with a missing callback routine\n");
 				panic();
 			}
 			result.is_valid = true;
@@ -106,11 +106,11 @@ bool is_queue_work_in_progress(work_queue_t* queue) {
 //#define TEST_THREAD_QUEUE
 #ifdef TEST_THREAD_QUEUE
 void echo_task_completed(int logical_thread_index, void* userdata) {
-	printf("thread %d completed: %s\n", logical_thread_index, (char*) userdata);
+	console_print("thread %d completed: %s\n", logical_thread_index, (char*) userdata);
 }
 
 void echo_task(int logical_thread_index, void* userdata) {
-	printf("thread %d: %s\n", logical_thread_index, (char*) userdata);
+	console_print("thread %d: %s\n", logical_thread_index, (char*) userdata);
 
 	add_work_queue_entry(&thread_message_queue, echo_task_completed, userdata);
 }
