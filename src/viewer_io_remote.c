@@ -110,7 +110,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						ASSERT(task->completion_callback);
 						add_work_queue_entry(&global_completion_queue, task->completion_callback, completion_task);
 
-						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM);
+						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM, GL_BGRA);
 					}
 
 				}

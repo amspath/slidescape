@@ -235,15 +235,15 @@ SlideviewerView* g_view;
     if (_window != nil)
         return (_window);
 
-    NSRect viewRect = NSMakeRect(100.0, 100.0, 100.0 + 1280.0, 100 + 720.0);
+    NSRect viewRect = NSMakeRect(0.0, 0.0, 1440.0, 100 + 720.0);
 
     _window = [[NSWindow alloc] initWithContentRect:viewRect styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:YES];
     [_window setTitle:@"Slideviewer"];
     [_window setAcceptsMouseMovedEvents:YES];
     [_window setOpaque:YES];
-    [_window makeKeyAndOrderFront:NSApp];
+    [_window makeKeyAndOrderFront:self];
 	[_window registerForDraggedTypes:[NSArray arrayWithObject:NSFilenamesPboardType]];
-
+	[NSApp activateIgnoringOtherApps:YES];
 
 	return (_window);
 }

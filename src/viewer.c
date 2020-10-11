@@ -270,7 +270,7 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 void init_app_state(app_state_t* app_state, window_handle_t main_window) {
 	ASSERT(!app_state->initialized); // check sanity
 	ASSERT(app_state->temp_storage_memory == NULL);
-	memset(app_state, 0, sizeof(app_state_t));
+//	memset(app_state, 0, sizeof(app_state_t));
 
 	app_state->main_window = main_window;
 
@@ -482,6 +482,20 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// Set up model matrix: scale and translate to the correct world position
 		static v2f obj_pos;
 		if (image->is_freshly_loaded) {
+			// TODO: don't immediately upload freshly loaded images to prevent crashing
+			image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, GL_RGBA);
+			/*glEnable(GL_TEXTURE_2D);
+			glGenTextures(1, &image->simple.texture);
+			//glActiveTexture(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_2D, image->simple.texture);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->simple.width, image->simple.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->simple.pixels);
+*/
 			obj_pos = (v2f) {50, 100};
 			image->is_freshly_loaded = false;
 		}

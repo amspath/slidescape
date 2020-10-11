@@ -297,7 +297,7 @@ void autosave(app_state_t* app_state, bool force_ignore_delay);
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 
-u32 load_texture(void* pixels, i32 width, i32 height);
+u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
 void init_opengl_stuff(app_state_t* app_state);
 
 

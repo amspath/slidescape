@@ -217,7 +217,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	glFinish(); // Block thread execution until all OpenGL operations have finished.
 #else
 	glEnable(GL_TEXTURE_2D);
-	u32 texture = load_texture(temp_memory, TILE_DIM, TILE_DIM);
+	u32 texture = load_texture(temp_memory, TILE_DIM, TILE_DIM, GL_BGRA);
 	glFinish(); // Block thread execution until all OpenGL operations have finished.
 #endif
 	write_barrier;
@@ -391,18 +391,6 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 		image.simple.channels = 4; // desired: RGBA
 		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
 		if (image.simple.pixels) {
-			// TODO: don't immediately upload freshly loaded images to prevent crashing
-			glEnable(GL_TEXTURE_2D);
-			glGenTextures(1, &image.simple.texture);
-			//glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, image.simple.texture);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.simple.width, image.simple.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.simple.pixels);
 
 			image.is_freshly_loaded = true;
 					sb_push(app_state->loaded_images, image);

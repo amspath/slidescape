@@ -153,7 +153,7 @@ void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state) {
 
 }
 
-u32 load_texture(void* pixels, i32 width, i32 height) {
+u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format) {
 	u32 texture = 0; //gl_gen_texture();
 	glEnable(GL_TEXTURE_2D);
 	glGenTextures(1, &texture);
@@ -165,14 +165,13 @@ u32 load_texture(void* pixels, i32 width, i32 height) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, pixel_format, GL_UNSIGNED_BYTE, pixels);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 //	glGenerateMipmap(GL_TEXTURE_2D);
 //	gl_diagnostic("glTexImage2D");
 	return texture;
 }
-
 
 void unload_texture(u32 texture) {
 	glDeleteTextures(1, &texture);
@@ -195,7 +194,7 @@ void init_opengl_stuff(app_state_t* app_state) {
 #endif
 	init_draw_rect();
 	u32 dummy_texture_color = MAKE_BGRA(255, 255, 0, 255);
-	dummy_texture = load_texture(&dummy_texture_color, 1, 1);
+	dummy_texture = load_texture(&dummy_texture_color, 1, 1, GL_BGRA);
 
 	// Make sure NVIDIA drivers don't complain about undefined base level for texture 0.
 	glEnable(GL_TEXTURE_2D);
