@@ -575,7 +575,8 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	if (item_count > 0) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
 		ImGui::PushFont(global_fixed_width_font);
-		ImGuiListClipper clipper(sb_count(console_log_items));
+		ImGuiListClipper clipper;
+		clipper.Begin(sb_count(console_log_items));
 		while (clipper.Step()) {
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 				console_log_item_t item = console_log_items[i];

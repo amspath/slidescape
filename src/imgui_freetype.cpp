@@ -32,7 +32,6 @@
 #include FT_GLYPH_H             // <freetype/ftglyph.h>
 #include FT_SYNTHESIS_H         // <freetype/ftsynth.h>
 
-
 #ifdef _MSC_VER
 #pragma warning (disable: 4505) // unreferenced local function has been removed (stb stuff)
 #endif
@@ -121,10 +120,10 @@ namespace
 
     bool FreeTypeFont::InitFont(FT_Library ft_library, const ImFontConfig& cfg, unsigned int extra_user_flags)
     {
-        FT_Error error = /*freetype.*/FT_New_Memory_Face(ft_library, (uint8_t*)cfg.FontData, (uint32_t)cfg.FontDataSize, (uint32_t)cfg.FontNo, &Face);
+        FT_Error error = FT_New_Memory_Face(ft_library, (uint8_t*)cfg.FontData, (uint32_t)cfg.FontDataSize, (uint32_t)cfg.FontNo, &Face);
         if (error != 0)
             return false;
-        error = /*freetype.*/FT_Select_Charmap(Face, FT_ENCODING_UNICODE);
+        error = FT_Select_Charmap(Face, FT_ENCODING_UNICODE);
         if (error != 0)
             return false;
 
@@ -159,7 +158,7 @@ namespace
     {
         if (Face)
         {
-            /*freetype.*/FT_Done_Face(Face);
+            FT_Done_Face(Face);
             Face = NULL;
         }
     }
@@ -175,7 +174,7 @@ namespace
         req.height = (uint32_t)pixel_height * 64;
         req.horiResolution = 0;
         req.vertResolution = 0;
-        /*freetype.*/FT_Request_Size(Face, &req);
+        FT_Request_Size(Face, &req);
 
         // Update font info
         FT_Size_Metrics metrics = Face->size->metrics;
@@ -189,10 +188,10 @@ namespace
 
     const FT_Glyph_Metrics* FreeTypeFont::LoadGlyph(uint32_t codepoint)
     {
-        uint32_t glyph_index = /*freetype.*/FT_Get_Char_Index(Face, codepoint);
+        uint32_t glyph_index = FT_Get_Char_Index(Face, codepoint);
         if (glyph_index == 0)
             return NULL;
-        FT_Error error = /*freetype.*/FT_Load_Glyph(Face, glyph_index, LoadFlags);
+        FT_Error error = FT_Load_Glyph(Face, glyph_index, LoadFlags);
         if (error)
             return NULL;
 
@@ -202,10 +201,10 @@ namespace
 
         // Apply convenience transform (this is not picking from real "Bold"/"Italic" fonts! Merely applying FreeType helper transform. Oblique == Slanting)
         if (UserFlags & ImGuiFreeType::Bold)
-            /*freetype.*/FT_GlyphSlot_Embolden(slot);
+            FT_GlyphSlot_Embolden(slot);
         if (UserFlags & ImGuiFreeType::Oblique)
         {
-	        /*freetype.*/FT_GlyphSlot_Oblique(slot);
+            FT_GlyphSlot_Oblique(slot);
             //FT_BBox bbox;
             //FT_Outline_Get_BBox(&slot->outline, &bbox);
             //slot->metrics.width = bbox.xMax - bbox.xMin;
@@ -218,7 +217,7 @@ namespace
     const FT_Bitmap* FreeTypeFont::RenderGlyphAndGetInfo(GlyphInfo* out_glyph_info)
     {
         FT_GlyphSlot slot = Face->glyph;
-        FT_Error error = /*freetype.*/FT_Render_Glyph(slot, RenderMode);
+        FT_Error error = FT_Render_Glyph(slot, RenderMode);
         if (error != 0)
             return NULL;
 
@@ -339,8 +338,8 @@ bool ImFontAtlasBuildWithFreeType(FT_Library ft_library, ImFontAtlas* atlas, uns
     ImVector<ImFontBuildDstDataFT> dst_tmp_array;
     src_tmp_array.resize(atlas->ConfigData.Size);
     dst_tmp_array.resize(atlas->Fonts.Size);
-    memset(src_tmp_array.Data, 0, (size_t)src_tmp_array.size_in_bytes());
-    memset(dst_tmp_array.Data, 0, (size_t)dst_tmp_array.size_in_bytes());
+    memset((void*)src_tmp_array.Data, 0, (size_t)src_tmp_array.size_in_bytes());
+    memset((void*)dst_tmp_array.Data, 0, (size_t)dst_tmp_array.size_in_bytes());
 
     // 1. Initialize font loading structure, check font data validity
     for (int src_i = 0; src_i < atlas->ConfigData.Size; src_i++)
@@ -387,7 +386,7 @@ bool ImFontAtlasBuildWithFreeType(FT_Library ft_library, ImFontAtlas* atlas, uns
             {
                 if (dst_tmp.GlyphsSet.TestBit(codepoint))    // Don't overwrite existing glyphs. We could make this an option (e.g. MergeOverwrite)
                     continue;
-                uint32_t glyph_index = /*freetype.*/FT_Get_Char_Index(src_tmp.Font.Face, codepoint); // It is actually in the font? (FIXME-OPT: We are not storing the glyph_index..)
+                uint32_t glyph_index = FT_Get_Char_Index(src_tmp.Font.Face, codepoint); // It is actually in the font? (FIXME-OPT: We are not storing the glyph_index..)
                 if (glyph_index == 0)
                     continue;
 
@@ -660,15 +659,15 @@ bool ImGuiFreeType::BuildFontAtlas(ImFontAtlas* atlas, unsigned int extra_flags)
 
     // https://www.freetype.org/freetype2/docs/reference/ft2-module_management.html#FT_New_Library
     FT_Library ft_library;
-    FT_Error error = /*freetype.*/FT_New_Library(&memory_rec, &ft_library);
+    FT_Error error = FT_New_Library(&memory_rec, &ft_library);
     if (error != 0)
         return false;
 
     // If you don't call FT_Add_Default_Modules() the rest of code may work, but FreeType won't use our custom allocator.
-    /*freetype.*/FT_Add_Default_Modules(ft_library);
+    FT_Add_Default_Modules(ft_library);
 
     bool ret = ImFontAtlasBuildWithFreeType(ft_library, atlas, extra_flags);
-    /*freetype.*/FT_Done_Library(ft_library);
+    FT_Done_Library(ft_library);
 
     return ret;
 }

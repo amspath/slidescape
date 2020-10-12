@@ -12,7 +12,6 @@
 #include "imgui_impl_osx.h"
 #import <Cocoa/Cocoa.h>
 
-
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
 //  2020-05-25: Inputs: Added a fix for missing trackpad clicks when done with "soft tap".
