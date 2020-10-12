@@ -390,6 +390,7 @@ extern input_t inputs[2];
 extern input_t *old_input;
 extern input_t *curr_input;
 extern u32 os_page_size;
+extern u64 page_alignment_mask;
 extern i32 total_thread_count;
 extern i32 worker_thread_count;
 extern i32 physical_cpu_count;

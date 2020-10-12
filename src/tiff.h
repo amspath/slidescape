@@ -272,6 +272,8 @@ struct tiff_t {
 	// TODO: platform independent file handle?
 #if WINDOWS
 	HANDLE win32_file_handle;
+#else
+	int fd;
 #endif
 #endif
 	i64 filesize;

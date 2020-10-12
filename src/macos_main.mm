@@ -23,6 +23,9 @@
 #include <sys/sysctl.h>
 #include <mach/mach_time.h>
 
+#if CODE_EDITOR // Prevent CLion complaining about not being able to resolve NSApp
+APPKIT_EXTERN __kindof NSApplication * __null_unspecified NSApp;
+#endif
 
 // Prototypes
 void macos_process_button_event(button_state_t* new_state, bool32 down);
@@ -262,6 +265,7 @@ SlideviewerView* g_view;
 -(void)menu_item_clicked_fullscreen         { want_toggle_fullscreen = true; }
 -(void)menu_item_clicked_image_adjustments  { show_image_adjustments_window = true; }
 -(void)menu_item_clicked_case_list          { show_slide_list_window = true; }
+-(void)menu_item_clicked_console_window     { show_console_window = true; }
 -(void)menu_item_clicked_debug_window       { show_demo_window = true; }
 
 -(void)setupMenu
@@ -359,7 +363,10 @@ SlideviewerView* g_view;
 	                        action:@selector(menu_item_clicked_case_list)
 	                 keyEquivalent:@""];
 	[current_menu addItem:[NSMenuItem separatorItem]];
-	[current_menu addItemWithTitle:@"Show debug window"
+	[current_menu addItemWithTitle:@"Show console"
+	                        action:@selector(menu_item_clicked_console_window)
+	                 keyEquivalent:@""];
+	[current_menu addItemWithTitle:@"Show demo window"
 	                        action:@selector(menu_item_clicked_debug_window)
 	                 keyEquivalent:@""];
 
@@ -582,6 +589,7 @@ void get_system_info() {
 	fprintf(stderr,"There are %d physical, %d logical cpu cores\n", physical_cpu_count, logical_cpu_count);
 	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 	os_page_size = (u32) getpagesize();
+	page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
 	is_macos = true;
 }
 

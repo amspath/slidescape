@@ -551,8 +551,8 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		tiff->fp = fp;
 		struct stat st;
 		if (fstat(fileno(fp), &st) == 0) {
-			i64 filesize = st.st_size;
-			if (filesize > 8) {
+			tiff->filesize = st.st_size;
+			if (tiff->filesize > 8) {
 				// read the 8-byte TIFF header / 16-byte BigTIFF header
 				tiff_header_t tiff_header = {};
 				if (fread(&tiff_header, sizeof(tiff_header_t) /*16*/, 1, fp) != 1) goto fail;
@@ -599,6 +599,32 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				tiff_post_init(tiff);
 
 				success = true;
+
+				// cleanup
+				fclose(fp);
+				tiff->fp = NULL;
+
+				// Prepare for Async I/O in the worker threads
+#if !IS_SERVER
+#if WINDOWS
+				// TODO: make async I/O platform agnostic
+				// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
+				// http://vec3.ca/using-win32-asynchronous-io/
+				tiff->win32_file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+		                                                 FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
+		                                                 /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
+		                                                 NULL);
+#else
+				tiff->fd = open(filename, O_RDONLY);
+				if (tiff->fd == -1) {
+					console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
+					return false;
+				} else {
+
+				}
+
+#endif
+#endif
 			}
 		}
 		// TODO: better error handling than this crap
@@ -608,17 +634,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		fclose(fp);
 		tiff->fp = NULL;
 
-#if !IS_SERVER
-#if WINDOWS
-		// TODO: make async I/O platform agnostic
-		// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
-		// http://vec3.ca/using-win32-asynchronous-io/
-		tiff->win32_file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
-		                                                 FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
-		                                                 /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
-		                                                 NULL);
-#endif
-#endif
+
 
 
 	}
@@ -1018,7 +1034,9 @@ void tiff_destroy(tiff_t* tiff) {
 		CloseHandle(tiff->win32_file_handle);
 	}
 #else
-	// TODO
+	if (tiff->fd) {
+		close(tiff->fd);
+	}
 #endif
 #endif
 

@@ -125,7 +125,25 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				win32_diagnostic("WaitForSingleObject");
 			}
 #else
-			// TODO
+			i64 offset = tile_offset;
+			size_t length = compressed_tile_size_in_bytes;
+			i64 pa_offset = (u64)offset & page_alignment_mask;
+			/* offset for mmap() must be page aligned */
+			if (offset >= tiff->filesize) {
+				console_print_error("offset is past end of file\n");
+				panic();
+			}
+
+			u8* addr = mmap(NULL, length + offset - pa_offset, PROT_READ,
+			                MAP_PRIVATE, tiff->fd, pa_offset);
+			if (addr == MAP_FAILED) {
+				console_print_error("Error: mmap() failed\n");
+				panic();
+			}
+			memcpy(compressed_tile_data, addr + offset - pa_offset, length);
+			munmap(addr, length);
+
+			//s = write(STDOUT_FILENO, addr + offset - pa_offset, length);
 #endif
 
 			if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {

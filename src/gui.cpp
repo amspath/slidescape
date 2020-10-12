@@ -650,7 +650,7 @@ void console_print(const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
-	vprintf(fmt, args);
+	fprintf(stdout, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
 	va_end(args);
 
@@ -662,7 +662,7 @@ void console_print_error(const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
-	vfprintf(stderr, fmt, args);
+	fprintf(stderr, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
 	va_end(args);
 
