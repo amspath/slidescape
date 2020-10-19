@@ -143,7 +143,8 @@ prepend_path(VIEWER_SOURCE_FILES src)
 if (WIN32)
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} resources/icon/icon.rc)
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
-    target_compile_options(slideviewer PRIVATE "$<$<CONFIG:MinSizeRel>:-mwindows>") # Hide the console window on MinSizeRel builds
+    # Hide the console window on release builds
+    target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
 elseif(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
