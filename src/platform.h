@@ -23,7 +23,7 @@
 
 #if WINDOWS
 #include "windows.h"
-#elif APPLE
+#else
 #include <semaphore.h>
 #endif
 
@@ -63,7 +63,7 @@ typedef struct work_queue_entry_t {
 
 #if WINDOWS
 typedef HANDLE semaphore_handle_t;
-#elif APPLE
+#else
 typedef sem_t* semaphore_handle_t;
 #endif
 

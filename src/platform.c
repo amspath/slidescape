@@ -22,7 +22,9 @@
 #include "platform.h"
 #include "intrinsics.h"
 
+#if !IS_SERVER
 #include "work_queue.c"
+#endif
 
 
 mem_t* platform_allocate_mem_buffer(size_t capacity) {

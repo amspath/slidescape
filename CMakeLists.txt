@@ -4,6 +4,12 @@ project(slideviewer)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
+if (NOT CMAKE_BUILD_TYPE)
+    set(DEFAULT_BUILD_TYPE "Release")
+    message(STATUS "Setting build type to '${DEFAULT_BUILD_TYPE}' as none was specified.")
+    set(CMAKE_BUILD_TYPE "${DEFAULT_BUILD_TYPE}" CACHE STRING "Build type")
+endif()
+
 set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-unknown-warning-option -Wno-shift-negative-value")
 if (APPLE)
     set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations")
@@ -145,14 +151,16 @@ if (WIN32)
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
     # Hide the console window on release builds
     target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
+    target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 elseif(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
+    target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 endif(WIN32)
-target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
+
 
 set(SERVER_SOURCE_FILES
         platform.c
