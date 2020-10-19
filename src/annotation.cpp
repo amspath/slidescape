@@ -133,14 +133,14 @@ i32 select_annotation(scene_t* scene, bool32 additive) {
 	float distance = 0.0f;
 
 	i32 nearest_annotation_index = find_nearest_annotation(annotation_set, scene->mouse.x, scene->mouse.y, &distance);
+	annotation_t* nearest = annotation_set->annotations + nearest_annotation_index;
 	if (nearest_annotation_index >= 0) {
 		ASSERT(scene->zoom.pixel_width > 0.0f);
 
 		// have to click somewhat close to a coordinate, otherwise treat as unselect
 		float pixel_distance = distance / scene->zoom.pixel_width;
 		if (pixel_distance < 500.0f) {
-			annotation_t* annotation = annotation_set->annotations + nearest_annotation_index;
-			annotation->selected = !annotation->selected;
+			nearest->selected = !nearest->selected;
 		}
 	}
 
@@ -153,7 +153,22 @@ i32 select_annotation(scene_t* scene, bool32 additive) {
 		}
 	}
 
+	if (nearest->selected && auto_assign_last_group) {
+		nearest->group_id = last_assigned_annotation_group;
+	}
+
 	return nearest_annotation_index;
+}
+
+void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group) {
+	last_assigned_annotation_group = new_group;
+	for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->annotations + i;
+		if (annotation->selected) {
+			annotation->group_id = new_group;
+			annotations_modified(annotation_set);
+		}
+	}
 }
 
 void draw_annotations_window(app_state_t* app_state, input_t* input) {
@@ -234,14 +249,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 				if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
 				      || ((!nothing_selected) && hotkey_pressed[group_index])) {
-					// set group
-					for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
-						annotation_t* annotation = annotation_set->annotations + i;
-						if (annotation->selected) {
-							annotation->group_id = group_index;
-							annotations_modified(annotation_set);
-						}
-					}
+					set_group_for_selected_annotations(annotation_set, group_index);
 				}
 			}
 			ImGui::EndCombo();
@@ -313,14 +321,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 //		ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
 			if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))
 			    || ((!nothing_selected) && hotkey_pressed[group_index])) {
-				// set group
-				for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
-					annotation_t* annotation = annotation_set->annotations + i;
-					if (annotation->selected) {
-						annotation->group_id = group_index;
-						annotations_modified(annotation_set);
-					}
-				}
+				set_group_for_selected_annotations(annotation_set, group_index);
 			}
 
 			ImGui::SameLine(0); ImGui::RadioButton(item_previews[group_index], &annotation_group_index, group_index);
@@ -337,6 +338,9 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			ImGui::PopID();
 
 		}
+
+		ImGui::Separator();
+		ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
 
 		if (nothing_selected) {
 			ImGui::PopItemFlag();

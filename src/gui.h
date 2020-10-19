@@ -70,6 +70,10 @@ extern ImFont* global_main_font;
 extern ImFont* global_fixed_width_font;
 #endif
 
+// annotation.cpp
+extern bool auto_assign_last_group;
+extern i32 last_assigned_annotation_group;
+
 #undef INIT
 #undef extern
 
