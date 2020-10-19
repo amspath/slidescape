@@ -54,7 +54,7 @@ void reset_global_caselist(app_state_t* app_state);
 void reload_global_caselist(app_state_t *app_state, const char *filename);
 bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_info_t* slide);
 bool32 caselist_select_first_case(app_state_t* app_state, caselist_t* caselist);
-bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist_name);
+bool32 load_caselist(caselist_t* caselist, const char* source, const char* caselist_name);
 bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename);
 bool32 load_caselist_from_remote(caselist_t* caselist, const char* hostname, i32 portno, const char* name);
 void caselist_destroy(caselist_t* caselist);

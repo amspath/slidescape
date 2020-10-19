@@ -13,8 +13,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 ${GCC_WARN_OPTIONS} -Wno-class-me
 
 if (NOT(APPLE))
     # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
-    set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s -mwindows")
-    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s -mwindows")
+    set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
+    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
 
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif()
@@ -77,6 +77,33 @@ else()
     set(FREETYPE_SOURCE_FILES ${FREETYPE_SOURCE_FILES} deps/freetype/src/base/ftdebug.c)
 endif()
 
+# mbedtls
+set(MBEDTLS_CRYPTO_SOURCE_FILES
+        aes.c                   aesni.c                         arc4.c                  aria.c              asn1parse.c
+        asn1write.c             base64.c                        bignum.c                blowfish.c          camellia.c
+        ccm.c                   chacha20.c                      chachapoly.c            cipher.c            cipher_wrap.c
+        cmac.c                  ctr_drbg.c                      des.c                   dhm.c               ecdh.c
+        ecdsa.c                 ecjpake.c                       ecp.c                   ecp_curves.c        entropy.c
+        entropy_poll.c          error.c                         gcm.c                   havege.c            hkdf.c
+        hmac_drbg.c             md.c                            md2.c                   md4.c               md5.c
+        memory_buffer_alloc.c   nist_kw.c                       oid.c                   padlock.c           pem.c
+        pk.c                    pk_wrap.c                       pkcs12.c                pkcs5.c             pkparse.c
+        pkwrite.c               platform.c                      platform_util.c         poly1305.c          psa_crypto.c
+        psa_crypto_se.c         psa_crypto_slot_management.c    psa_crypto_storage.c    psa_its_file.c      ripemd160.c
+        rsa.c                   rsa_internal.c                  sha1.c                  sha256.c            sha512.c
+        threading.c             timing.c                        version.c               version_features.c  xtea.c
+)
+set(MBEDTLS_X509_SOURCE_FILES
+        certs.c                 pkcs11.c                        x509.c                  x509_create.c       x509_crl.c
+        x509_crt.c              x509_csr.c                      x509write_crt.c         x509write_csr.c
+)
+set(MBEDTLS_TLS_SOURCE_FILES
+        debug.c                 net_sockets.c                   ssl_cache.c             ssl_ciphersuites.c  ssl_cli.c
+        ssl_cookie.c            ssl_msg.c                       ssl_srv.c               ssl_ticket.c        ssl_tls.c
+)
+set(MBEDTLS_SOURCE_FILES ${MBEDTLS_CRYPTO_SOURCE_FILES} ${MBEDTLS_X509_SOURCE_FILES} ${MBEDTLS_TLS_SOURCE_FILES})
+prepend_path(MBEDTLS_SOURCE_FILES deps/mbedtls/library)
+
 set(VIEWER_SOURCE_FILES
         platform.c
         viewer.c
@@ -96,7 +123,7 @@ set(VIEWER_SOURCE_FILES
         imgui_freetype.cpp
         gui.cpp
         jpeg_decoder.c
-        tlsclient.c
+        remote.c
         lz4.c
         parson.c
         yxml.c
@@ -114,8 +141,9 @@ prepend_path(VIEWER_SOURCE_FILES src)
 
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
-    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} resources/icon/icon.rc)
+    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} resources/icon/icon.rc)
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
+    target_compile_options(slideviewer PRIVATE "$<$<CONFIG:MinSizeRel>:-mwindows>") # Hide the console window on MinSizeRel builds
 elseif(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -123,6 +151,7 @@ elseif(APPLE)
     set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
 endif(WIN32)
+target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 
 set(SERVER_SOURCE_FILES
         platform.c
@@ -133,7 +162,7 @@ set(SERVER_SOURCE_FILES
         stringutils.c
 )
 prepend_path(SERVER_SOURCE_FILES src)
-add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES})
+add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
 target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
 if (WIN32)

@@ -326,11 +326,13 @@ typedef void* window_handle_t;
 
 // Platform specific function prototypes
 
+#if !IS_SERVER
 i64 get_clock();
 float get_seconds_elapsed(i64 start, i64 end);
 void platform_sleep(u32 ms);
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
 void set_swap_interval(int interval);
+#endif
 
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
 mem_t* platform_allocate_mem_buffer(size_t capacity);
@@ -368,6 +370,7 @@ void memrw_destroy(memrw_t* buffer);
 #define console_print_error(...) fprintf(stderr, __VA_ARGS__)
 #else
 void console_print(const char* fmt, ...); // defined in gui.cpp
+void console_print_verbose(const char* fmt, ...); // defined in gui.cpp
 void console_print_error(const char* fmt, ...);
 #endif
 
@@ -400,6 +403,7 @@ extern bool is_nvidia_gpu;
 extern bool is_macos;
 extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
+extern bool is_verbose_mode INIT(= false);
 
 #undef INIT
 #undef extern

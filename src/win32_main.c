@@ -45,7 +45,7 @@
 #include "intrinsics.h"
 
 #include "gui.h"
-#include "tlsclient.h"
+#include "remote.h"
 #include "caselist.h"
 
 
@@ -1415,7 +1415,7 @@ int main(int argc, const char** argv) {
     load_openslide_task(0, NULL);
 #endif
 	win32_init_input();
-	init_networking();
+//	do_remote_connection_test();
 
 	is_program_running = true;
 

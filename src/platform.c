@@ -129,6 +129,8 @@ void memrw_destroy(memrw_t* buffer) {
 }
 
 
+#if !IS_SERVER
+
 //TODO: move this
 bool profiling = false;
 
@@ -142,3 +144,4 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 	}
 	return end;
 }
+#endif

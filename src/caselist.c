@@ -26,7 +26,7 @@
 #include "viewer.h"
 #include "caselist.h"
 #include "gui.h"
-#include "tlsclient.h"
+#include "remote.h"
 
 
 void reset_global_caselist(app_state_t* app_state) {
@@ -78,12 +78,12 @@ bool32 caselist_select_first_case(app_state_t* app_state, caselist_t* caselist) 
 	return success;
 }
 
-bool32 load_caselist(caselist_t* caselist, mem_t* file_mem, const char* caselist_name) {
+bool32 load_caselist(caselist_t* caselist, const char* source, const char* caselist_name) {
 
 	bool32 success = false;
 
-	if (file_mem) {
-		JSON_Value* root_value = json_parse_string((const char*)file_mem->data);
+	if (source) {
+		JSON_Value* root_value = json_parse_string(source);
 		if (json_value_get_type(root_value) != JSONArray) {
 			// failed
 
@@ -176,7 +176,7 @@ bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename) 
 		caselist->prefix_len = strlen(caselist->folder_prefix);
 
 		caselist->is_remote = false;
-		success = load_caselist(caselist, caselist_file, json_filename);
+		success = load_caselist(caselist, (char*)caselist_file->data, json_filename);
 		free(caselist_file);
 	}
 	return success;
@@ -185,9 +185,12 @@ bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename) 
 bool32 load_caselist_from_remote(caselist_t* caselist, const char* hostname, i32 portno, const char* name) {
 	bool32 success = false;
 
-	mem_t* json_file = download_remote_caselist(hostname, portno, name); // load from remote
-	caselist->is_remote = true;
-	success = load_caselist(caselist, json_file, name);
+	u8* json_file = download_remote_caselist(hostname, portno, name, NULL); // load from remote
+	if (json_file) {
+		caselist->is_remote = true;
+		success = load_caselist(caselist, (char*)json_file, name);
+		free(json_file);
+	}
 
 	return success;
 }

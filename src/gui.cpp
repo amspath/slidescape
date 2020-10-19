@@ -28,7 +28,7 @@
 
 #include "openslide_api.h"
 #include "viewer.h"
-#include "tlsclient.h"
+#include "remote.h"
 #include "caselist.h"
 #include "tiff_write.h"
 
@@ -235,6 +235,19 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		entered = entered || ImGui::InputText("Filename", remote_filename, sizeof(remote_filename), input_flags);
 		if (entered || ImGui::Button("Connect")) {
 			const char* ext = get_file_extension(remote_filename);
+#if DO_DEBUG
+			if (strcmp(remote_filename, "test_google.html") == 0) {
+				i32 bytes_read = 0;
+				u8* read_buffer = do_http_request(remote_hostname, atoi(remote_port), "/test", &bytes_read, 0);
+				if (read_buffer) {
+					FILE* test_out = fopen("test_google2.html", "wb");
+					fwrite(read_buffer, bytes_read, 1, test_out);
+					fclose(test_out);
+					free(read_buffer);
+				}
+			}
+			else
+#endif
 			if (strcasecmp(ext, "json") == 0) {
 				// Open as 'caselist'
 				unload_all_images(app_state);
@@ -657,6 +670,20 @@ void console_print(const char* fmt, ...) {
 
 	console_split_lines_and_add_log_item(buf, false, 0);
 }
+
+void console_print_verbose(const char* fmt, ...) {
+	if (!is_verbose_mode) return;
+	char buf[4096];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buf, sizeof(buf), fmt, args);
+	fprintf(stdout, "%s", buf);
+	buf[sizeof(buf)-1] = 0;
+	va_end(args);
+
+	console_split_lines_and_add_log_item(buf, false, 0);
+}
+
 
 void console_print_error(const char* fmt, ...) {
 	char buf[4096];

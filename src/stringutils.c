@@ -19,6 +19,26 @@
 #include "common.h"
 #include "stringutils.h"
 
+
+
+void strip_character(char* s, char character_to_strip) {
+	if (!s) return;
+	char c;
+	while ((c = *s)) {
+		if (c == character_to_strip) *s = '\0';
+		++s;
+	}
+}
+
+char* find_next_token(char* s, char separator) {
+	if (!s) return NULL;
+	char c;
+	while ((c = *s++)) {
+		if (c == separator) return s;
+	}
+	return NULL;
+}
+
 void dots_to_underscores(char* s, i32 max) {
 	for (char* pos = s; pos < s + max; ++pos) {
 		char c = *pos;

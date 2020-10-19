@@ -45,7 +45,7 @@
 
 #include "tiff.h"
 #include "jpeg_decoder.h"
-#include "tlsclient.h"
+#include "remote.h"
 #include "gui.h"
 #include "caselist.h"
 #include "annotation.h"

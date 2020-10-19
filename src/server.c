@@ -23,17 +23,47 @@
 #ifdef _WIN32
 #define _WIN32_WINNT 0x0600
 #define WINVER 0x0600
-#include <winsock2.h>
-#define socklen_t int
+#endif
+
+#if !defined(MBEDTLS_CONFIG_FILE)
+#include "mbedtls/config.h"
 #else
-#include <sys/socket.h>
-#include <arpa/inet.h>
+#include MBEDTLS_CONFIG_FILE
+#endif
+
+#if defined(MBEDTLS_PLATFORM_C)
+#include "mbedtls/platform.h"
+#else
+#include <stdio.h>
+#include <stdlib.h>
+#define mbedtls_fprintf    fprintf
+#define mbedtls_printf     printf
+#define mbedtls_snprintf   snprintf
+#define mbedtls_exit            exit
+#define MBEDTLS_EXIT_SUCCESS    EXIT_SUCCESS
+#define MBEDTLS_EXIT_FAILURE    EXIT_FAILURE
+#endif
+
+
+
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
+#include "mbedtls/certs.h"
+#include "mbedtls/x509.h"
+#include "mbedtls/ssl.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/error.h"
+
+#if defined(MBEDTLS_SSL_CACHE_C)
+#include "mbedtls/ssl_cache.h"
+#endif
+
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+#include "mbedtls/memory_buffer_alloc.h"
 #endif
 
 #include "common.h"
 #include "platform.h"
-#undef MIN
-#undef MAX // redefined by tlse.c
 
 #include <stdio.h>
 #include <string.h>    //strlen
@@ -43,18 +73,85 @@
 #include <time.h>
 #include <errno.h>
 
-
-
-#define LTM_DESC
-#define TLS_AMALGAMATION
-#define LTC_NO_ASM
-#include "tlse.c"
-
 #include "tiff.h"
 #include "stringutils.h"
 
-#define THREAD_COUNT 16
+#define MAX_NUM_THREADS 16
 #define SERVER_VERBOSE 1
+
+typedef struct {
+	mbedtls_net_context client_fd;
+	int thread_complete;
+	const mbedtls_ssl_config *config;
+} thread_info_t;
+
+typedef struct {
+	int active;
+	thread_info_t   data;
+	pthread_t       thread;
+} pthread_info_t;
+
+static thread_info_t    base_info;
+static pthread_info_t   threads[MAX_NUM_THREADS];
+
+typedef struct {
+	thread_info_t *thread_info;
+	mbedtls_net_context *client_fd;
+	long int thread_id;
+	mbedtls_ssl_context ssl;
+} server_connection_t;
+
+bool ssl_send(server_connection_t* connection, u8* buf, i32 send_size) {
+	/*
+	 * 7. Write the 200 Response
+	 */
+	mbedtls_printf( "  [ #%ld ]  > Write to client:\n", connection->thread_id );
+	i32 ret = 1;
+
+	u8* send_buffer_pos = buf;
+	u32 send_size_remaining = (u32)send_size;
+
+	bool32 sent = false;
+	i32 bytes_written = 0;
+	i32 total_bytes_written = 0;
+
+//	len = sprintf( (char *) buf, HTTP_RESPONSE,
+//	               mbedtls_ssl_get_ciphersuite( &connection.ssl ) );
+
+	while (!sent) {
+		while( ( ret = mbedtls_ssl_write( &connection->ssl, send_buffer_pos, send_size_remaining ) ) <= 0 )
+		{
+			if( ret == MBEDTLS_ERR_NET_CONN_RESET )
+			{
+				mbedtls_printf( "  [ #%ld ]  failed: peer closed the connection\n",
+				                connection->thread_id );
+				return false;
+			}
+
+			if( ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE )
+			{
+				mbedtls_printf( "  [ #%ld ]  failed: mbedtls_ssl_write returned -0x%04x\n",
+				                connection->thread_id, ret );
+				return false;
+			}
+		}
+
+		bytes_written = ret;
+		total_bytes_written += bytes_written;
+		send_buffer_pos += bytes_written;
+		send_size_remaining -= bytes_written;
+		if (total_bytes_written >= send_size) {
+			sent = true;
+		}
+
+	}
+
+
+	mbedtls_printf( "  [ #%ld ]  %d bytes written\n=====\n\n=====\n",
+	                connection->thread_id, total_bytes_written);
+	return true;
+}
+
 
 static char identity_str[0xFF] = {0};
 
@@ -97,99 +194,7 @@ int read_from_file(const char *fname, void *buf, int max_len) {
 	return 0;
 }
 
-bool32 load_keys(struct TLSContext *context, char *fname, char *priv_fname) {
-	unsigned char buf[0xFFFF];
-	unsigned char buf2[0xFFFF];
-	int size = read_from_file(fname, buf, 0xFFFF);
-	bool32 certificate_loaded = false;
-	bool32 private_key_loaded = false;
-	int size2 = read_from_file(priv_fname, buf2, 0xFFFF);
-	int ret = 0;
-	if (size > 0) {
-		if (context) {
-			ret = tls_load_certificates(context, buf, size);
-			certificate_loaded = (ret > 0);
-			ret = tls_load_private_key(context, buf2, size2);
-			private_key_loaded = (ret > 0);
-			// tls_print_certificate(fname);
-		}
-	}
-	if (!certificate_loaded) {
-		fprintf(stderr, "Could not load certificate: %s\n", fname);
-	}
-	if (!private_key_loaded) {
-		fprintf(stderr, "Could not load private key: %s\n", priv_fname);
-	}
 
-	return (certificate_loaded && private_key_loaded);
-}
-
-/*
-// Use this version with DTLS (preserving message boundary)
-int send_pending_udp(int client_sock, struct TLSContext *context, struct sockaddr_in *clientaddr, socklen_t socket_len) {
-    unsigned int out_buffer_len = 0;
-    unsigned int offset = 0;
-    int send_res = 0;
-    const unsigned char *out_buffer;
-    do {
-        out_buffer = tls_get_message(context, &out_buffer_len, offset);
-        if (out_buffer) {
-            send_res += sendto(client_sock, out_buffer, out_buffer_len, 0, (struct sockaddr *)clientaddr, socket_len);
-            offset += out_buffer_len;
-        }
-    } while (out_buffer);
-    tls_buffer_clear(context);
-    return send_res;
-}
-*/
-
-int send_pending(int client_sock, struct TLSContext *context) {
-	unsigned int out_buffer_len = 0;
-	const unsigned char *out_buffer = tls_get_write_buffer(context, &out_buffer_len);
-	unsigned int out_buffer_index = 0;
-	int send_res = 0;
-	while ((out_buffer) && (out_buffer_len > 0)) {
-		int res = send(client_sock, (char *)&out_buffer[out_buffer_index], out_buffer_len, 0);
-		if (res <= 0) {
-			send_res = res;
-			break;
-		}
-		out_buffer_len -= res;
-		out_buffer_index += res;
-	}
-	tls_buffer_clear(context);
-	return send_res;
-}
-
-// verify signature
-int verify_signature(struct TLSContext *context, struct TLSCertificate **certificate_chain, int len) {
-	if (len) {
-		struct TLSCertificate *cert = certificate_chain[0];
-		if (cert) {
-			snprintf(identity_str, sizeof(identity_str), "%s, %s(%s) (issued by: %s)", cert->subject, cert->entity, cert->location, cert->issuer_entity);
-			fprintf(stderr, "Verified: %s\n", identity_str);
-		}
-	}
-	return no_error;
-}
-
-void strip_character(char* s, char character_to_strip) {
-	if (!s) return;
-	char c;
-	while ((c = *s)) {
-		if (c == character_to_strip) *s = '\0';
-		++s;
-	}
-}
-
-char* find_next_token(char* s, char separator) {
-	if (!s) return NULL;
-	char c;
-	while ((c = *s++)) {
-		if (c == separator) return s;
-	}
-	return NULL;
-}
 
 enum http_request_method {
 	HTTP_GET = 1,
@@ -315,28 +320,20 @@ void locate_file_prepend_env(const char* base_filename, const char* env, char* p
 	strcpy(path_buffer, base_filename);
 }
 
-bool32 send_buffer_to_client(struct TLSContext* context, int client_sock, u8* send_buffer, u64 send_size) {
-	u8* send_buffer_pos = send_buffer;
-	u32 send_size_remaining = (u32)send_size;
+bool server_send_test(server_connection_t* connection) {
+	bool32 success = false;
 
-	bool32 sent = false;
-	i32 bytes_written = 0;
-	i32 total_bytes_written = 0;
-	while (!sent) {
-		bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
-		total_bytes_written += bytes_written;
-		send_buffer_pos += bytes_written;
-		send_size_remaining -= bytes_written;
-		if (total_bytes_written >= send_size) {
-			sent = true;
-		} else {
-			send_pending(client_sock, context);
-		}
+	mem_t* file_mem = platform_read_entire_file("test_google.html");
+	if (file_mem) {
+		success = ssl_send(connection, file_mem->data, file_mem->len);
+		free(file_mem);
 	}
-	return sent;
+
+	return success;
 }
 
-bool32 execute_slide_set_api_call(struct TLSContext *context, int client_sock, slide_api_call_t *call) {
+
+bool32 execute_slide_set_api_call(server_connection_t* connection, slide_api_call_t *call) {
 	bool32 success = false;
 
 	char path_buffer[2048];
@@ -344,18 +341,22 @@ bool32 execute_slide_set_api_call(struct TLSContext *context, int client_sock, s
 	locate_file_prepend_env(call->filename, "SLIDES_DIR", path_buffer, sizeof(path_buffer));
 	mem_t* file_mem = platform_read_entire_file(path_buffer);
 	if (file_mem) {
-		success = send_buffer_to_client(context, client_sock, file_mem->data, file_mem->len);
+		success = ssl_send(connection, file_mem->data, file_mem->len);
+		free(file_mem);
 	}
 
 	return success;
 }
 
-bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide_api_call_t *call) {
+bool32 execute_slide_api_call(server_connection_t* connection, slide_api_call_t *call) {
 	if (!call || !call->command) return false;
 	bool32 success = false;
 
 	if (strcmp(call->command, "slide_set") == 0) {
-		success = execute_slide_set_api_call(context, client_sock, call);
+		success = execute_slide_set_api_call(connection, call);
+	}
+	else if (strcmp(call->command, "test") == 0) {
+		success = server_send_test(connection);
 	}
 
 	else if (strcmp(call->command, "slide") == 0) {
@@ -392,7 +393,7 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 					u8* send_buffer = malloc(send_size);
 					memcpy(send_buffer, http_headers, http_headers_size);
 					memcpy(send_buffer + http_headers_size, payload_buffer.data, payload_buffer.used_size);
-					success = send_buffer_to_client(context, client_sock, send_buffer, send_size);
+					success = ssl_send(connection, send_buffer, send_size);
 
 //				    tls_close_notify(context);
 //				    send_pending(client_sock, context);
@@ -462,26 +463,7 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 
 						if (ok) {
 
-							u8* send_buffer_pos = send_buffer;
-							u64 send_size_remaining = send_size;
-
-							bool32 sent = false;
-							i32 bytes_written = 0;
-							i32 total_bytes_written = 0;
-							while (!sent) {
-								bytes_written = tls_write(context, send_buffer_pos, send_size_remaining);
-								total_bytes_written += bytes_written;
-								send_buffer_pos += bytes_written;
-								send_size_remaining -= bytes_written;
-								if (total_bytes_written >= send_size) {
-									sent = true;
-									success = true;
-								} else {
-									send_pending(client_sock, context);
-								}
-							}
-//									tls_close_notify(context);
-//									send_pending(client_sock, context);
+							ssl_send(connection, send_buffer, send_size);
 
 						}
 						free(send_buffer);
@@ -497,149 +479,10 @@ bool32 execute_slide_api_call(struct TLSContext *context, int client_sock, slide
 	return success;
 }
 
-struct TLSContext *server_context;
 
 
-void *connection_handler(void *socket_desc) {
-	//Get the socket descriptor
-	int client_sock = *(int*)socket_desc;
-	int ret;
 
-	char client_message[0xFFFF];
-
-
-	struct TLSContext *context = tls_accept(server_context);
-	if (!context) {
-		fprintf(stderr, "[socket %d] tls_accept() failed\n", client_sock);
-		goto cleanup;
-	}
-
-	// uncomment next line to request client certificate
-//        tls_request_client_certificate(context);
-
-	// make the TLS context serializable (this must be called before negotiation)
-//		tls_make_exportable(context, 1);
-
-#if SERVER_VERBOSE
-	fprintf(stderr, "[socket %d] Client connected\n", client_sock);
-#endif
-
-	int read_size;
-	for (;;) {
-		read_size = recv(client_sock, client_message, sizeof(client_message), 0);
-		if (read_size < 0) {
-			fprintf(stderr, "[socket %d] recv(1) returned %d\n", client_sock, read_size);
-			perror("recv failed");
-			goto cleanup;
-		} else if (read_size == 0) {
-#if SERVER_VERBOSE
-			fprintf(stderr, "[socket %d] Gracefully closed\n", client_sock);
-#endif
-			break;
-		} else {
-			ret = tls_consume_stream(context, (u8*) client_message, read_size, verify_signature);
-			if (ret < 0) {
-				fprintf(stderr, "[socket %d] Error in stream consume\n", client_sock);
-				goto cleanup;
-			} else if (ret == 0) {
-				fprintf(stderr, "[socket %d] stream consume returned 0\n", client_sock);
-				continue;
-			} else {
-				break; // done
-			}
-		}
-
-	}
-
-
-	send_pending(client_sock, context);
-
-	if (read_size > 0) {
-#if SERVER_VERBOSE
-		fprintf(stderr, "USED CIPHER: %s\n", tls_cipher_name(context));
-#endif
-		int ref_packet_count = 0;
-		int res;
-		for (;;) {
-			read_size = recv(client_sock, client_message, sizeof(client_message) , 0);
-			if (read_size < 0) {
-				fprintf(stderr, "[socket %d] recv (2) returned %d\n", client_sock, read_size);
-				perror("recv failed");
-				goto cleanup;
-			} else if (read_size == 0) {
-				fprintf(stderr, "[socket %d] Gracefully closed\n", client_sock);
-				break;
-			}
-			if (tls_consume_stream(context, (u8*) client_message, read_size, verify_signature) < 0) {
-				fprintf(stderr, "[socket %d] Error in stream consume\n", client_sock);
-				goto cleanup;
-			}
-			send_pending(client_sock, context);
-			if (tls_established(context) == 1) {
-				unsigned char read_buffer[0xFFFF];
-				int read_size = tls_read(context, read_buffer, sizeof(read_buffer) - 1);
-				if (read_size > 0) {
-					read_buffer[read_size] = 0;
-					unsigned char export_buffer[0xFFF];
-					// simulate serialization / deserialization to another process
-					char sni[0xFF];
-					sni[0] = 0;
-					if (context->sni)
-						snprintf(sni, 0xFF, "%s", context->sni);
-
-					// note: the export context stuff does not seem to work on the server??
 #if 0
-					/* COOL STUFF => */ int size = tls_export_context(context, export_buffer, sizeof(export_buffer), 1);
-                        if (size > 0) {
-    /* COOLER STUFF => */   struct TLSContext *imported_context = tls_import_context(export_buffer, size);
-    // This is cool because a context can be sent to an existing process.
-    // It will work both with fork and with already existing worker process.
-                            fprintf(stderr, "Imported context (size: %i): %x\n", size, imported_context);
-                            if (imported_context) {
-                                // destroy old context
-                                tls_destroy_context(context);
-                                // simulate serialization/deserialization of context
-                                context = imported_context;
-                            }
-                        }
-#endif
-					// interpret the request
-					http_request_t* request = parse_http_headers((char *) read_buffer, read_size);
-					if (!request) {
-						fprintf(stderr, "[socket %d] Warning: bad request\n", client_sock);
-					} else {
-						fprintf(stderr, "[socket %d] Received request: %s\n", client_sock, request->uri);
-						slide_api_call_t* call = interpret_api_request(request);
-						if (call) {
-							if (execute_slide_api_call(context, client_sock, call)) {
-								// success!
-							}
-						}
-					}
-
-					tls_close_notify(context);
-					send_pending(client_sock, context);
-
-					break;
-				}
-			}
-		}
-	}
-
-	cleanup:
-#ifdef __WIN32
-	shutdown(client_sock, SD_BOTH);
-	closesocket(client_sock);
-#else
-	shutdown(client_sock, SHUT_RDWR);
-        close(client_sock);
-#endif
-	tls_destroy_context(context);
-
-	return 0;
-}
-
-
 void* worker_thread(void* arg_ptr) {
 
 	for (;;) {
@@ -670,7 +513,7 @@ typedef struct {
 	pthread_cond_t cond;
 } thread_data_t;
 
-int main(int argc , char *argv[]) {
+int main2(int argc , char *argv[]) {
 	int socket_desc , client_sock , read_size;
 	socklen_t c;
 	struct sockaddr_in server , client;
@@ -685,7 +528,7 @@ int main(int argc , char *argv[]) {
 
 	tls_init();
 
-	pthread_t threads[THREAD_COUNT] = {0};
+	pthread_t threads[MAX_NUM_THREADS] = {0};
 
 	pthread_cond_init(&semaphore_work_available, NULL);
 	pthread_mutex_init(&work_mutex, NULL);
@@ -761,4 +604,433 @@ int main(int argc , char *argv[]) {
 	}
 	tls_destroy_context(server_context);
 	return 0;
+}
+
+
+
+
+
+#endif
+
+
+
+
+
+mbedtls_threading_mutex_t debug_mutex;
+
+static void my_mutexed_debug( void *ctx, int level,
+                              const char *file, int line,
+                              const char *str )
+{
+	long int thread_id = (long int) pthread_self();
+
+	mbedtls_mutex_lock( &debug_mutex );
+
+	((void) level);
+	mbedtls_fprintf( (FILE *) ctx, "%s:%04d: [ #%ld ] %s",
+	                 file, line, thread_id, str );
+	fflush(  (FILE *) ctx  );
+
+	mbedtls_mutex_unlock( &debug_mutex );
+}
+
+
+
+static void *handle_ssl_connection( void *data )
+{
+	int ret, len;
+//	thread_info_t *thread_info = (thread_info_t *) data;
+//	mbedtls_net_context *client_fd = &thread_info->client_fd;
+//	long int thread_id = (long int) pthread_self();
+	unsigned char buf[1024];
+//	mbedtls_ssl_context ssl;
+
+	server_connection_t connection = {};
+	connection.thread_info = (thread_info_t *) data;
+	connection.client_fd = &connection.thread_info->client_fd;
+	connection.thread_id = (long int) pthread_self();
+
+	/* Make sure memory references are valid */
+	mbedtls_ssl_init( &connection.ssl );
+
+	mbedtls_printf( "  [ #%ld ]  Setting up SSL/TLS data\n", connection.thread_id );
+
+	/*
+	 * 4. Get the SSL context ready
+	 */
+	if( ( ret = mbedtls_ssl_setup( &connection.ssl, connection.thread_info->config ) ) != 0 )
+	{
+		mbedtls_printf( "  [ #%ld ]  failed: mbedtls_ssl_setup returned -0x%04x\n",
+		                connection.thread_id, -ret );
+		goto thread_exit;
+	}
+
+	mbedtls_ssl_set_bio( &connection.ssl, connection.client_fd, mbedtls_net_send, mbedtls_net_recv, NULL );
+
+	/*
+	 * 5. Handshake
+	 */
+	mbedtls_printf( "  [ #%ld ]  Performing the SSL/TLS handshake\n", connection.thread_id );
+
+	while( ( ret = mbedtls_ssl_handshake( &connection.ssl ) ) != 0 )
+	{
+		if( ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE )
+		{
+			mbedtls_printf( "  [ #%ld ]  failed: mbedtls_ssl_handshake returned -0x%04x\n",
+			                connection.thread_id, -ret );
+			goto thread_exit;
+		}
+	}
+
+	mbedtls_printf( "  [ #%ld ]  ok\n", connection.thread_id );
+
+	/*
+	 * 6. Read the HTTP Request
+	 */
+	mbedtls_printf( "  [ #%ld ]  < Read from client\n", connection.thread_id );
+
+	do
+	{
+		len = sizeof( buf ) - 1;
+		memset( buf, 0, sizeof( buf ) );
+		ret = mbedtls_ssl_read( &connection.ssl, buf, len );
+
+		if( ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE )
+			continue;
+
+		if( ret <= 0 )
+		{
+			switch( ret )
+			{
+				case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+					mbedtls_printf( "  [ #%ld ]  connection was closed gracefully\n",
+					                connection.thread_id );
+					goto thread_exit;
+
+				case MBEDTLS_ERR_NET_CONN_RESET:
+					mbedtls_printf( "  [ #%ld ]  connection was reset by peer\n",
+					                connection.thread_id );
+					goto thread_exit;
+
+				default:
+					mbedtls_printf( "  [ #%ld ]  mbedtls_ssl_read returned -0x%04x\n",
+					                connection.thread_id, -ret );
+					goto thread_exit;
+			}
+		}
+
+		len = ret;
+		mbedtls_printf( "  [ #%ld ]  %d bytes read\n=====\n%s\n=====\n",
+		                connection.thread_id, len, (char *) buf );
+
+		if( ret > 0 )
+			break;
+	}
+	while( 1 );
+
+	// TODO: assemble chunks into request buffer
+	http_request_t* request = parse_http_headers((char *) buf, len);
+	if (!request) {
+		fprintf(stderr, "[thread %d] Warning: bad request\n", connection.thread_id);
+	} else {
+		fprintf(stderr, "[thread %d] Received request: %s\n", connection.thread_id, request->uri);
+		slide_api_call_t* call = interpret_api_request(request);
+		if (call) {
+			if (execute_slide_api_call(&connection, call)) {
+				// success!
+			}
+		}
+	}
+
+	// write
+//	bool send_ok = ssl_send(&connection, buf, len);
+//	if (!send_ok) goto thread_exit;
+
+	mbedtls_printf( "  [ #%ld ]  . Closing the connection...", connection.thread_id );
+
+	while( ( ret = mbedtls_ssl_close_notify( &connection.ssl ) ) < 0 )
+	{
+		if( ret != MBEDTLS_ERR_SSL_WANT_READ &&
+		    ret != MBEDTLS_ERR_SSL_WANT_WRITE )
+		{
+			mbedtls_printf( "  [ #%ld ]  failed: mbedtls_ssl_close_notify returned -0x%04x\n",
+			                connection.thread_id, ret );
+			goto thread_exit;
+		}
+	}
+
+	mbedtls_printf( " ok\n" );
+
+	ret = 0;
+
+	thread_exit:
+
+#ifdef MBEDTLS_ERROR_C
+	if( ret != 0 )
+	{
+		char error_buf[100];
+		mbedtls_strerror( ret, error_buf, 100 );
+		mbedtls_printf("  [ #%ld ]  Last error was: -0x%04x - %s\n\n",
+		               connection.thread_id, -ret, error_buf );
+	}
+#endif
+
+	mbedtls_net_free( connection.client_fd );
+	mbedtls_ssl_free( &connection.ssl );
+
+	connection.thread_info->thread_complete = 1;
+
+	return( NULL );
+}
+
+static int thread_create( mbedtls_net_context *client_fd )
+{
+	int ret, i;
+
+	/*
+	 * Find in-active or finished thread slot
+	 */
+	for( i = 0; i < MAX_NUM_THREADS; i++ )
+	{
+		if( threads[i].active == 0 )
+			break;
+
+		if( threads[i].data.thread_complete == 1 )
+		{
+			mbedtls_printf( "  [ main ]  Cleaning up thread %d\n", i );
+			pthread_join(threads[i].thread, NULL );
+			memset( &threads[i], 0, sizeof(pthread_info_t) );
+			break;
+		}
+	}
+
+	if( i == MAX_NUM_THREADS )
+		return( -1 );
+
+	/*
+	 * Fill thread-info for thread
+	 */
+	memcpy( &threads[i].data, &base_info, sizeof(base_info) );
+	threads[i].active = 1;
+	memcpy( &threads[i].data.client_fd, client_fd, sizeof( mbedtls_net_context ) );
+
+	if( ( ret = pthread_create( &threads[i].thread, NULL, handle_ssl_connection,
+	                            &threads[i].data ) ) != 0 )
+	{
+		return( ret );
+	}
+
+	return( 0 );
+}
+
+
+
+int main( void )
+{
+	int ret;
+	mbedtls_net_context listen_fd, client_fd;
+	const char pers[] = "ssl_pthread_server";
+
+	mbedtls_entropy_context entropy;
+	mbedtls_ctr_drbg_context ctr_drbg;
+	mbedtls_ssl_config conf;
+	mbedtls_x509_crt srvcert;
+	mbedtls_x509_crt cachain;
+	mbedtls_pk_context pkey;
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+	unsigned char alloc_buf[100000];
+#endif
+#if defined(MBEDTLS_SSL_CACHE_C)
+	mbedtls_ssl_cache_context cache;
+#endif
+
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+	mbedtls_memory_buffer_alloc_init( alloc_buf, sizeof(alloc_buf) );
+#endif
+
+#if defined(MBEDTLS_SSL_CACHE_C)
+	mbedtls_ssl_cache_init( &cache );
+#endif
+
+	mbedtls_x509_crt_init( &srvcert );
+	mbedtls_x509_crt_init( &cachain );
+
+	mbedtls_ssl_config_init( &conf );
+	mbedtls_ctr_drbg_init( &ctr_drbg );
+	memset( threads, 0, sizeof(threads) );
+	mbedtls_net_init( &listen_fd );
+	mbedtls_net_init( &client_fd );
+
+	mbedtls_mutex_init( &debug_mutex );
+
+	base_info.config = &conf;
+
+	/*
+	 * We use only a single entropy source that is used in all the threads.
+	 */
+	mbedtls_entropy_init( &entropy );
+
+	/*
+	 * 1. Load the certificates and private RSA key
+	 */
+	mbedtls_printf( "\n  . Loading the server cert. and key..." );
+	fflush( stdout );
+
+	/*
+	 * This demonstration program uses embedded test certificates.
+	 * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
+	 * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
+	 */
+	ret = mbedtls_x509_crt_parse( &srvcert, (const unsigned char *) mbedtls_test_srv_crt,
+	                              mbedtls_test_srv_crt_len );
+	if( ret != 0 )
+	{
+		mbedtls_printf( " failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret );
+		goto exit;
+	}
+
+	ret = mbedtls_x509_crt_parse( &cachain, (const unsigned char *) mbedtls_test_cas_pem,
+	                              mbedtls_test_cas_pem_len );
+	if( ret != 0 )
+	{
+		mbedtls_printf( " failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret );
+		goto exit;
+	}
+
+	mbedtls_pk_init( &pkey );
+	ret =  mbedtls_pk_parse_key( &pkey, (const unsigned char *) mbedtls_test_srv_key,
+	                             mbedtls_test_srv_key_len, NULL, 0 );
+	if( ret != 0 )
+	{
+		mbedtls_printf( " failed\n  !  mbedtls_pk_parse_key returned %d\n\n", ret );
+		goto exit;
+	}
+
+	mbedtls_printf( " ok\n" );
+
+	/*
+	 * 1b. Seed the random number generator
+	 */
+	mbedtls_printf( "  . Seeding the random number generator..." );
+
+	if( ( ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy,
+	                                   (const unsigned char *) pers,
+	                                   strlen( pers ) ) ) != 0 )
+	{
+		mbedtls_printf( " failed: mbedtls_ctr_drbg_seed returned -0x%04x\n",
+		                -ret );
+		goto exit;
+	}
+
+	mbedtls_printf( " ok\n" );
+
+	/*
+	 * 1c. Prepare SSL configuration
+	 */
+	mbedtls_printf( "  . Setting up the SSL data...." );
+
+	if( ( ret = mbedtls_ssl_config_defaults( &conf,
+	                                         MBEDTLS_SSL_IS_SERVER,
+	                                         MBEDTLS_SSL_TRANSPORT_STREAM,
+	                                         MBEDTLS_SSL_PRESET_DEFAULT ) ) != 0 )
+	{
+		mbedtls_printf( " failed: mbedtls_ssl_config_defaults returned -0x%04x\n",
+		                -ret );
+		goto exit;
+	}
+
+	mbedtls_ssl_conf_rng( &conf, mbedtls_ctr_drbg_random, &ctr_drbg );
+	mbedtls_ssl_conf_dbg( &conf, my_mutexed_debug, stdout );
+
+	/* mbedtls_ssl_cache_get() and mbedtls_ssl_cache_set() are thread-safe if
+	 * MBEDTLS_THREADING_C is set.
+	 */
+#if defined(MBEDTLS_SSL_CACHE_C)
+	mbedtls_ssl_conf_session_cache( &conf, &cache,
+	                                mbedtls_ssl_cache_get,
+	                                mbedtls_ssl_cache_set );
+#endif
+
+	mbedtls_ssl_conf_ca_chain( &conf, &cachain, NULL );
+	if( ( ret = mbedtls_ssl_conf_own_cert( &conf, &srvcert, &pkey ) ) != 0 )
+	{
+		mbedtls_printf( " failed\n  ! mbedtls_ssl_conf_own_cert returned %d\n\n", ret );
+		goto exit;
+	}
+
+	mbedtls_printf( " ok\n" );
+
+	/*
+	 * 2. Setup the listening TCP socket
+	 */
+	mbedtls_printf( "  . Bind on https://localhost:4433/ ..." );
+	fflush( stdout );
+
+	if( ( ret = mbedtls_net_bind( &listen_fd, NULL, "4433", MBEDTLS_NET_PROTO_TCP ) ) != 0 )
+	{
+		mbedtls_printf( " failed\n  ! mbedtls_net_bind returned %d\n\n", ret );
+		goto exit;
+	}
+
+	mbedtls_printf( " ok\n" );
+
+	reset:
+#ifdef MBEDTLS_ERROR_C
+	if( ret != 0 )
+	{
+		char error_buf[100];
+		mbedtls_strerror( ret, error_buf, 100 );
+		mbedtls_printf( "  [ main ]  Last error was: -0x%04x - %s\n", -ret, error_buf );
+	}
+#endif
+
+	/*
+	 * 3. Wait until a client connects
+	 */
+	mbedtls_printf( "  [ main ]  Waiting for a remote connection\n" );
+
+	if( ( ret = mbedtls_net_accept( &listen_fd, &client_fd,
+	                                NULL, 0, NULL ) ) != 0 )
+	{
+		mbedtls_printf( "  [ main ] failed: mbedtls_net_accept returned -0x%04x\n", ret );
+		goto exit;
+	}
+
+	mbedtls_printf( "  [ main ]  ok\n" );
+	mbedtls_printf( "  [ main ]  Creating a new thread\n" );
+
+	if( ( ret = thread_create( &client_fd ) ) != 0 )
+	{
+		mbedtls_printf( "  [ main ]  failed: thread_create returned %d\n", ret );
+		mbedtls_net_free( &client_fd );
+		goto reset;
+	}
+
+	ret = 0;
+	goto reset;
+
+	exit:
+	mbedtls_x509_crt_free( &srvcert );
+	mbedtls_pk_free( &pkey );
+#if defined(MBEDTLS_SSL_CACHE_C)
+	mbedtls_ssl_cache_free( &cache );
+#endif
+	mbedtls_ctr_drbg_free( &ctr_drbg );
+	mbedtls_entropy_free( &entropy );
+	mbedtls_ssl_config_free( &conf );
+
+	mbedtls_net_free( &listen_fd );
+
+	mbedtls_mutex_free( &debug_mutex );
+
+#if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+	mbedtls_memory_buffer_alloc_free();
+#endif
+
+#if defined(_WIN32)
+	mbedtls_printf( "  Press Enter to exit this program.\n" );
+	fflush( stdout ); getchar();
+#endif
+
+	mbedtls_exit( ret );
 }
