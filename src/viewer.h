@@ -179,6 +179,8 @@ enum entity_type_enum {
 enum mouse_mode_enum {
 	MODE_VIEW,
 	MODE_CREATE_SELECTION_BOX,
+	MODE_VIEW_OR_SELECT_ANNOTATION_NODE,
+	MODE_DRAG_ANNOTATION_NODE,
 };
 
 enum placement_tool_enum {

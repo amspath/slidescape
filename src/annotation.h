@@ -93,13 +93,15 @@ typedef struct annotation_set_t {
 	float hovered_coordinate_pixel_distance;
 	bool is_edit_mode;
 	i32 selection_count;
+	i32 selected_coordinate_index;
+	v2f coordinate_drag_start_offset;
 } annotation_set_t;
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
-i32
-find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr, i32* coordinate_index);
+i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr, i32* coordinate_index);
+void annotations_modified(annotation_set_t* annotation_set);
 void delete_selected_annotations(annotation_set_t* annotation_set);
-i32 select_annotation(scene_t* scene, input_t* input);
+i32 select_annotation(app_state_t* app_state, scene_t* scene, input_t* input);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);

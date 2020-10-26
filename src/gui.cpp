@@ -324,15 +324,16 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		ImGui::Begin("General options", &show_general_options_window);
 
-
+		ImGui::Text("User interface options");
+		ImGui::SliderFloat("Opacity##user interface", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.
 		// General BeginCombo() API, you have full control over your selection data and display type.
 		// (your selection data could be an index, a pointer to the object, an id for the object, a flag stored in the object itself, etc.)
 		const char* items[] = {"Dark", "Light", "Classic"};
 		static i32 style_color = 0;
 		int old_style_color = style_color;
 		static ImGuiComboFlags flags = 0;
-		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
-		if (ImGui::BeginCombo("##user_interface_colors_combo", items[style_color],
+//		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
+		if (ImGui::BeginCombo("Colors##user interface", items[style_color],
 		                      flags)) // The second parameter is the label previewed before opening the combo.
 		{
 			for (int n = 0; n < IM_ARRAYSIZE(items); n++) {
@@ -354,6 +355,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				}
 			}
 		}
+
 
 		ImGui::Text("\nTIFF backend");
 //		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
@@ -377,8 +379,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		ImGui::NewLine();
 		ImGui::Checkbox("Enable Vsync", &is_vsync_enabled);
 
-//		ImGui::Text("\nGlobal Alpha");
-//		ImGui::SliderFloat("##Global Alpha", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.
 
 
 

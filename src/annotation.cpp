@@ -68,13 +68,13 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 			draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, true, thickness);
 
 			// draw coordinate nodes
-			if (annotation->selected && annotation_show_polygon_nodes) {
+			if (annotation->selected && (annotation_show_polygon_nodes_outside_edit_mode || annotation_set->is_edit_mode)) {
 				bool need_hover = false;
 				v2f hovered_node_point = {};
 				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 					i32 coordinate_index = annotation->first_coordinate + i;
 					v2f point = points[i];
-					if (annotation_set->is_edit_mode && coordinate_index == annotation_set->hovered_coordinate && annotation_set->hovered_coordinate_pixel_distance < 9.0f) {
+					if (annotation_set->is_edit_mode && coordinate_index == annotation_set->hovered_coordinate && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
 						hovered_node_point = point;
 						need_hover = true;
 					} else {
@@ -159,7 +159,7 @@ void delete_selected_annotations(annotation_set_t* annotation_set) {
 
 }
 
-i32 select_annotation(scene_t* scene, input_t* input) {
+i32 select_annotation(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 	float distance = 0.0f;
 	i32 nearest_coordinate_index = -1;
@@ -177,15 +177,25 @@ i32 select_annotation(scene_t* scene, input_t* input) {
 //		console_print("The nearest coordinate is %d\n", nearest_coordinate_index);
 
 
+
+		if (scene->drag_started) {
+			if (annotation_set->is_edit_mode && nearest_annotation->selected && pixel_distance < annotation_hover_distance) {
+//				console_print("Selecting coordinate %d\n", nearest_coordinate_index);
+				app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
+				annotation_set->selected_coordinate_index = nearest_coordinate_index;
+				annotation_set->coordinate_drag_start_offset.x = scene->mouse.x - nearest_coordinate->x;
+				annotation_set->coordinate_drag_start_offset.y = scene->mouse.y - nearest_coordinate->y;
+			}
+		}
+
 		if (scene->clicked) {
 			// if annotation was already selected, we can try to select a coordinate as well
-			/*if (nearest_annotation->selected && pixel_distance < 5.0f) {
-				console_print("Selecting coordinate %d\n", nearest_coordinate_index);
-			} else */
+//			 else
 
 			// have to click somewhat close to a coordinate, otherwise treat as unselect
 			if (pixel_distance < 500.0f) {
 				nearest_annotation->selected = !nearest_annotation->selected;
+//				annotation_set->is_edit_mode = false;
 			}
 
 			if (nearest_annotation->selected && auto_assign_last_group) {
@@ -213,10 +223,9 @@ i32 select_annotation(scene_t* scene, input_t* input) {
 	}
 	annotation_set->selection_count = selection_count;
 
-	/*if (selection_count > 0 && scene->right_clicked) {
+	if (selection_count > 0 && scene->right_clicked) {
 		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
 	}
-*/
 	return nearest_annotation_index;
 }
 
@@ -300,12 +309,13 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f);
 			ImGui::SliderFloat("Line thickness (selected)", &annotation_selected_line_thickness, 0.0f, 10.0f);
-			ImGui::Checkbox("Show polygon nodes", &annotation_show_polygon_nodes);
-			ImGui::SliderFloat("Node size", &annotation_node_size, 0.0f, 20.0f);
+			ImGui::NewLine();
 
+//			ImGui::Checkbox("Show polygon nodes", &annotation_show_polygon_nodes_outside_edit_mode);
+			ImGui::Checkbox("Allow dragging annotation coordinates (right-click to toggle)", &annotation_set->is_edit_mode);
+			ImGui::SliderFloat("Coordinate node size", &annotation_node_size, 0.0f, 20.0f);
 
 			ImGui::NewLine();
-//			ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
 		}
 
 		// Interface for viewing/editing annotation groups
@@ -398,10 +408,6 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					}
 				}
 				ImGui::EndCombo();
-			}
-
-			if (ImGui::Button("Move coordinates")) {
-				annotation_set->is_edit_mode = true;
 			}
 
 			if (nothing_selected) {

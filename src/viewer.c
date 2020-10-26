@@ -432,11 +432,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 		}
 		if (was_button_released(&input->mouse_buttons[1])) {
-			float drag_distance = v2f_distance(scene->cumulative_drag_vector);
-			// TODO: tweak this
-			if (drag_distance < 3.0f) {
-				scene->right_clicked = true;
-			}
+			// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
+			scene->right_clicked = true;
+			/*float drag_distance = v2f_distance(scene->cumulative_drag_vector);
+			if (drag_distance < 30.0f) {
+
+			}*/
 		}
 
 		if (input->mouse_buttons[0].down) {
@@ -748,8 +749,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (!gui_want_capture_mouse) {
 					// try to hover over / select an annotation
 					if (scene->annotation_set.annotation_count > 0) {
-						i64 select_begin = get_clock();
-						select_annotation(scene, input);
+						select_annotation(app_state, scene, input);
 //				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
 //			    	    	console_print("Selecting took %g ms.\n", selection_ms);
 					}
@@ -770,6 +770,23 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					}
 
 				}
+			}
+
+			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE){
+				if (scene->is_dragging) {
+					i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
+					if (coordinate_index >= 0 && coordinate_index < scene->annotation_set.coordinate_count) {
+						coordinate_t* coordinate = scene->annotation_set.coordinates + coordinate_index;
+						coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
+						coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
+						annotations_modified(&scene->annotation_set);
+					}
+				} else if (scene->drag_ended) {
+					app_state->mouse_mode = MODE_VIEW;
+//						scene->annotation_set.is_edit_mode = false;
+
+				}
+
 			}
 
 			/*if (scene->clicked && !gui_want_capture_mouse) {
