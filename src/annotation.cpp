@@ -51,24 +51,53 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 			rgba.b = LERP(0.2f, rgba.b, 255);
 			thickness *= 2.0f;
 		}
-		u32 color = *(u32*)(&rgba);
+		u32 annotation_color = *(u32*)(&rgba);
 		if (annotation->has_coordinates) {
+			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 			// TODO: don't abuse the stack here
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-				coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
+				i32 coordinate_index = annotation->first_coordinate + i;
+				coordinate_t* coordinate = annotation_set->coordinates + coordinate_index;
 				v2f world_pos = {(float)coordinate->x, (float)coordinate->y};
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, screen_um_per_pixel);
 				points[i] = transformed_pos;
+
+
 			}
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
-			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-			draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, color, true, thickness);
+			draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, true, thickness);
+
+			// draw coordinate nodes
+			if (annotation->selected) {
+				bool need_hover = false;
+				v2f hovered_node_point = {};
+				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+					i32 coordinate_index = annotation->first_coordinate + i;
+					v2f point = points[i];
+					if (coordinate_index == annotation_set->hovered_coordinate && annotation_set->hovered_coordinate_pixel_distance < 9.0f) {
+						hovered_node_point = point;
+						need_hover = true;
+					} else {
+						draw_list->AddCircleFilled(point, 5.0f, annotation_color, 12);
+					}
+				}
+				if (need_hover) {
+//											rgba_t node_rgba = {0, 0, 0, 255};
+//					rgba_t node_rgba = {(u8)(group->color.r / 2) , (u8)(group->color.g / 2), (u8)(group->color.b / 2), 255};
+					rgba_t node_rgba = group->color;
+					node_rgba.a = 255;
+					u32 node_color = *(u32*)(&node_rgba);
+					draw_list->AddCircleFilled(hovered_node_point, 7.0f, node_color, 12);
+				}
+			}
+
 		}
 	}
 }
 
-i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr) {
+i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr,
+                            i32* coordinate_index) {
 	i32 result = -1;
 	float shortest_sq_distance = 1e50;
 	// TODO: use bounding boxes and subdivide line segments with far apart coordinates
@@ -86,6 +115,9 @@ i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, 
 						*distance_ptr = sqrtf(shortest_sq_distance);
 					}
 					result = annotation_index;
+					if (coordinate_index) {
+						*coordinate_index = annotation->first_coordinate + i;
+					}
 				}
 			}
 		}
@@ -128,33 +160,48 @@ void delete_selected_annotations(annotation_set_t* annotation_set) {
 
 }
 
-i32 select_annotation(scene_t* scene, bool32 additive) {
+i32 select_annotation(scene_t* scene, bool32 is_ctrl_down) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 	float distance = 0.0f;
+	i32 nearest_coordinate_index = -1;
+	i32 nearest_annotation_index = find_nearest_annotation(annotation_set, scene->mouse.x, scene->mouse.y, &distance,
+	                                                       &nearest_coordinate_index);
 
-	i32 nearest_annotation_index = find_nearest_annotation(annotation_set, scene->mouse.x, scene->mouse.y, &distance);
-	annotation_t* nearest = annotation_set->annotations + nearest_annotation_index;
-	if (nearest_annotation_index >= 0) {
+	if (nearest_annotation_index >= 0 && nearest_coordinate_index >= 0) {
 		ASSERT(scene->zoom.pixel_width > 0.0f);
-
-		// have to click somewhat close to a coordinate, otherwise treat as unselect
 		float pixel_distance = distance / scene->zoom.pixel_width;
-		if (pixel_distance < 500.0f) {
-			nearest->selected = !nearest->selected;
+
+		annotation_t* nearest_annotation = annotation_set->annotations + nearest_annotation_index;
+		coordinate_t* nearest_coordinate = annotation_set->coordinates + nearest_coordinate_index;
+		annotation_set->hovered_coordinate = nearest_coordinate_index;
+		annotation_set->hovered_coordinate_pixel_distance = pixel_distance;
+//		console_print("The nearest coordinate is %d\n", nearest_coordinate_index);
+
+
+		if (scene->clicked) {
+			// if annotation was already selected, we can try to select a coordinate as well
+			if (nearest_annotation->selected && pixel_distance < 5.0f) {
+				console_print("Selecting coordinate %d\n", nearest_coordinate_index);
+			}
+				// have to click somewhat close to a coordinate, otherwise treat as unselect
+			else if (pixel_distance < 500.0f) {
+				nearest_annotation->selected = !nearest_annotation->selected;
+			}
+
+			if (nearest_annotation->selected && auto_assign_last_group) {
+				nearest_annotation->group_id = last_assigned_annotation_group;
+			}
 		}
+
 	}
 
 	// unselect all annotations (except if Ctrl held down)
-	if (!additive) {
+	if (scene->clicked && !is_ctrl_down) {
 		for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
 			if (i == nearest_annotation_index) continue; // skip the one we just selected!
 			annotation_t* annotation = annotation_set->annotations + i;
 			annotation->selected = false;
 		}
-	}
-
-	if (nearest->selected && auto_assign_last_group) {
-		nearest->group_id = last_assigned_annotation_group;
 	}
 
 	return nearest_annotation_index;

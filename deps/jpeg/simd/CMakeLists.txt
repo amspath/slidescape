@@ -7,6 +7,12 @@ macro(simd_fail message)
   endif()
 endmacro()
 
+if (NOT CMAKE_BUILD_TYPE)
+    set(DEFAULT_BUILD_TYPE "Release")
+    message(STATUS "Setting build type to '${DEFAULT_BUILD_TYPE}' as none was specified.")
+    set(CMAKE_BUILD_TYPE "${DEFAULT_BUILD_TYPE}" CACHE STRING "Build type")
+endif()
+
 # Detect CPU type and whether we're building 64-bit or 32-bit code
 math(EXPR BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} CMAKE_SYSTEM_PROCESSOR_LC)

@@ -740,14 +740,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 
 				if (!gui_want_capture_mouse) {
-					if (scene->clicked || was_key_pressed(input, 'Q')) {
-						// try to select an annotation
-						if (scene->annotation_set.annotation_count > 0) {
-							i64 select_begin = get_clock();
-							select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
+					// try to hover over / select an annotation
+					if (scene->annotation_set.annotation_count > 0) {
+						i64 select_begin = get_clock();
+						select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
 //				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
 //			    	    	console_print("Selecting took %g ms.\n", selection_ms);
-						}
 					}
 
 				}
