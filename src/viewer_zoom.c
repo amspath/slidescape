@@ -22,10 +22,9 @@ void zoom_update_pos(zoom_state_t* zoom, float pos) {
 	zoom->downsample_factor = exp2f(zoom->pos);
 	zoom->pixel_width = zoom->downsample_factor * zoom->base_pixel_width;
 	zoom->pixel_height = zoom->downsample_factor * zoom->base_pixel_height;
-	float zoom_pos_with_rounding_tolerance = pos + 0.001f;
-	zoom->level = (i32) zoom_pos_with_rounding_tolerance;
+	zoom->level  = (i32)floorf(pos);
 	ASSERT(zoom->notch_size != 0.0f);
-	zoom->notches = (i32) (zoom_pos_with_rounding_tolerance / zoom->notch_size);
+	zoom->notches = (i32) floorf((pos / zoom->notch_size));
 }
 
 void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, float base_pixel_width, float base_pixel_height) {

@@ -567,8 +567,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		zoom_state_t old_zoom = scene->zoom;
 
-		i32 max_level = 10;//image->level_count - 1;
-
 		float r_minus_l = scene->zoom.pixel_width * (float) client_width;
 		float t_minus_b = scene->zoom.pixel_height * (float) client_height;
 
@@ -636,7 +634,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					i32 residual_dlevel = scene->zoom_target_state.level - scene->zoom.level;
 					new_level += residual_dlevel;
 				}
-				new_level = CLAMP(new_level, 0, max_level);
+				new_level = CLAMP(new_level, viewer_min_level, viewer_max_level);
 				zoom_state_t new_zoom = scene->zoom;
 				zoom_update_pos(&new_zoom, (float) new_level);
 
@@ -694,7 +692,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			// Panning should be faster when zoomed in very far.
-			float panning_multiplier = 1.0f + 3.0f * ((float) max_level - scene->zoom.pos) / (float) max_level;
+			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
 			if (is_key_down(input, KEYCODE_SHIFT)) {
 				panning_multiplier *= 0.25f;
 			}

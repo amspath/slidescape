@@ -52,12 +52,12 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 
 extern bool show_demo_window;
-extern bool show_image_adjustments_window INIT(= false);
+extern bool show_image_options_window INIT(= false);
 extern bool show_open_remote_window;
 extern bool show_slide_list_window;
 extern bool show_annotations_window;
 extern bool show_annotation_group_assignment_window;
-extern bool show_display_options_window;
+extern bool show_general_options_window;
 extern bool show_about_window;
 extern bool show_console_window INIT(= DO_DEBUG);
 extern bool gui_want_capture_mouse;
@@ -69,6 +69,9 @@ extern char remote_filename[128] INIT(= "sample.tiff");
 extern ImFont* global_main_font;
 extern ImFont* global_fixed_width_font;
 #endif
+
+extern i32 viewer_min_level INIT(= -1);
+extern i32 viewer_max_level INIT(= 10);
 
 // annotation.cpp
 extern bool auto_assign_last_group;

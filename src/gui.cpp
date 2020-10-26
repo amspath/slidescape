@@ -135,12 +135,12 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		if (ImGui::BeginMenu("View")) {
 			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
-			if (ImGui::MenuItem("Image adjustments...", NULL, &show_image_adjustments_window)) {}
+			if (ImGui::MenuItem("Image options...", NULL, &show_image_options_window)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 			ImGui::Separator();
 
-			if (ImGui::MenuItem("Options...", NULL, &show_display_options_window)) {}
+			if (ImGui::MenuItem("General options...", NULL, &show_general_options_window)) {}
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Show console", "F3", &show_console_window)) {}
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
@@ -271,44 +271,58 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 
 	// 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-	if (show_demo_window)
+	if (show_demo_window) {
 		ImGui::ShowDemoWindow(&show_demo_window);
+	}
 
-	// 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-	if (show_image_adjustments_window) {
+	if (show_image_options_window) {
 		static int counter = 0;
 
 		ImGui::SetNextWindowPos(ImVec2(25, 50), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(360, 200), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(386,291), ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Image adjustments",
-		             &show_image_adjustments_window);                          // Create a window called "Hello, world!" and append into it.
+		ImGui::Begin("Image options", &show_image_options_window);
 
-//		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+        float zoom_objective_factor = 40.0f * exp2f(-app_state->scene.zoom.level);
+        ImGui::Text("Current zoom level: %d (%gx)", app_state->scene.zoom.level, zoom_objective_factor);
+		if (ImGui::SliderInt("Min zoom (near)", &viewer_min_level, -5, 15)) {
+			viewer_max_level = ATLEAST(viewer_min_level, viewer_max_level);
+		}
+		if (ImGui::SliderInt("Max zoom (far)", &viewer_max_level, -5, 15)) {
+			viewer_min_level = ATMOST(viewer_min_level, viewer_max_level);
+		}
+		ImGui::NewLine();
+
 		ImGui::Checkbox("Use image adjustments", &app_state->use_image_adjustments);
 
-		ImGui::SliderFloat("black level", &app_state->black_level, 0.0f,
+		bool disable_gui = !app_state->use_image_adjustments;
+		if (disable_gui) {
+			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+
+		ImGui::SliderFloat("Black level", &app_state->black_level, 0.0f,
 		                   1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-		ImGui::SliderFloat("white level", &app_state->white_level, 0.0f,
+		ImGui::SliderFloat("White level", &app_state->white_level, 0.0f,
 		                   1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
 
+		if (disable_gui) {
+			ImGui::PopItemFlag();
+			ImGui::PopStyleVar();
+		}
 
+		ImGui::NewLine();
+		ImGui::ColorEdit3("Background color", (float*) &app_state->clear_color); // Edit 3 floats representing a color
 
-//		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-//			counter++;
-//		ImGui::SameLine();
-//		ImGui::Text("counter = %d", counter);
-//
-//		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
 	}
 
-	if (show_display_options_window) {
+	if (show_general_options_window) {
 
 		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
 		ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Options", &show_display_options_window);
+		ImGui::Begin("General options", &show_general_options_window);
 
 
 		// General BeginCombo() API, you have full control over your selection data and display type.
@@ -341,9 +355,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			}
 		}
 
-		ImGui::Text("\nBackground color");               // Display some text (you can use a format strings too)
-		ImGui::ColorEdit3("color", (float*) &app_state->clear_color); // Edit 3 floats representing a color
-
 		ImGui::Text("\nTIFF backend");
 //		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
 		const char* tiff_backends[] = {"Built-in", "OpenSlide"};
@@ -362,6 +373,9 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			}
 			ImGui::EndCombo();
 		}
+
+		ImGui::NewLine();
+		ImGui::Checkbox("Enable Vsync", &is_vsync_enabled);
 
 //		ImGui::Text("\nGlobal Alpha");
 //		ImGui::SliderFloat("##Global Alpha", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.

@@ -400,6 +400,10 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::EndCombo();
 			}
 
+			if (ImGui::Button("Move coordinates")) {
+				annotation_set->is_edit_mode = true;
+			}
+
 			if (nothing_selected) {
 				ImGui::PopItemFlag();
 				ImGui::PopStyleVar();
