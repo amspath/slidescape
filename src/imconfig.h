@@ -16,7 +16,7 @@
 
 //---- Define assertion handler. Defaults to calling assert().
 // If your macro uses multiple statements, make sure is enclosed in a 'do { .. } while (0)' block so it can be used as a single statement.
-#if WINDOWS
+#ifdef _WIN32
 #define IM_ASSERT(_EXPR)  do {if (!(_EXPR)) __debugbreak();} while(0)
 #endif
 //#define IM_ASSERT(_EXPR)  ((void)(_EXPR))     // Disable asserts
@@ -111,7 +111,7 @@ typedef struct v4f {
 #ifndef NDEBUG
 // (use 'Metrics->Tools->Item Picker' to pick widgets with the mouse and break into them for easy debugging.)
 //#define IM_DEBUG_BREAK  IM_ASSERT(0)
-#if WINDOWS
+#ifdef _WIN32
 #define IM_DEBUG_BREAK()  __debugbreak()
 #endif
 //#define IM_DEBUG_BREAK() __asm__ volatile("int $0x03")

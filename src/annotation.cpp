@@ -43,13 +43,14 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 		annotation_group_t* group = annotation_set->groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };
 		rgba_t rgba = group->color;
-		rgba.a = 255;
-		float thickness = 2.0f;
+		u8 alpha = (u8)(annotation_opacity * 255.0f);
+		rgba.a = alpha;
+		float thickness = annotation_normal_line_thickness;
 		if (annotation->selected) {
 			rgba.r = LERP(0.2f, rgba.r, 255);
 			rgba.g = LERP(0.2f, rgba.g, 255);
 			rgba.b = LERP(0.2f, rgba.b, 255);
-			thickness *= 2.0f;
+			thickness = annotation_selected_line_thickness;
 		}
 		u32 annotation_color = *(u32*)(&rgba);
 		if (annotation->has_coordinates) {
@@ -62,33 +63,31 @@ void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float sc
 				v2f world_pos = {(float)coordinate->x, (float)coordinate->y};
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, screen_um_per_pixel);
 				points[i] = transformed_pos;
-
-
 			}
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
 			draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, true, thickness);
 
 			// draw coordinate nodes
-			if (annotation->selected) {
+			if (annotation->selected && annotation_show_polygon_nodes) {
 				bool need_hover = false;
 				v2f hovered_node_point = {};
 				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 					i32 coordinate_index = annotation->first_coordinate + i;
 					v2f point = points[i];
-					if (coordinate_index == annotation_set->hovered_coordinate && annotation_set->hovered_coordinate_pixel_distance < 9.0f) {
+					if (annotation_set->is_edit_mode && coordinate_index == annotation_set->hovered_coordinate && annotation_set->hovered_coordinate_pixel_distance < 9.0f) {
 						hovered_node_point = point;
 						need_hover = true;
 					} else {
-						draw_list->AddCircleFilled(point, 5.0f, annotation_color, 12);
+						draw_list->AddCircleFilled(point, annotation_node_size, annotation_color, 12);
 					}
 				}
 				if (need_hover) {
 //											rgba_t node_rgba = {0, 0, 0, 255};
 //					rgba_t node_rgba = {(u8)(group->color.r / 2) , (u8)(group->color.g / 2), (u8)(group->color.b / 2), 255};
 					rgba_t node_rgba = group->color;
-					node_rgba.a = 255;
+					node_rgba.a = alpha;
 					u32 node_color = *(u32*)(&node_rgba);
-					draw_list->AddCircleFilled(hovered_node_point, 7.0f, node_color, 12);
+					draw_list->AddCircleFilled(hovered_node_point, annotation_node_size * 1.4f, node_color, 12);
 				}
 			}
 
@@ -160,7 +159,7 @@ void delete_selected_annotations(annotation_set_t* annotation_set) {
 
 }
 
-i32 select_annotation(scene_t* scene, bool32 is_ctrl_down) {
+i32 select_annotation(scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 	float distance = 0.0f;
 	i32 nearest_coordinate_index = -1;
@@ -180,11 +179,12 @@ i32 select_annotation(scene_t* scene, bool32 is_ctrl_down) {
 
 		if (scene->clicked) {
 			// if annotation was already selected, we can try to select a coordinate as well
-			if (nearest_annotation->selected && pixel_distance < 5.0f) {
+			/*if (nearest_annotation->selected && pixel_distance < 5.0f) {
 				console_print("Selecting coordinate %d\n", nearest_coordinate_index);
-			}
-				// have to click somewhat close to a coordinate, otherwise treat as unselect
-			else if (pixel_distance < 500.0f) {
+			} else */
+
+			// have to click somewhat close to a coordinate, otherwise treat as unselect
+			if (pixel_distance < 500.0f) {
 				nearest_annotation->selected = !nearest_annotation->selected;
 			}
 
@@ -196,7 +196,7 @@ i32 select_annotation(scene_t* scene, bool32 is_ctrl_down) {
 	}
 
 	// unselect all annotations (except if Ctrl held down)
-	if (scene->clicked && !is_ctrl_down) {
+	if (scene->clicked && !is_key_down(input, KEYCODE_CONTROL)) {
 		for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
 			if (i == nearest_annotation_index) continue; // skip the one we just selected!
 			annotation_t* annotation = annotation_set->annotations + i;
@@ -204,6 +204,19 @@ i32 select_annotation(scene_t* scene, bool32 is_ctrl_down) {
 		}
 	}
 
+	i32 selection_count = 0;
+	for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->annotations + i;
+		if (annotation->selected) {
+			++selection_count;
+		}
+	}
+	annotation_set->selection_count = selection_count;
+
+	/*if (selection_count > 0 && scene->right_clicked) {
+		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
+	}
+*/
 	return nearest_annotation_index;
 }
 
@@ -245,10 +258,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	}
 	bool nothing_selected = (annotation_group_index == -1);
 	bool multiple_selected = (annotation_group_index == -2);
-	u32 selectable_flags = 0;
-	if (nothing_selected) {
-		selectable_flags |= ImGuiSelectableFlags_Disabled;
-	}
+
 
 	// Detect hotkey presses for group assignment
 	bool* hotkey_pressed = (bool*) alloca(annotation_set->group_count * sizeof(bool));
@@ -273,65 +283,140 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	if (show_annotations_window) {
 
-		ImGui::SetNextWindowPos((ImVec2){20, 600}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-		ImGui::SetNextWindowSize((ImVec2){400, 250}, ImGuiCond_FirstUseEver);
-
+		ImGui::SetNextWindowPos((ImVec2){830,43}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+		ImGui::SetNextWindowSize((ImVec2){525,673}, ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
 
-		ImGui::Text("(work in progress...)");
-
+		ImGui::Text("Annotation filename: %s\n", annotation_set->filename);
 		ImGui::Text("Number of annotations loaded: %d\n", annotation_set->annotation_count);
-		ImGui::Checkbox("Show annotations", &annotation_set->enabled);
+		ImGui::Spacing();
 
 
-		if (nothing_selected) {
-			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		if (ImGui::CollapsingHeader("Options"))
+		{
+			ImGui::Checkbox("Show annotations", &annotation_set->enabled);
+			ImGui::SliderFloat("Annotation opacity", &annotation_opacity, 0.0f, 1.0f);
+
+			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f);
+			ImGui::SliderFloat("Line thickness (selected)", &annotation_selected_line_thickness, 0.0f, 10.0f);
+			ImGui::Checkbox("Show polygon nodes", &annotation_show_polygon_nodes);
+			ImGui::SliderFloat("Node size", &annotation_node_size, 0.0f, 20.0f);
+
+
+			ImGui::NewLine();
+//			ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
 		}
 
-		if (ImGui::BeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
-			for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
-				annotation_group_t* group = annotation_set->groups + group_index;
+		// Interface for viewing/editing annotation groups
+		if (ImGui::CollapsingHeader("Groups"))
+		{
+			static i32 edit_group_index = -1;
+			const char* edit_group_preview = "";
 
-				if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
-				      || ((!nothing_selected) && hotkey_pressed[group_index])) {
-					set_group_for_selected_annotations(annotation_set, group_index);
+			if (edit_group_index >= 0 && edit_group_index < annotation_set->group_count) {
+				edit_group_preview = item_previews[edit_group_index];
+			} else {
+				edit_group_index = -1;
+			}
+
+			bool disable_interface = annotation_set->group_count <= 0;
+			u32 selectable_flags = 0;
+
+			if (disable_interface) {
+				ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+				ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+				selectable_flags |= ImGuiSelectableFlags_Disabled;
+			}
+
+			ImGui::Text("Number of groups: %d\n", annotation_set->group_count);
+			if (ImGui::BeginCombo("Select group", edit_group_preview, ImGuiComboFlags_HeightLargest)) {
+				for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
+					annotation_group_t* group = annotation_set->groups + group_index;
+
+					if (ImGui::Selectable(item_previews[group_index], (edit_group_index == group_index), selectable_flags)) {
+						edit_group_index = group_index;
+					}
 				}
+				ImGui::EndCombo();
 			}
-			ImGui::EndCombo();
-		}
+			ImGui::Spacing();
 
-
-
-		if (ImGui::Button("Assign group...")) {
-			show_annotation_group_assignment_window = true;
-		}
-
-		ImGuiColorEditFlags flags = 0;
-		float color[3] = {};
-		if (annotation_group_index >= 0) {
-			annotation_group_t* group = annotation_set->groups + annotation_group_index;
-			rgba_t rgba = group->color;
-			color[0] = BYTE_TO_FLOAT(rgba.r);
-			color[1] = BYTE_TO_FLOAT(rgba.g);
-			color[2] = BYTE_TO_FLOAT(rgba.b);
-			if (ImGui::ColorEdit3("Group color", (float*) color, flags)) {
-				rgba.r = FLOAT_TO_BYTE(color[0]);
-				rgba.g = FLOAT_TO_BYTE(color[1]);
-				rgba.b = FLOAT_TO_BYTE(color[2]);
-				group->color = rgba;
-				annotations_modified(annotation_set);
+			annotation_group_t* selected_group = NULL;
+			if (edit_group_index >= 0) {
+				selected_group = annotation_set->groups + edit_group_index;
 			}
-		} else {
-			flags = ImGuiColorEditFlags_NoPicker;
-			ImGui::ColorEdit3("Group color", (float*) color, flags);
+			const char* group_name = selected_group ? selected_group->name : "";
+			ImGui::Text("Group name: %s\n", group_name);
+
+			ImGuiColorEditFlags flags = 0;
+			float color[3] = {};
+			if (edit_group_index >= 0) {
+				annotation_group_t* group = annotation_set->groups + edit_group_index;
+				rgba_t rgba = group->color;
+				color[0] = BYTE_TO_FLOAT(rgba.r);
+				color[1] = BYTE_TO_FLOAT(rgba.g);
+				color[2] = BYTE_TO_FLOAT(rgba.b);
+				if (ImGui::ColorEdit3("Group color", (float*) color, flags)) {
+					rgba.r = FLOAT_TO_BYTE(color[0]);
+					rgba.g = FLOAT_TO_BYTE(color[1]);
+					rgba.b = FLOAT_TO_BYTE(color[2]);
+					group->color = rgba;
+					annotations_modified(annotation_set);
+				}
+			} else {
+				flags = ImGuiColorEditFlags_NoPicker;
+				ImGui::ColorEdit3("Group color", (float*) color, flags);
+			}
+
+			if (disable_interface) {
+				ImGui::PopItemFlag();
+				ImGui::PopStyleVar();
+			}
+
+			ImGui::NewLine();
+
+
 		}
 
-		if (nothing_selected) {
-			ImGui::PopItemFlag();
-			ImGui::PopStyleVar();
+		if (ImGui::CollapsingHeader("Annotation"))
+		{
+			u32 selectable_flags = 0;
+			if (nothing_selected) {
+				selectable_flags |= ImGuiSelectableFlags_Disabled;
+				ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+				ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+			}
+
+			if (ImGui::BeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
+				for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
+					annotation_group_t* group = annotation_set->groups + group_index;
+
+					if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
+					    || ((!nothing_selected) && hotkey_pressed[group_index])) {
+						set_group_for_selected_annotations(annotation_set, group_index);
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+			if (nothing_selected) {
+				ImGui::PopItemFlag();
+				ImGui::PopStyleVar();
+			}
+
+			if (ImGui::Button("Open group assignment window")) {
+				show_annotation_group_assignment_window = true;
+			}
+
+			ImGui::NewLine();
+
 		}
+
+
+
+
+
 
 		ImGui::End();
 	}
@@ -340,14 +425,16 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	if (show_annotation_group_assignment_window) {
 
 		ImGui::SetNextWindowPos((ImVec2){1359,43}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-		ImGui::SetNextWindowSize((ImVec2){214,343}, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize((ImVec2){285,572}, ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Assign group", &show_annotation_group_assignment_window);
 
 		ImGui::TextUnformatted(preview);
 
 
+		u32 selectable_flags = 0;
 		if (nothing_selected) {
+			selectable_flags |= ImGuiSelectableFlags_Disabled;
 			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
 			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
 		}
@@ -362,10 +449,10 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			ImGui::PushID(group_index);
 			color.w = 1.0f;
 			ImGui::PushStyleColor(ImGuiCol_CheckMark, color);
-//		color.w = 0.6f;
-//		ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, color);
-//		color.w = 0.7f;
-//		ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
+//		    color.w = 0.6f;
+//		    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, color);
+//		    color.w = 0.7f;
+//		    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
 			if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))
 			    || ((!nothing_selected) && hotkey_pressed[group_index])) {
 				set_group_for_selected_annotations(annotation_set, group_index);

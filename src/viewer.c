@@ -413,6 +413,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	// todo: process even more of the mouse/keyboard input here?
 	v2f current_drag_vector = {};
 	scene->clicked = false;
+	scene->right_clicked = false;
 	scene->drag_started = false;
 	scene->drag_ended = false;
 	if (input) {
@@ -426,8 +427,15 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (was_button_released(&input->mouse_buttons[0])) {
 			float drag_distance = v2f_distance(scene->cumulative_drag_vector);
 			// TODO: tweak this
-			if (drag_distance < 2.0f) {
+			if (drag_distance < 3.0f) {
 				scene->clicked = true;
+			}
+		}
+		if (was_button_released(&input->mouse_buttons[1])) {
+			float drag_distance = v2f_distance(scene->cumulative_drag_vector);
+			// TODO: tweak this
+			if (drag_distance < 3.0f) {
+				scene->right_clicked = true;
 			}
 		}
 
@@ -743,7 +751,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					// try to hover over / select an annotation
 					if (scene->annotation_set.annotation_count > 0) {
 						i64 select_begin = get_clock();
-						select_annotation(scene, is_key_down(input, KEYCODE_CONTROL));
+						select_annotation(scene, input);
 //				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
 //			    	    	console_print("Selecting took %g ms.\n", selection_ms);
 					}

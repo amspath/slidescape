@@ -228,6 +228,7 @@ typedef struct scene_t {
 	entity_t entities[MAX_ENTITIES];
 	annotation_set_t annotation_set;
 	bool8 clicked;
+	bool8 right_clicked;
 	bool8 drag_started;
 	bool8 drag_ended;
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
