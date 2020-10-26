@@ -41,14 +41,17 @@
 
 #ifdef __APPLE__
 #define APPLE 1
+#define OPENGL_H <OpenGL/gl3.h>
+#else
+#define APPLE 0
+#endif
+
+#if !WINDOWS
 #include <unistd.h> // for access(), F_OK
 #define fseeko64 fseek
 #define fopen64 fopen
 #define fgetpos64 fgetpos
 #define fsetpos64 fsetpos
-#define OPENGL_H <OpenGL/gl3.h>
-#else
-#define APPLE 0
 #endif
 
 // Compiler detection

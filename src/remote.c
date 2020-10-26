@@ -428,7 +428,7 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 	bool32 read_ok = remote_request(connection, request, request_len, &mem_buffer);
 	float seconds_elapsed = close_remote_connection(connection);
 
-	if (read_ok) {
+	if (read_ok && mem_buffer.used_size > 0) {
 		// now we should have the whole HTTP response
 #if REMOTE_CLIENT_VERBOSE
 		console_print("HTTP read finished, length = %d\n", mem_buffer->len);

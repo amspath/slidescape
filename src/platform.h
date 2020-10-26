@@ -25,6 +25,7 @@
 #include "windows.h"
 #else
 #include <semaphore.h>
+#include <unistd.h>
 #endif
 
 #ifdef TARGET_EMSCRIPTEN
