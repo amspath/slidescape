@@ -95,6 +95,8 @@ typedef struct annotation_set_t {
 	i32 selection_count;
 	i32 selected_coordinate_index;
 	v2f coordinate_drag_start_offset;
+	i32 last_assigned_annotation_group;
+	bool last_assigned_group_is_valid;
 } annotation_set_t;
 
 void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);

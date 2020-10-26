@@ -198,8 +198,8 @@ i32 select_annotation(app_state_t* app_state, scene_t* scene, input_t* input) {
 //				annotation_set->is_edit_mode = false;
 			}
 
-			if (nearest_annotation->selected && auto_assign_last_group) {
-				nearest_annotation->group_id = last_assigned_annotation_group;
+			if (nearest_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
+				nearest_annotation->group_id = annotation_set->last_assigned_annotation_group;
 			}
 		}
 
@@ -230,7 +230,8 @@ i32 select_annotation(app_state_t* app_state, scene_t* scene, input_t* input) {
 }
 
 void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group) {
-	last_assigned_annotation_group = new_group;
+	annotation_set->last_assigned_annotation_group = new_group;
+	annotation_set->last_assigned_group_is_valid = true;
 	for (i32 i = 0; i < annotation_set->annotation_count; ++i) {
 		annotation_t* annotation = annotation_set->annotations + i;
 		if (annotation->selected) {

@@ -75,7 +75,6 @@ extern i32 viewer_max_level INIT(= 10);
 
 // annotation.cpp
 extern bool auto_assign_last_group;
-extern i32 last_assigned_annotation_group;
 extern bool annotation_show_polygon_nodes_outside_edit_mode INIT(= false);
 extern float annotation_normal_line_thickness INIT(= 2.0f);
 extern float annotation_selected_line_thickness INIT(= 4.0f);
