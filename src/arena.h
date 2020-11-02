@@ -13,7 +13,7 @@ typedef struct temporary_memory_t {
 	i32 temp_index;
 } temp_memory_t;
 
-static void init_arena(arena_t* arena, size_t size, void* base) {
+static inline void init_arena(arena_t* arena, size_t size, void* base) {
 	*arena = (arena_t) {
 			.size = size,
 			.base = (u8*) base,
@@ -22,17 +22,21 @@ static void init_arena(arena_t* arena, size_t size, void* base) {
 	};
 }
 
-#define arena_push_struct(arena, type) (type*)push_size_((arena), sizeof(type))
-#define arena_push_array(arena, count, type) (type*) push_size_((arena), (count)* sizeof(type))
+static inline void* arena_current_pos(arena_t* arena) {
+	return arena->base + arena->used;
+}
+
+#define arena_push_struct(arena, type) ((type*)push_size_((arena), sizeof(type)))
+#define arena_push_array(arena, count, type) ((type*) push_size_((arena), (count)* sizeof(type)))
 #define arena_push_size(arena, size) push_size_((arena), (size))
-static void* push_size_(arena_t* arena, size_t size) {
+static inline void* push_size_(arena_t* arena, size_t size) {
 	ASSERT((arena->used + size) <= arena->size);
 	void* result = arena->base + arena->used;
 	arena->used += size;
 	return result;
 }
 
-static temp_memory_t begin_temp_memory(arena_t* arena) {
+static inline temp_memory_t begin_temp_memory(arena_t* arena) {
 	temp_memory_t result = {
 			.arena = arena,
 			.used = arena->used,
@@ -42,7 +46,7 @@ static temp_memory_t begin_temp_memory(arena_t* arena) {
 	return result;
 }
 
-static void end_temp_memory(temp_memory_t* temp) {
+static inline void end_temp_memory(temp_memory_t* temp) {
 	ASSERT(temp->arena->temp_count > 0);
 	temp->arena->temp_count--;
 	temp->arena->used = temp->used;

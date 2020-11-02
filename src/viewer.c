@@ -34,7 +34,6 @@
 #include <linmath.h>
 
 #include "arena.h"
-#include "arena.c"
 
 #define VIEWER_IMPL
 #include "viewer.h"
@@ -369,6 +368,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	i64 last_section = get_clock(); // start profiler section
 
+	// Release the temporary memory that was allocated the previous frame.
+	app_state->temp_arena.used = 0;
+
 //	if (!app_state->initialized) init_app_state(app_state);
 	// Note: the window might get resized, so need to update this every frame
 	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
@@ -378,6 +380,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// Note: could be changed to allow e.g. multiple scenes side by side
 	scene->viewport = app_state->client_viewport;
+
+	v2f current_drag_vector = {};
+	scene->clicked = false;
+	scene->right_clicked = false;
+	scene->drag_started = false;
+	scene->drag_ended = false;
+
+	refresh_annotation_pointers(app_state, &scene->annotation_set);
 
 	// TODO: this is part of rendering and doesn't belong here
 	gui_new_frame();
@@ -411,11 +421,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	// TODO: mutate state here
 
 	// todo: process even more of the mouse/keyboard input here?
-	v2f current_drag_vector = {};
-	scene->clicked = false;
-	scene->right_clicked = false;
-	scene->drag_started = false;
-	scene->drag_ended = false;
+
 	if (input) {
 		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
 
@@ -748,8 +754,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 				if (!gui_want_capture_mouse) {
 					// try to hover over / select an annotation
-					if (scene->annotation_set.annotation_count > 0) {
-						select_annotation(app_state, scene, input);
+					if (scene->annotation_set.stored_annotation_count > 0) {
+						interact_with_annotations(app_state, scene, input);
 //				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
 //			    	    	console_print("Selecting took %g ms.\n", selection_ms);
 					}
@@ -809,15 +815,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
 			}
 
-
-
-			if (!gui_want_capture_keyboard && was_key_pressed(input, KEYCODE_DELETE)) {
-				delete_selected_annotations(&scene->annotation_set);
-			}
-
 		}
 
-		draw_annotations(&scene->annotation_set, camera_bounds.min, scene->zoom.pixel_width);
+		draw_annotations(app_state, scene, &scene->annotation_set, camera_bounds.min);
 
 		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 

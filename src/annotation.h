@@ -65,9 +65,9 @@ typedef struct annotation_t {
 } annotation_t;
 
 typedef struct coordinate_t {
-	i32 order;
 	double x;
 	double y;
+//	i32 order;
 	bool8 selected;
 } coordinate_t;
 
@@ -79,10 +79,13 @@ typedef struct annotation_group_t {
 } annotation_group_t;
 
 typedef struct annotation_set_t {
-	annotation_t* annotations; // sb
-	i32 annotation_count;
+	annotation_t* stored_annotations; // sb
+	i32 stored_annotation_count;
+	annotation_t** active_annotations; // recreated every frame
 	coordinate_t* coordinates; // sb
 	i32 coordinate_count;
+	i32* active_annotation_indices; // sb
+	i32 active_annotation_count;
 	annotation_group_t* groups; // sb
 	i32 group_count;
 	bool enabled;
@@ -93,22 +96,25 @@ typedef struct annotation_set_t {
 	float hovered_coordinate_pixel_distance;
 	bool is_edit_mode;
 	i32 selection_count;
+	annotation_t** selected_annotations; // recreated every frame
 	i32 selected_coordinate_index;
 	v2f coordinate_drag_start_offset;
 	i32 last_assigned_annotation_group;
 	bool last_assigned_group_is_valid;
 } annotation_set_t;
 
-void draw_annotations(annotation_set_t* annotation_set, v2f camera_min, float screen_um_per_pixel);
+void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
 i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr, i32* coordinate_index);
 void annotations_modified(annotation_set_t* annotation_set);
-void delete_selected_annotations(annotation_set_t* annotation_set);
-i32 select_annotation(app_state_t* app_state, scene_t* scene, input_t* input);
+void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
+i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
+void refresh_annotation_pointers(app_state_t* app_state, annotation_set_t* annotation_set);
+void recount_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 
 #ifdef __cplusplus
 }
