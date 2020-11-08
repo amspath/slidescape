@@ -389,6 +389,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	refresh_annotation_pointers(app_state, &scene->annotation_set);
 
+	app_state->input = input;
+
 	// TODO: this is part of rendering and doesn't belong here
 	gui_new_frame();
 
@@ -416,6 +418,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	image_t* image = app_state->loaded_images + app_state->displayed_image;
 
+	// Workaround for drag onto window being registered as a click
+	if (image->is_freshly_loaded) {
+		input->mouse_buttons[0].down = false;
+		input->mouse_buttons[0].transition_count = 0;
+	}
 
 
 	// TODO: mutate state here
@@ -431,7 +438,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		if (was_button_released(&input->mouse_buttons[0])) {
-			float drag_distance = v2f_distance(scene->cumulative_drag_vector);
+			float drag_distance = v2f_length(scene->cumulative_drag_vector);
 			// TODO: tweak this
 			if (drag_distance < 3.0f) {
 				scene->clicked = true;
@@ -440,7 +447,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (was_button_released(&input->mouse_buttons[1])) {
 			// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
 			scene->right_clicked = true;
-			/*float drag_distance = v2f_distance(scene->cumulative_drag_vector);
+			/*float drag_distance = v2f_length(scene->cumulative_drag_vector);
 			if (drag_distance < 30.0f) {
 
 			}*/

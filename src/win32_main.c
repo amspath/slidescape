@@ -738,10 +738,6 @@ void win32_process_xinput_controllers() {
 }
 
 
-void win32_init_gdi_renderer() {
-
-}
-
 
 const char* wgl_extensions_string;
 
@@ -1123,6 +1119,7 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
 		curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
 	}
+	memset_zero(&old_input->keyboard);
 	memset_zero(&curr_input->mouse_buttons);
 	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
 		curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;

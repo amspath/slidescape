@@ -277,6 +277,7 @@ typedef struct app_state_t {
 	pixel_transfer_state_t pixel_transfer_states[32];
 	u32 next_pixel_transfer_to_submit;
 	window_handle_t main_window;
+	input_t* input;
 } app_state_t;
 
 

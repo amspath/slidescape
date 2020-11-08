@@ -60,6 +60,7 @@ typedef struct annotation_t {
 	i32 group_id;
 	i32 first_coordinate;
 	i32 coordinate_count;
+	i32 coordinate_capacity;
 	bool8 has_coordinates;
 	bool8 selected;
 } annotation_t;
@@ -95,6 +96,7 @@ typedef struct annotation_set_t {
 	i32 hovered_coordinate;
 	float hovered_coordinate_pixel_distance;
 	bool is_edit_mode;
+	bool is_insert_coordinate_mode;
 	i32 selection_count;
 	annotation_t** selected_annotations; // recreated every frame
 	i32 selected_coordinate_index;
@@ -105,9 +107,11 @@ typedef struct annotation_set_t {
 
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
 i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr, i32* coordinate_index);
+i32 find_insertion_point_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, v2f* projected_point_ptr, float* distance_ptr);
 void annotations_modified(annotation_set_t* annotation_set);
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
+void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);

@@ -96,16 +96,6 @@ v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_p
 	return transformed_pos;
 }
 
-float v2i_distance(v2i v) {
-	float result = sqrtf(SQUARE(v.x) + SQUARE(v.y));
-	return result;
-}
-
-float v2f_distance(v2f v) {
-	float result = sqrtf(SQUARE(v.x) + SQUARE(v.y));
-	return result;
-}
-
 
 i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
 	ASSERT(tile_side > 0);
@@ -143,3 +133,22 @@ bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minu
 	};
 	return bounds;
 }
+
+// https://math.stackexchange.com/questions/330269/the-distance-from-a-point-to-a-line-segment
+// https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment
+v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end) {
+	v2f line_end_minus_start = v2f_subtract(line_end, line_start);
+	float segment_length_sq = v2f_length_squared(line_end_minus_start);
+	if (segment_length_sq == 0.0f) {
+		return line_start; // line_start == line_end case
+	}
+	// Consider the line extending the segment, parameterized as v + t (w - v).
+	// We find projection of point p onto the line.
+	// It falls where t = [(p-v) . (w-v)] / |w-v|^2
+	// We clamp t from [0,1] to handle points outside the segment vw.
+	float t = v2f_dot(v2f_subtract(point, line_start), line_end_minus_start) / segment_length_sq;
+	float t_clamped = MAX(0, MIN(1, t));
+	v2f projection = v2f_add(line_start, v2f_scale(t_clamped, line_end_minus_start)); // lerp
+	return projection;
+}
+

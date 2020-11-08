@@ -497,7 +497,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 
 
-	if (show_annotations_window || show_annotation_group_assignment_window) {
+	if (show_annotations_window || show_annotation_group_assignment_window || show_delete_annotation_prompt) {
 		draw_annotations_window(app_state, input);
 	}
 
