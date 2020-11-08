@@ -82,6 +82,7 @@ extern float annotation_node_size INIT(= 5.0f);
 extern float annotation_opacity INIT(= 1.0f);
 extern float annotation_hover_distance INIT(= 9.0f);
 extern bool show_delete_annotation_prompt;
+extern bool dont_ask_to_delete_annotations;
 
 #undef INIT
 #undef extern

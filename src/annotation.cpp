@@ -89,15 +89,18 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					} else {
 						float node_size;
 						rgba_t node_color;
+#if 0
+						// for selected coordinates: larger circle and darker color
 						if (coordinate_index == annotation_set->selected_coordinate_index) {
 							node_size = annotation_node_size * 1.2f;
-//							node_color = {(u8)(group->color.r / 2) , (u8)(group->color.g / 2), (u8)(group->color.b / 2), 255};
 							node_color = group->color;
 							node_color.r = LERP(0.9f, 0, node_color.r);
 							node_color.g = LERP(0.9f, 0, node_color.g);
 							node_color.b = LERP(0.9f, 0, node_color.b);
 							node_color.a = alpha;
-						} else {
+						} else
+#endif
+						{
 							node_size = annotation_node_size;
 							node_color = base_color;
 						}
@@ -148,7 +151,11 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			if (ImGui::MenuItem("Enable editing", "E", &annotation_set->is_edit_mode)) {}
 			if (annotation_set->selection_count > 0) {
 				if (ImGui::MenuItem("Delete selected annotations", "Del")) {
-					delete_selected_annotations(app_state, annotation_set);
+					if (dont_ask_to_delete_annotations) {
+						delete_selected_annotations(app_state, annotation_set);
+					} else {
+						show_delete_annotation_prompt = true;
+					}
 				};
 			}
 			ImGui::EndPopup();
@@ -240,7 +247,7 @@ void annotations_modified(annotation_set_t* annotation_set) {
 	annotation_set->last_modification_time = get_clock();
 }
 
-void insert_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, coordinate_t new_coordinate) {
+void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, coordinate_t new_coordinate) {
 	if (insert_at_index >= 0 && insert_at_index <= annotation->coordinate_count) {
 		if (annotation->coordinate_count == annotation->coordinate_capacity) {
 			// Make room by expanding annotation_set->coordinates and copying the coordinates to the end
@@ -258,6 +265,8 @@ void insert_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 		memmove(coordinates_at_insertion_point + 1, coordinates_at_insertion_point, num_coordinates_to_move * sizeof(coordinate_t));
 		++annotation->coordinate_count;
 		*coordinates_at_insertion_point = new_coordinate;
+		annotations_modified(annotation_set);
+		refresh_annotation_pointers(app_state, annotation_set);
 //		console_print("inserted a coordinate at index %d\n", insert_at_index);
 	} else {
 #if DO_DEBUG
@@ -317,12 +326,13 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 
 		sb_raw_count(annotation_set->active_annotation_indices) = 0;
 		for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
-			annotation_t* annotation = annotation_set->active_annotations[i];
+			i32 stored_index = temp_copy[i];
+			annotation_t* annotation = annotation_set->stored_annotations + stored_index;
 			if (annotation->selected) {
 				// TODO: allow undo?
 				continue; // skip (delete)
 			} else {
-				sb_push(annotation_set->active_annotation_indices, i);
+				sb_push(annotation_set->active_annotation_indices, stored_index);
 			}
 		}
 		annotation_set->active_annotation_count = sb_count(annotation_set->active_annotation_indices);
@@ -372,7 +382,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 					if (pixel_distance_to_edge < annotation_hover_distance) {
 						// try to insert a new coordinate, and start dragging that
 						coordinate_t new_coordinate = { .x = (double)projected_point.x, .y = (double)projected_point.y };
-						insert_coordinate(annotation_set, nearest_annotation, insert_at_index, new_coordinate);
+						insert_coordinate(app_state, annotation_set, nearest_annotation, insert_at_index, new_coordinate);
 						// update state so we can immediately interact with the newly created coordinate
 						annotation_set->is_insert_coordinate_mode = false;
 						annotation_set->force_insert_mode = false;
@@ -431,16 +441,19 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 	if (annotation_set->selection_count > 0) {
 		if (was_key_pressed(input, KEYCODE_DELETE)) {
 			if (nearest_annotation_index > 0) {
-				show_delete_annotation_prompt = true;
-				ImGui::OpenPopup("delete_annotation_prompt");
-				// TODO: fix release keyboard events bug for good
-				input->keyboard.keys[KEYCODE_DELETE].down = false;
+				if (dont_ask_to_delete_annotations) {
+					delete_selected_annotations(app_state, annotation_set);
+				} else {
+					show_delete_annotation_prompt = true;
+					// TODO: fix release keyboard events bug for good
+					input->keyboard.keys[KEYCODE_DELETE].down = false;
+				}
 			}
 		}
 
-		if (was_key_pressed(input, 'C')) {
-			if (nearest_annotation_index > 0 && annotation_set->selected_coordinate_index >= 0) {
-				delete_coordinate(annotation_set, annotation_set->active_annotations[nearest_annotation_index], annotation_set->selected_coordinate_index);
+		if (was_key_pressed(input, 'C') && annotation_set->is_edit_mode) {
+			if (nearest_annotation_index > 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
+				delete_coordinate(annotation_set, annotation_set->active_annotations[nearest_annotation_index], annotation_set->hovered_coordinate);
 			}
 		}
 	} else {
@@ -717,43 +730,42 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::End();
 	}
+}
 
+void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set) {
 	if (show_delete_annotation_prompt) {
-		// Always center this window when appearing
-		ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-		ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
-		if (ImGui::BeginPopupModal("delete_annotation_prompt", &show_delete_annotation_prompt, ImGuiWindowFlags_AlwaysAutoResize))
-		{
-			ImGui::Text("All those beautiful files will be deleted.\nThis operation cannot be undone!\n\n");
-			ImGui::Separator();
-
-			//static int unused_i = 0;
-			//ImGui::Combo("Combo", &unused_i, "Delete\0Delete harder\0");
-
-			static bool dont_ask_me_next_time = false;
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-			ImGui::Checkbox("Don't ask me next time", &dont_ask_me_next_time);
-			ImGui::PopStyleVar();
-
-			if (ImGui::Button("OK", ImVec2(120, 0))) {
-				ImGui::CloseCurrentPopup();
-				delete_selected_annotations(app_state, annotation_set);
-				show_delete_annotation_prompt = false;
-			}
-			ImGui::SetItemDefaultFocus();
-			ImGui::SameLine();
-			if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-				ImGui::CloseCurrentPopup();
-				show_delete_annotation_prompt = false;
-			}
-			ImGui::EndPopup();
-		}
-
+		ImGui::OpenPopup("Delete annotation?");
+		show_delete_annotation_prompt = false;
 	}
+	// Always center this window when appearing
+	ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
+	if (ImGui::BeginPopupModal("Delete annotation?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::Text("The annotation will be deleted.\nThis operation cannot be undone.\n\n");
+		ImGui::Separator();
 
+		//static int unused_i = 0;
+		//ImGui::Combo("Combo", &unused_i, "Delete\0Delete harder\0");
 
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+		ImGui::Checkbox("Don't ask me next time", &dont_ask_to_delete_annotations);
+		ImGui::PopStyleVar();
+
+		if (ImGui::Button("OK", ImVec2(120, 0))) {
+			delete_selected_annotations(app_state, annotation_set);
+			show_delete_annotation_prompt = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+			show_delete_annotation_prompt = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
 }
 
 u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {

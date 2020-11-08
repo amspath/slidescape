@@ -497,9 +497,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 
 
-	if (show_annotations_window || show_annotation_group_assignment_window || show_delete_annotation_prompt) {
+	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state, input);
 	}
+	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
 
 	if (show_about_window) {
 		ImGui::Begin("About Slideviewer", &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);

@@ -114,6 +114,7 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
+void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
