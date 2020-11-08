@@ -115,6 +115,9 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						if (ImGui::MenuItem("Delete coordinate", "C")) {
 							delete_coordinate(annotation_set, annotation, annotation_set->hovered_coordinate);
 						};
+						if (ImGui::MenuItem("Insert coordinate", "Shift", &annotation_set->force_insert_mode)) {
+							annotation_set->is_insert_coordinate_mode = true;
+						};
 						if (ImGui::MenuItem("Split annotation here", NULL, false, false)) {}
 						ImGui::EndPopup();
 					}
@@ -354,7 +357,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 
 		if (annotation_set->is_edit_mode && app_state->mouse_mode == MODE_VIEW && is_key_down(input, KEYCODE_SHIFT)) {
 			annotation_set->is_insert_coordinate_mode = true;
-		} else {
+		} else if (!annotation_set->force_insert_mode) {
 			annotation_set->is_insert_coordinate_mode = false;
 		}
 
@@ -372,6 +375,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 						insert_coordinate(annotation_set, nearest_annotation, insert_at_index, new_coordinate);
 						// update state so we can immediately interact with the newly created coordinate
 						annotation_set->is_insert_coordinate_mode = false;
+						annotation_set->force_insert_mode = false;
 						coordinate_distance = coordinate_pixel_distance = 0.0f;
 						nearest_coordinate_index = nearest_annotation->first_coordinate + insert_at_index;
 						nearest_coordinate = annotation_set->coordinates + nearest_coordinate_index;
@@ -397,12 +401,13 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 			if (nearest_annotation->selected && coordinate_pixel_distance < annotation_hover_distance) {
 				annotation_set->selected_coordinate_index = nearest_coordinate_index;
 			}
-			else
-
-			// have to click somewhat close to a coordinate, otherwise treat as unselect
-			if (coordinate_pixel_distance < 500.0f) {
-				nearest_annotation->selected = !nearest_annotation->selected;
-//				annotation_set->is_edit_mode = false;
+			else {
+				// have to click somewhat close to a coordinate, otherwise treat as unselect
+				if (coordinate_pixel_distance < 500.0f) {
+					nearest_annotation->selected = !nearest_annotation->selected;
+				}
+				annotation_set->selected_coordinate_index = -1;
+				annotation_set->force_insert_mode = false;
 			}
 
 			if (nearest_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
@@ -423,20 +428,27 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 
 	recount_selected_annotations(app_state, annotation_set);
 
-	if (was_key_pressed(input, KEYCODE_DELETE)) {
-		if (annotation_set->selection_count > 0 && nearest_annotation_index > 0) {
-			show_delete_annotation_prompt = true;
-			ImGui::OpenPopup("delete_annotation_prompt");
-			// TODO: fix release keyboard events bug for good
-			input->keyboard.keys[KEYCODE_DELETE].down = false;
+	if (annotation_set->selection_count > 0) {
+		if (was_key_pressed(input, KEYCODE_DELETE)) {
+			if (nearest_annotation_index > 0) {
+				show_delete_annotation_prompt = true;
+				ImGui::OpenPopup("delete_annotation_prompt");
+				// TODO: fix release keyboard events bug for good
+				input->keyboard.keys[KEYCODE_DELETE].down = false;
+			}
 		}
+
+		if (was_key_pressed(input, 'C')) {
+			if (nearest_annotation_index > 0 && annotation_set->selected_coordinate_index >= 0) {
+				delete_coordinate(annotation_set, annotation_set->active_annotations[nearest_annotation_index], annotation_set->selected_coordinate_index);
+			}
+		}
+	} else {
+		// nothing selected
+		annotation_set->force_insert_mode = false;
 	}
 
-	if (was_key_pressed(input, 'C')) {
-		if (annotation_set->selection_count > 0 && nearest_annotation_index > 0 && annotation_set->selected_coordinate_index >= 0) {
-			delete_coordinate(annotation_set, annotation_set->active_annotations[nearest_annotation_index], annotation_set->selected_coordinate_index);
-		}
-	}
+
 
 	return nearest_annotation_index;
 }
