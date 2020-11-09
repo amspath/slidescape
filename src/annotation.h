@@ -98,6 +98,7 @@ typedef struct annotation_set_t {
 	bool is_edit_mode;
 	bool is_insert_coordinate_mode;
 	bool force_insert_mode;
+	bool is_split_mode;
 	i32 selection_count;
 	annotation_t** selected_annotations; // recreated every frame
 	i32 selected_coordinate_index;

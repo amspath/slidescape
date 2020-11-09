@@ -120,8 +120,14 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						};
 						if (ImGui::MenuItem("Insert coordinate", "Shift", &annotation_set->force_insert_mode)) {
 							annotation_set->is_insert_coordinate_mode = true;
+							annotation_set->is_split_mode = false;
 						};
-						if (ImGui::MenuItem("Split annotation here", NULL, false, false)) {}
+						if (ImGui::MenuItem("Split annotation here")) {
+							annotation_set->selected_coordinate_index = annotation_set->hovered_coordinate;
+							annotation_set->is_split_mode = true;
+							annotation_set->is_insert_coordinate_mode = false;
+							annotation_set->force_insert_mode = false;
+						}
 						ImGui::EndPopup();
 					}
 				}
@@ -139,6 +145,17 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 							draw_list->AddCircleFilled(transformed_pos, annotation_node_size * 1.4f, *(u32*)(&hover_color), 12);
 						}
 					}
+				}
+
+				if (annotation_set->is_edit_mode && annotation_set->is_split_mode) {
+					ASSERT(annotation_set->selected_coordinate_index >= annotation->first_coordinate && annotation_set->selected_coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
+					coordinate_t* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
+					v2f world_pos = {(float)split_coordinate->x, (float)split_coordinate->y};
+					v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
+					v2f split_line_points[2] = {};
+					split_line_points[0] = transformed_pos;
+					split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.pixel_width);
+					draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, false, thickness);
 				}
 			}
 
@@ -343,6 +360,67 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 
 }
 
+void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 first_coordinate_index, i32 second_coordinate_index) {
+	if (first_coordinate_index == second_coordinate_index) {
+		// Trivial case: clicked the same coordinate again -> cancel operation
+		annotation_set->is_split_mode = false;
+		return;
+	}
+	ASSERT(first_coordinate_index >= annotation->first_coordinate && first_coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
+	ASSERT(second_coordinate_index >= annotation->first_coordinate && second_coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
+	i32 lower_coordinate_index = MIN(first_coordinate_index, second_coordinate_index);
+	i32 upper_coordinate_index = MAX(first_coordinate_index, second_coordinate_index);
+	if ((upper_coordinate_index - lower_coordinate_index == 1) || (upper_coordinate_index - lower_coordinate_index == annotation->coordinate_count - 1)) {
+		// Trivial case: clicked adjacent coordinate -> cancel operation (can't split)
+		annotation_set->is_split_mode = false;
+		return;
+	}
+
+	// work with 'local' coordinate indices
+	lower_coordinate_index -= annotation->first_coordinate;
+	upper_coordinate_index -= annotation->first_coordinate;
+
+	// step 1: create a new annotation leaving out the section between the lower and upper bounds of the split section
+	// Note: the coordinates at the lower and upper bounds themselves are included (duplicated)!
+	{
+		i32 new_first_coordinate = annotation_set->coordinate_count;
+		i32 new_coordinate_count_lower_part = lower_coordinate_index + 1;
+		i32 new_coordinate_count_upper_part = annotation->coordinate_count - upper_coordinate_index;
+		i32 new_coordinate_count = new_coordinate_count_lower_part + new_coordinate_count_upper_part;
+		coordinate_t* new_coordinates = sb_add(annotation_set->coordinates, new_coordinate_count);
+		annotation_set->coordinate_count += new_coordinate_count;
+		coordinate_t* original_coordinates = annotation_set->coordinates + annotation->first_coordinate;
+		memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(coordinate_t));
+		memcpy(&new_coordinates[lower_coordinate_index + 1], &original_coordinates[upper_coordinate_index], new_coordinate_count_upper_part * sizeof(coordinate_t));
+
+		annotation_t new_annotation = *annotation;
+		new_annotation.first_coordinate = new_first_coordinate;
+		new_annotation.coordinate_count = new_coordinate_count;
+		new_annotation.coordinate_capacity = new_coordinate_count;
+
+		i32 new_stored_annotation_index = annotation_set->stored_annotation_count;
+		sb_push(annotation_set->stored_annotations, new_annotation);
+		annotation_set->stored_annotation_count++;
+		sb_push(annotation_set->active_annotation_indices, new_stored_annotation_index);
+		annotation_set->active_annotation_count++;
+	}
+
+	// step 2: compactify the original annotation, leaving only the extracted section between the bounds (inclusive)
+	{
+		i32 num_annotations_removed_front = lower_coordinate_index;
+		i32 new_coordinate_count = upper_coordinate_index - lower_coordinate_index + 1;
+		ASSERT(new_coordinate_count >= 3);
+		annotation->first_coordinate += num_annotations_removed_front;
+		annotation->coordinate_capacity -= num_annotations_removed_front;
+		annotation->coordinate_count = new_coordinate_count;
+	}
+
+	annotation_set->is_split_mode = false;
+	refresh_annotation_pointers(app_state, annotation_set);
+	recount_selected_annotations(app_state, annotation_set);
+	annotations_modified(annotation_set);
+}
+
 i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 	float coordinate_distance = 0.0f;
@@ -371,7 +449,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 			annotation_set->is_insert_coordinate_mode = false;
 		}
 
-		if (scene->drag_started && annotation_set->is_edit_mode && nearest_annotation->selected) {
+		if (scene->drag_started && annotation_set->is_edit_mode && !annotation_set->is_split_mode && nearest_annotation->selected) {
 			if (annotation_set->is_insert_coordinate_mode) {
 				// check if we have clicked close enough to a line segment to insert a coordinate there
 				v2f projected_point = {};
@@ -407,8 +485,16 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 
 		if (scene->clicked) {
 			// if annotation was already selected, we can try to select a coordinate as well
-			annotation_set->selected_coordinate_index = -1;
 			if (nearest_annotation->selected && coordinate_pixel_distance < annotation_hover_distance) {
+
+				// Annotation splitting: if we are in split mode, then another coordinate was already selected earlier;
+				// in this case we should finish the splitting operation by connecting up the newly selected coordinate
+				if (annotation_set->is_split_mode && annotation_set->selected_coordinate_index >= nearest_annotation->first_coordinate &&
+						annotation_set->selected_coordinate_index < nearest_annotation->first_coordinate + nearest_annotation->coordinate_count)
+				{
+					split_annotation(app_state, annotation_set, nearest_annotation, annotation_set->selected_coordinate_index, nearest_coordinate_index);
+				}
+
 				annotation_set->selected_coordinate_index = nearest_coordinate_index;
 			}
 			else {
@@ -418,6 +504,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 				}
 				annotation_set->selected_coordinate_index = -1;
 				annotation_set->force_insert_mode = false;
+				annotation_set->is_split_mode = false;
 			}
 
 			if (nearest_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
