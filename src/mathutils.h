@@ -85,14 +85,15 @@ typedef struct bounds2f {
 
 #pragma pack(pop)
 
-static inline float v2i_length(v2i v)               { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
-static inline float v2f_length(v2f v)               { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
-static inline float v2f_length_squared(v2f v)       { return SQUARE(v.x) + SQUARE(v.y); }
+static inline float v2i_length(v2i v)                       { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
+static inline float v2f_length(v2f v)                       { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
+static inline float v2f_length_squared(v2f v)               { return SQUARE(v.x) + SQUARE(v.y); }
 
-static inline v2f v2f_add(v2f a, v2f b)             { return (v2f){ a.x + b.x, a.y + b.y }; }
-static inline v2f v2f_subtract(v2f a, v2f b)        { return (v2f){ a.x - b.x, a.y - b.y }; }
-static inline float v2f_dot(v2f a, v2f b)           { return a.x * b.x + a.y * b.y; }
-static inline v2f v2f_scale(float scalar, v2f v)    { return (v2f){ v.x * scalar, v.y * scalar }; }
+static inline v2f v2f_add(v2f a, v2f b)                     { return (v2f){ a.x + b.x, a.y + b.y }; }
+static inline v2f v2f_subtract(v2f a, v2f b)                { return (v2f){ a.x - b.x, a.y - b.y }; }
+static inline float v2f_dot(v2f a, v2f b)                   { return a.x * b.x + a.y * b.y; }
+static inline v2f v2f_scale(float scalar, v2f v)            { return (v2f){ v.x * scalar, v.y * scalar }; }
+static inline v2f v2f_lerp(v2f a, v2f b_minus_a, float t)   { return v2f_add(a, v2f_scale(t, b_minus_a)); }
 
 // prototypes
 rect2i clip_rect(rect2i* first, rect2i* second);
@@ -106,7 +107,8 @@ i32 tile_pos_from_world_pos(float world_pos, float tile_side);
 bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height);
 bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b);
 bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minus_l, float t_minus_b);
-v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end);
+v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr);
+bool v2f_within_bounds(bounds2f bounds, v2f point);
 
 // globals
 #if defined(MATHUTILS_IMPL)

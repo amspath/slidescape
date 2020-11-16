@@ -136,7 +136,7 @@ bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minu
 
 // https://math.stackexchange.com/questions/330269/the-distance-from-a-point-to-a-line-segment
 // https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment
-v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end) {
+v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr) {
 	v2f line_end_minus_start = v2f_subtract(line_end, line_start);
 	float segment_length_sq = v2f_length_squared(line_end_minus_start);
 	if (segment_length_sq == 0.0f) {
@@ -148,7 +148,16 @@ v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end) {
 	// We clamp t from [0,1] to handle points outside the segment vw.
 	float t = v2f_dot(v2f_subtract(point, line_start), line_end_minus_start) / segment_length_sq;
 	float t_clamped = MAX(0, MIN(1, t));
-	v2f projection = v2f_add(line_start, v2f_scale(t_clamped, line_end_minus_start)); // lerp
+	if (t_ptr != NULL) {
+		*t_ptr = t_clamped; // return value to caller
+	}
+	v2f projection = v2f_lerp(line_start, line_end_minus_start, t_clamped); // lerp
 	return projection;
 }
+
+bool v2f_within_bounds(bounds2f bounds, v2f point) {
+	bool result = point.x >= bounds.left && point.x < bounds.right && point.y >= bounds.top && point.y < bounds.bottom;
+	return result;
+}
+
 

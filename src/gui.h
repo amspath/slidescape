@@ -80,7 +80,8 @@ extern float annotation_normal_line_thickness INIT(= 2.0f);
 extern float annotation_selected_line_thickness INIT(= 4.0f);
 extern float annotation_node_size INIT(= 5.0f);
 extern float annotation_opacity INIT(= 1.0f);
-extern float annotation_hover_distance INIT(= 9.0f);
+extern float annotation_hover_distance INIT(= 10.0f);
+extern float annotation_insert_hover_distance INIT(= 25.0f);
 extern bool show_delete_annotation_prompt;
 extern bool dont_ask_to_delete_annotations;
 

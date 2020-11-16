@@ -135,10 +135,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				if (annotation_set->is_edit_mode && (annotation_set->is_insert_coordinate_mode)) {
 					v2f projected_point = {};
 					float distance = 1e9f;
-					i32 insert_before_index = find_insertion_point_for_annotation(annotation_set, annotation, app_state->scene.mouse, &projected_point, &distance);
+					i32 insert_before_index = find_insertion_point_for_annotation(annotation_set, annotation, app_state->scene.mouse, NULL, &projected_point, &distance);
 					if (insert_before_index >= 0) {
 						float transformed_distance = distance / scene->zoom.pixel_width;
-						if (transformed_distance < annotation_hover_distance) {
+						if (transformed_distance < annotation_insert_hover_distance) {
 							v2f transformed_pos = world_pos_to_screen_pos(projected_point, camera_min, scene->zoom.pixel_width);
 							rgba_t hover_color = group->color;
 							hover_color.a = alpha / 2;
@@ -148,14 +148,20 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				}
 
 				if (annotation_set->is_edit_mode && annotation_set->is_split_mode) {
-					ASSERT(annotation_set->selected_coordinate_index >= annotation->first_coordinate && annotation_set->selected_coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
-					coordinate_t* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
-					v2f world_pos = {(float)split_coordinate->x, (float)split_coordinate->y};
-					v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
-					v2f split_line_points[2] = {};
-					split_line_points[0] = transformed_pos;
-					split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.pixel_width);
-					draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, false, thickness);
+					if (annotation_set->selected_coordinate_index >= annotation->first_coordinate && annotation_set->selected_coordinate_index < annotation->first_coordinate + annotation->coordinate_count) {
+						coordinate_t* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
+						v2f world_pos = {(float)split_coordinate->x, (float)split_coordinate->y};
+						v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
+						v2f split_line_points[2] = {};
+						split_line_points[0] = transformed_pos;
+						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.pixel_width);
+						draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, false, thickness);
+					} else {
+#if DO_DEBUG
+						console_print_error("Error: tried to draw line for annotation split mode, but the selected coordinate (%d) is invalid for this annotation\n", annotation_set->selected_coordinate_index);
+#endif
+					}
+
 				}
 			}
 
@@ -183,7 +189,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr,
                             i32* coordinate_index) {
 	i32 result = -1;
-	float shortest_sq_distance = 1e50;
+	float shortest_sq_distance = FLT_MAX;
 	// TODO: use bounding boxes and subdivide line segments with far apart coordinates
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		annotation_t* annotation = annotation_set->active_annotations[annotation_index];
@@ -210,16 +216,117 @@ i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, 
 	return result;
 }
 
-i32 find_insertion_point_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, v2f* projected_point_ptr, float* distance_ptr) {
+
+bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
+	bounds2f result = { +FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX };
+	if (annotation->coordinate_count >=1) {
+		for (i32 coordinate_index = annotation->first_coordinate; coordinate_index < annotation->first_coordinate + annotation->coordinate_count; ++coordinate_index) {
+			coordinate_t* coordinate = annotation_set->coordinates + coordinate_index;
+			float x = (float)coordinate->x;
+			float y = (float)coordinate->y;
+			result.left = MIN(result.left, x);
+			result.right = MAX(result.right, x);
+			result.top = MIN(result.top, y);
+			result.bottom = MAX(result.bottom, y);
+		}
+	}
+
+
+	return result;
+}
+
+bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin) {
+	if (!annotation->has_valid_bounds) {
+		annotation->bounds = bounds_for_annotation(annotation_set, annotation);
+		annotation->has_valid_bounds = true;
+	}
+	bounds2f bounds = annotation->bounds;
+	// TODO: Maybe make the tolerance depend on the size of the annotation?
+	if (tolerance_margin != 0.0f) {
+		bounds.left -= tolerance_margin;
+		bounds.right += tolerance_margin;
+		bounds.top -= tolerance_margin;
+		bounds.bottom += tolerance_margin;
+	}
+	bool result = v2f_within_bounds(bounds, point);
+	return result;
+
+}
+
+
+
+annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected) {
+	annotation_hit_result_t hit_result = {};
+	hit_result.annotation_index = -1;
+	hit_result.line_segment_coordinate_index = -1;
+	hit_result.line_segment_distance = FLT_MAX;
+	hit_result.coordinate_index = -1;
+	hit_result.coordinate_distance = FLT_MAX;
+	hit_result.is_valid = false;
+
+	float shortest_biased_line_segment_distance = FLT_MAX; // for making it easier to focus on only selected annotations
+
+	// Finding the nearest annotation
+	// Step 1: discard annotation if the point is outside the annotation's min/max coordinate bounds (plus a tolerance margin)
+	// Step 2: for the remaining annotations, calculate the distances from the point to each of the line segments between coordinates.
+	// Step 3: choose the annotation that has the closest distance.
+	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
+		annotation_t* annotation = annotation_set->active_annotations[annotation_index];
+		if (annotation->has_coordinates) {
+			if (is_point_within_annotation_bounds(annotation_set, annotation, point, bounds_check_tolerance)) {
+				float bias = annotation->selected ? bias_for_selected : 0.0f;
+				float line_segment_distance = FLT_MAX; // distance to line segment
+				v2f projected_point = {}; // projected point on line segment
+				float t_clamped = 0.0f; // how for we are along the line segment (between 0 and 1)
+				i32 nearest_line_segment_coordinate_index = find_insertion_point_for_annotation(annotation_set, annotation, point, &t_clamped, &projected_point, &line_segment_distance);
+				float biased_line_segment_distance = line_segment_distance - bias;
+				if (nearest_line_segment_coordinate_index >= 0 && biased_line_segment_distance < shortest_biased_line_segment_distance) {
+					shortest_biased_line_segment_distance = biased_line_segment_distance;
+					hit_result.line_segment_distance = line_segment_distance;
+					hit_result.line_segment_coordinate_index = nearest_line_segment_coordinate_index;
+					hit_result.line_segment_projected_point = projected_point;
+					hit_result.line_segment_t_clamped = t_clamped;
+					hit_result.annotation_index = annotation_index;
+				}
+			}
+		}
+
+	}
+
+	// Step 4: determine the closest coordinate of the closest annotation (as calculated above)
+	// Note: this is not necessarily the same as the closest coordinate globally (that may belong to a different annotation)!
+	float nearest_coordinate_distance_sq = FLT_MAX;
+	if (hit_result.annotation_index >= 0) {
+		annotation_t* annotation = annotation_set->active_annotations[hit_result.annotation_index];
+		ASSERT(annotation->has_coordinates);
+		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+			i32 global_coordinate_index = annotation->first_coordinate + i;
+			coordinate_t* coordinate = annotation_set->coordinates + global_coordinate_index;
+			float delta_x = point.x - (float)coordinate->x;
+			float delta_y = point.y - (float)coordinate->y;
+			float sq_distance = SQUARE(delta_x) + SQUARE(delta_y);
+			if (sq_distance < nearest_coordinate_distance_sq) {
+				nearest_coordinate_distance_sq = sq_distance;
+				hit_result.coordinate_index = annotation->first_coordinate + i;
+				hit_result.coordinate_distance = sqrtf(nearest_coordinate_distance_sq);
+				hit_result.is_valid = true;
+			}
+		}
+	}
+
+	return hit_result;
+}
+
+
+i32 find_insertion_point_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr) {
 	i32 insert_before_index = -1;
 	ASSERT(annotation->coordinate_count > 0);
 	if (annotation->coordinate_count == 1) {
 		// trivial case
 		coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate;
 		v2f line_point = {(float)coordinate->x, (float)coordinate->y};
-		if (projected_point_ptr) {
-			*projected_point_ptr = line_point;
-		}
+		if (t_ptr) *t_ptr = 0.0f;
+		if (projected_point_ptr) *projected_point_ptr = line_point;
 		if (distance_ptr) {
 			float distance = v2f_length(v2f_subtract(point, line_point));
 			*distance_ptr = distance;
@@ -227,8 +334,9 @@ i32 find_insertion_point_for_annotation(annotation_set_t* annotation_set, annota
 		insert_before_index = 1;
 	} else if (annotation->coordinate_count > 1) {
 		// find the line segment (between coordinates) closest to the point we are checking against
-		float closest_distance_sq = 1e9f;
+		float closest_distance_sq = FLT_MAX;
 		v2f closest_projected_point = {};
+		float t_closest = 0.0f;
 		bool found_closest = false;
 		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 			coordinate_t* coordinate_current = annotation_set->coordinates + annotation->first_coordinate + i;
@@ -236,7 +344,8 @@ i32 find_insertion_point_for_annotation(annotation_set_t* annotation_set, annota
 			coordinate_t* coordinate_after = annotation_set->coordinates + annotation->first_coordinate + coordinate_index_after;
 			v2f line_start = {(float)coordinate_current->x, (float)coordinate_current->y};
 			v2f line_end = {(float)coordinate_after->x, (float)coordinate_after->y};
-			v2f projected_point = project_point_on_line_segment(point, line_start, line_end);
+			float t = 0.0f;
+			v2f projected_point = project_point_on_line_segment(point, line_start, line_end, &t);
 			float distance_sq = v2f_length_squared(v2f_subtract(point, projected_point));
 			if (distance_sq < closest_distance_sq) {
 				found_closest = true;
@@ -282,6 +391,8 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 		memmove(coordinates_at_insertion_point + 1, coordinates_at_insertion_point, num_coordinates_to_move * sizeof(coordinate_t));
 		++annotation->coordinate_count;
 		*coordinates_at_insertion_point = new_coordinate;
+
+		annotation->has_valid_bounds = false;
 		annotations_modified(annotation_set);
 		refresh_annotation_pointers(app_state, annotation_set);
 //		console_print("inserted a coordinate at index %d\n", insert_at_index);
@@ -294,7 +405,8 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 }
 
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index) {
-	if (coordinate_index >= annotation->first_coordinate && coordinate_index < annotation->first_coordinate + annotation->coordinate_count) {
+	// TODO: What happens if there is only one coordinate left?
+	if (coordinate_index_valid_for_annotation(coordinate_index, annotation)) {
 		i32 one_past_last_coordinate = annotation->first_coordinate + annotation->coordinate_count;
 		i32 trailing_coordinate_count = one_past_last_coordinate - (coordinate_index + 1);
 		if (trailing_coordinate_count > 0) {
@@ -315,6 +427,7 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 	}
 #endif
 
+		annotation->has_valid_bounds = false;
 		annotations_modified(annotation_set);
 		annotation_set->selected_coordinate_index = -1;
 	} else {
@@ -366,8 +479,8 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		annotation_set->is_split_mode = false;
 		return;
 	}
-	ASSERT(first_coordinate_index >= annotation->first_coordinate && first_coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
-	ASSERT(second_coordinate_index >= annotation->first_coordinate && second_coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
+	ASSERT(coordinate_index_valid_for_annotation(first_coordinate_index, annotation));
+	ASSERT(coordinate_index_valid_for_annotation(second_coordinate_index, annotation));
 	i32 lower_coordinate_index = MIN(first_coordinate_index, second_coordinate_index);
 	i32 upper_coordinate_index = MAX(first_coordinate_index, second_coordinate_index);
 	if ((upper_coordinate_index - lower_coordinate_index == 1) || (upper_coordinate_index - lower_coordinate_index == annotation->coordinate_count - 1)) {
@@ -397,6 +510,7 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		new_annotation.first_coordinate = new_first_coordinate;
 		new_annotation.coordinate_count = new_coordinate_count;
 		new_annotation.coordinate_capacity = new_coordinate_count;
+		new_annotation.has_valid_bounds = false;
 
 		i32 new_stored_annotation_index = annotation_set->stored_annotation_count;
 		sb_push(annotation_set->stored_annotations, new_annotation);
@@ -413,6 +527,7 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		annotation->first_coordinate += num_annotations_removed_front;
 		annotation->coordinate_capacity -= num_annotations_removed_front;
 		annotation->coordinate_count = new_coordinate_count;
+		annotation->has_valid_bounds = false;
 	}
 
 	annotation_set->is_split_mode = false;
@@ -421,95 +536,166 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 	annotations_modified(annotation_set);
 }
 
-i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
+void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
-	float coordinate_distance = 0.0f;
-	i32 nearest_coordinate_index = -1;
-	i32 nearest_annotation_index = find_nearest_annotation(annotation_set, scene->mouse.x, scene->mouse.y, &coordinate_distance,
-	                                                       &nearest_coordinate_index);
 
 	if (was_key_pressed(input, 'E')) {
 		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
 	}
 
-	if (nearest_annotation_index >= 0 && nearest_coordinate_index >= 0) {
+	// TODO: Handle mouse clicks/drag starts differently.
+	// Right now, if you move the mouse only a little after pressing LMB down, it immediately registers as a dragging start.
+	// A 'click' gets registered when the dragging operation is within certain limits. However, this is still annoying.
+	// Maybe there should be a 'dead zone' where the screen doesn't start panning until you move outside the 'dead zone'.
+	// If you end the drag inside the dead zone, it will be registered as a click. If outside, it becomes a drag.
+
+	// TODO: Instead of a bias, we should handle the situation differently depending on what is actually happening.
+	// E.g.: if clicking to select another annotation, but within the tolerance/bias, we should not unselect but rather switch
+	// over to the other annotation.
+	// And if we 'promise' to grab or insert a coordinate (as indicated by the visual cue: larger node circle), then
+	// that should always be the action that happens, no matter if it's within the tolerance or not.
+	// Possible solution: retrieve multiple hit results, one for only the selected annotation(s), and one
+	// for the 'actually' closest annotation. Then we decide later what to do, based on the difference between those results.
+
+	annotation_hit_result_t hit_result = get_annotation_hit_result(annotation_set, scene->mouse, 300.0f * scene->zoom.pixel_width, 5.0f * scene->zoom.pixel_width);
+	if (hit_result.is_valid) {
 		ASSERT(scene->zoom.pixel_width > 0.0f);
-		float coordinate_pixel_distance = coordinate_distance / scene->zoom.pixel_width;
+		float line_segment_pixel_distance = hit_result.line_segment_distance / scene->zoom.pixel_width;
+		float coordinate_pixel_distance = hit_result.coordinate_distance / scene->zoom.pixel_width;
 
-		annotation_t* nearest_annotation = annotation_set->active_annotations[nearest_annotation_index];
-		coordinate_t* nearest_coordinate = annotation_set->coordinates + nearest_coordinate_index;
-		annotation_set->hovered_coordinate = nearest_coordinate_index;
+		annotation_t* hit_annotation = annotation_set->active_annotations[hit_result.annotation_index];
+		coordinate_t* hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
+
+		annotation_set->hovered_coordinate = hit_result.coordinate_index;
 		annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
-//		console_print("The nearest coordinate is %d\n", nearest_coordinate_index);
 
+		bool click_action_handled = false;
 
-		if (annotation_set->is_edit_mode && app_state->mouse_mode == MODE_VIEW && is_key_down(input, KEYCODE_SHIFT)) {
-			annotation_set->is_insert_coordinate_mode = true;
-		} else if (!annotation_set->force_insert_mode) {
-			annotation_set->is_insert_coordinate_mode = false;
-		}
+		if (annotation_set->is_edit_mode) {
 
-		if (scene->drag_started && annotation_set->is_edit_mode && !annotation_set->is_split_mode && nearest_annotation->selected) {
-			if (annotation_set->is_insert_coordinate_mode) {
-				// check if we have clicked close enough to a line segment to insert a coordinate there
-				v2f projected_point = {};
-				float distance_to_edge = 1e9f;
-				i32 insert_at_index = find_insertion_point_for_annotation(annotation_set, nearest_annotation, app_state->scene.mouse, &projected_point, &distance_to_edge);
-				if (insert_at_index >= 0) {
-					float pixel_distance_to_edge = distance_to_edge / scene->zoom.pixel_width;
-					if (pixel_distance_to_edge < annotation_hover_distance) {
-						// try to insert a new coordinate, and start dragging that
-						coordinate_t new_coordinate = { .x = (double)projected_point.x, .y = (double)projected_point.y };
-						insert_coordinate(app_state, annotation_set, nearest_annotation, insert_at_index, new_coordinate);
-						// update state so we can immediately interact with the newly created coordinate
-						annotation_set->is_insert_coordinate_mode = false;
-						annotation_set->force_insert_mode = false;
-						coordinate_distance = coordinate_pixel_distance = 0.0f;
-						nearest_coordinate_index = nearest_annotation->first_coordinate + insert_at_index;
-						nearest_coordinate = annotation_set->coordinates + nearest_coordinate_index;
-						annotation_set->hovered_coordinate = nearest_coordinate_index;
-						annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
+			// The special mode for inserting new coordinate is enabled under one of two conditions:
+			// - While editing, the user uses Shift+Click to quickly insert a new coordinate between two coordinates
+			//   (if you release Shift without clicking, the mode is disabled again)
+			// - While editing, the user right-clicks, selects the context menu item for inserting a coordinate
+			//   and enters 'forced' insert mode. This mode ends when you click
+			if (app_state->mouse_mode == MODE_VIEW && is_key_down(input, KEYCODE_SHIFT)) {
+				annotation_set->is_insert_coordinate_mode = true;
+			} else if (!annotation_set->force_insert_mode) {
+				annotation_set->is_insert_coordinate_mode = false;
+			}
+
+			// Actions for clicking (LMB down) and/or starting a dragging operation while in editing mode:
+			// - Basic action: if we are close enough to a coordinate, we 'grab' the coordinate and start dragging it.
+			// - If we are in insert coordinate mode, we instead create a new coordinate at the chosen location
+			//   and then immediately start dragging the new coordinate.
+			if (scene->drag_started && !annotation_set->is_split_mode && hit_annotation->selected) {
+				if (annotation_set->is_insert_coordinate_mode) {
+					// check if we have clicked close enough to a line segment to insert a coordinate there
+					v2f projected_point = {};
+					float distance_to_edge = FLT_MAX;
+					float t_clamped = 0.0f;
+					i32 insert_at_index = find_insertion_point_for_annotation(annotation_set, hit_annotation, app_state->scene.mouse, &t_clamped, &projected_point, &distance_to_edge);
+					if (insert_at_index >= 0) {
+						float pixel_distance_to_edge = distance_to_edge / scene->zoom.pixel_width;
+						if (pixel_distance_to_edge < annotation_insert_hover_distance) {
+							// try to insert a new coordinate, and start dragging that
+							coordinate_t new_coordinate = { .x = (double)projected_point.x, .y = (double)projected_point.y };
+							insert_coordinate(app_state, annotation_set, hit_annotation, insert_at_index, new_coordinate);
+							// update state so we can immediately interact with the newly created coordinate
+							annotation_set->is_insert_coordinate_mode = false;
+							annotation_set->force_insert_mode = false;
+							hit_result.coordinate_distance = coordinate_pixel_distance = 0.0f;
+							hit_result.coordinate_index = hit_annotation->first_coordinate + insert_at_index;
+							hit_result.line_segment_coordinate_index = insert_at_index;
+							hit_result.line_segment_distance = distance_to_edge;
+							hit_result.line_segment_t_clamped = t_clamped;
+							hit_result.line_segment_projected_point = projected_point;
+							hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
+							annotation_set->hovered_coordinate = hit_result.coordinate_index;
+							annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
+						}
 					}
 				}
-			}
 
-			if (coordinate_pixel_distance < annotation_hover_distance) {
 				// Start dragging a coordinate
-//				console_print("Selecting coordinate %d\n", nearest_coordinate_index);
-				app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
-				annotation_set->selected_coordinate_index = nearest_coordinate_index;
-				annotation_set->coordinate_drag_start_offset.x = scene->mouse.x - nearest_coordinate->x;
-				annotation_set->coordinate_drag_start_offset.y = scene->mouse.y - nearest_coordinate->y;
+				if (coordinate_pixel_distance < annotation_hover_distance) {
+//				    console_print("Grabbed coordinate %d\n", nearest_coordinate_index);
+					app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
+					annotation_set->selected_coordinate_index = hit_result.coordinate_index;
+					annotation_set->coordinate_drag_start_offset.x = scene->mouse.x - hit_coordinate->x;
+					annotation_set->coordinate_drag_start_offset.y = scene->mouse.y - hit_coordinate->y;
+				}
 			}
-		}
 
-		if (scene->clicked) {
-			// if annotation was already selected, we can try to select a coordinate as well
-			if (nearest_annotation->selected && coordinate_pixel_distance < annotation_hover_distance) {
 
-				// Annotation splitting: if we are in split mode, then another coordinate was already selected earlier;
-				// in this case we should finish the splitting operation by connecting up the newly selected coordinate
-				if (annotation_set->is_split_mode && annotation_set->selected_coordinate_index >= nearest_annotation->first_coordinate &&
-						annotation_set->selected_coordinate_index < nearest_annotation->first_coordinate + nearest_annotation->coordinate_count)
-				{
-					split_annotation(app_state, annotation_set, nearest_annotation, annotation_set->selected_coordinate_index, nearest_coordinate_index);
+			// Actions when scene is clicked (LMB release without dragging):
+			// - Select a previously unselected annotation
+			// - Unselect an annotation
+			// - Special: when in splitting mode and clicking on a coordinate, split that annotation in two.
+			if (scene->clicked) {
+
+
+				// Annotation splitting: if we are in split mode, then another coordinate was selected earlier;
+				// in this case we should try to finish the splitting operation by connecting up the newly selected coordinate
+				if (annotation_set->is_split_mode) {
+					bool split_ok = false;
+					// Have we clicked on a coordinate?
+					if (hit_annotation->selected && coordinate_pixel_distance < annotation_hover_distance) {
+						// Are the coordinates valid?
+						if (coordinate_index_valid_for_annotation(annotation_set->selected_coordinate_index, hit_annotation) &&
+								coordinate_index_valid_for_annotation(hit_result.coordinate_index, hit_annotation))
+						{
+							split_annotation(app_state, annotation_set, hit_annotation, annotation_set->selected_coordinate_index, hit_result.coordinate_index);
+							split_ok = true;
+						}
+					}
+					if (!split_ok) {
+						// failed
+					}
+					click_action_handled = true;
 				}
 
-				annotation_set->selected_coordinate_index = nearest_coordinate_index;
+				// Have we clicked on a coordinate?
+				if (hit_annotation->selected && coordinate_pixel_distance < annotation_hover_distance) {
+					annotation_set->selected_coordinate_index = hit_result.coordinate_index;
+				}
+
+
 			}
-			else {
-				// have to click somewhat close to a coordinate, otherwise treat as unselect
-				if (coordinate_pixel_distance < 500.0f) {
-					nearest_annotation->selected = !nearest_annotation->selected;
+
+		} else {
+			// We are not in editing mode.
+			annotation_set->selected_coordinate_index = -1;
+			annotation_set->is_insert_coordinate_mode = false;
+			annotation_set->force_insert_mode = false;
+			annotation_set->is_split_mode = false;
+		}
+		// Select/unselect (both in edit mode and not in edit mode)
+		if (scene->clicked && !click_action_handled) {
+			bool did_select = false;
+
+			if (!click_action_handled) {
+				if (!hit_annotation->selected) {
+					hit_annotation->selected = true;
+					did_select = true;
+				} else {
+					hit_annotation->selected = false;
 				}
 				annotation_set->selected_coordinate_index = -1;
-				annotation_set->force_insert_mode = false;
-				annotation_set->is_split_mode = false;
+				click_action_handled = true;
 			}
 
-			if (nearest_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
-				nearest_annotation->group_id = annotation_set->last_assigned_annotation_group;
+			ASSERT(click_action_handled);
+
+			// Feature for quickly assigning the same annotation group to the next selected annotation.
+			if (did_select && hit_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
+				hit_annotation->group_id = annotation_set->last_assigned_annotation_group;
+				annotations_modified(annotation_set);
 			}
+
+			annotation_set->is_insert_coordinate_mode = false;
+			annotation_set->force_insert_mode = false;
+			annotation_set->is_split_mode = false;
 		}
 
 	}
@@ -517,7 +703,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 	// unselect all annotations (except if Ctrl held down)
 	if (scene->clicked && !is_key_down(input, KEYCODE_CONTROL)) {
 		for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
-			if (i == nearest_annotation_index) continue; // skip the one we just selected!
+			if (i == hit_result.annotation_index) continue; // skip the one we just selected!
 			annotation_t* annotation = annotation_set->active_annotations[i];
 			annotation->selected = false;
 		}
@@ -527,7 +713,7 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 
 	if (annotation_set->selection_count > 0) {
 		if (was_key_pressed(input, KEYCODE_DELETE)) {
-			if (nearest_annotation_index > 0) {
+			if (hit_result.annotation_index > 0) {
 				if (dont_ask_to_delete_annotations) {
 					delete_selected_annotations(app_state, annotation_set);
 				} else {
@@ -539,8 +725,8 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 		}
 
 		if (was_key_pressed(input, 'C') && annotation_set->is_edit_mode) {
-			if (nearest_annotation_index > 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
-				delete_coordinate(annotation_set, annotation_set->active_annotations[nearest_annotation_index], annotation_set->hovered_coordinate);
+			if (hit_result.annotation_index > 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
+				delete_coordinate(annotation_set, annotation_set->active_annotations[hit_result.annotation_index], annotation_set->hovered_coordinate);
 			}
 		}
 	} else {
@@ -548,9 +734,6 @@ i32 interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* i
 		annotation_set->force_insert_mode = false;
 	}
 
-
-
-	return nearest_annotation_index;
 }
 
 void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group) {

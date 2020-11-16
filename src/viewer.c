@@ -792,6 +792,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						coordinate_t* coordinate = scene->annotation_set.coordinates + coordinate_index;
 						coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
 						coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
+						// TODO: invalidate annotation bounds
 						annotations_modified(&scene->annotation_set);
 					}
 				} else if (scene->drag_ended) {
