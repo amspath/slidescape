@@ -129,13 +129,18 @@ static inline bool coordinate_index_valid_for_annotation(i32 coordinate_index, a
 }
 
 
-void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
-i32 find_nearest_annotation(annotation_set_t* annotation_set, float x, float y, float* distance_ptr, i32* coordinate_index);
-i32 find_insertion_point_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);
-void annotations_modified(annotation_set_t* annotation_set);
-void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
+bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
+bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin);
+annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected);
+i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);
+void annotations_modified(annotation_set_t* annotation_set);
+void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, coordinate_t new_coordinate);
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index);
+void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
+void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 first_coordinate_index, i32 second_coordinate_index);
+void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group);
+void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
