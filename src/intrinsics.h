@@ -55,8 +55,16 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 //TODO: implement
 #define write_barrier
 #define read_barrier
-#define atomic_increment(x)
-#define atomic_compare_exchange(x)
+
+static inline void atomic_increment(volatile i32* x) {
+    __sync_fetch_and_add(x, 1);
+}
+
+static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
+    bool result = __sync_val_compare_and_swap(destination, comparand, exchange);
+    return result;
+}
+
 #endif
 
 

@@ -142,6 +142,15 @@ elseif(APPLE)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             macos_main.mm   imgui_impl_osx.mm
     )
+else()
+    set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
+         #[[   imgui.cpp
+            imgui_demo.cpp
+            imgui_draw.cpp
+            imgui_widgets.cpp
+            imgui_impl_opengl3.cpp]]
+            linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp
+    )
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
@@ -151,16 +160,17 @@ if (WIN32)
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
     # Hide the console window on release builds
     target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
-    target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 elseif(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
-    target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
-endif(WIN32)
-
+else()
+    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
+    target_link_libraries(slideviewer pthread m GL GLEW SDL2)
+endif()
+target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 
 set(SERVER_SOURCE_FILES
         platform.c

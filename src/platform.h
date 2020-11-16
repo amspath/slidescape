@@ -21,6 +21,10 @@
 #include "common.h"
 #include "mathutils.h"
 
+#if LINUX
+#include <SDL2/SDL.h>
+#endif
+
 #if WINDOWS
 #include "windows.h"
 #else
@@ -155,8 +159,10 @@ typedef struct input_t {
 
 #if WINDOWS
 typedef HWND window_handle_t;
-#else
+#elif APPLE
 typedef void* window_handle_t;
+#else
+typedef SDL_Window* window_handle_t;
 #endif
 
 // virtual keycodes

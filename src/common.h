@@ -54,6 +54,13 @@
 #define fsetpos64 fsetpos
 #endif
 
+#if defined(__linux__) || (!defined(__APPLE___) && (defined(__unix__) || defined(_POSIX_VERSION)))
+#define LINUX 1
+#define OPENGL_H <GL/gl.h>
+#else
+#define LINUX 0
+#endif
+
 // Compiler detection
 #ifdef _MSC_VER
 #define COMPILER_MSVC 1
@@ -87,6 +94,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
+
+#if LINUX
+#include <fcntl.h>
+#endif
 
 #include <stretchy_buffer.h> // https://github.com/nothings/stb/blob/master/stretchy_buffer.h
 #define sb_raw_count(a)    stb__sbn(a)
