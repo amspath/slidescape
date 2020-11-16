@@ -252,7 +252,7 @@ SlideviewerView* g_view;
 }
 
 -(void)menu_item_clicked_about              { show_about_window = true; }
--(void)menu_item_clicked_preferences        { show_display_options_window = true; }
+-(void)menu_item_clicked_preferences        { show_general_options_window = true; }
 -(void)menu_item_clicked_open               { want_open_file_dialog = true; }
 -(void)menu_item_clicked_close              { want_close = true; }
 -(void)menu_item_clicked_open_remote        { show_open_remote_window = true; }
@@ -263,7 +263,7 @@ SlideviewerView* g_view;
 -(void)menu_item_clicked_annotations        { show_annotations_window = true; }
 -(void)menu_item_clicked_assign_group       { show_annotation_group_assignment_window = true; }
 -(void)menu_item_clicked_fullscreen         { want_toggle_fullscreen = true; }
--(void)menu_item_clicked_image_adjustments  { show_image_adjustments_window = true; }
+-(void)menu_item_clicked_image_options      { show_image_options_window = true; }
 -(void)menu_item_clicked_case_list          { show_slide_list_window = true; }
 -(void)menu_item_clicked_console_window     { show_console_window = true; }
 -(void)menu_item_clicked_debug_window       { show_demo_window = true; }
@@ -355,8 +355,8 @@ SlideviewerView* g_view;
 	[[current_menu addItemWithTitle:@"Fullscreen"
 	                        action:@selector(menu_item_clicked_fullscreen)
 	                 keyEquivalent:@"F"] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
-	[current_menu addItemWithTitle:@"Image adjustments..."
-	                        action:@selector(menu_item_clicked_image_adjustments)
+	[current_menu addItemWithTitle:@"Image options..."
+	                        action:@selector(menu_item_clicked_image_options)
 	                 keyEquivalent:@""];
 	[current_menu addItem:[NSMenuItem separatorItem]];
 	[current_menu addItemWithTitle:@"Show case list"

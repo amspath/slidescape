@@ -54,7 +54,7 @@
 #define fsetpos64 fsetpos
 #endif
 
-#if defined(__linux__) || (!defined(__APPLE___) && (defined(__unix__) || defined(_POSIX_VERSION)))
+#if defined(__linux__) || (!defined(__APPLE__) && (defined(__unix__) || defined(_POSIX_VERSION)))
 #define LINUX 1
 #define OPENGL_H <GL/gl.h>
 #else
