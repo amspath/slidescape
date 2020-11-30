@@ -108,12 +108,12 @@ float window_scale_factor = 1.0f;
 {
     [super prepareOpenGL];
 
-#ifndef DEBUG
+	// Synchronize buffer swaps with vertical refresh rate
     GLint swapInterval = 1;
     [[self openGLContext] setValues:&swapInterval forParameter:NSOpenGLCPSwapInterval];
-    if (swapInterval == 0)
-        NSLog(@"Error: Cannot set swap interval.");
-#endif
+    if (swapInterval == 0) {
+	    NSLog(@"Error: Cannot set swap interval.");
+    }
 }
 
 -(void)updateAndDrawDemoView
@@ -129,8 +129,7 @@ float window_scale_factor = 1.0f;
 	i32 fb_width = (i32)(width * window_scale_factor);
 	i32 fb_height = (i32)(height * window_scale_factor);
 
-	viewer_update_and_render(&global_app_state, curr_input, fb_width, fb_height, 0.17f);
-
+	viewer_update_and_render(&global_app_state, curr_input, fb_width, fb_height, 0.01667f);
 
     // Present
     [[self openGLContext] flushBuffer];
@@ -140,7 +139,9 @@ float window_scale_factor = 1.0f;
 //    fprintf(stderr, "frame time: %g ms\n", seconds_elapsed * 1000.0f);
 
 	if (!animationTimer)
-        animationTimer = [NSTimer scheduledTimerWithTimeInterval:0.017 target:self selector:@selector(animationTimerFired:) userInfo:nil repeats:YES];
+        animationTimer = [NSTimer scheduledTimerWithTimeInterval:0.010 target:self selector:@selector(animationTimerFired:) userInfo:nil repeats:YES];
+
+	platform_sleep(1);
 }
 
 -(void)reshape
@@ -619,7 +620,7 @@ void* worker_thread(void* parameter) {
 	for (;;) {
 		if (!is_queue_work_in_progress(thread_info->queue)) {
 			platform_sleep(1);
-			sem_trywait(thread_info->queue->semaphore);
+			sem_wait(thread_info->queue->semaphore);
 		}
 		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
 	}
@@ -731,6 +732,7 @@ int main(int argc, const char* argv[])
 	get_system_info();
 	macos_init_multithreading();
 	macos_init_input();
+	is_vsync_enabled = 1;
 
 	@autoreleasepool
 	{
