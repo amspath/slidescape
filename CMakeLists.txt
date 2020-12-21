@@ -144,11 +144,6 @@ elseif(APPLE)
     )
 else()
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-         #[[   imgui.cpp
-            imgui_demo.cpp
-            imgui_draw.cpp
-            imgui_widgets.cpp
-            imgui_impl_opengl3.cpp]]
             linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp
     )
 endif()

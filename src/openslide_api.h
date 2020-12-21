@@ -47,19 +47,19 @@ typedef struct _openslide openslide_t;
 typedef struct openslide_api {
 	const char*  (WINAPI *openslide_detect_vendor)(const char *filename);
 	openslide_t* (WINAPI *openslide_open)(const char *filename);
-	int32_t      (WINAPI *openslide_get_level_count)(openslide_t *osr);
-	void         (WINAPI *openslide_get_level0_dimensions)(openslide_t *osr, int64_t *w, int64_t *h);
-	void         (WINAPI *openslide_get_level_dimensions)(openslide_t *osr, int32_t level, int64_t *w, int64_t *h);
-	double       (WINAPI *openslide_get_level_downsample)(openslide_t *osr, int32_t level);
-	int32_t      (WINAPI *openslide_get_best_level_for_downsample)(openslide_t *osr, double downsample);
-	void         (WINAPI *openslide_read_region)(openslide_t *osr, uint32_t *dest, int64_t x, int64_t y, int32_t level, int64_t w, int64_t h);
+    i32          (WINAPI *openslide_get_level_count)(openslide_t *osr);
+	void         (WINAPI *openslide_get_level0_dimensions)(openslide_t *osr, i64 *w, i64 *h);
+	void         (WINAPI *openslide_get_level_dimensions)(openslide_t *osr, i32 level, i64 *w, i64 *h);
+	double       (WINAPI *openslide_get_level_downsample)(openslide_t *osr, i32 level);
+    i32          (WINAPI *openslide_get_best_level_for_downsample)(openslide_t *osr, double downsample);
+	void         (WINAPI *openslide_read_region)(openslide_t *osr, uint32_t *dest, i64 x, i64 y, i32 level, i64 w, i64 h);
 	void         (WINAPI *openslide_close)(openslide_t *osr);
 	const char * (WINAPI *openslide_get_error)(openslide_t *osr);
 	const char * const *(WINAPI *openslide_get_property_names)(openslide_t *osr);
 	const char * (WINAPI *openslide_get_property_value)(openslide_t *osr, const char *name);
 	const char * const *(WINAPI *openslide_get_associated_image_names)(openslide_t *osr);
-	void         (WINAPI *openslide_get_associated_image_dimensions)(openslide_t *osr, const char *name, int64_t *w, int64_t *h);
-	void         (WINAPI *openslide_read_associated_image)(openslide_t *osr, const char *name, uint32_t *dest);
+	void         (WINAPI *openslide_get_associated_image_dimensions)(openslide_t *osr, const char *name, i64 *w, i64 *h);
+	void         (WINAPI *openslide_read_associated_image)(openslide_t *osr, const char *name, u32 *dest);
 	const char * (WINAPI *openslide_get_version)(void);
 } openslide_api;
 

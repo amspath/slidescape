@@ -191,6 +191,8 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				level_image->um_per_pixel_y = ifd->um_per_pixel_y;
 				level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
 				level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
+				ASSERT(level_image->x_tile_side_in_um > 0);
+				ASSERT(level_image->y_tile_side_in_um > 0);
 				level_image->tiles = (tile_t*) calloc(1, ifd->tile_count * sizeof(tile_t));
 				ASSERT(ifd->tile_byte_counts != NULL);
 				ASSERT(ifd->tile_offsets != NULL);
@@ -432,7 +434,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	if (input) {
 		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
 
-		if (was_key_pressed(input, 'W') && is_key_down(input, KEYCODE_CONTROL)) {
+		if (was_key_pressed(input, SCANCODE_W) && input->keyboard.key_ctrl.down) {
 			menu_close_file(app_state);
 			goto after_scene_render;
 		}
@@ -605,9 +607,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			float key_repeat_interval = 0.15f; // in seconds
 
 			// Zoom out using Z or /
-			if (is_key_down(input, 'Z') || is_key_down(input, KEYCODE_OEM_2 /* '/' */)) {
+			if (is_key_down(input, SCANCODE_Z) || is_key_down(input, SCANCODE_SLASH)) {
 
-				if (was_key_pressed(input, 'Z') || was_key_pressed(input, KEYCODE_OEM_2 /* '/' */)) {
+				if (was_key_pressed(input, SCANCODE_Z) || was_key_pressed(input, SCANCODE_SLASH)) {
 					dlevel += 1;
 					zoom_in_key_hold_down_start_time = get_clock();
 					zoom_in_key_times_zoomed_while_holding = 0;
@@ -622,10 +624,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			// Zoom in using X or .
-			if (is_key_down(input, 'X') || is_key_down(input, KEYCODE_OEM_PERIOD)) {
+			if (is_key_down(input, SCANCODE_X) || is_key_down(input, SCANCODE_PERIOD)) {
 
 
-				if (was_key_pressed(input, 'X') || was_key_pressed(input, KEYCODE_OEM_PERIOD)) {
+				if (was_key_pressed(input, SCANCODE_X) || was_key_pressed(input, SCANCODE_PERIOD)) {
 					dlevel -= 1;
 					zoom_out_key_hold_down_start_time = get_clock();
 					zoom_out_key_times_zoomed_while_holding = 0;
@@ -707,25 +709,25 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning should be faster when zoomed in very far.
 			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
-			if (is_key_down(input, KEYCODE_SHIFT)) {
+			if (input->keyboard.key_shift.down) {
 				panning_multiplier *= 0.25f;
 			}
 
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
-			if (input->keyboard.action_down.down || is_key_down(input, 'S')) {
+			if (input->keyboard.action_down.down || is_key_down(input, SCANCODE_S)) {
 				scene->camera.y += scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
-			if (input->keyboard.action_up.down || is_key_down(input, 'W')) {
+			if (input->keyboard.action_up.down || is_key_down(input, SCANCODE_W)) {
 				scene->camera.y -= scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
-			if (input->keyboard.action_right.down || is_key_down(input, 'D')) {
+			if (input->keyboard.action_right.down || is_key_down(input, SCANCODE_D)) {
 				scene->camera.x += scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
-			if (input->keyboard.action_left.down || is_key_down(input, 'A')) {
+			if (input->keyboard.action_left.down || is_key_down(input, SCANCODE_A)) {
 				scene->camera.x -= scene->zoom.pixel_width * panning_speed;
 				mouse_hide();
 			}
@@ -738,12 +740,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
 
 
-			/*if (was_key_pressed(input, 'O')) {
+			/*if (was_key_pressed(input, SCANCODE_O)) {
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
 //				console_print("switching to creation mode\n");
 			}*/
 
-			if (was_key_pressed(input, 'P')) {
+			if (was_key_pressed(input, SCANCODE_P)) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;
 			}
 
@@ -951,7 +953,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// The lowest needed level might be lower than the actual current downsampling level,
 		// because some levels may not have image data available (-> need to fall back to lower level).
 		i32 highest_visible_level = image->level_count - 1;
-		i32 lowest_visible_level = scene->zoom.level;
+		i32 lowest_visible_level = ATLEAST(scene->zoom.level, 0);
 		lowest_visible_level = ATMOST(highest_visible_level, lowest_visible_level);
 		for (; lowest_visible_level > 0; --lowest_visible_level) {
 			if (image->level_images[lowest_visible_level].exists) {
@@ -965,6 +967,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
 
 		for (i32 level = highest_visible_level; level >= lowest_visible_level; --level) {
+			ASSERT(level >= 0 && level < COUNT(image->level_images));
 			level_image_t *drawn_level = image->level_images + level;
 			if (!drawn_level->exists) {
 				continue; // no image data

@@ -33,6 +33,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	image_t* image = task->image;
 	level_image_t* level_image = image->level_images + level;
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
+	ASSERT(level_image->x_tile_side_in_um > 0&& level_image->y_tile_side_in_um > 0);
 	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
 	float tile_world_pos_y_end = (tile_y + 1) * level_image->y_tile_side_in_um;
 	float tile_x_excess = tile_world_pos_x_end - image->width_in_um;

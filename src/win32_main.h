@@ -60,7 +60,6 @@ void win32_diagnostic(const char* prefix);
 #endif
 
 extern HWND main_window;
-extern SYSTEM_INFO system_info;
 
 
 #undef INIT

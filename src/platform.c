@@ -130,6 +130,31 @@ void memrw_destroy(memrw_t* buffer) {
 	memset(buffer, 0, sizeof(*buffer));
 }
 
+void get_system_info() {
+#if WINDOWS
+    SYSTEM_INFO system_info;
+    GetSystemInfo(&system_info);
+	logical_cpu_count = (i32)system_info.dwNumberOfProcessors;
+	physical_cpu_count = logical_cpu_count; // TODO: how to read this on Windows?
+	os_page_size = system_info.dwPageSize;
+#elif APPLE
+    size_t physical_cpu_count_len = sizeof(physical_cpu_count);
+	size_t logical_cpu_count_len = sizeof(logical_cpu_count);
+	sysctlbyname("hw.physicalcpu", &physical_cpu_count, &physical_cpu_count_len, NULL, 0);
+	sysctlbyname("hw.logicalcpu", &logical_cpu_count, &logical_cpu_count_len, NULL, 0);
+	os_page_size = (u32) getpagesize();
+	page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
+	is_macos = true;
+#else
+    logical_cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
+    physical_cpu_count = logical_cpu_count; // TODO: how to read this on Linux?
+    os_page_size = (u32) getpagesize();
+    page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
+#endif
+    console_print("There are %d logical CPU cores\n", logical_cpu_count);
+    total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
+}
+
 
 #if !IS_SERVER
 

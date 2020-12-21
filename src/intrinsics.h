@@ -61,8 +61,8 @@ static inline void atomic_increment(volatile i32* x) {
 }
 
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
-    bool result = __sync_val_compare_and_swap(destination, comparand, exchange);
-    return result;
+    i32 read_value = __sync_val_compare_and_swap(destination, comparand, exchange);
+    return (read_value == comparand);
 }
 
 #endif

@@ -581,20 +581,7 @@ bool check_fullscreen(window_handle_t window) {
 }
 
 
-
-void get_system_info() {
-	size_t physical_cpu_count_len = sizeof(physical_cpu_count);
-	size_t logical_cpu_count_len = sizeof(logical_cpu_count);
-	sysctlbyname("hw.physicalcpu", &physical_cpu_count, &physical_cpu_count_len, NULL, 0);
-	sysctlbyname("hw.logicalcpu", &logical_cpu_count, &logical_cpu_count_len, NULL, 0);
-	fprintf(stderr,"There are %d physical, %d logical cpu cores\n", physical_cpu_count, logical_cpu_count);
-	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
-	os_page_size = (u32) getpagesize();
-	page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
-	is_macos = true;
-}
-
-void* worker_thread(void* parameter) {
+[[noreturn]] void* worker_thread(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);

@@ -48,7 +48,9 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 #endif
 			return true;
 		} else {
-//			console_print_error("exchange failed, retrying (try #%d)\n", tries);
+			if (tries > 5) {
+				console_print_error("exchange failed, retrying (try #%d)\n", tries);
+			}
 			continue;
 		}
 
@@ -112,31 +114,31 @@ void echo_task_completed(int logical_thread_index, void* userdata) {
 void echo_task(int logical_thread_index, void* userdata) {
 	console_print("thread %d: %s\n", logical_thread_index, (char*) userdata);
 
-	add_work_queue_entry(&thread_message_queue, echo_task_completed, userdata);
+	add_work_queue_entry(&global_completion_queue, echo_task_completed, userdata);
 }
 #endif
 
 void test_multithreading_work_queue() {
 #ifdef TEST_THREAD_QUEUE
-	add_work_queue_entry(&work_queue, echo_task, (void*)"NULL entry");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 0");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 1");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 2");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 3");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 4");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 5");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 6");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 7");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 8");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 9");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 10");
-	add_work_queue_entry(&work_queue, echo_task, (void*)"string 11");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"NULL entry");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 0");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 1");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 2");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 3");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 4");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 5");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 6");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 7");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 8");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 9");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 10");
+	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 11");
 
-//	while (is_queue_work_in_progress(&work_queue)) {
-//		do_worker_work(&work_queue, 0);
+//	while (is_queue_work_in_progress(&global_work_queue)) {
+//		do_worker_work(&global_work_queue, 0);
 //	}
-	while (is_queue_work_in_progress(&work_queue) || is_queue_work_in_progress((&thread_message_queue))) {
-		do_worker_work(&thread_message_queue, 0);
+	while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress((&global_completion_queue))) {
+		do_worker_work(&global_completion_queue, 0);
 	}
 #endif
 }

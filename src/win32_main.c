@@ -1396,10 +1396,7 @@ int main(int argc, const char** argv) {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-	GetSystemInfo(&system_info);
-	logical_cpu_count = (i32)system_info.dwNumberOfProcessors;
-	os_page_size = system_info.dwPageSize;
-	total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
+	get_system_info();
 
 	win32_init_timer();
 	win32_init_cursor();
@@ -1416,14 +1413,14 @@ int main(int argc, const char** argv) {
 
 	is_program_running = true;
 
-	init_opengl_stuff(&global_app_state);
 	win32_init_gui(main_window);
 
-	app_state_t* app_state = &global_app_state;
-	init_app_state(app_state, main_window);
+    app_state_t* app_state = &global_app_state;
+    init_app_state(app_state, main_window);
 
-	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
-	// TODO: give the viewer the option to do this without referring to the g_argc which it does not need to know!
+    init_opengl_stuff(&global_app_state);
+
+    // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
 		const char* filename = g_argv[1];
 		load_generic_file(app_state, filename);

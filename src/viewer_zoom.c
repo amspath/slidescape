@@ -18,6 +18,7 @@
 
 
 void zoom_update_pos(zoom_state_t* zoom, float pos) {
+	ASSERT(pos > -50);
 	zoom->pos = pos;
 	zoom->downsample_factor = exp2f(zoom->pos);
 	zoom->pixel_width = zoom->downsample_factor * zoom->base_pixel_width;

@@ -56,7 +56,7 @@
 
 #if defined(__linux__) || (!defined(__APPLE__) && (defined(__unix__) || defined(_POSIX_VERSION)))
 #define LINUX 1
-#define OPENGL_H <GL/gl.h>
+#define OPENGL_H <GL/glew.h>
 #else
 #define LINUX 0
 #endif

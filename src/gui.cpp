@@ -533,6 +533,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 //}
 //
 //void gui_render(app_state_t* app_state, i32 client_width, i32 client_height) {
+#if !LINUX
 
 	// Rendering
 	ImGui::Render();
@@ -540,7 +541,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 //	glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
 //	glClear(GL_COLOR_BUFFER_BIT);
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
+#endif
 
 
 }

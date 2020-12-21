@@ -26,7 +26,7 @@
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 
-	if (was_key_pressed(input, 'E')) {
+	if (was_key_pressed(input, SCANCODE_E)) {
 		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
 	}
 
@@ -65,7 +65,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			//   (if you release Shift without clicking, the mode is disabled again)
 			// - While editing, the user right-clicks, selects the context menu item for inserting a coordinate
 			//   and enters 'forced' insert mode. This mode ends when you click
-			if (app_state->mouse_mode == MODE_VIEW && is_key_down(input, KEYCODE_SHIFT)) {
+			if (app_state->mouse_mode == MODE_VIEW && input->keyboard.key_shift.down) {
 				annotation_set->is_insert_coordinate_mode = true;
 			} else if (!annotation_set->force_insert_mode) {
 				annotation_set->is_insert_coordinate_mode = false;
@@ -190,7 +190,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	}
 
 	// unselect all annotations (except if Ctrl held down)
-	if (scene->clicked && !is_key_down(input, KEYCODE_CONTROL)) {
+	if (scene->clicked && !input->keyboard.key_ctrl.down) {
 		for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 			if (i == hit_result.annotation_index) continue; // skip the one we just selected!
 			annotation_t* annotation = annotation_set->active_annotations[i];
@@ -201,19 +201,20 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	recount_selected_annotations(app_state, annotation_set);
 
 	if (annotation_set->selection_count > 0) {
-		if (was_key_pressed(input, KEYCODE_DELETE)) {
+		if (was_key_pressed(input, SCANCODE_DELETE)) {
 			if (hit_result.annotation_index > 0) {
 				if (dont_ask_to_delete_annotations) {
 					delete_selected_annotations(app_state, annotation_set);
 				} else {
 					show_delete_annotation_prompt = true;
 					// TODO: fix release keyboard events bug for good
-					input->keyboard.keys[KEYCODE_DELETE].down = false;
+					input->keyboard.keys[SCANCODE_DELETE].down = false;
 				}
 			}
 		}
 
-		if (was_key_pressed(input, 'C') && annotation_set->is_edit_mode) {
+		// Delete a coordinate by pressing 'C' while hovering over the coordinate
+		if (was_key_pressed(input, SCANCODE_C) && annotation_set->is_edit_mode) {
 			if (hit_result.annotation_index > 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
 				delete_coordinate(annotation_set, annotation_set->active_annotations[hit_result.annotation_index], annotation_set->hovered_coordinate);
 			}
@@ -741,11 +742,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	bool* hotkey_pressed = (bool*) alloca(annotation_set->group_count * sizeof(bool));
 	memset(hotkey_pressed, 0, annotation_set->group_count * sizeof(bool));
 	for (i32 i = 0; i < ATMOST(9, annotation_set->group_count); ++i) {
-		if (was_key_pressed(input, '1'+i)) {
+		if (was_key_pressed(input, SCANCODE_1+i)) {
 			hotkey_pressed[i] = true;
 		}
 	}
-	if (annotation_set->group_count >= 10 && was_key_pressed(input, '0')) {
+	if (annotation_set->group_count >= 10 && was_key_pressed(input, SCANCODE_0)) {
 		hotkey_pressed[9] = true;
 	}
 

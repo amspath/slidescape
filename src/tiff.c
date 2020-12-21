@@ -620,7 +620,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
 					return false;
 				} else {
-
+					// success
 				}
 
 #endif
@@ -643,6 +643,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 	if (!success) {
 		// could not open file
 	}
+	console_print("Opened %s\n", filename);
 	return success;
 }
 
