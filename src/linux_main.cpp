@@ -347,16 +347,19 @@ int main(int argc, const char** argv)
 #if 1
         linux_process_input();
 
-        if (was_key_pressed(curr_input, SCANCODE_F1)) {
+        if (was_key_pressed(curr_input, KEY_F1)) {
             show_demo_window = !show_demo_window;
         }
-        if (was_key_pressed(curr_input, SCANCODE_F3) || was_key_pressed(curr_input, SCANCODE_GRAVE)) {
+        if (was_key_pressed(curr_input, KEY_F3) || was_key_pressed(curr_input, KEY_Grave)) {
             show_console_window = !show_console_window;
         }
-        if (was_key_pressed(curr_input, SCANCODE_F4) && curr_input->keyboard.key_alt.down) {
+        if (was_key_pressed(curr_input, KEY_F4) && curr_input->keyboard.key_alt.down) {
             is_program_running = false;
         }
-        if (was_key_pressed(curr_input, SCANCODE_F11)) {
+        if (was_key_pressed(curr_input, KEY_O) && curr_input->keyboard.key_ctrl.down) {
+	        open_file_dialog(window);
+        }
+        if (was_key_pressed(curr_input, KEY_F11)) {
 	        toggle_fullscreen(window);
         }
 

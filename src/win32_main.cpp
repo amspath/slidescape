@@ -38,6 +38,8 @@
 #include <glad/glad.h>
 #include <GL/wgl.h>
 
+#include "keycode.h"
+#include "keytable.h"
 
 #include "platform.h"
 #include "stringutils.h"
@@ -504,7 +506,10 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 				TranslateMessage(&message);
 				DispatchMessageA(&message);
 
+				//https://stackoverflow.com/questions/8737566/rolling-ones-own-keyboard-input-system-in-c-c
 				u32 vk_code = (u32) message.wParam;
+				u32 scancode = keycode_windows_from_lparam((u32)message.lParam);
+				u32 hid_code = keycode_windows_to_hid(scancode);
 				bool32 alt_down = message.lParam & (1 << 29);
 				bool32 is_down = ((message.lParam & (1 << 31)) == 0);
 				bool32 was_down = ((message.lParam & (1 << 30)) != 0);
@@ -515,6 +520,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 				switch(vk_code) {
 					default: break;
+					// TODO: move a lot of this code to platform-independent sections
 					case VK_F1: {
 						if (is_down) {
 							show_demo_window = !show_demo_window;
@@ -549,10 +555,23 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 				if (!gui_want_capture_keyboard) {
 
-					win32_process_keyboard_event(&keyboard_input->keys[vk_code & 0xFF], is_down);
+					win32_process_keyboard_event(&keyboard_input->keys[hid_code], is_down);
 
 					switch (vk_code) {
 						default:
+							break;
+						case VK_SHIFT:
+							win32_process_keyboard_event(&keyboard_input->key_shift, is_down);
+							break;
+						case VK_CONTROL:
+							win32_process_keyboard_event(&keyboard_input->key_ctrl, is_down);
+							break;
+						case VK_MENU:
+							win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
+							break;
+						case VK_LWIN:
+						case VK_RWIN:
+							win32_process_keyboard_event(&keyboard_input->key_super, is_down);
 							break;
 						case VK_UP:
 							win32_process_keyboard_event(&keyboard_input->action_up, is_down);
@@ -626,7 +645,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 void win32_process_xinput_controllers() {
 	// NOTE: performance bug in XInput! May stall if no controller is connected.
-	int game_max_controller_count = MIN(XUSER_MAX_COUNT, COUNT(curr_input->controllers));
+	u32 game_max_controller_count = MIN(XUSER_MAX_COUNT, COUNT(curr_input->controllers));
 	// TODO: should we poll this more frequently?
 	for (DWORD controller_index = 0; controller_index < game_max_controller_count; ++controller_index) {
 		controller_input_t* old_controller_input = &old_input->controllers[controller_index];
@@ -670,42 +689,39 @@ void win32_process_xinput_controllers() {
 			                           XINPUT_GAMEPAD_DPAD_LEFT|XINPUT_GAMEPAD_DPAD_RIGHT)
 					) {
 				new_controller_input->is_analog = false;
-				new_controller_input->x_end = 0;
-				new_controller_input->y_end = 0;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_UP) new_controller_input->y_end += 1.0f;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_DOWN) new_controller_input->y_end -= 1.0f;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_LEFT) new_controller_input->x_end += 1.0f;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_RIGHT) new_controller_input->x_end -= 1.0f;
+				new_controller_input->stick_end = (v2f){0};
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_UP) new_controller_input->stick_end.y += 1.0f;
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_DOWN) new_controller_input->stick_end.y -= 1.0f;
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_LEFT) new_controller_input->stick_end.x += 1.0f;
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_RIGHT) new_controller_input->stick_end.x -= 1.0f;
 			}
 
 			{
 				i16 xinput_stick_x = xinput_gamepad->sThumbLX;
 				i16 xinput_stick_y = xinput_gamepad->sThumbLY;
 
-				float stick_x, stick_y;
+				v2f stick;
 				if (xinput_stick_x < 0) ++xinput_stick_x;
 				if (xinput_stick_y < 0) ++xinput_stick_y;
-				stick_x = (float) xinput_stick_x / 32767.f;
-				stick_y = (float) xinput_stick_y / 32767.f;
+				stick.x = (float) xinput_stick_x / 32767.f;
+				stick.y = (float) xinput_stick_y / 32767.f;
 
-				float magnitude_squared = SQUARE(stick_x) + SQUARE(stick_y);
+				float magnitude_squared = SQUARE(stick.x) + SQUARE(stick.y);
 				if (magnitude_squared > SQUARE(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE / 32767.f)) {
 					new_controller_input->is_analog = true;
 				} else {
-					stick_x = 0;
-					stick_y = 0;
+					stick.x = 0;
+					stick.y = 0;
 				}
 
-				new_controller_input->x_start = old_controller_input->x_start;
-				new_controller_input->y_start = old_controller_input->y_start;
-				new_controller_input->x_end = stick_x;
-				new_controller_input->y_end = stick_y;
+				new_controller_input->stick_start = old_controller_input->stick_start;
+				new_controller_input->stick_end = stick;
 
 				const float threshold = 0.4f;
-				WORD move_up_state = (stick_y > threshold) ? 1 : 0;
-				WORD move_down_state = (stick_y < -threshold) ? 1 : 0;
-				WORD move_left_state = (stick_x < -threshold) ? 1 : 0;
-				WORD move_right_state = (stick_x > threshold) ? 1 : 0;
+				WORD move_up_state = (stick.y > threshold) ? 1 : 0;
+				WORD move_down_state = (stick.y < -threshold) ? 1 : 0;
+				WORD move_left_state = (stick.x < -threshold) ? 1 : 0;
+				WORD move_right_state = (stick.x > threshold) ? 1 : 0;
 
 				win32_process_xinput_button(&old_controller_input->move_up, move_up_state, 1,
 				                            &new_controller_input->move_up);
@@ -1109,19 +1125,25 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	old_input = curr_input;
 	curr_input = temp;
 
+	memcpy(curr_input, old_input, sizeof(input_t));
 
-	// reset the transition counts.
+	for (u32 i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+		curr_input->mouse_buttons[i].transition_count = 0;
+	}
+	curr_input->mouse_z_start = curr_input->mouse_z;
 
-	memset_zero(&curr_input->keyboard);
-	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
-		curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
+
+	for (u32 controller_index = 0; controller_index < COUNT(curr_input->abstract_controllers); ++controller_index) {
+		controller_input_t* controller = curr_input->abstract_controllers + controller_index;
+		controller->stick_start = controller->stick_end;
+		// Reset transition counts.
+		for (u32 i = 0; i < COUNT(controller->buttons); ++i) {
+			controller->buttons[i].transition_count = 0;
+		}
 	}
-	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
-		curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
-	}
-	memset_zero(&old_input->keyboard);
+
 	memset_zero(&curr_input->mouse_buttons);
-	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
 		curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
 	}
 
@@ -1157,13 +1179,13 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	// Check if at least one button/key is pressed at all (if no buttons are pressed,
 	// we might be allowed to idle waiting for input (skipping frames!) as long as nothing is animating on the screen).
 	curr_input->are_any_buttons_down = false;
-	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.buttons[i].down;
 	}
-	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.keys[i].down;
 	}
-	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->mouse_buttons[i].down;
 	}
 

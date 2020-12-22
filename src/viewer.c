@@ -434,7 +434,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	if (input) {
 		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
 
-		if (was_key_pressed(input, SCANCODE_W) && input->keyboard.key_ctrl.down) {
+		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
 			menu_close_file(app_state);
 			goto after_scene_render;
 		}
@@ -607,9 +607,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			float key_repeat_interval = 0.15f; // in seconds
 
 			// Zoom out using Z or /
-			if (is_key_down(input, SCANCODE_Z) || is_key_down(input, SCANCODE_SLASH)) {
+			if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
 
-				if (was_key_pressed(input, SCANCODE_Z) || was_key_pressed(input, SCANCODE_SLASH)) {
+				if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash)) {
 					dlevel += 1;
 					zoom_in_key_hold_down_start_time = get_clock();
 					zoom_in_key_times_zoomed_while_holding = 0;
@@ -624,10 +624,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			// Zoom in using X or .
-			if (is_key_down(input, SCANCODE_X) || is_key_down(input, SCANCODE_PERIOD)) {
+			if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)) {
 
 
-				if (was_key_pressed(input, SCANCODE_X) || was_key_pressed(input, SCANCODE_PERIOD)) {
+				if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period)) {
 					dlevel -= 1;
 					zoom_out_key_hold_down_start_time = get_clock();
 					zoom_out_key_times_zoomed_while_holding = 0;
@@ -715,19 +715,19 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
-			if (input->keyboard.action_down.down || is_key_down(input, SCANCODE_S)) {
+			if (input->keyboard.action_down.down || is_key_down(input, KEY_S)) {
 				scene->camera.y += scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
-			if (input->keyboard.action_up.down || is_key_down(input, SCANCODE_W)) {
+			if (input->keyboard.action_up.down || is_key_down(input, KEY_W)) {
 				scene->camera.y -= scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
-			if (input->keyboard.action_right.down || is_key_down(input, SCANCODE_D)) {
+			if (input->keyboard.action_right.down || is_key_down(input, KEY_D)) {
 				scene->camera.x += scene->zoom.pixel_height * panning_speed;
 				mouse_hide();
 			}
-			if (input->keyboard.action_left.down || is_key_down(input, SCANCODE_A)) {
+			if (input->keyboard.action_left.down || is_key_down(input, KEY_A)) {
 				scene->camera.x -= scene->zoom.pixel_width * panning_speed;
 				mouse_hide();
 			}
@@ -740,12 +740,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
 
 
-			/*if (was_key_pressed(input, SCANCODE_O)) {
+			/*if (was_key_pressed(input, KEY_O)) {
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
 //				console_print("switching to creation mode\n");
 			}*/
 
-			if (was_key_pressed(input, SCANCODE_P)) {
+			if (was_key_pressed(input, KEY_P)) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;
 			}
 

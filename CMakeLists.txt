@@ -30,6 +30,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
+include_directories("${CMAKE_SOURCE_DIR}/deps/keycode")
 
 # libjpeg-turbo requires these files for JPEG decoding support
 set(JPEG_SOURCE_FILES
@@ -110,6 +111,15 @@ set(MBEDTLS_TLS_SOURCE_FILES
 set(MBEDTLS_SOURCE_FILES ${MBEDTLS_CRYPTO_SOURCE_FILES} ${MBEDTLS_X509_SOURCE_FILES} ${MBEDTLS_TLS_SOURCE_FILES})
 prepend_path(MBEDTLS_SOURCE_FILES deps/mbedtls/library)
 
+if (WIN32)
+    set(KEYCODE_SOURCE_FILES keycode_id.c windows_fromhid.c windows_lparam.c windows_name.c windows_rawname.c windows_tohid.c)
+elseif(APPLE)
+    set(KEYCODE_SOURCE_FILES keycode_id.c macos_fromhid.c macos_modifier.c macos_name.c macos_rawname.c macos_tohid.c)
+else()
+    set(KEYCODE_SOURCE_FILES keycode_id.c linux_fromhid.c linux_name.c linux_rawname.c linux_tohid.c)
+endif()
+prepend_path(KEYCODE_SOURCE_FILES deps/keycode)
+
 set(VIEWER_SOURCE_FILES
         platform.c
         viewer.c
@@ -136,33 +146,32 @@ set(VIEWER_SOURCE_FILES
 )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            win32_main.c    win32_gui.cpp   imgui_impl_win32.cpp     glad.c
-    )
+            win32_main.cpp  win32_gui.cpp   imgui_impl_win32.cpp     glad.c )
 elseif(APPLE)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            macos_main.mm   imgui_impl_osx.mm
-    )
+            macos_main.mm   imgui_impl_osx.mm )
 else()
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp
-    )
+            linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp )
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
+set(LIBRARY_SOURCE_FILES ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} ${KEYCODE_SOURCE_FILES})
+
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
-    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} resources/icon/icon.rc)
+    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
     target_link_libraries(slideviewer user32 gdi32 winmm ws2_32)
     # Hide the console window on release builds
     target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
 elseif(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
+    add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
 else()
-    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
+    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     target_link_libraries(slideviewer pthread m GL GLEW SDL2)
 endif()
 target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)

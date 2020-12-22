@@ -26,7 +26,7 @@
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 
-	if (was_key_pressed(input, SCANCODE_E)) {
+	if (was_key_pressed(input, KEY_E)) {
 		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
 	}
 
@@ -201,20 +201,20 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	recount_selected_annotations(app_state, annotation_set);
 
 	if (annotation_set->selection_count > 0) {
-		if (was_key_pressed(input, SCANCODE_DELETE)) {
+		if (was_key_pressed(input, KEY_Delete)) {
 			if (hit_result.annotation_index > 0) {
 				if (dont_ask_to_delete_annotations) {
 					delete_selected_annotations(app_state, annotation_set);
 				} else {
 					show_delete_annotation_prompt = true;
 					// TODO: fix release keyboard events bug for good
-					input->keyboard.keys[SCANCODE_DELETE].down = false;
+					input->keyboard.keys[KEY_Delete].down = false;
 				}
 			}
 		}
 
 		// Delete a coordinate by pressing 'C' while hovering over the coordinate
-		if (was_key_pressed(input, SCANCODE_C) && annotation_set->is_edit_mode) {
+		if (was_key_pressed(input, KEY_C) && annotation_set->is_edit_mode) {
 			if (hit_result.annotation_index > 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
 				delete_coordinate(annotation_set, annotation_set->active_annotations[hit_result.annotation_index], annotation_set->hovered_coordinate);
 			}
@@ -742,11 +742,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	bool* hotkey_pressed = (bool*) alloca(annotation_set->group_count * sizeof(bool));
 	memset(hotkey_pressed, 0, annotation_set->group_count * sizeof(bool));
 	for (i32 i = 0; i < ATMOST(9, annotation_set->group_count); ++i) {
-		if (was_key_pressed(input, SCANCODE_1+i)) {
+		if (was_key_pressed(input, KEY_1+i)) {
 			hotkey_pressed[i] = true;
 		}
 	}
-	if (annotation_set->group_count >= 10 && was_key_pressed(input, SCANCODE_0)) {
+	if (annotation_set->group_count >= 10 && was_key_pressed(input, KEY_0)) {
 		hotkey_pressed[9] = true;
 	}
 
