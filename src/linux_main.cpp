@@ -291,7 +291,16 @@ int main(int argc, const char** argv)
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
 	global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoSans-Regular.ttf", 17.0f);
+	if (!global_main_font) {
+		global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16.0f);
+	}
 	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf/NotoMono-Regular.ttf", 15.0f);
+	if (!global_fixed_width_font) {
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf", 15.0f);
+		if (!global_fixed_width_font) {
+			global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15.0f);
+		}
+	}
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != NULL);
 

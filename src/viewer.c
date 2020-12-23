@@ -393,9 +393,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	app_state->input = input;
 
-	// TODO: this is part of rendering and doesn't belong here
-	gui_new_frame();
-
 	// Set up rendering state for the next frame
 	glDrawBuffer(GL_BACK);
 	glDisable(GL_BLEND);

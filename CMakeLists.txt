@@ -31,6 +31,9 @@ include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
 include_directories("${CMAKE_SOURCE_DIR}/deps/keycode")
+if (WIN32)
+    include_directories("${CMAKE_SOURCE_DIR}/deps/dirent")
+endif()
 
 # libjpeg-turbo requires these files for JPEG decoding support
 set(JPEG_SOURCE_FILES
@@ -153,7 +156,7 @@ elseif(APPLE)
             macos_main.mm   imgui_impl_osx.mm )
 else()
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp )
+            linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp ImGuiFileDialog.cpp)
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 

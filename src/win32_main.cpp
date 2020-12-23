@@ -23,6 +23,7 @@
 
 #define WIN32_MAIN_IMPL
 #include "win32_main.h"
+#include "win32_gui.h"
 
 //#define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
@@ -37,6 +38,9 @@
 
 #include <glad/glad.h>
 #include <GL/wgl.h>
+
+#include "imgui.h"
+#include "imgui_impl_opengl3.h"
 
 #include "keycode.h"
 #include "keytable.h"
@@ -1475,8 +1479,17 @@ int main(int argc, const char** argv) {
 		}
 		i64 section_end = profiler_end_section(last_clock, "input", 20.0f);
 
+		win32_gui_new_frame();
+
+		// Update and render our application
 		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
+
+		// Render the UI
+		ImGui::Render();
+		glViewport(0, 0, dimension.width, dimension.height);
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
 		section_end = profiler_end_section(section_end, "viewer update and render", 20.0f);
 
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;

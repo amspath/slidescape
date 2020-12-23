@@ -6,15 +6,10 @@
 
 #include <time.h>
 
-SDL_Window* g_window;
+#include "ImGuiFileDialog.h"
 
-// TODO: factor this out
-extern "C"
-void gui_new_frame() {
-//    ImGui_ImplOpenGL3_NewFrame();
-//    ImGui_ImplSDL2_NewFrame(g_window);
-//    ImGui::NewFrame();
-}
+
+SDL_Window* g_window;
 
 i64 get_clock() {
     struct timespec t = {};
@@ -76,8 +71,41 @@ void mouse_hide() {
     }
 }
 
-void open_file_dialog(window_handle_t window) {
-    console_print_error("Not implemented: open_file_dialog\n");
+bool need_open_file_dialog = false;
+bool open_file_dialog_open = true;
+
+void open_file_dialog(window_handle_t* window) {
+	if (!open_file_dialog_open) {
+		need_open_file_dialog = true;
+	}
+}
+
+void gui_draw_open_file_dialog(app_state_t* app_state) {
+	if (need_open_file_dialog) {
+		ImVec2 max_size = ImVec2(app_state->client_viewport.w, (float)app_state->client_viewport.h);
+		ImVec2 min_size = max_size;
+		min_size.x *= 0.5f;
+		min_size.y *= 0.5f;
+
+		igfd::ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*", "");
+		need_open_file_dialog = false;
+		open_file_dialog_open = true;
+	}
+
+	// display
+	if (igfd::ImGuiFileDialog::Instance()->FileDialog("ChooseFileDlgKey", ImGuiWindowFlags_NoCollapse, min_size, max_size))
+	{
+		// action if OK
+		if (igfd::ImGuiFileDialog::Instance()->IsOk == true)
+		{
+			std::string file_path_name = igfd::ImGuiFileDialog::Instance()->GetFilePathName();
+//			std::string filePath = igfd::ImGuiFileDialog::Instance()->GetCurrentPath();
+			load_generic_file(app_state, file_path_name.c_str());
+		}
+		// close
+		igfd::ImGuiFileDialog::Instance()->CloseDialog("ChooseFileDlgKey");
+		open_file_dialog_open = false;
+	}
 }
 
 bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string) {

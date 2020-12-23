@@ -520,7 +520,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 #endif
 		};
 
-
 		ImGui::End();
 	}
 
@@ -528,19 +527,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		draw_console_window(app_state, "Console", &show_console_window);
 	}
 
-
-
-//}
-//
-//void gui_render(app_state_t* app_state, i32 client_width, i32 client_height) {
-#if !LINUX
-
-	// Rendering
-	ImGui::Render();
-	glViewport(0, 0, client_width, client_height);
-//	glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-//	glClear(GL_COLOR_BUFFER_BIT);
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+#if LINUX
+	gui_draw_open_file_dialog(app_state);
 #endif
 
 

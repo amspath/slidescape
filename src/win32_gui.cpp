@@ -33,7 +33,7 @@
 #include "win32_gui.h"
 #include "gui.h"
 
-void gui_new_frame() {
+void win32_gui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();

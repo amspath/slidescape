@@ -25,7 +25,7 @@
 extern "C" {
 #endif
 
-void gui_new_frame();
+void win32_gui_new_frame();
 
 void win32_init_gui(HWND hwnd);
 // from imgui_impl_win32.cpp
