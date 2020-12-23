@@ -8,6 +8,8 @@
 
 #include "ImGuiFileDialog.h"
 
+#include "viewer.h"
+
 
 SDL_Window* g_window;
 
@@ -72,21 +74,22 @@ void mouse_hide() {
 }
 
 bool need_open_file_dialog = false;
-bool open_file_dialog_open = true;
+bool open_file_dialog_open = false;
 
-void open_file_dialog(window_handle_t* window) {
+void open_file_dialog(window_handle_t window) {
 	if (!open_file_dialog_open) {
 		need_open_file_dialog = true;
 	}
 }
 
+extern "C"
 void gui_draw_open_file_dialog(app_state_t* app_state) {
-	if (need_open_file_dialog) {
-		ImVec2 max_size = ImVec2(app_state->client_viewport.w, (float)app_state->client_viewport.h);
-		ImVec2 min_size = max_size;
-		min_size.x *= 0.5f;
-		min_size.y *= 0.5f;
+	ImVec2 max_size = ImVec2(app_state->client_viewport.w, (float)app_state->client_viewport.h);
+	ImVec2 min_size = max_size;
+	min_size.x *= 0.5f;
+	min_size.y *= 0.5f;
 
+	if (need_open_file_dialog) {
 		igfd::ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*", "");
 		need_open_file_dialog = false;
 		open_file_dialog_open = true;
