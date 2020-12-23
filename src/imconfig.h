@@ -138,6 +138,8 @@ namespace ImGui
 #define IMGUI_IMPL_WIN32_DISABLE_GAMEPAD
 #elif defined(__APPLE__)
 #define IMGUI_IMPL_OPENGL_LOADER_CUSTOM <OpenGL/gl3.h>
+#else
+#define IMGUI_IMPL_OPENGL_LOADER_GLEW
 #endif
 #define IMGUI_IMPL_API extern "C"
 #define CIMGUI_NO_EXPORT
