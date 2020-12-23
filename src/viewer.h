@@ -222,6 +222,8 @@ typedef struct scene_t {
 	v2f mouse;
 	zoom_state_t zoom;
 	bool8 need_zoom_animation;
+	float control_x;
+	float control_y;
 	v2f zoom_pivot;
 	zoom_state_t zoom_target_state;
 	v2f level_pixel_size;

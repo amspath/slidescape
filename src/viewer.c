@@ -436,47 +436,51 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			goto after_scene_render;
 		}
 
-		if (was_button_released(&input->mouse_buttons[0])) {
-			float drag_distance = v2f_length(scene->cumulative_drag_vector);
-			// TODO: tweak this
-			if (drag_distance < 3.0f) {
-				scene->clicked = true;
-			}
-		}
-		if (was_button_released(&input->mouse_buttons[1])) {
-			// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
-			scene->right_clicked = true;
-			/*float drag_distance = v2f_length(scene->cumulative_drag_vector);
-			if (drag_distance < 30.0f) {
-
-			}*/
-		}
-
-		if (input->mouse_buttons[0].down) {
-			// Mouse drag.
-			if (input->mouse_buttons[0].transition_count != 0) {
-				// Don't start dragging if clicked outside the window
-				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
-				if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){input->mouse_xy.x, input->mouse_xy.y})) {
-					scene->is_dragging = true; // drag start
-					scene->drag_started = true;
-					scene->cumulative_drag_vector = (v2f){};
-//					console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
-				}
-			} else if (scene->is_dragging) {
-				// already started dragging on a previous frame
-				current_drag_vector = input->drag_vector;
-				scene->cumulative_drag_vector.x += current_drag_vector.x;
-				scene->cumulative_drag_vector.y += current_drag_vector.y;
-			}
-			input->drag_vector = (v2f){};
-			mouse_hide();
+		if (gui_want_capture_mouse) {
+			// ignore mouse input
 		} else {
-			if (input->mouse_buttons[0].transition_count != 0) {
-				mouse_show();
-				scene->is_dragging = false;
-				scene->drag_ended = true;
+			if (was_button_released(&input->mouse_buttons[0])) {
+				float drag_distance = v2f_length(scene->cumulative_drag_vector);
+				// TODO: tweak this
+				if (drag_distance < 3.0f) {
+					scene->clicked = true;
+				}
+			}
+			if (was_button_released(&input->mouse_buttons[1])) {
+				// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
+				scene->right_clicked = true;
+				/*float drag_distance = v2f_length(scene->cumulative_drag_vector);
+				if (drag_distance < 30.0f) {
+
+				}*/
+			}
+
+			if (input->mouse_buttons[0].down) {
+				// Mouse drag.
+				if (input->mouse_buttons[0].transition_count != 0) {
+					// Don't start dragging if clicked outside the window
+					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
+					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){input->mouse_xy.x, input->mouse_xy.y})) {
+						scene->is_dragging = true; // drag start
+						scene->drag_started = true;
+						scene->cumulative_drag_vector = (v2f){};
+//					console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+					}
+				} else if (scene->is_dragging) {
+					// already started dragging on a previous frame
+					current_drag_vector = input->drag_vector;
+					scene->cumulative_drag_vector.x += current_drag_vector.x;
+					scene->cumulative_drag_vector.y += current_drag_vector.y;
+				}
+				input->drag_vector = (v2f){};
+				mouse_hide();
+			} else {
+				if (input->mouse_buttons[0].transition_count != 0) {
+					mouse_show();
+					scene->is_dragging = false;
+					scene->drag_ended = true;
 //			        console_print("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
+				}
 			}
 		}
 	}
@@ -596,47 +600,65 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			bool32 used_mouse_to_zoom = false;
 
 			// Zoom in or out using the mouse wheel.
-			if (input->mouse_z != 0) {
+			if (!gui_want_capture_mouse && input->mouse_z != 0) {
 				dlevel = (input->mouse_z > 0 ? -1 : 1);
 				used_mouse_to_zoom = true;
 			}
 
 			float key_repeat_interval = 0.15f; // in seconds
 
-			// Zoom out using Z or /
-			if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
+			scene->control_x = 0.0f;
+			scene->control_y = 0.0f;
 
-				if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash)) {
-					dlevel += 1;
-					zoom_in_key_hold_down_start_time = get_clock();
-					zoom_in_key_times_zoomed_while_holding = 0;
-				} else {
-					float time_elapsed = get_seconds_elapsed(zoom_in_key_hold_down_start_time, get_clock());
-					int zooms = (int) (time_elapsed / key_repeat_interval);
-					if ((zooms - zoom_in_key_times_zoomed_while_holding) == 1) {
-						zoom_in_key_times_zoomed_while_holding = zooms;
+			if (!gui_want_capture_keyboard) {
+				if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
+					scene->control_y = 1.0f;
+				}
+				if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
+					scene->control_y = -1.0f;
+				}
+				if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
+					scene->control_x = 1.0f;
+				}
+				if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
+					scene->control_x = -1.0f;
+				}
+
+				// Zoom out using Z or /
+				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
+
+					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash)) {
 						dlevel += 1;
+						zoom_in_key_hold_down_start_time = get_clock();
+						zoom_in_key_times_zoomed_while_holding = 0;
+					} else {
+						float time_elapsed = get_seconds_elapsed(zoom_in_key_hold_down_start_time, get_clock());
+						int zooms = (int) (time_elapsed / key_repeat_interval);
+						if ((zooms - zoom_in_key_times_zoomed_while_holding) == 1) {
+							zoom_in_key_times_zoomed_while_holding = zooms;
+							dlevel += 1;
+						}
 					}
 				}
-			}
 
-			// Zoom in using X or .
-			if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)) {
+				// Zoom in using X or .
+				if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)) {
 
-
-				if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period)) {
-					dlevel -= 1;
-					zoom_out_key_hold_down_start_time = get_clock();
-					zoom_out_key_times_zoomed_while_holding = 0;
-				} else {
-					float time_elapsed = get_seconds_elapsed(zoom_out_key_hold_down_start_time, get_clock());
-					int zooms = (int) (time_elapsed / key_repeat_interval);
-					if ((zooms - zoom_out_key_times_zoomed_while_holding) == 1) {
-						zoom_out_key_times_zoomed_while_holding = zooms;
+					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period)) {
 						dlevel -= 1;
+						zoom_out_key_hold_down_start_time = get_clock();
+						zoom_out_key_times_zoomed_while_holding = 0;
+					} else {
+						float time_elapsed = get_seconds_elapsed(zoom_out_key_hold_down_start_time, get_clock());
+						int zooms = (int) (time_elapsed / key_repeat_interval);
+						if ((zooms - zoom_out_key_times_zoomed_while_holding) == 1) {
+							zoom_out_key_times_zoomed_while_holding = zooms;
+							dlevel -= 1;
+						}
 					}
 				}
 			}
+
 
 
 			if (dlevel != 0) {
@@ -712,20 +734,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
-			if (input->keyboard.action_down.down || is_key_down(input, KEY_S)) {
-				scene->camera.y += scene->zoom.pixel_height * panning_speed;
+			if (scene->control_y != 0.0f) {
+				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->control_y;
 				mouse_hide();
 			}
-			if (input->keyboard.action_up.down || is_key_down(input, KEY_W)) {
-				scene->camera.y -= scene->zoom.pixel_height * panning_speed;
-				mouse_hide();
-			}
-			if (input->keyboard.action_right.down || is_key_down(input, KEY_D)) {
-				scene->camera.x += scene->zoom.pixel_height * panning_speed;
-				mouse_hide();
-			}
-			if (input->keyboard.action_left.down || is_key_down(input, KEY_A)) {
-				scene->camera.x -= scene->zoom.pixel_width * panning_speed;
+			if (scene->control_x != 0.0f) {
+				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->control_x;
 				mouse_hide();
 			}
 
@@ -742,10 +756,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 //				console_print("switching to creation mode\n");
 			}*/
 
-			if (was_key_pressed(input, KEY_P)) {
+			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;
 			}
-
 
 			if (app_state->mouse_mode == MODE_VIEW) {
 				if (scene->is_dragging) {
