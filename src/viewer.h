@@ -55,6 +55,8 @@ typedef struct {
 	float um_per_pixel_y;
 	float x_tile_side_in_um;
 	float y_tile_side_in_um;
+	i32 downsample_level;
+	float downsample_factor;
 } wsi_level_t;
 
 #define WSI_MAX_LEVELS 16
@@ -67,6 +69,9 @@ typedef struct wsi_t {
 	const char* barcode;
 	float mpp_x;
 	float mpp_y;
+	i32 max_downsample_level;
+	u32 tile_width;
+	u32 tile_height;
 
 	wsi_level_t levels[WSI_MAX_LEVELS];
 } wsi_t;

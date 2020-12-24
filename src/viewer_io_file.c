@@ -273,7 +273,8 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 		if (wsi->level_count > WSI_MAX_LEVELS) {
 			panic();
 		}
-
+		wsi->tile_width = TILE_DIM;
+		wsi->tile_height = TILE_DIM;
 
 
 		const char* const* wsi_properties = openslide.openslide_get_property_names(wsi->osr);
@@ -314,6 +315,10 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			i64 partial_block_y = level->height % TILE_DIM;
 			level->width_in_tiles = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
 			level->height_in_tiles = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
+
+			level->downsample_level = i;
+			level->downsample_factor = exp2f(level->downsample_level);
+			wsi->max_downsample_level = MAX(level->downsample_level, wsi->max_downsample_level);
 			level->um_per_pixel_x = (float)(1 << i) * wsi->mpp_x;
 			level->um_per_pixel_y = (float)(1 << i) * wsi->mpp_y;
 			level->x_tile_side_in_um = level->um_per_pixel_x * (float)TILE_DIM;
@@ -417,28 +422,45 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
 			return false;
 		}
-		image_t image = (image_t){};
+		image_t new_image = (image_t){};
 
-		image.type = IMAGE_TYPE_WSI;
-		wsi_t* wsi = &image.wsi.wsi;
+		new_image.type = IMAGE_TYPE_WSI;
+		wsi_t* wsi = &new_image.wsi.wsi;
 		load_wsi(wsi, filename);
 		if (wsi->osr) {
-			image.is_freshly_loaded = true;
-			image.mpp_x = wsi->mpp_x;
-			image.mpp_y = wsi->mpp_y;
-			image.width_in_pixels = wsi->width;
-			image.width_in_um = wsi->width * wsi->mpp_x;
-			image.height_in_pixels = wsi->height;
-			image.height_in_um = wsi->height * wsi->mpp_y;
+			new_image.is_freshly_loaded = true;
+			new_image.mpp_x = wsi->mpp_x;
+			new_image.mpp_y = wsi->mpp_y;
+			new_image.tile_width = wsi->tile_width;
+			new_image.tile_height = wsi->tile_height;
+			new_image.width_in_pixels = wsi->width;
+			new_image.width_in_um = wsi->width * wsi->mpp_x;
+			new_image.height_in_pixels = wsi->height;
+			new_image.height_in_um = wsi->height * wsi->mpp_y;
 			if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
 
-				image.level_count = wsi->level_count;
-				memset(image.level_images, 0, sizeof(image.level_images));
+				new_image.level_count = wsi->level_count;
+				memset(new_image.level_images, 0, sizeof(new_image.level_images));
+
+				// TODO: check against downsample level, see add_image_from_tiff()
+				//new_image.level_count = wsi->max_downsample_level + 1;
+				if (wsi->level_count > new_image.level_count) {
+					panic();
+				}
+				if (new_image.level_count > WSI_MAX_LEVELS) {
+					panic();
+				}
 
 				for (i32 i = 0; i < wsi->level_count; ++i) {
-					level_image_t* level_image = image.level_images + i;
+					level_image_t* level_image = new_image.level_images + i;
 					wsi_level_t* wsi_level = wsi->levels + i;
+
+					level_image->exists = true;
+					level_image->pyramid_image_index = i;
+					level_image->downsample_factor = wsi_level->downsample_factor;
 					level_image->tile_count = wsi_level->tile_count;
+					level_image->tile_width = wsi->tile_width;
+					level_image->tile_height = wsi->tile_height;
 					level_image->width_in_tiles = wsi_level->width_in_tiles;
 					level_image->height_in_tiles = wsi_level->height_in_tiles;
 					level_image->um_per_pixel_x = wsi_level->um_per_pixel_x;
@@ -461,7 +483,7 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 				}
 			}
 
-					sb_push(app_state->loaded_images, image);
+					sb_push(app_state->loaded_images, new_image);
 			result = true;
 
 		}
