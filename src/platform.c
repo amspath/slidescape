@@ -26,6 +26,9 @@
 #include "work_queue.c"
 #endif
 
+#if APPLE
+#include <sys/sysctl.h> // for sysctlbyname()
+#endif
 
 mem_t* platform_allocate_mem_buffer(size_t capacity) {
 	size_t allocation_size = sizeof(mem_t) + capacity + 1;

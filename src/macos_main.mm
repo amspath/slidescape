@@ -23,6 +23,9 @@
 #include <sys/sysctl.h>
 #include <mach/mach_time.h>
 
+//#include "keycode.h"
+//#include "keytable.h"
+
 #if CODE_EDITOR // Prevent CLion complaining about not being able to resolve NSApp
 APPKIT_EXTERN __kindof NSApplication * __null_unspecified NSApp;
 #endif
@@ -47,6 +50,8 @@ float window_scale_factor = 1.0f;
     NSTimer*    animationTimer;
 }
 @end
+
+SlideviewerView* g_view;
 
 @implementation SlideviewerView
 
@@ -129,7 +134,18 @@ float window_scale_factor = 1.0f;
 	i32 fb_width = (i32)(width * window_scale_factor);
 	i32 fb_height = (i32)(height * window_scale_factor);
 
+	// Start the Dear ImGui frame
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplOSX_NewFrame(g_view);
+	ImGui::NewFrame();
+
+	// Update and render our application
 	viewer_update_and_render(&global_app_state, curr_input, fb_width, fb_height, 0.01667f);
+
+	// Finish up by rendering the UI
+	ImGui::Render();
+	glViewport(0, 0, width, height);
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     // Present
     [[self openGLContext] flushBuffer];
@@ -216,7 +232,6 @@ float window_scale_factor = 1.0f;
 
 @end
 
-SlideviewerView* g_view;
 
 //-----------------------------------------------------------------------------------
 // ImGuiExampleAppDelegate
@@ -522,9 +537,9 @@ float get_seconds_elapsed(i64 start, i64 end) {
 }
 
 void platform_sleep(u32 ms) {
-	struct timespec tim, tim2;
+	struct timespec tim = {}, tim2 = {};
 	tim.tv_sec = 0;
-	tim.tv_nsec = 1000;
+	tim.tv_nsec = 1000000 * ms;
 	nanosleep(&tim, &tim2);
 }
 
@@ -581,7 +596,7 @@ bool check_fullscreen(window_handle_t window) {
 }
 
 
-[[noreturn]] void* worker_thread(void* parameter) {
+void* worker_thread(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
@@ -621,6 +636,7 @@ void macos_init_multithreading() {
 	i32 semaphore_initial_count = 0;
 	worker_thread_count = total_thread_count - 1;
 	global_work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
+	global_completion_queue.semaphore = sem_open("/completionsem", O_CREAT, 0644, semaphore_initial_count);
 
 	pthread_t threads[MAX_THREAD_COUNT] = {};
 
@@ -660,7 +676,7 @@ bool macos_process_input() {
 
 
 	// reset the transition counts.
-
+	// TODO: can't we just do that, instead of reinitializing the reset?
 
 
 	curr_input->drag_start_xy = old_input->drag_start_xy;
@@ -668,27 +684,37 @@ bool macos_process_input() {
 
 	ImGuiIO& io = ImGui::GetIO();
 	curr_input->mouse_xy = io.MousePos;
+//	curr_input->mouse_xy.x *= window_scale_factor;
+//	curr_input->mouse_xy.y *= window_scale_factor;
 
-	i32 button_count = MIN(COUNT(curr_input->mouse_buttons), COUNT(io.MouseDown));
+	u32 button_count = MIN(COUNT(curr_input->mouse_buttons), COUNT(io.MouseDown));
 	memset_zero(&curr_input->mouse_buttons);
-	for (i32 i = 0; i < button_count; ++i) {
+	for (u32 i = 0; i < button_count; ++i) {
 		curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
 		macos_process_button_event(&curr_input->mouse_buttons[i], io.MouseDown[i]);
 	}
 
 	memset_zero(&curr_input->keyboard);
-	for (i32 i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
 		curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
 
 	}
-	i32 key_count = MIN(COUNT(curr_input->keyboard.keys), COUNT(io.KeysDown));
-	for (i32 i = 0; i < key_count; ++i) {
+	u32 key_count = MIN(COUNT(curr_input->keyboard.keys), COUNT(io.KeysDown));
+	for (u32 i = 0; i < key_count; ++i) {
 		curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
 		macos_process_button_event(&curr_input->keyboard.keys[i], io.KeysDown[i]);
 	}
 
+	curr_input->keyboard.key_shift.down = old_input->keyboard.key_shift.down;
+	curr_input->keyboard.key_ctrl.down = old_input->keyboard.key_ctrl.down;
+	curr_input->keyboard.key_alt.down = old_input->keyboard.key_alt.down;
+	curr_input->keyboard.key_super.down = old_input->keyboard.key_super.down;
+	macos_process_button_event(&curr_input->keyboard.key_shift, io.KeyShift);
+	macos_process_button_event(&curr_input->keyboard.key_ctrl, io.KeyCtrl);
+	macos_process_button_event(&curr_input->keyboard.key_alt, io.KeyAlt);
+	macos_process_button_event(&curr_input->keyboard.key_super, io.KeySuper);
 
-	// TODO: process input events here? what is the chronological order in macOS?
+	curr_input->mouse_z = io.MouseWheel;
 
 	v2f mouse_delta = io.MouseDelta;
 	mouse_delta.x *= window_scale_factor;
@@ -696,13 +722,13 @@ bool macos_process_input() {
 	curr_input->drag_vector = mouse_delta;
 
 	curr_input->are_any_buttons_down = false;
-	for (int i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.buttons[i].down;
 	}
-	for (int i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.keys[i].down;
 	}
-	for (int i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
+	for (u32 i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->mouse_buttons[i].down;
 	}
 

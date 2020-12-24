@@ -33,6 +33,10 @@
 #else
 #include <semaphore.h>
 #include <unistd.h>
+#if APPLE
+#include <stddef.h> // for offsetof()
+#endif
+
 #endif
 
 #ifdef TARGET_EMSCRIPTEN
