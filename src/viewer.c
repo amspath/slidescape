@@ -43,6 +43,7 @@
 #include "stb_image.h"
 
 #include "tiff.h"
+#include "isyntax.h"
 #include "jpeg_decoder.h"
 #include "remote.h"
 #include "gui.h"

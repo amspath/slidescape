@@ -131,6 +131,7 @@ set(VIEWER_SOURCE_FILES
         shader.c
         tiff.c
         tiff_write.c
+        isyntax.c
         caselist.c
         annotation.cpp
         openslide_api.c

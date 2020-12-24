@@ -374,6 +374,7 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 				console_print("Found XML annotations: %s\n", temp_filename);
 				load_asap_xml_annotations(app_state, temp_filename);
 			}
+			console_print("Loaded '%s'\n", filename);
 			return true;
 
 		} else {
@@ -387,7 +388,7 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 	unload_all_images(app_state);
 
-	bool32 result = false;
+	bool32 success = false;
 	const char* ext = get_file_extension(filename);
 
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
@@ -400,22 +401,28 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 
 			image.is_freshly_loaded = true;
 					sb_push(app_state->loaded_images, image);
-			result = true;
+			success = true;
 
 			//stbi_image_free(image->stbi.pixels);
 		}
 
 	} else if (app_state->use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0 || strcasecmp(ext, "ptif") == 0)) {
+		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
 			add_image_from_tiff(app_state, tiff);
-			result = true;
+			success = true;
 		} else {
 			tiff_destroy(&tiff);
-			result = false;
+			success = false;
 			console_print_error("Opening %s failed\n", filename);
 		}
-
+	} else if (strcasecmp(ext, "isyntax") == 0) {
+		// Try to open as iSyntax
+		isyntax_t isyntax = {0};
+		if (isyntax_open(&isyntax, filename)) {
+			success = false;
+		}
 	} else {
 		// Try to load the file using OpenSlide
 		if (!is_openslide_available) {
@@ -483,12 +490,12 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 				}
 			}
 
-					sb_push(app_state->loaded_images, new_image);
-			result = true;
+			sb_push(app_state->loaded_images, new_image);
+			success = true;
 
 		}
 	}
-	return result;
+	return success;
 
 }
 

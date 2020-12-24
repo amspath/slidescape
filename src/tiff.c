@@ -544,6 +544,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 #if TIFF_VERBOSE
 	console_print("Opening TIFF file %s\n", filename);
 #endif
+	ASSERT(tiff);
 	int ret = 0; (void)ret; // for checking return codes from fgetpos, fsetpos, etc
 	FILE* fp = fopen64(filename, "rb");
 	bool32 success = false;
@@ -640,10 +641,6 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 
 
 	}
-	if (!success) {
-		// could not open file
-	}
-	console_print("Opened %s\n", filename);
 	return success;
 }
 
