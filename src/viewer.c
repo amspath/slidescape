@@ -295,6 +295,8 @@ void init_app_state(app_state_t* app_state, window_handle_t main_window) {
 		transfer_state->initialized = true;
 	}
 
+	init_scene(app_state, &app_state->scene);
+
 	app_state->initialized = true;
 }
 
@@ -379,7 +381,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
 
 	scene_t* scene = &app_state->scene;
-	if (!scene->initialized) init_scene(app_state, scene);
+	ASSERT(app_state->initialized);
+	ASSERT(scene->initialized);
 
 	// Note: could be changed to allow e.g. multiple scenes side by side
 	scene->viewport = app_state->client_viewport;
