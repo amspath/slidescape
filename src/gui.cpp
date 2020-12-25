@@ -161,7 +161,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		if (menu_items_clicked.exit_program) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
-			open_file_dialog(app_state->main_window);
+			open_file_dialog(app_state);
 		} else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.open_remote) {
@@ -196,7 +196,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				image_t* image = app_state->loaded_images + 0;
 				if (menu_items_clicked.export_region_as_bigtiff) {
 					char filename[4096];
-					if (save_file_dialog(app_state->main_window, filename, sizeof(filename), "BigTIFF\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
+					if (save_file_dialog(app_state, filename, sizeof(filename), "BigTIFF\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
 						export_cropped_bigtiff(app_state, image, &image->tiff.tiff, export_bounds, filename, 512, TIFF_PHOTOMETRIC_YCBCR, 80);
 					}
 				} else if (menu_items_clicked.export_region_as_jpeg) {

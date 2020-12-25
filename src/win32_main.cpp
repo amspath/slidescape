@@ -134,7 +134,7 @@ void platform_sleep(u32 ms) {
 }
 
 void message_box(const char* message) {
-	MessageBoxA(main_window, message, "Slideviewer", MB_ICONERROR);
+	MessageBoxA(global_main_window, message, "Slideviewer", MB_ICONERROR);
 }
 
 
@@ -228,7 +228,7 @@ void toggle_fullscreen(window_handle_t window) {
 	}
 }
 
-void open_file_dialog(window_handle_t window) {
+void open_file_dialog(app_state_t* app_state) {
 	// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
 	OPENFILENAME ofn = {};       // common dialog box structure
 	char filename[4096];       // buffer for file name
@@ -238,7 +238,7 @@ void open_file_dialog(window_handle_t window) {
 
 	// Initialize OPENFILENAME
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = window;
+	ofn.hwndOwner = app_state->main_window;
 	ofn.lpstrFile = filename;
 	ofn.nMaxFile = sizeof(filename);
 	ofn.lpstrFilter = "All\0*.*\0Text\0*.TXT\0";
@@ -255,14 +255,14 @@ void open_file_dialog(window_handle_t window) {
 	}
 }
 
-bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
 	OPENFILENAME ofn = {};       // common dialog box structure
 	path_buffer[0] = '\0';
 	ASSERT(path_buffer_size > 1);
 
 	// Initialize OPENFILENAME
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = window;
+	ofn.hwndOwner = app_state->main_window;
 	ofn.lpstrFile = path_buffer;
 	ofn.nMaxFile = path_buffer_size-1;
 	ofn.lpstrFilter = filter_string;
@@ -275,6 +275,7 @@ bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer
 	mouse_show();
 	if (GetSaveFileNameA(&ofn)==TRUE) {
 //		console_print("attempting to save as %s\n", path_buffer);
+//  TODO: append file extension
 		return true;
 	} else {
 #if DO_DEBUG
@@ -308,7 +309,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_SIZE: {
 			if (is_main_window_initialized) {
 				glDrawBuffer(GL_BACK);
-				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+				win32_window_dimension_t dimension = win32_get_window_dimension(global_main_window);
 				viewer_update_and_render(curr_input, dimension.width, dimension.height);
 				SwapBuffers(wglGetCurrentDC());
 			}
@@ -365,7 +366,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_PAINT: {
 			if (is_main_window_initialized) {
 				glDrawBuffer(GL_BACK);
-				win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+				win32_window_dimension_t dimension = win32_get_window_dimension(global_main_window);
 				viewer_update_and_render(curr_input, dimension.width, dimension.height);
 				SwapBuffers(wglGetCurrentDC());
 			}
@@ -524,19 +525,6 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 				switch(vk_code) {
 					default: break;
-					// TODO: move a lot of this code to platform-independent sections
-					case VK_F1: {
-						if (is_down) {
-							show_demo_window = !show_demo_window;
-						}
-					} break;
-
-					case VK_F3:
-					case VK_OEM_3 /* ` */: {
-						if (is_down) {
-							show_console_window = !show_console_window;
-						}
-					} break;
 
 					case VK_F4: {
 						if (is_down && alt_down) {
@@ -546,7 +534,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 					case 'O': {
 						if (is_down && ctrl_down) {
-							open_file_dialog(window);
+							open_file_dialog(&global_app_state);
 						}
 					} break;
 
@@ -557,72 +545,70 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 					} break;
 				}
 
-				if (!gui_want_capture_keyboard) {
 
-					win32_process_keyboard_event(&keyboard_input->keys[hid_code], is_down);
+				win32_process_keyboard_event(&keyboard_input->keys[hid_code], is_down);
 
-					switch (vk_code) {
-						default:
-							break;
-						case VK_SHIFT:
-							win32_process_keyboard_event(&keyboard_input->key_shift, is_down);
-							break;
-						case VK_CONTROL:
-							win32_process_keyboard_event(&keyboard_input->key_ctrl, is_down);
-							break;
-						case VK_MENU:
-							win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
-							break;
-						case VK_LWIN:
-						case VK_RWIN:
-							win32_process_keyboard_event(&keyboard_input->key_super, is_down);
-							break;
-						case VK_UP:
-							win32_process_keyboard_event(&keyboard_input->action_up, is_down);
-							break;
-						case VK_DOWN:
-							win32_process_keyboard_event(&keyboard_input->action_down, is_down);
-							break;
-						case VK_LEFT:
-							win32_process_keyboard_event(&keyboard_input->action_left, is_down);
-							break;
-						case VK_RIGHT:
-							win32_process_keyboard_event(&keyboard_input->action_right, is_down);
-							break;
+				switch (vk_code) {
+					default:
+						break;
+					case VK_SHIFT:
+						win32_process_keyboard_event(&keyboard_input->key_shift, is_down);
+						break;
+					case VK_CONTROL:
+						win32_process_keyboard_event(&keyboard_input->key_ctrl, is_down);
+						break;
+					case VK_MENU:
+						win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
+						break;
+					case VK_LWIN:
+					case VK_RWIN:
+						win32_process_keyboard_event(&keyboard_input->key_super, is_down);
+						break;
+					case VK_UP:
+						win32_process_keyboard_event(&keyboard_input->action_up, is_down);
+						break;
+					case VK_DOWN:
+						win32_process_keyboard_event(&keyboard_input->action_down, is_down);
+						break;
+					case VK_LEFT:
+						win32_process_keyboard_event(&keyboard_input->action_left, is_down);
+						break;
+					case VK_RIGHT:
+						win32_process_keyboard_event(&keyboard_input->action_right, is_down);
+						break;
 
-						case 'W':
-							win32_process_keyboard_event(&keyboard_input->move_up, is_down);
-							break;
-						case 'S':
-							win32_process_keyboard_event(&keyboard_input->move_down, is_down);
-							break;
-						case 'A':
-							win32_process_keyboard_event(&keyboard_input->move_left, is_down);
-							break;
-						case 'D':
-							win32_process_keyboard_event(&keyboard_input->move_right, is_down);
-							break;
+					case 'W':
+						win32_process_keyboard_event(&keyboard_input->move_up, is_down);
+						break;
+					case 'S':
+						win32_process_keyboard_event(&keyboard_input->move_down, is_down);
+						break;
+					case 'A':
+						win32_process_keyboard_event(&keyboard_input->move_left, is_down);
+						break;
+					case 'D':
+						win32_process_keyboard_event(&keyboard_input->move_right, is_down);
+						break;
 
-						case 'Q': {
-							win32_process_keyboard_event(&keyboard_input->left_shoulder, is_down);
-						}
-							break;
-
-						case 'E': {
-							win32_process_keyboard_event(&keyboard_input->right_shoulder, is_down);
-						}
-							break;
-
-						case VK_SPACE: {
-							win32_process_keyboard_event(&keyboard_input->button_a, is_down);
-						}
-							break;
-
-							/*case VK_ESCAPE: {
-								is_program_running = false;
-							}*/
-							break;
+					case 'Q': {
+						win32_process_keyboard_event(&keyboard_input->left_shoulder, is_down);
 					}
+						break;
+
+					case 'E': {
+						win32_process_keyboard_event(&keyboard_input->right_shoulder, is_down);
+					}
+						break;
+
+					case VK_SPACE: {
+						win32_process_keyboard_event(&keyboard_input->button_a, is_down);
+					}
+						break;
+
+						/*case VK_ESCAPE: {
+							is_program_running = false;
+						}*/
+						break;
 				}
 
 
@@ -1219,10 +1205,10 @@ DWORD WINAPI thread_proc(void* parameter) {
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
 #if USE_MULTIPLE_OPENGL_CONTEXTS
-	ASSERT(main_window);
+	ASSERT(global_main_window);
 	HDC dc = 0;
 	for (;;) {
-		dc = GetDC(main_window);
+		dc = GetDC(global_main_window);
 		if (dc) break; else {
 			Sleep(1);
 		}
@@ -1239,7 +1225,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 			panic();
 		}
 	}
-	ReleaseDC(main_window, dc);
+	ReleaseDC(global_main_window, dc);
 
 	// Hack: make sure the OpenGL driver doesn't spawn any more threads
 	glEnable(GL_DEBUG_OUTPUT);
@@ -1326,19 +1312,19 @@ void win32_init_main_window() {
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
 
 
-	main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
+	global_main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
 	                              main_window_class.lpszClassName, "Slideviewer",
-	                              window_style,
-	                              0/*CW_USEDEFAULT*/, 0/*CW_USEDEFAULT*/, initial_window_width, initial_window_height,
-	                              0, 0, g_instance, 0);
-	if (!main_window) {
+	                                     window_style,
+	                                     0/*CW_USEDEFAULT*/, 0/*CW_USEDEFAULT*/, initial_window_width, initial_window_height,
+	                                     0, 0, g_instance, 0);
+	if (!global_main_window) {
 		win32_diagnostic("CreateWindowExA");
 		panic();
 	}
 
-	win32_init_opengl(main_window);
+	win32_init_opengl(global_main_window);
 
-	ShowWindow(main_window, SW_MAXIMIZE);
+	ShowWindow(global_main_window, SW_MAXIMIZE);
 
 }
 
@@ -1439,10 +1425,10 @@ int main(int argc, const char** argv) {
 
 	is_program_running = true;
 
-	win32_init_gui(main_window);
+	win32_init_gui(global_main_window);
 
     app_state_t* app_state = &global_app_state;
-    init_app_state(app_state, main_window);
+    init_app_state(app_state, global_main_window);
 
     init_opengl_stuff(&global_app_state);
 
@@ -1473,7 +1459,7 @@ int main(int argc, const char** argv) {
 		last_clock = current_clock;
 		delta_t = ATMOST(2.0f / 60.0f, delta_t); // prevent physics overshoot at lag spikes
 
-		bool did_idle = win32_process_input(main_window, app_state);
+		bool did_idle = win32_process_input(global_main_window, app_state);
 		if (did_idle) {
 			last_clock = get_clock();
 		}
@@ -1482,7 +1468,7 @@ int main(int argc, const char** argv) {
 		win32_gui_new_frame();
 
 		// Update and render our application
-		win32_window_dimension_t dimension = win32_get_window_dimension(main_window);
+		win32_window_dimension_t dimension = win32_get_window_dimension(global_main_window);
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 
 		// Render the UI

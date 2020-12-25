@@ -577,11 +577,11 @@ void mouse_hide() {
 	}
 }
 
-void open_file_dialog(window_handle_t window) {
+void open_file_dialog(app_state_t* app_state) {
 	want_open_file_dialog = true;
 }
 
-bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
 	want_save_file_dialog = true;
 	return false;
 }

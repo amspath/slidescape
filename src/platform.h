@@ -52,6 +52,8 @@ extern "C" {
 
 #define MAX_THREAD_COUNT 128
 
+typedef struct app_state_t app_state_t;
+
 typedef struct mem_t {
 	size_t len;
 	size_t capacity;
@@ -199,8 +201,8 @@ u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
 void mouse_show();
 void mouse_hide();
 
-void open_file_dialog(window_handle_t window_handle);
-bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string);
+void open_file_dialog(app_state_t* app_state);
+bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string);
 void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
 

@@ -1198,6 +1198,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	after_scene_render:
 
+	if (was_key_pressed(input, KEY_F1)) {
+		show_demo_window = !show_demo_window;
+	}
+	if (was_key_pressed(input, KEY_F3) || was_key_pressed(input, KEY_Grave)) {
+		show_console_window = !show_console_window;
+	}
+
 	gui_draw(app_state, curr_input, client_width, client_height);
 	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
 

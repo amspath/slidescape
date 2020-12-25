@@ -95,6 +95,6 @@ void win32_init_gui(HWND hwnd) {
 	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
 
 
-	is_fullscreen = check_fullscreen(main_window);
+	is_fullscreen = check_fullscreen(global_main_window);
 
 }

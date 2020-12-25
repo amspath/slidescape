@@ -111,7 +111,13 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 	}
 }
 
-bool save_file_dialog(window_handle_t window, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+bool need_save_file_dialog = false;
+bool save_file_dialog_open = false;
+
+bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+	if (!save_file_dialog_open) {
+		need_save_file_dialog = true;
+	}
 	console_print_error("Not implemented: save_file_dialog\n");
     return false;
 }
