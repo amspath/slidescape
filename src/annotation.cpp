@@ -830,8 +830,25 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				selected_group = annotation_set->groups + edit_group_index;
 			}
 			const char* group_name = selected_group ? selected_group->name : "";
-			ImGui::Text("Group name: %s\n", group_name);
 
+			// Text field to display the group name, allowing for renaming.
+			{
+				static char dummy_buf[64] = "";
+				char* group_name_buf = dummy_buf;
+				ImGuiInputTextFlags flags;
+				if (selected_group) {
+					group_name_buf = selected_group->name;
+					flags = 0;
+				} else {
+					group_name_buf = dummy_buf;
+					flags = ImGuiInputTextFlags_ReadOnly;
+				}
+				if (ImGui::InputText("Group name", group_name_buf, 64)) {
+					annotations_modified(annotation_set);
+				}
+			}
+
+			// Color picker for editing the group color.
 			ImGuiColorEditFlags flags = 0;
 			float color[3] = {};
 			if (edit_group_index >= 0) {
