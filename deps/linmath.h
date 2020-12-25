@@ -46,13 +46,13 @@ LINMATH_H_FUNC void vec##n##_norm(vec##n r, vec##n const v) \
 	float k = 1.0 / vec##n##_len(v); \
 	vec##n##_scale(r, v, k); \
 } \
-LINMATH_H_FUNC void vec##n##_min(vec##n r, vec##n a, vec##n b) \
+LINMATH_H_FUNC void vec##n##_min(vec##n r, vec##n const a, vec##n const b) \
 { \
 	int i; \
 	for(i=0; i<n; ++i) \
 		r[i] = a[i]<b[i] ? a[i] : b[i]; \
 } \
-LINMATH_H_FUNC void vec##n##_max(vec##n r, vec##n a, vec##n b) \
+LINMATH_H_FUNC void vec##n##_max(vec##n r, vec##n const a, vec##n const b) \
 { \
 	int i; \
 	for(i=0; i<n; ++i) \
@@ -250,9 +250,9 @@ LINMATH_H_FUNC void mat4x4_rotate_Y(mat4x4 Q, mat4x4 M, float angle)
 	float s = sinf(angle);
 	float c = cosf(angle);
 	mat4x4 R = {
-		{   c, 0.f,   s, 0.f},
+		{   c, 0.f,  -s, 0.f},
 		{ 0.f, 1.f, 0.f, 0.f},
-		{  -s, 0.f,   c, 0.f},
+		{   s, 0.f,   c, 0.f},
 		{ 0.f, 0.f, 0.f, 1.f}
 	};
 	mat4x4_mul(Q, M, R);
@@ -321,12 +321,11 @@ LINMATH_H_FUNC void mat4x4_orthonormalize(mat4x4 R, mat4x4 M)
 	s = vec3_mul_inner(R[1], R[2]);
 	vec3_scale(h, R[2], s);
 	vec3_sub(R[1], R[1], h);
-	vec3_norm(R[2], R[2]);
-
-	s = vec3_mul_inner(R[1], R[2]);
-	vec3_scale(h, R[2], s);
-	vec3_sub(R[1], R[1], h);
 	vec3_norm(R[1], R[1]);
+
+	s = vec3_mul_inner(R[0], R[2]);
+	vec3_scale(h, R[2], s);
+	vec3_sub(R[0], R[0], h);
 
 	s = vec3_mul_inner(R[0], R[1]);
 	vec3_scale(h, R[1], s);
@@ -583,4 +582,33 @@ LINMATH_H_FUNC void quat_from_mat4x4(quat q, mat4x4 M)
 	q[3] = (M[p[2]][p[1]] - M[p[1]][p[2]])/(2.f*r);
 }
 
+LINMATH_H_FUNC void mat4x4_arcball(mat4x4 R, mat4x4 M, vec2 _a, vec2 _b, float s)
+{
+	vec2 a; memcpy(a, _a, sizeof(a));
+	vec2 b; memcpy(b, _b, sizeof(b));
+	
+	float z_a = 0.;
+	float z_b = 0.;
+
+	if(vec2_len(a) < 1.) {
+		z_a = sqrtf(1. - vec2_mul_inner(a, a));
+	} else {
+		vec2_norm(a, a);
+	}
+
+	if(vec2_len(b) < 1.) {
+		z_b = sqrtf(1. - vec2_mul_inner(b, b));
+	} else {
+		vec2_norm(b, b);
+	}
+	
+	vec3 a_ = {a[0], a[1], z_a};
+	vec3 b_ = {b[0], b[1], z_b};
+
+	vec3 c_;
+	vec3_mul_cross(c_, a_, b_);
+
+	float const angle = acos(vec3_mul_inner(a_, b_)) * s;
+	mat4x4_rotate(R, M, c_[0], c_[1], c_[2], angle);
+}
 #endif
