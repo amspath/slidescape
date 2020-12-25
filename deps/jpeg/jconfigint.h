@@ -31,7 +31,11 @@
 #define HAVE_BUILTIN_CTZL
 
 /* Define to 1 if you have the <intrin.h> header file. */
+#if defined(__has_include)
+#if __has_include(<intrin.h>)
 #define HAVE_INTRIN_H
+#endif
+#endif
 
 #if defined(_MSC_VER) && defined(HAVE_INTRIN_H)
 #if (SIZEOF_SIZE_T == 8)
