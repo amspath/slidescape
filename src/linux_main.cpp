@@ -356,13 +356,13 @@ int main(int argc, const char** argv)
 #if 1
         linux_process_input();
 
-	    if (was_key_pressed(input, KEY_F4) && input->keyboard.key_alt.down) {
+	    if (was_key_pressed(curr_input, KEY_F4) && curr_input->keyboard.key_alt.down) {
 		    is_program_running = false;
 	    }
-	    if (was_key_pressed(input, KEY_O) && input->keyboard.key_ctrl.down) {
+	    if (was_key_pressed(curr_input, KEY_O) && curr_input->keyboard.key_ctrl.down) {
 		    open_file_dialog(app_state);
 	    }
-	    if (was_key_pressed(input, KEY_F11)) {
+	    if (was_key_pressed(curr_input, KEY_F11)) {
 		    toggle_fullscreen(app_state->main_window);
 	    }
 

@@ -126,7 +126,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				win32_diagnostic("WaitForSingleObject");
 			}
 #else
-			pread(tiff->fd, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
+			size_t bytes_read = pread(tiff->fd, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #endif
 
 			if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {

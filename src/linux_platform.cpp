@@ -76,7 +76,7 @@ void mouse_hide() {
 bool need_open_file_dialog = false;
 bool open_file_dialog_open = false;
 
-void open_file_dialog(window_handle_t window) {
+void open_file_dialog(app_state_t* app_state) {
 	if (!open_file_dialog_open) {
 		need_open_file_dialog = true;
 	}
