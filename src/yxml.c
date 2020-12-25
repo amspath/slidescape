@@ -116,14 +116,9 @@ typedef enum {
 #define INTFROM5CHARS(a, b, c, d, e) ((((uint64_t)(a))<<32) | (((uint64_t)(b))<<24) | (((uint64_t)(c))<<16) | (((uint64_t)(d))<<8) | (uint64_t)(e))
 
 
-/* Set the given char value to ch (0<=ch<=255).
- * This can't be done with simple assignment because char may be signed, and
- * unsigned-to-signed overflow is implementation defined in C. This function
- * /looks/ inefficient, but gcc compiles it down to a single movb instruction
- * on x86, even with -O0. */
+/* Set the given char value to ch (0<=ch<=255). */
 static inline void yxml_setchar(char *dest, unsigned ch) {
-	unsigned char _ch = ch;
-	memcpy(dest, &_ch, 1);
+	*(unsigned char *)dest = ch;
 }
 
 
