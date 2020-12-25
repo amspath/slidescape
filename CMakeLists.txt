@@ -4,12 +4,43 @@ project(slideviewer)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-if (NOT CMAKE_BUILD_TYPE)
-    set(DEFAULT_BUILD_TYPE "Release")
-    message(STATUS "Setting build type to '${DEFAULT_BUILD_TYPE}' as none was specified.")
-    set(CMAKE_BUILD_TYPE "${DEFAULT_BUILD_TYPE}" CACHE STRING "Build type")
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
+message(STATUS "CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
 
+# Detect CPU type and whether we're building 64-bit or 32-bit code
+math(EXPR BITS "${CMAKE_SIZEOF_VOID_P} * 8")
+string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} CMAKE_SYSTEM_PROCESSOR_LC)
+if(CMAKE_SYSTEM_PROCESSOR_LC MATCHES "x86_64" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "amd64" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "i[0-9]86" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "x86" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "ia32")
+    if(BITS EQUAL 64 OR CMAKE_C_COMPILER_ABI MATCHES "ELF X32")
+        set(CPU_TYPE x86_64)
+    else()
+        set(CPU_TYPE i386)
+    endif()
+    if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL ${CPU_TYPE})
+        set(CMAKE_SYSTEM_PROCESSOR ${CPU_TYPE})
+    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR_LC STREQUAL "aarch64" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "arm*")
+    if(BITS EQUAL 64)
+        set(CPU_TYPE arm64)
+    else()
+        set(CPU_TYPE arm)
+    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR_LC MATCHES "ppc*" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "powerpc*")
+    set(CPU_TYPE powerpc)
+else()
+    set(CPU_TYPE ${CMAKE_SYSTEM_PROCESSOR_LC})
+endif()
+message(STATUS "${BITS}-bit build (${CPU_TYPE})")
+
+# Set up compiler and linker flags
 set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-shift-negative-value")
 if (APPLE)
     set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations -Wno-unknown-warning-option")
