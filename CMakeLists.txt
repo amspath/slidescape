@@ -208,7 +208,7 @@ elseif(APPLE)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
 else()
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
-    target_link_libraries(slideviewer pthread m GL GLEW SDL2)
+    target_link_libraries(slideviewer pthread dl m GL GLEW SDL2)
 endif()
 target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 

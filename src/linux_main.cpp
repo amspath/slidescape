@@ -195,6 +195,7 @@ int main(int argc, const char** argv)
     console_print("Starting up...\n");
     get_system_info();
     linux_init_multithreading();
+	add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL);
     linux_init_input();
 
     // Setup SDL

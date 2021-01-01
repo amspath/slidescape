@@ -25,18 +25,34 @@
 #ifdef _WIN32
 #include <windows.h>
 #include "win32_main.h" // for win32_diagnostic()
+#else
+#include <dlfcn.h>
+#endif
 
-bool32 init_openslide() {
+bool init_openslide() {
 	i64 debug_start = get_clock();
-	HINSTANCE dll_handle = LoadLibraryA("libopenslide-0.dll");
-	if (!dll_handle) {
+
+#ifdef _WIN32
+	HINSTANCE library_handle = LoadLibraryA("libopenslide-0.dll");
+	if (!library_handle) {
 		SetDllDirectoryA("openslide");
-		dll_handle = LoadLibraryA("libopenslide-0.dll");
+		library_handle = LoadLibraryA("libopenslide-0.dll");
 		SetDllDirectoryA(NULL);
 	}
-	if (dll_handle) {
+#else
+	void* library_handle = dlopen("libopenslide.so", RTLD_LAZY);
+	if (!library_handle) {
+		library_handle = dlopen("/usr/local/lib/libopenslide.so", RTLD_LAZY);
+	}
+#endif
 
-#define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(dll_handle, #proc))) goto failed;
+	if (library_handle) {
+
+#ifdef _WIN32
+#define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(library_handle, #proc))) goto failed;
+#else
+#define GET_PROC(proc) if (!(openslide.proc = (void*) dlsym(library_handle, #proc))) goto failed;
+#endif
 		GET_PROC(openslide_detect_vendor);
 		GET_PROC(openslide_open);
 		GET_PROC(openslide_get_level_count);
@@ -55,22 +71,23 @@ bool32 init_openslide() {
 		GET_PROC(openslide_get_version);
 #undef GET_PROC
 
-		console_print("Initialized OpenSlide in %g seconds.\n", get_seconds_elapsed(debug_start, get_clock()));
-		return true;
+		float seconds = get_seconds_elapsed(debug_start, get_clock());
+		if (seconds > 0.1f) {
+			console_print("OpenSlide initialized (loading took %g seconds)\n", seconds);
+		} else {
+			console_print("OpenSlide initialized\n");
+		}
+		is_openslide_available = true;
 
 	} else failed: {
+#ifdef _WIN32
 		//win32_diagnostic("LoadLibraryA");
 		console_print("OpenSlide not available: could not load libopenslide-0.dll\n");
-		return false;
-	}
-
-}
-
-#else //_WIN32
-
-bool32 init_openslide() {
-	// stub
-	return false;
-}
-
+#else
+		console_print("OpenSlide not available: could not load libopenslide.so (not installed?)\n");
 #endif
+		is_openslide_available = false;
+	}
+	is_openslide_loading_done = true;
+	return is_openslide_available;
+}

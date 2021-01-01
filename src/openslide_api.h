@@ -66,7 +66,7 @@ typedef struct openslide_api {
 
 
 // prototypes
-bool32 init_openslide();
+bool init_openslide();
 
 // globals
 #if defined(OPENSLIDE_API_IMPL)
@@ -78,12 +78,11 @@ bool32 init_openslide();
 #endif
 
 extern openslide_api openslide;
-extern bool32 is_openslide_available;
-extern bool32 is_openslide_loading_done;
+extern bool is_openslide_available;
+extern bool is_openslide_loading_done;
 
 #undef INIT
 #undef extern
-
 
 
 #ifdef __cplusplus
