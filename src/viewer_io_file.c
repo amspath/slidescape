@@ -262,7 +262,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			return;
 		}
 
-		console_print("Openslide: opened %s\n", filename);
+		console_print_verbose("OpenSlide: opened '%s'\n", filename);
 
 		wsi->level_count = openslide.openslide_get_level_count(wsi->osr);
 		if (wsi->level_count == -1) {
@@ -271,7 +271,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			unload_wsi(wsi);
 			return;
 		}
-		console_print("Openslide: WSI has %d levels\n", wsi->level_count);
+		console_print_verbose("OpenSlide: WSI has %d levels\n", wsi->level_count);
 		if (wsi->level_count > WSI_MAX_LEVELS) {
 			panic();
 		}
@@ -290,7 +290,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			const char* property = wsi_properties[0];
 			for (; property != NULL; property = wsi_properties[++property_index]) {
 				const char* property_value = openslide.openslide_get_property_value(wsi->osr, property);
-				console_print("%s = %s\n", property, property_value);
+				console_print_verbose("%s = %s\n", property, property_value);
 
 			}
 		}
@@ -354,7 +354,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 				i64 w = 0;
 				i64 h = 0;
 				openslide.openslide_get_associated_image_dimensions(wsi->osr, name, &w, &h);
-				console_print("%s : w=%lld h=%lld\n", name, w, h);
+				console_print_verbose("%s : w=%lld h=%lld\n", name, w, h);
 
 			}
 		}

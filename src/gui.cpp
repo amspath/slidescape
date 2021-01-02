@@ -590,6 +590,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	if (ImGui::BeginPopupContextWindow())
 	{
 		if (ImGui::Selectable("Clear")) console_clear_log();
+		if (ImGui::MenuItem("Verbose mode", NULL, &is_verbose_mode)) {}
 		ImGui::EndPopup();
 	}
 	i32 item_count = sb_count(console_log_items);
@@ -606,9 +607,10 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 				// Normally you would store more information in your item than just a string.
 				// (e.g. make Items[] an array of structure, store color/type etc.)
-				ImVec4 color;
+				ImVec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
 				if (item.has_color) {
-					if (item.item_type == 1)          { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);}
+					if (item.item_type == 1)      { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);}
+					else if (item.item_type == 2) { color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);}
 					else if (strncmp(item.text, "# ", 2) == 0) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f);  }
 					ImGui::PushStyleColor(ImGuiCol_Text, color);
 				}
@@ -689,7 +691,7 @@ void console_print_verbose(const char* fmt, ...) {
 	buf[sizeof(buf)-1] = 0;
 	va_end(args);
 
-	console_split_lines_and_add_log_item(buf, false, 0);
+	console_split_lines_and_add_log_item(buf, true, 2);
 }
 
 
