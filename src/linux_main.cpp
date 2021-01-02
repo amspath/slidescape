@@ -186,6 +186,8 @@ bool linux_process_input() {
 
 extern SDL_Window* g_window;
 
+static i32 need_check_window_focus_gained_after_frames;
+
 // Main code
 int main(int argc, const char** argv)
 {
@@ -330,8 +332,7 @@ int main(int argc, const char** argv)
     // Main loop
     is_program_running = true;
     i64 last_clock = get_clock();
-    while (is_program_running)
-    {
+    while (is_program_running) {
         i64 current_clock = get_clock();
         app_state->last_frame_start = current_clock;
         float delta_t = (float)(current_clock - last_clock) / (float)1e9;
@@ -345,16 +346,28 @@ int main(int argc, const char** argv)
         // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application.
         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
         SDL_Event event;
-        while (SDL_PollEvent(&event))
-        {
+        while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
-                is_program_running = false;
-            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
-                is_program_running = false;
+            if (event.type == SDL_QUIT) {
+	            is_program_running = false;
+            } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window)) {
+	            is_program_running = false;
+            } else if (event.type == SDL_DROPFILE) {
+            	if (load_generic_file(app_state, event.drop.file)) {
+		            // Bring the window to the foreground / set input-focus.
+		            // This makes it possible to immediately interact with the scene.
+		            SDL_RaiseWindow(window);
+		            // NOTE: on KDE there is a system setting 'focus stealing prevention setting', preventing us from getting the window focus.
+		            // Solution: change this system setting from 'Low' (the default in my case) to 'None'.
+		            // https://stackoverflow.com/questions/28782681/sdl2-how-to-raise-window-on-top-of-calling-terminal
+		            // To warn the user this is happening, we try to detect this situation and write an error message to the console (see code below).
+		            need_check_window_focus_gained_after_frames = 10;
+
+            	}
+	            SDL_free(event.drop.file);
+            }
         }
 
-#if 1
         linux_process_input();
 
 	    if (was_key_pressed(curr_input, KEY_F4) && curr_input->keyboard.key_alt.down) {
@@ -367,12 +380,26 @@ int main(int argc, const char** argv)
 		    toggle_fullscreen(app_state->main_window);
 	    }
 
+	    u32 current_window_flags = SDL_GetWindowFlags(window);
         int w, h;
         int display_w, display_h;
         SDL_GetWindowSize(window, &w, &h);
-        if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED)
-            w = h = 0;
+        if (current_window_flags & SDL_WINDOW_MINIMIZED) {
+	        w = h = 0;
+	        display_w = display_h = 0;
+        }
         SDL_GL_GetDrawableSize(window, &display_w, &display_h);
+
+        // After dragging a file onto the window to load it, we want to gain the window focus.
+        // Detect if this was successfully done (see event handling code above) and warn the user if it failed.
+        if (need_check_window_focus_gained_after_frames > 0) {
+	        --need_check_window_focus_gained_after_frames;
+	        if (need_check_window_focus_gained_after_frames == 0) {
+		        if (!(current_window_flags & SDL_WINDOW_INPUT_FOCUS)) {
+			        console_print_error("Could not gain window focus (maybe need to adjust the 'focus stealing prevention' setting on your system?)\n");
+		        }
+	        }
+        }
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -399,58 +426,9 @@ int main(int argc, const char** argv)
 
 //	    printf("Frame time: %g\n", get_seconds_elapsed(last_clock, get_clock()));
 
-#else
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame(window);
-        ImGui::NewFrame();
-
-        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        if (show_demo_window)
-            ImGui::ShowDemoWindow(&show_demo_window);
-
-        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
-        {
-            static float f = 0.0f;
-            static int counter = 0;
-
-            ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-            ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-            ImGui::Checkbox("Another Window", &show_another_window);
-
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-            ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-            if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                counter++;
-            ImGui::SameLine();
-            ImGui::Text("counter = %d", counter);
-
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-            ImGui::End();
-        }
-
-        // 3. Show another simple window.
-        if (show_another_window)
-        {
-            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
-            if (ImGui::Button("Close Me"))
-                show_another_window = false;
-            ImGui::End();
-        }
-
-        // Rendering
-        ImGui::Render();
-        glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
-        glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(window);
-#endif
     }
+
+    autosave(app_state, true); // save any unsaved changes
 
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
