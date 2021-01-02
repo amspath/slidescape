@@ -32,6 +32,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	i32 tile_y = task->tile_y;
 	image_t* image = task->image;
 	level_image_t* level_image = image->level_images + level;
+	ASSERT(level_image->exists);
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
 	ASSERT(level_image->x_tile_side_in_um > 0&& level_image->y_tile_side_in_um > 0);
 	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
@@ -63,8 +64,6 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		}
 		u8* jpeg_tables = level_ifd->jpeg_tables;
 		u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
-
-		// TODO: make async I/O code platform agnostic
 
 		if (tiff->is_remote) {
 			console_print("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
@@ -164,9 +163,10 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	} else if (image->type == IMAGE_TYPE_WSI) {
 		wsi_t* wsi = &image->wsi.wsi;
+		i32 wsi_file_level = level_image->pyramid_image_index;
 		i64 x = (tile_x * TILE_DIM) << level;
 		i64 y = (tile_y * TILE_DIM) << level;
-		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, level, TILE_DIM, TILE_DIM);
+		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, TILE_DIM, TILE_DIM);
 	} else {
 		console_print_error("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
@@ -250,29 +250,36 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 		}
 	}
 
-	if (!is_openslide_available) {
-		char message[4096];
-		snprintf(message, sizeof(message), "Could not open \"%s\":\nlibopenslide-0.dll is missing or broken.\n", filename);
-		message_box(message);
-		return;
-	}
-
 	// TODO: check if necessary anymore?
 	unload_wsi(wsi);
 
 	wsi->osr = openslide.openslide_open(filename);
 	if (wsi->osr) {
+		const char* error_string = openslide.openslide_get_error(wsi->osr);
+		if (error_string != NULL) {
+			console_print_error("OpenSlide error: %s\n", error_string);
+			unload_wsi(wsi);
+			return;
+		}
+
 		console_print("Openslide: opened %s\n", filename);
+
+		wsi->level_count = openslide.openslide_get_level_count(wsi->osr);
+		if (wsi->level_count == -1) {
+			error_string = openslide.openslide_get_error(wsi->osr);
+			console_print_error("OpenSlide error: %s\n", error_string);
+			unload_wsi(wsi);
+			return;
+		}
+		console_print("Openslide: WSI has %d levels\n", wsi->level_count);
+		if (wsi->level_count > WSI_MAX_LEVELS) {
+			panic();
+		}
 
 		openslide.openslide_get_level0_dimensions(wsi->osr, &wsi->width, &wsi->height);
 		ASSERT(wsi->width > 0);
 		ASSERT(wsi->height > 0);
 
-		wsi->level_count = openslide.openslide_get_level_count(wsi->osr);
-		console_print("Openslide: WSI has %d levels\n", wsi->level_count);
-		if (wsi->level_count > WSI_MAX_LEVELS) {
-			panic();
-		}
 		wsi->tile_width = TILE_DIM;
 		wsi->tile_height = TILE_DIM;
 
@@ -315,12 +322,18 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			i64 partial_block_y = level->height % TILE_DIM;
 			level->width_in_tiles = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
 			level->height_in_tiles = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
+			level->tile_width = TILE_DIM;
+			level->tile_height = TILE_DIM;
 
-			level->downsample_level = i;
+			float raw_downsample_factor = openslide.openslide_get_level_downsample(wsi->osr, i);
+			float raw_downsample_level = log2f(raw_downsample_factor);
+			i32 downsample_level = (i32) roundf(raw_downsample_level);
+
+			level->downsample_level = downsample_level;
 			level->downsample_factor = exp2f(level->downsample_level);
 			wsi->max_downsample_level = MAX(level->downsample_level, wsi->max_downsample_level);
-			level->um_per_pixel_x = (float)(1 << i) * wsi->mpp_x;
-			level->um_per_pixel_y = (float)(1 << i) * wsi->mpp_y;
+			level->um_per_pixel_x = level->downsample_factor * wsi->mpp_x;
+			level->um_per_pixel_y = level->downsample_factor * wsi->mpp_y;
 			level->x_tile_side_in_um = level->um_per_pixel_x * (float)TILE_DIM;
 			level->y_tile_side_in_um = level->um_per_pixel_y * (float)TILE_DIM;
 			level->tile_count = level->width_in_tiles * level->height_in_tiles;
@@ -429,11 +442,22 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 	} else {
 		// Try to load the file using OpenSlide
 		if (!is_openslide_available) {
-			console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
-			return false;
+			if (!is_openslide_loading_done) {
+#if DO_DEBUG
+				console_print("Waiting for OpenSlide to finish loading...\n");
+#endif
+				while (is_queue_work_in_progress(&global_work_queue)) {
+					do_worker_work(&global_work_queue, 0);
+				}
+			}
+			if (!is_openslide_available) {
+				console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
+				return false;
+			}
 		}
-		image_t new_image = (image_t){};
 
+		// TODO: fix code duplication from add_image_from_tiff()
+		image_t new_image = (image_t){};
 		new_image.type = IMAGE_TYPE_WSI;
 		wsi_t* wsi = &new_image.wsi.wsi;
 		load_wsi(wsi, filename);
@@ -447,13 +471,14 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			new_image.width_in_um = wsi->width * wsi->mpp_x;
 			new_image.height_in_pixels = wsi->height;
 			new_image.height_in_um = wsi->height * wsi->mpp_y;
+			ASSERT(wsi->levels[0].x_tile_side_in_um > 0);
 			if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
+				ASSERT(wsi->max_downsample_level >= 0);
 
-				new_image.level_count = wsi->level_count;
 				memset(new_image.level_images, 0, sizeof(new_image.level_images));
+				new_image.level_count = wsi->max_downsample_level + 1;
 
 				// TODO: check against downsample level, see add_image_from_tiff()
-				//new_image.level_count = wsi->max_downsample_level + 1;
 				if (wsi->level_count > new_image.level_count) {
 					panic();
 				}
@@ -461,37 +486,79 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 					panic();
 				}
 
-				for (i32 i = 0; i < wsi->level_count; ++i) {
-					level_image_t* level_image = new_image.level_images + i;
-					wsi_level_t* wsi_level = wsi->levels + i;
-
-					level_image->exists = true;
-					level_image->pyramid_image_index = i;
-					level_image->downsample_factor = wsi_level->downsample_factor;
-					level_image->tile_count = wsi_level->tile_count;
-					level_image->tile_width = wsi->tile_width;
-					level_image->tile_height = wsi->tile_height;
-					level_image->width_in_tiles = wsi_level->width_in_tiles;
-					level_image->height_in_tiles = wsi_level->height_in_tiles;
-					level_image->um_per_pixel_x = wsi_level->um_per_pixel_x;
-					level_image->um_per_pixel_y = wsi_level->um_per_pixel_y;
-					level_image->x_tile_side_in_um = wsi_level->x_tile_side_in_um;
-					level_image->y_tile_side_in_um = wsi_level->y_tile_side_in_um;
-					level_image->tiles = (tile_t*) calloc(1, wsi_level->tile_count * sizeof(tile_t));
-					// Note: OpenSlide doesn't allow us to quickly check if tiles are empty or not.
-					for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
-						tile_t* tile = level_image->tiles + tile_index;
-						// Facilitate some introspection by storing self-referential information
-						// in the tile_t struct. This is needed for some specific cases where we
-						// pass around pointers to tile_t structs without caring exactly where they
-						// came from.
-						// (Specific example: we use this when exporting a selected region as BigTIFF)
-						tile->tile_index = tile_index;
-						tile->tile_x = tile_index % level_image->width_in_tiles;
-						tile->tile_y = tile_index / level_image->width_in_tiles;
+				i32 wsi_level_index = 0;
+				i32 next_wsi_level_index_to_check_for_match = 0;
+				wsi_level_t* wsi_file_level = wsi->levels + wsi_level_index;
+				for (i32 downsample_level = 0; downsample_level < new_image.level_count; ++downsample_level) {
+					level_image_t* downsample_level_image = new_image.level_images + downsample_level;
+					i32 wanted_downsample_level = downsample_level;
+					bool found_wsi_level_for_downsample_level = false;
+					for (wsi_level_index = next_wsi_level_index_to_check_for_match; wsi_level_index < wsi->level_count; ++wsi_level_index) {
+						wsi_file_level = wsi->levels + wsi_level_index;
+						if (wsi_file_level->downsample_level == wanted_downsample_level) {
+							// match!
+							found_wsi_level_for_downsample_level = true;
+							next_wsi_level_index_to_check_for_match = wsi_level_index + 1; // next iteration, don't reuse the same WSI level!
+							break;
+						}
 					}
+
+					if (found_wsi_level_for_downsample_level) {
+						// The current downsampling level is backed by a corresponding IFD level image in the TIFF.
+						downsample_level_image->exists = true;
+						downsample_level_image->pyramid_image_index = wsi_level_index;
+						downsample_level_image->downsample_factor = wsi_file_level->downsample_factor;
+						downsample_level_image->tile_count = wsi_file_level->tile_count;
+						downsample_level_image->width_in_tiles = wsi_file_level->width_in_tiles;
+						ASSERT(downsample_level_image->width_in_tiles > 0);
+						downsample_level_image->height_in_tiles = wsi_file_level->height_in_tiles;
+						downsample_level_image->tile_width = wsi_file_level->tile_width;
+						downsample_level_image->tile_height = wsi_file_level->tile_height;
+#if DO_DEBUG
+						if (downsample_level_image->tile_width != new_image.tile_width) {
+							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, new_image.tile_width);
+						}
+						if (downsample_level_image->tile_height != new_image.tile_height) {
+							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, new_image.tile_width);
+						}
+#endif
+						downsample_level_image->um_per_pixel_x = wsi_file_level->um_per_pixel_x;
+						downsample_level_image->um_per_pixel_y = wsi_file_level->um_per_pixel_y;
+						downsample_level_image->x_tile_side_in_um = wsi_file_level->x_tile_side_in_um;
+						downsample_level_image->y_tile_side_in_um = wsi_file_level->y_tile_side_in_um;
+						ASSERT(downsample_level_image->x_tile_side_in_um > 0);
+						ASSERT(downsample_level_image->y_tile_side_in_um > 0);
+						downsample_level_image->tiles = (tile_t*) calloc(1, wsi_file_level->tile_count * sizeof(tile_t));
+						// Note: OpenSlide doesn't allow us to quickly check if tiles are empty or not.
+						for (i32 tile_index = 0; tile_index < downsample_level_image->tile_count; ++tile_index) {
+							tile_t* tile = downsample_level_image->tiles + tile_index;
+							// Facilitate some introspection by storing self-referential information
+							// in the tile_t struct. This is needed for some specific cases where we
+							// pass around pointers to tile_t structs without caring exactly where they
+							// came from.
+							// (Specific example: we use this when exporting a selected region as BigTIFF)
+							tile->tile_index = tile_index;
+							tile->tile_x = tile_index % downsample_level_image->width_in_tiles;
+							tile->tile_y = tile_index / downsample_level_image->width_in_tiles;
+						}
+					} else {
+						// The current downsampling level has no corresponding IFD level image :(
+						// So we need only some placeholder information.
+						downsample_level_image->exists = false;
+						downsample_level_image->downsample_factor = exp2f((float)wanted_downsample_level);
+						// Just in case anyone tries to divide by zero:
+						downsample_level_image->tile_width = new_image.tile_width;
+						downsample_level_image->tile_height = new_image.tile_height;
+						downsample_level_image->um_per_pixel_x = new_image.mpp_x * downsample_level_image->downsample_factor;
+						downsample_level_image->um_per_pixel_y = new_image.mpp_y * downsample_level_image->downsample_factor;
+						downsample_level_image->x_tile_side_in_um = downsample_level_image->um_per_pixel_x * (float)wsi->levels[0].tile_width;
+						downsample_level_image->y_tile_side_in_um = downsample_level_image->um_per_pixel_y * (float)wsi->levels[0].tile_height;
+					}
+
 				}
+
 			}
+			ASSERT(new_image.level_count > 0);
 
 			sb_push(app_state->loaded_images, new_image);
 			success = true;

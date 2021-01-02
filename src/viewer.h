@@ -50,6 +50,8 @@ typedef struct {
 	i64 height;
 	i64 width_in_tiles;
 	i64 height_in_tiles;
+	u32 tile_width;
+	u32 tile_height;
 	i32 tile_count;
 	float um_per_pixel_x;
 	float um_per_pixel_y;

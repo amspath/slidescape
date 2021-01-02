@@ -226,8 +226,8 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				level_image->tile_height = new_image.tile_height;
 				level_image->um_per_pixel_x = new_image.mpp_x * level_image->downsample_factor;
 				level_image->um_per_pixel_y = new_image.mpp_y * level_image->downsample_factor;
-				level_image->x_tile_side_in_um = ifd->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
-				level_image->y_tile_side_in_um = ifd->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
+				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
+				level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
 			}
 
 			DUMMY_STATEMENT;
@@ -969,7 +969,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// Determine the highest and lowest levels with image data that need to be loaded and rendered.
 		// The lowest needed level might be lower than the actual current downsampling level,
 		// because some levels may not have image data available (-> need to fall back to lower level).
-		i32 highest_visible_level = image->level_count - 1;
+		ASSERT(image->level_count >= 0);
+		i32 highest_visible_level = ATLEAST(image->level_count - 1, 0);
 		i32 lowest_visible_level = ATLEAST(scene->zoom.level, 0);
 		lowest_visible_level = ATMOST(highest_visible_level, lowest_visible_level);
 		for (; lowest_visible_level > 0; --lowest_visible_level) {
