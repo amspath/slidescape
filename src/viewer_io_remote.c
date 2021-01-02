@@ -79,14 +79,16 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 					i64 chunk_offset_in_read_buffer = 0;
 					for (i32 i = 0; i < batch_size; ++i) {
-						u8* pixel_memory = malloc(WSI_BLOCK_SIZE);
-						memset(pixel_memory, 0xFF, WSI_BLOCK_SIZE);
+						load_tile_task_t* task = batch->tile_tasks + i;
+						level_image_t* level_image = image->level_images + task->level;
+
+						size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
+						u8* pixel_memory = malloc(pixel_memory_size);
+						memset(pixel_memory, 0xFF, pixel_memory_size);
 
 						u8* current_chunk = content + chunk_offset_in_read_buffer;
 						chunk_offset_in_read_buffer += chunk_sizes[i];
 
-						load_tile_task_t* task = batch->tile_tasks + i;
-						level_image_t* level_image = image->level_images + task->level;
 						tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 						u8* jpeg_tables = level_ifd->jpeg_tables;
 						u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
@@ -104,7 +106,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 						viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
 						completion_task->pixel_memory = pixel_memory;
-						completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
+						// TODO: check if we need to pass the tile height here too?
+						completion_task->tile_width = level_image->tile_width;
 						completion_task->tile = task->tile;
 
 						ASSERT(task->completion_callback);

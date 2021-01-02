@@ -43,8 +43,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
-	u8* temp_memory = malloc(WSI_BLOCK_SIZE);//(u8*) thread_memory->aligned_rest_of_thread_memory;
-	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
+	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
+	u8* temp_memory = malloc(pixel_memory_size);//(u8*) thread_memory->aligned_rest_of_thread_memory;
+	memset(temp_memory, 0xFF, pixel_memory_size);
 	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory;// + WSI_BLOCK_SIZE;
 
 
@@ -143,18 +144,18 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 		// Trim the tile (replace with transparent color) if it extends beyond the image size
 		// TODO: anti-alias edge?
-		i32 new_tile_height = TILE_DIM;
-		i32 pitch = TILE_DIM * BYTES_PER_PIXEL;
+		i32 new_tile_height = level_image->tile_height;
+		i32 pitch = level_image->tile_width * BYTES_PER_PIXEL;
 		if (tile_y_excess > 0) {
-			i32 excess_rows = (int)(tile_y_excess / level_image->y_tile_side_in_um * TILE_DIM);
+			i32 excess_rows = (int)((tile_y_excess / level_image->y_tile_side_in_um) * level_image->tile_height);
 			ASSERT(excess_rows >= 0);
-			new_tile_height = TILE_DIM - excess_rows;
+			new_tile_height = level_image->tile_height - excess_rows;
 			memset(temp_memory + (new_tile_height * pitch), 0, excess_rows * pitch);
 		}
 		if (tile_x_excess > 0) {
-			i32 excess_pixels = (int)(tile_x_excess / level_image->x_tile_side_in_um * TILE_DIM);
+			i32 excess_pixels = (int)((tile_x_excess / level_image->x_tile_side_in_um) * level_image->tile_width);
 			ASSERT(excess_pixels >= 0);
-			i32 new_tile_width = TILE_DIM - excess_pixels;
+			i32 new_tile_width = level_image->tile_width - excess_pixels;
 			for (i32 row = 0; row < new_tile_height; ++row) {
 				u8* write_pos = temp_memory + (row * pitch) + (new_tile_width * BYTES_PER_PIXEL);
 				memset(write_pos, 0, excess_pixels * BYTES_PER_PIXEL);
@@ -164,24 +165,22 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	} else if (image->type == IMAGE_TYPE_WSI) {
 		wsi_t* wsi = &image->wsi.wsi;
 		i32 wsi_file_level = level_image->pyramid_image_index;
-		i64 x = (tile_x * TILE_DIM) << level;
-		i64 y = (tile_y * TILE_DIM) << level;
-		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, TILE_DIM, TILE_DIM);
+		i64 x = (tile_x * level_image->tile_width) << level;
+		i64 y = (tile_y * level_image->tile_height) << level;
+		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
 	} else {
 		console_print_error("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
 	}
 
 
-
-
 	finish_up:;
-
-	i32 width = TILE_DIM;
-	i32 height = TILE_DIM;
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 #if 1
+	i32 width = level_image->tile_width;
+	i32 height = level_image->tile_height;
+
 	glEnable(GL_TEXTURE_2D);
 	if (!thread_memory->pbo) {
 		glGenBuffers(1, &thread_memory->pbo);
@@ -228,7 +227,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
 	completion_task->pixel_memory = temp_memory;
-	completion_task->tile_width = TILE_DIM; // TODO: make tile width agnostic
+	completion_task->tile_width = level_image->tile_width;
 	completion_task->tile = task->tile;
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
@@ -280,8 +279,8 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 		ASSERT(wsi->width > 0);
 		ASSERT(wsi->height > 0);
 
-		wsi->tile_width = TILE_DIM;
-		wsi->tile_height = TILE_DIM;
+		wsi->tile_width = WSI_TILE_DIM;
+		wsi->tile_height = WSI_TILE_DIM;
 
 
 		const char* const* wsi_properties = openslide.openslide_get_property_names(wsi->osr);
@@ -318,12 +317,12 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			openslide.openslide_get_level_dimensions(wsi->osr, i, &level->width, &level->height);
 			ASSERT(level->width > 0);
 			ASSERT(level->height > 0);
-			i64 partial_block_x = level->width % TILE_DIM;
-			i64 partial_block_y = level->height % TILE_DIM;
-			level->width_in_tiles = (i32)(level->width / TILE_DIM) + (partial_block_x != 0);
-			level->height_in_tiles = (i32)(level->height / TILE_DIM) + (partial_block_y != 0);
-			level->tile_width = TILE_DIM;
-			level->tile_height = TILE_DIM;
+			i64 partial_block_x = level->width % WSI_TILE_DIM;
+			i64 partial_block_y = level->height % WSI_TILE_DIM;
+			level->width_in_tiles = (i32)(level->width / WSI_TILE_DIM) + (partial_block_x != 0);
+			level->height_in_tiles = (i32)(level->height / WSI_TILE_DIM) + (partial_block_y != 0);
+			level->tile_width = WSI_TILE_DIM;
+			level->tile_height = WSI_TILE_DIM;
 
 			float raw_downsample_factor = openslide.openslide_get_level_downsample(wsi->osr, i);
 			float raw_downsample_level = log2f(raw_downsample_factor);
@@ -334,8 +333,8 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			wsi->max_downsample_level = MAX(level->downsample_level, wsi->max_downsample_level);
 			level->um_per_pixel_x = level->downsample_factor * wsi->mpp_x;
 			level->um_per_pixel_y = level->downsample_factor * wsi->mpp_y;
-			level->x_tile_side_in_um = level->um_per_pixel_x * (float)TILE_DIM;
-			level->y_tile_side_in_um = level->um_per_pixel_y * (float)TILE_DIM;
+			level->x_tile_side_in_um = level->um_per_pixel_x * (float)WSI_TILE_DIM;
+			level->y_tile_side_in_um = level->um_per_pixel_y * (float)WSI_TILE_DIM;
 			level->tile_count = level->width_in_tiles * level->height_in_tiles;
 			// Note: tiles are now managed by the format-agnostic image_t
 //			level->tiles = calloc(1, level->num_tiles * sizeof(wsi_tile_t));

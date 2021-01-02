@@ -40,10 +40,8 @@ typedef struct texture_t {
 } texture_t;
 
 
-#define TILE_DIM 512
+#define WSI_TILE_DIM 512
 #define BYTES_PER_PIXEL 4
-#define TILE_PITCH (TILE_DIM * BYTES_PER_PIXEL)
-#define WSI_BLOCK_SIZE (TILE_DIM * TILE_DIM * BYTES_PER_PIXEL)
 
 typedef struct {
 	i64 width;

@@ -931,8 +931,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					tile->is_submitted_for_loading = false;
 					if (tile->is_cached && tile->pixels) {
 						if (tile->need_gpu_residency) {
-							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, TILE_DIM,
-                                                                                                   TILE_DIM, 4,
+							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->image->tile_width,
+							                                                                       task->image->tile_height, 4,
                                                                                                    tile->pixels, finalize_textures_immediately);
 							tile->texture = transfer_state->texture;
 						} else {
