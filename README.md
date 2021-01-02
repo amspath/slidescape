@@ -1,6 +1,6 @@
 # Slideviewer
 
-Slideviewer is a viewer for whole-slide images. It is currently in early development.
+Slideviewer is a viewer for whole-slide images, currently in development.
 
 ## How to build
 
@@ -23,6 +23,24 @@ cd ..
 cmake --build build --target slideviewer -- -j
 ./slideviewer
 ```
+
+Note that macOS support is currently not yet completely implemented.
+
+## Supported image formats
+
+The viewer has built-in support for tiled TIFF and BigTIFF images (including generic and Philips TIFF variants).
+
+In addition, the program can detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime. 
+If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana formats can also be loaded.
+
+To enable OpenSlide support on Windows, download (or compile) the [64-bit binaries](https://openslide.org/download/) 
+and put all of the DLL files together in an `openslide/` folder in the same location as `slideviewer.exe`.
+
+To enable OpenSlide support on Linux, install the library, either using a package manager or 
+by building and installing it manually. The program will try to locate `libopenslide.so`, either in the 
+default system library paths or in `/usr/local/lib/`.  
+
+Support for Philips iSyntax is planned at some point in the future.
 
 ## Credits
 
