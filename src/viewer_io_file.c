@@ -364,6 +364,9 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
 		if (load_image_from_file(app_state, filename)) {
+			// Unload any old annotations if necessary
+			unload_and_reinit_annotations(&app_state->scene.annotation_set);
+
 			// Check if there is an associated ASAP XML annotations file
 			size_t len = strlen(filename);
 			size_t temp_size = len + 5; // add 5 so that we can always append ".xml\0"

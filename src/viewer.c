@@ -108,7 +108,10 @@ void unload_image(image_t* image) {
 	}
 }
 
+// TODO: make this based on scene (allow loading multiple images independently side by side)
 void unload_all_images(app_state_t *app_state) {
+	autosave(app_state, true); // save recent changes to annotations, if necessary
+
 	i32 current_image_count = sb_count(app_state->loaded_images);
 	if (current_image_count > 0) {
 		ASSERT(app_state->loaded_images);
