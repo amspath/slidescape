@@ -58,8 +58,8 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+include_directories("${CMAKE_SOURCE_DIR}/src/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
-include_directories("${CMAKE_SOURCE_DIR}/deps/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
 include_directories("${CMAKE_SOURCE_DIR}/deps/keycode")
 if (WIN32)
@@ -166,13 +166,13 @@ set(VIEWER_SOURCE_FILES
         caselist.c
         annotation.cpp
         openslide_api.c
-        imgui.cpp
-        imgui_demo.cpp
-        imgui_draw.cpp
-        imgui_widgets.cpp
-        imgui_tables.cpp
-        imgui_impl_opengl3.cpp
-        imgui_freetype.cpp
+        imgui/imgui.cpp
+        imgui/imgui_demo.cpp
+        imgui/imgui_draw.cpp
+        imgui/imgui_widgets.cpp
+        imgui/imgui_tables.cpp
+        imgui/imgui_impl_opengl3.cpp
+        imgui/imgui_freetype.cpp
         gui.cpp
         jpeg_decoder.c
         remote.c
@@ -182,13 +182,13 @@ set(VIEWER_SOURCE_FILES
 )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            win32_main.cpp  win32_gui.cpp   imgui_impl_win32.cpp     glad.c )
+            win32_main.cpp  win32_gui.cpp   imgui/imgui_impl_win32.cpp     glad.c )
 elseif(APPLE)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            macos_main.mm   imgui_impl_osx.mm )
+            macos_main.mm   imgui/imgui_impl_osx.mm )
 else()
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            linux_main.cpp   linux_platform.cpp imgui_impl_sdl.cpp ImGuiFileDialog.cpp)
+            linux_main.cpp   linux_platform.cpp imgui/imgui_impl_sdl.cpp imgui/ImGuiFileDialog.cpp)
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
