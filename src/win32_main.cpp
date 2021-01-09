@@ -543,6 +543,11 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 							toggle_fullscreen(message.hwnd);
 						}
 					} break;
+					case VK_RETURN: {
+						if (is_down && message.hwnd && alt_down) {
+							toggle_fullscreen(message.hwnd);
+						}
+					}
 				}
 
 

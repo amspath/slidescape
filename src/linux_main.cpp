@@ -432,7 +432,7 @@ int main(int argc, const char** argv)
 	    if (was_key_pressed(curr_input, KEY_O) && curr_input->keyboard.key_ctrl.down) {
 		    open_file_dialog(app_state);
 	    }
-	    if (was_key_pressed(curr_input, KEY_F11)) {
+	    if (was_key_pressed(curr_input, KEY_F11) || (was_key_pressed(curr_input, KEY_Return) && curr_input->keyboard.key_alt.down)) {
 		    toggle_fullscreen(app_state->main_window);
 	    }
 
