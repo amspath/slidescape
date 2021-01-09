@@ -146,6 +146,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				if (ImGui::MenuItem("Enable Vsync", NULL, &is_vsync_enabled)) {}
+				if (ImGui::MenuItem("Show menu bar", "Alt+F11", &show_menu_bar)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -220,7 +221,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	gui_want_capture_mouse = io.WantCaptureMouse;
 	gui_want_capture_keyboard = io.WantCaptureKeyboard;
 
-	if (!is_macos) gui_draw_main_menu_bar(app_state);
+	if (show_menu_bar) gui_draw_main_menu_bar(app_state);
 
 	if (show_open_remote_window) {
 		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);

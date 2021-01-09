@@ -60,6 +60,7 @@ extern bool show_annotation_group_assignment_window;
 extern bool show_general_options_window;
 extern bool show_about_window;
 extern bool show_console_window INIT(= DO_DEBUG);
+extern bool show_menu_bar INIT(= true);
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 extern char remote_hostname[64] INIT(= "localhost");
