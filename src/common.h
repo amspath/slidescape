@@ -171,7 +171,7 @@ static inline void panic() {
 
 #define COMPILE_TIME_ASSERT(name, condition) typedef char assert_failed_ ## name [ (condition) ? 1 : -1 ];
 
-#define DUMMY_STATEMENT do { int x = 5; } while(0)
+#define DUMMY_STATEMENT do { int __x = 5; } while(0)
 
 static inline u64 next_pow2(u64 x) {
 	ASSERT(x > 1);

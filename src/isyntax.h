@@ -25,9 +25,28 @@ extern "C" {
 #include "common.h"
 #include "platform.h"
 
+enum isyntax_image_type_enum {
+	ISYNTAX_IMAGE_TYPE_NONE = 0,
+	ISYNTAX_IMAGE_TYPE_MACROIMAGE = 1,
+	ISYNTAX_IMAGE_TYPE_LABELIMAGE = 2,
+	ISYNTAX_IMAGE_TYPE_WSI = 3,
+};
+
+typedef struct isyntax_image_t {
+	u32 image_type;
+} isyntax_image_t;
+
+typedef struct isyntax_parser_t {
+	isyntax_image_t* current_image;
+	u32 current_image_type;
+} isyntax_parser_t;
 
 typedef struct isyntax_t {
 	i64 filesize;
+	isyntax_image_t macro_image;
+	isyntax_image_t label_image;
+	isyntax_image_t wsi_image;
+	isyntax_parser_t parser;
 } isyntax_t;
 
 // function prototypes
