@@ -44,7 +44,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
 	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
-	u8* temp_memory = malloc(pixel_memory_size);//(u8*) thread_memory->aligned_rest_of_thread_memory;
+	u8* temp_memory = (u8*)malloc(pixel_memory_size);//(u8*) thread_memory->aligned_rest_of_thread_memory;
 	memset(temp_memory, 0xFF, pixel_memory_size);
 	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory;// + WSI_BLOCK_SIZE;
 
@@ -382,7 +382,7 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 			// Check if there is an associated ASAP XML annotations file
 			size_t len = strlen(filename);
 			size_t temp_size = len + 5; // add 5 so that we can always append ".xml\0"
-			char* temp_filename = alloca(temp_size);
+			char* temp_filename = (char*) alloca(temp_size);
 			strncpy(temp_filename, filename, temp_size);
 			replace_file_extension(temp_filename, temp_size, "xml");
 			if (file_exists(temp_filename)) {

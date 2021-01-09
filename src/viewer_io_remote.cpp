@@ -83,7 +83,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						level_image_t* level_image = image->level_images + task->level;
 
 						size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
-						u8* pixel_memory = malloc(pixel_memory_size);
+						u8* pixel_memory = (u8*)malloc(pixel_memory_size);
 						memset(pixel_memory, 0xFF, pixel_memory_size);
 
 						u8* current_chunk = content + chunk_offset_in_read_buffer;

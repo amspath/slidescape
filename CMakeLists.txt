@@ -41,7 +41,7 @@ endif()
 message(STATUS "${BITS}-bit build (${CPU_TYPE})")
 
 # Set up compiler and linker flags
-set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-shift-negative-value")
+set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-shift-negative-value -Wno-sign-compare")
 if (APPLE)
     set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations -Wno-unknown-warning-option")
 endif()
@@ -156,7 +156,7 @@ prepend_path(KEYCODE_SOURCE_FILES deps/keycode)
 
 set(VIEWER_SOURCE_FILES
         platform.c
-        viewer.c
+        viewer.cpp
         stringutils.c
         mathutils.c
         shader.c

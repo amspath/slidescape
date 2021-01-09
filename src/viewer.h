@@ -310,6 +310,7 @@ void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client
 
 u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
 void init_opengl_stuff(app_state_t* app_state);
+void do_after_scene_render(app_state_t* app_state, input_t* input);
 
 
 // globals

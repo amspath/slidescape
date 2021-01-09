@@ -16,7 +16,7 @@
 #include <SDL2/SDL.h>
 
 #include "stb_image.h"
-#include "stringified_icon.c"
+#include "stringified_icon.h"
 
 #include "imgui_freetype.h"
 
@@ -52,7 +52,7 @@ using namespace gl;
 void stringify_icon_image() {
 	const char* resource_filename = "resources/icon/icon128.png";
 	mem_t* icon_file = platform_read_entire_file(resource_filename);
-	FILE* f_output = fopen("src/stringified_icon.c", "w");
+	FILE* f_output = fopen("src/stringified_icon.h", "w");
 
 	fprintf(f_output,   "// This is a stringified version of the file %s\n"
 				        "// It is used to load the window icon on Linux.\n"

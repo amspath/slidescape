@@ -51,10 +51,10 @@
 #include "annotation.h"
 #include "shader.h"
 
-#include "viewer_opengl.c"
-#include "viewer_io_file.c"
-#include "viewer_io_remote.c"
-#include "viewer_zoom.c"
+#include "viewer_opengl.cpp"
+#include "viewer_io_file.cpp"
+#include "viewer_io_remote.cpp"
+#include "viewer_zoom.cpp"
 
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
@@ -419,7 +419,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	if (image_count == 0) {
 		//load_generic_file(app_state, "test.jpeg");
-		goto after_scene_render;
+		do_after_scene_render(app_state, input);
+		return;
 	}
 
 	image_t* image = app_state->loaded_images + app_state->displayed_image;
@@ -440,7 +441,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
 			menu_close_file(app_state);
-			goto after_scene_render;
+			do_after_scene_render(app_state, input);
+			return;
 		}
 
 		if (gui_want_capture_mouse) {
@@ -467,7 +469,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (input->mouse_buttons[0].transition_count != 0) {
 					// Don't start dragging if clicked outside the window
 					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
-					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){input->mouse_xy.x, input->mouse_xy.y})) {
+					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){(i32)input->mouse_xy.x, (i32)input->mouse_xy.y})) {
 						scene->is_dragging = true; // drag start
 						scene->drag_started = true;
 						scene->cumulative_drag_vector = (v2f){};
@@ -991,12 +993,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				continue; // no image data
 			}
 
-			bounds2i level_tiles_bounds = {
-					.left = 0,
-					.top = 0,
-					.right = drawn_level->width_in_tiles,
-					.bottom = drawn_level->height_in_tiles,
-			};
+			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
@@ -1149,12 +1146,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				continue;
 			}
 
-			bounds2i level_tiles_bounds = {
-					.left = 0,
-					.top = 0,
-					.right = drawn_level->width_in_tiles,
-					.bottom = drawn_level->height_in_tiles,
-			};
+			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
@@ -1203,8 +1195,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	}
 
-	after_scene_render:
+	do_after_scene_render(app_state, input);
+}
 
+void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	if (was_key_pressed(input, KEY_F1)) {
 		show_demo_window = !show_demo_window;
 	}
@@ -1215,11 +1209,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		show_menu_bar = !show_menu_bar;
 	}
 
-	gui_draw(app_state, curr_input, client_width, client_height);
-	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
+	gui_draw(app_state, curr_input, app_state->client_viewport.w, app_state->client_viewport.h);
+//	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
 
 	autosave(app_state, false);
-	last_section = profiler_end_section(last_section, "autosave", 10.0f);
+//	last_section = profiler_end_section(last_section, "autosave", 10.0f);
 
 	//glFinish();
 
