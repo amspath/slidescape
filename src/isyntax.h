@@ -25,6 +25,8 @@ extern "C" {
 #include "common.h"
 #include "platform.h"
 
+#include "yxml.h"
+
 enum isyntax_image_type_enum {
 	ISYNTAX_IMAGE_TYPE_NONE = 0,
 	ISYNTAX_IMAGE_TYPE_MACROIMAGE = 1,
@@ -37,8 +39,25 @@ typedef struct isyntax_image_t {
 } isyntax_image_t;
 
 typedef struct isyntax_parser_t {
+	yxml_t* x;
 	isyntax_image_t* current_image;
 	u32 current_image_type;
+	char* current_element_name;
+	char* attrbuf;
+	char* attrbuf_end;
+	char* attrcur;
+	size_t attrlen;
+	size_t attrbuf_capacity;
+	char* contentbuf;
+	char* contentcur;
+	size_t contentlen;
+	size_t contentbuf_capacity;
+	char current_dicom_attribute_name[256];
+	u32 current_dicom_group_tag;
+	u32 current_dicom_element_tag;
+	i32 attribute_index;
+	bool parsing_dicom_tag;
+	bool initialized;
 } isyntax_parser_t;
 
 typedef struct isyntax_t {

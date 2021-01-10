@@ -23,7 +23,6 @@
 
 #include "yxml.h"
 
-// TODO: Reading the header in chunks
 // TODO: Parse array nodes properly
 // TODO: Record relevant metadata in the isyntax_t structure
 // TODO: Add base64 decoding routines
@@ -288,50 +287,80 @@ bool isyntax_validate_dicom_attr(const char* expected, const char* observed) {
 	return ok;
 }
 
+void isyntax_parser_init(isyntax_t* isyntax) {
+	isyntax_parser_t* parser = &isyntax->parser;
 
-bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 header_length) {
+	parser->initialized = true;
+
+	parser->attrbuf_capacity = KILOBYTES(32);
+	parser->contentbuf_capacity = MEGABYTES(8);
+
+	parser->current_element_name = "";
+	parser->attrbuf = malloc(parser->attrbuf_capacity); // TODO: free
+	parser->attrbuf_end = parser->attrbuf + parser->attrbuf_capacity;
+	parser->attrcur = NULL;
+	parser->attrlen = 0;
+	parser->contentbuf = malloc(parser->contentbuf_capacity); // TODO: free
+	parser->contentcur = NULL;
+	parser->contentlen = 0;
+
+	parser->current_dicom_attribute_name[0] = '\0';
+	parser->current_dicom_group_tag = 0;
+	parser->current_dicom_element_tag = 0;
+	parser->attribute_index = 0;
+	parser->parsing_dicom_tag = false;
+
+	// XML parsing using the yxml library.
+	// https://dev.yorhel.nl/yxml/man
+	size_t yxml_stack_buffer_size = KILOBYTES(32);
+	parser->x = (yxml_t*) malloc(sizeof(yxml_t) + yxml_stack_buffer_size);
+
+	yxml_init(parser->x, parser->x + 1, yxml_stack_buffer_size);
+}
+
+
+bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_length, bool is_last_chunk) {
 
 	yxml_t* x = NULL;
 	bool success = false;
 
 	static bool paranoid_mode = true;
 
-	char* current_element_name = "";
-	char* attrbuf = malloc(header_length);
-	char* attrbuf_end = attrbuf + header_length;
-	char* attrcur = NULL;
-	size_t attrlen = 0;
-	char* contentbuf = malloc(header_length);
-	char* contentbuf_end = contentbuf + header_length;
-	char* contentcur = NULL;
-	size_t contentlen = 0;
+	isyntax_parser_t* parser = &isyntax->parser;
 
-	char current_dicom_attribute_name[256];
-	u32 current_dicom_group_tag = 0;
-	u32 current_dicom_element_tag = 0;
-	i32 attribute_index = 0;
-	bool parsing_dicom_tag = false;
+	if (!parser->initialized) {
+		isyntax_parser_init(isyntax);
+	}
+	x = parser->x;
 
 	if (0) { failed: cleanup:
-		if (x) free(x);
-		if (attrbuf) free(attrbuf);
-		if (contentbuf) free(contentbuf);
+		if (x) {
+			free(x);
+			parser->x = NULL;
+		}
+		if (parser->attrbuf) {
+			free(parser->attrbuf);
+			parser->attrbuf = NULL;
+		}
+		if (parser->contentbuf) {
+			free(parser->contentbuf);
+			parser->contentbuf = NULL;
+		}
 		return success;
 	}
 
-	// XML parsing using the yxml library.
-	// https://dev.yorhel.nl/yxml/man
-	size_t yxml_stack_buffer_size = KILOBYTES(32);
-	x = (yxml_t*) malloc(sizeof(yxml_t) + yxml_stack_buffer_size);
 
-	yxml_init(x, x + 1, yxml_stack_buffer_size);
 
 	// parse XML byte for byte
 
-
 	char* doc = xml_header;
-	for (; *doc; doc++) {
-		yxml_ret_t r = yxml_parse(x, *doc);
+	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length) {
+		int c = *doc++;
+		if (c == '\0') {
+			ASSERT(false); // this should never trigger
+			break;
+		}
+		yxml_ret_t r = yxml_parse(x, c);
 		if (r == YXML_OK) {
 			continue; // nothing worthy of note has happened -> continue
 		} else if (r < 0) {
@@ -341,31 +370,43 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 header_l
 			switch(r) {
 				case YXML_ELEMSTART: {
 					// start of an element: '<Tag ..'
-					contentcur = contentbuf;
-					*contentcur = '\0';
-					contentlen = 0;
-					attribute_index = 0;
-					parsing_dicom_tag = (strcmp(x->elem, "Attribute") == 0);
-					current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
+					parser->contentcur = parser->contentbuf;
+					*parser->contentcur = '\0';
+					parser->contentlen = 0;
+					parser->attribute_index = 0;
+					parser->parsing_dicom_tag = (strcmp(x->elem, "Attribute") == 0);
+					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
 
-					if (!parsing_dicom_tag) console_print_verbose("element start: %s\n", x->elem);
+					if (!parser->parsing_dicom_tag) console_print_verbose("element start: %s\n", x->elem);
 
 				} break;
 				case YXML_CONTENT: {
 					// element content
-//				    console_print_verbose("   element content: %s\n", x->elem);
-					if (!contentcur) break;
+					// TODO: load iSyntax block header table greedily, and bypass yxml parsing overhead
+#if 0
+					static i32 count = 0;
+					if (count++ < 1000) {
+						console_print_verbose("   element content: %s: %s\n", x->elem, x->data);
+					}
+#endif
+					if (!parser->contentcur) break;
 					char* tmp = x->data;
-					while (*tmp && contentbuf < contentbuf_end) {
-						*(contentcur++) = *(tmp++);
-						++contentlen;
+					while (*tmp && parser->contentlen < parser->contentbuf_capacity) {
+						*(parser->contentcur++) = *(tmp++);
+						++parser->contentlen;
+						// too long content -> resize buffer
+						if (parser->contentlen == parser->contentbuf_capacity) {
+							size_t new_capacity = parser->contentbuf_capacity * 2;
+							char* new_ptr = (char*)realloc(parser->contentbuf, new_capacity);
+							if (!new_ptr) panic();
+							parser->contentbuf = new_ptr;
+							parser->contentcur = parser->contentbuf + parser->contentlen;
+							parser->contentbuf_capacity = new_capacity;
+//							console_print("isyntax_parse_xml_header(): XML content buffer overflow (resized buffer to %u)\n", new_capacity);
+						}
 					}
-					if (contentcur == contentbuf_end) {
-						// too long content
-						console_print("isyntax_parse_xml_header(): encountered a too long XML element content\n");
-						goto failed;
-					}
-					*contentcur = '\0';
+
+					*parser->contentcur = '\0';
 				} break;
 				case YXML_ELEMEND: {
 					// end of an element: '.. />' or '</Tag>'
@@ -376,14 +417,16 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 header_l
 					// are also processed. So in that case we need to intervene at an earlier stage, e.g. at
 					// the YXML_CONTENT stage, while we know the
 
-					if (parsing_dicom_tag) {
-						console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x) = %s\n", current_dicom_attribute_name, current_dicom_group_tag, current_dicom_element_tag, contentbuf);
-						isyntax_parse_attribute(isyntax, current_dicom_group_tag, current_dicom_element_tag, contentbuf, contentlen);
+					if (parser->parsing_dicom_tag) {
+						console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x) = %s\n", parser->current_dicom_attribute_name,
+							parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentbuf);
+						isyntax_parse_attribute(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+							  parser->contentbuf, parser->contentlen);
 					} else {
-						console_print_verbose("element end: %s\n", current_element_name);
-						if (contentcur) {
-							if (contentlen > 0) {
-								console_print_verbose("elem content: %s\n", contentbuf);
+						console_print_verbose("element end: %s\n", parser->current_element_name);
+						if (parser->contentcur) {
+							if (parser->contentlen > 0) {
+								console_print_verbose("elem content: %s\n", parser->contentbuf);
 							}
 //
 						}
@@ -393,53 +436,58 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 header_l
 				case YXML_ATTRSTART: {
 					// attribute: 'Name=..'
 //				    console_print_verbose("attr start: %s\n", x->attr);
-					attrcur = attrbuf;
-					*attrcur = '\0';
-					attrlen = 0;
+					parser->attrcur = parser->attrbuf;
+					*parser->attrcur = '\0';
+					parser->attrlen = 0;
 				} break;
 				case YXML_ATTRVAL: {
 					// attribute value
 				    //console_print_verbose("   attr val: %s\n", x->attr);
-					if (!attrcur) break;
+					if (!parser->attrcur) break;
 					char* tmp = x->data;
-					while (*tmp && attrbuf < attrbuf_end) {
-						*(attrcur++) = *(tmp++);
-						++attrlen;
+					while (*tmp && parser->attrbuf < parser->attrbuf_end) {
+						*(parser->attrcur++) = *(tmp++);
+						++parser->attrlen;
+						// too long content -> resize buffer
+						if (parser->attrlen == parser->attrbuf_capacity) {
+							size_t new_capacity = parser->attrbuf_capacity * 2;
+							char* new_ptr = (char*)realloc(parser->attrbuf, new_capacity);
+							if (!new_ptr) panic();
+							parser->attrbuf = new_ptr;
+							parser->attrcur = parser->attrbuf + parser->attrlen;
+							parser->attrbuf_capacity = new_capacity;
+//							console_print("isyntax_parse_xml_header(): XML attribute buffer overflow (resized buffer to %u)\n", new_capacity);
+						}
 					}
-					if (attrcur == attrbuf_end) {
-						// too long attribute
-						console_print("isyntax_parse_xml_header(): encountered a too long XML attribute\n");
-						goto failed;
-					}
-					*attrcur = '\0';
+					*parser->attrcur = '\0';
 				} break;
 				case YXML_ATTREND: {
 					// end of attribute '.."'
-					if (attrcur) {
-						if (!parsing_dicom_tag) console_print_verbose("attr %s = %s\n", x->attr, attrbuf);
-						ASSERT(strlen(attrbuf) == attrlen);
-						if (parsing_dicom_tag) {
-							if (attribute_index == 0 /* Name="..." */) {
+					if (parser->attrcur) {
+						if (!parser->parsing_dicom_tag) console_print_verbose("attr %s = %s\n", x->attr, parser->attrbuf);
+						ASSERT(strlen(parser->attrbuf) == parser->attrlen);
+						if (parser->parsing_dicom_tag) {
+							if (parser->attribute_index == 0 /* Name="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Name");
-								size_t copy_size = MIN(attrlen, sizeof(current_dicom_attribute_name));
-								memcpy(current_dicom_attribute_name, attrbuf, copy_size);
-								i32 one_past_last_char = MIN(attrlen, sizeof(current_dicom_attribute_name)-1);
-								current_dicom_attribute_name[one_past_last_char] = '\0';
+								size_t copy_size = MIN(parser->attrlen, sizeof(parser->current_dicom_attribute_name));
+								memcpy(parser->current_dicom_attribute_name, parser->attrbuf, copy_size);
+								i32 one_past_last_char = MIN(parser->attrlen, sizeof(parser->current_dicom_attribute_name)-1);
+								parser->current_dicom_attribute_name[one_past_last_char] = '\0';
 								DUMMY_STATEMENT;
-							} else if (attribute_index == 1 /* Group="0x...." */) {
+							} else if (parser->attribute_index == 1 /* Group="0x...." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Group");
-								current_dicom_group_tag = strtoul(attrbuf, NULL, 0);
+								parser->current_dicom_group_tag = strtoul(parser->attrbuf, NULL, 0);
 								DUMMY_STATEMENT;
-							} else if (attribute_index == 2 /* Element="0x...." */) {
+							} else if (parser->attribute_index == 2 /* Element="0x...." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Element");
-								current_dicom_element_tag = strtoul(attrbuf, NULL, 0);
+								parser->current_dicom_element_tag = strtoul(parser->attrbuf, NULL, 0);
 								DUMMY_STATEMENT;
-							} else if (attribute_index == 3 /* PMSVR="..." */) {
+							} else if (parser->attribute_index == 3 /* PMSVR="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "PMSVR");
 							}
 
 						}
-						++attribute_index;
+						++parser->attribute_index;
 
 					}
 				} break;
@@ -455,7 +503,12 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 header_l
 		}
 	}
 
-	goto cleanup;
+	success = true;
+	if (is_last_chunk) {
+		goto cleanup;
+	} else {
+		return success; // no cleanup yet, we will still need resources until the last header chunk is reached.
+	}
 }
 
 bool isyntax_open(isyntax_t* isyntax, const char* filename) {
@@ -484,38 +537,84 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			// to quickly start I/O operations on the actual image data, without needing the whole header
 			// (the whole XML header can be huge, >32MB in some files)
 
+			float io_seconds = 0.0f;
+			i64 io_begin = get_clock();
+			i64 io_ticks_elapsed = 0;
+			float parsing_seconds = 0.0f;
+			i64 parse_begin = get_clock();
+			i64 parse_ticks_elapsed = 0;
+
 			size_t read_size = MEGABYTES(32);
 			char* read_buffer = malloc(read_size);
 			size_t bytes_read = fread(read_buffer, 1, read_size, fp);
+			io_ticks_elapsed += (get_clock() - io_begin);
+
 			if (bytes_read < 3) goto fail_1;
 			bool are_there_bytes_left = (bytes_read == read_size);
 			// find EOT candidates, 3 bytes "\r\n\x04"
-			bool match = false;
 			i64 header_length = 0;
-			char* pos = read_buffer;
-			i64 offset = 0;
-			for (; offset < bytes_read; ++offset, ++pos) {
-				char c = *pos;
-				if (c == '\x04' && offset > 2) {
-					// candidate for EOT marker
-					if (pos[-2] == '\r' && pos[-1] == '\n') {
-						match = true;
-						header_length = offset - 2;
-						ASSERT(header_length > 0);
-						break;
+			i32 chunk_index = 0;
+			for (;; ++chunk_index) {
+//				console_print("iSyntax: reading XML header chunk %d\n", chunk_index);
+				i64 chunk_length = 0;
+				bool match = false;
+				char* pos = read_buffer;
+				i64 offset = 0;
+				for (; offset < bytes_read; ++offset, ++pos) {
+					char c = *pos;
+					if (c == '\x04' && offset > 2) {
+						// candidate for EOT marker
+						if (pos[-2] == '\r' && pos[-1] == '\n') {
+							match = true;
+							chunk_length = offset - 2;
+							header_length += chunk_length;
+							ASSERT(header_length > 0);
+							break;
+						}
+					}
+				}
+				if (match) {
+					// We found the end of the XML header. This is the last chunk to process.
+					if (!(header_length > 0 && header_length < isyntax->filesize)) goto fail_1;
+
+					parse_begin = get_clock();
+					isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, true);
+					parse_ticks_elapsed += (get_clock() - parse_begin);
+
+					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)(header_length * 100) / isyntax->filesize);
+					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
+					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+					break;
+				} else {
+					// We didn't find the end of the XML header. We need to read more chunks to find it.
+					// (Or, we reached the end of the file unexpectedly, which is an error.)
+					chunk_length = read_size;
+					header_length += chunk_length;
+					if (are_there_bytes_left) {
+
+						parse_begin = get_clock();
+						isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, false);
+						parse_ticks_elapsed += (get_clock() - parse_begin);
+
+						io_begin = get_clock();
+						bytes_read = fread(read_buffer, 1, read_size, fp); // read the next chunk
+						io_ticks_elapsed += (get_clock() - io_begin);
+
+						are_there_bytes_left = (bytes_read == read_size);
+						continue;
+					} else {
+						console_print_error("iSyntax parsing error: didn't find the end of the XML header (unexpected end of file)\n");
+						goto fail_1;
 					}
 				}
 			}
-			if (!match) {
-				// TODO: read more
-				console_print_error("didn't find the end of the XML header\n");
-			}
-			if (!(header_length > 0 && header_length < isyntax->filesize)) goto fail_1;
+
 
 			// Offset of either the Seektable, or the Codeblocks segment of the iSyntax file.
 			i64 isyntax_data_offset = header_length + 3;
 
 			// Process the XML header
+#if 0
 			char* xml_header = read_buffer;
 			xml_header[header_length] = '\0';
 
@@ -525,6 +624,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			FILE* test_out = fopen("isyntax_header.xml", "wb");
 			fwrite(xml_header, header_length, 1, test_out);
 			fclose(test_out);
+#endif
 #endif
 
 			// TODO: further implement iSyntax support
