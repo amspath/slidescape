@@ -354,8 +354,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 	// parse XML byte for byte
 
 	char* doc = xml_header;
-	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length) {
-		int c = *doc++;
+	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length, ++doc) {
+		int c = *doc;
 		if (c == '\0') {
 			ASSERT(false); // this should never trigger
 			break;
@@ -382,14 +382,32 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 				} break;
 				case YXML_CONTENT: {
 					// element content
-					// TODO: load iSyntax block header table greedily, and bypass yxml parsing overhead
-#if 0
-					static i32 count = 0;
-					if (count++ < 1000) {
-						console_print_verbose("   element content: %s: %s\n", x->elem, x->data);
-					}
-#endif
 					if (!parser->contentcur) break;
+
+					// Load iSyntax block header table (and other large XML tags) greedily and bypass yxml parsing overhead
+					if (parser->parsing_dicom_tag) {
+						u32 group = parser->current_dicom_group_tag;
+						u32 element = parser->current_dicom_element_tag;
+						bool need_skip = (group == 0x301D && element == 0x2014) || // UFS_IMAGE_BLOCK_HEADER_TABLE
+								         (group == 0x301D && element == 0x1005) || // PIM_DP_IMAGE_DATA
+										 (group == 0x0028 && element == 0x2000);   // DICOM_ICCPROFILE
+
+					    if (need_skip) {
+							char* content_start = doc;
+							char* pos = (char*)memchr(content_start, '<', remaining_length);
+							if (pos) {
+								i64 size = pos - content_start;
+//								console_print("iSyntax: skipped tag (0x%04x, 0x%04x) content length = %d\n", group, element, size);
+								doc += (size-1); // skip to the next tag
+								remaining_length -= (size-1);
+							} else {
+//								console_print("iSyntax: skipped tag (0x%04x, 0x%04x) content length = %d\n", group, element, remaining_length);
+								remaining_length = 0; // skip to the next chunk
+								break;
+							}
+						}
+					}
+
 					char* tmp = x->data;
 					while (*tmp && parser->contentlen < parser->contentbuf_capacity) {
 						*(parser->contentcur++) = *(tmp++);
@@ -418,8 +436,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					// the YXML_CONTENT stage, while we know the
 
 					if (parser->parsing_dicom_tag) {
-						console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x) = %s\n", parser->current_dicom_attribute_name,
-							parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentbuf);
+						console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x), size:%-8u = %s\n", parser->current_dicom_attribute_name,
+							parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentlen, parser->contentbuf);
 						isyntax_parse_attribute(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
 							  parser->contentbuf, parser->contentlen);
 					} else {
@@ -532,19 +550,18 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			// We don't know the length of the XML header, so we just read 'enough' data in a chunk and hope that we get it
 			// (and if not, read some more data until we get it)
 
-			// TODO: read and parse the header in chunks (maybe we don't need all of it to begin useful work?)
+			// TODO: accelerate parsing of block header data
 			// We might be able to use the image block header structure (typically located near the top of the file)
 			// to quickly start I/O operations on the actual image data, without needing the whole header
 			// (the whole XML header can be huge, >32MB in some files)
 
-			float io_seconds = 0.0f;
+			i64 load_begin = get_clock();
 			i64 io_begin = get_clock();
 			i64 io_ticks_elapsed = 0;
-			float parsing_seconds = 0.0f;
 			i64 parse_begin = get_clock();
 			i64 parse_ticks_elapsed = 0;
 
-			size_t read_size = MEGABYTES(32);
+			size_t read_size = MEGABYTES(1);
 			char* read_buffer = malloc(read_size);
 			size_t bytes_read = fread(read_buffer, 1, read_size, fp);
 			io_ticks_elapsed += (get_clock() - io_begin);
@@ -560,18 +577,12 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				bool match = false;
 				char* pos = read_buffer;
 				i64 offset = 0;
-				for (; offset < bytes_read; ++offset, ++pos) {
-					char c = *pos;
-					if (c == '\x04' && offset > 2) {
-						// candidate for EOT marker
-						if (pos[-2] == '\r' && pos[-1] == '\n') {
-							match = true;
-							chunk_length = offset - 2;
-							header_length += chunk_length;
-							ASSERT(header_length > 0);
-							break;
-						}
-					}
+				char* marker = (char*)memchr(read_buffer, '\x04', bytes_read);
+				if (marker) {
+					offset = marker - read_buffer;
+					match = true;
+					chunk_length = offset;
+					header_length += chunk_length;
 				}
 				if (match) {
 					// We found the end of the XML header. This is the last chunk to process.
@@ -584,6 +595,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)(header_length * 100) / isyntax->filesize);
 					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+					console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
 					break;
 				} else {
 					// We didn't find the end of the XML header. We need to read more chunks to find it.
