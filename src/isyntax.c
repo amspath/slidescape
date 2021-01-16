@@ -23,7 +23,6 @@
 
 #include "yxml.h"
 
-// TODO: Parse array nodes properly
 // TODO: Record relevant metadata in the isyntax_t structure
 // TODO: Add base64 decoding routines
 // --> used in the XML header for barcode, label/macro JPEG data, image block header structure, ICC profiles
@@ -179,123 +178,6 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 	}
 }
 
-// TODO: parse array nodes properly
-void isyntax_parse_attribute(isyntax_t* isyntax, u32 group, u32 element, const char* value, u64 value_len) {
-
-	switch(group) {
-		default: {
-			// unknown group
-			console_print_verbose("Unknown group 0x%04x\n", group);
-		} break;
-		case 0x0008: {
-			switch(element) {
-				default: {
-					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
-				} break;
-				case 0x002A: /*DICOM_ACQUISITION_DATETIME*/     {} break; // "20210101103030.000000"
-				case 0x0070: /*DICOM_MANUFACTURER*/             {} break; // "PHILIPS"
-				case 0x1090: /*DICOM_MANUFACTURERS_MODEL_NAME*/ {} break; // "UFS Scanner"
-				case 0x2111: /*DICOM_DERIVATION_DESCRIPTION*/   {         // "PHILIPS UFS V%s | Quality=%d | DWT=%d | Compressor=%d"
-
-				} break;
-			}
-		}; break;
-		case 0x0018: {
-			switch(element) {
-				default: {
-					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
-				} break;
-				case 0x1000: /*DICOM_DEVICE_SERIAL_NUMBER*/     {} break; // "FMT<4-digit number>"
-				case 0x1020: /*DICOM_SOFTWARE_VERSIONS*/        {} break; // "<versionnumber>" "<versionnumber>"
-				case 0x1200: /*DICOM_DATE_OF_LAST_CALIBRATION*/ {} break; // "20210101"
-				case 0x1201: /*DICOM_TIME_OF_LAST_CALIBRATION*/ {} break; // "100730"
-			}
-		} break;
-		case 0x0028: {
-			switch(element) {
-				default: {
-					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
-				} break;
-				case 0x0002: /*DICOM_SAMPLES_PER_PIXEL*/     {} break;
-				case 0x0100: /*DICOM_BITS_ALLOCATED*/     {} break;
-				case 0x0101: /*DICOM_BITS_STORED*/     {} break;
-				case 0x0102: /*DICOM_HIGH_BIT*/     {} break;
-				case 0x0103: /*DICOM_PIXEL_REPRESENTATION*/     {} break;
-				case 0x2000: /*DICOM_ICCPROFILE*/     {} break;
-				case 0x2110: /*DICOM_LOSSY_IMAGE_COMPRESSION*/     {} break;
-				case 0x2112: /*DICOM_LOSSY_IMAGE_COMPRESSION_RATIO*/     {} break;
-				case 0x2114: /*DICOM_LOSSY_IMAGE_COMPRESSION_METHOD*/     {} break; // "PHILIPS_DP_1_0"
-			}
-		} break;
-		case 0x101D: {
-			switch(element) {
-				default: {
-					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
-				} break;
-				case 0x1007: /*PIIM_DP_SCANNER_RACK_NUMBER*/        {} break; // "[1..15]"
-				case 0x1008: /*PIIM_DP_SCANNER_SLOT_NUMBER*/        {} break; // "[1..15]"
-				case 0x1009: /*PIIM_DP_SCANNER_OPERATOR_ID*/        {} break; // "<Operator ID>"
-				case 0x100A: /*PIIM_DP_SCANNER_CALIBRATION_STATUS*/ {} break; // "OK" or "NOT OK"
-
-			}
-		} break;
-		case 0x301D: {
-			switch(element) {
-				default: {
-					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
-				} break;
-				case 0x1001: /*PIM_DP_UFS_INTERFACE_VERSION*/          {} break; // "5.0"
-				case 0x1002: /*PIM_DP_UFS_BARCODE*/                    {} break; // "<base64-encoded barcode value>"
-				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                 {} break;
-				case 0x1004: /*PIM_DP_IMAGE_TYPE*/                     {         // "MACROIMAGE" or "LABELIMAGE" or "WSI"
-					if ((strcmp(value, "MACROIMAGE") == 0)) {
-						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
-						isyntax->macro_image.image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
-						isyntax->parser.current_image = &isyntax->macro_image;
-					} else if ((strcmp(value, "LABELIMAGE") == 0)) {
-						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_LABELIMAGE;
-						isyntax->label_image.image_type = ISYNTAX_IMAGE_TYPE_LABELIMAGE;
-						isyntax->parser.current_image = &isyntax->label_image;
-					} else if ((strcmp(value, "WSI") == 0)) {
-						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_WSI;
-						isyntax->wsi_image.image_type = ISYNTAX_IMAGE_TYPE_WSI;
-						isyntax->parser.current_image = &isyntax->wsi_image;
-					}
-				} break;
-				case 0x1005: /*PIM_DP_IMAGE_DATA*/                          {} break;
-				case 0x1010: /*PIM_DP_SCANNER_RACK_PRIORITY*/               {} break; // "<u16>"
-				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
-				case 0x1014: /*DP_IMAGE_POST_PROCESSING*/                   {} break;
-				case 0x1015: /*DP_SHARPNESS_GAIN_RGB24*/                    {} break;
-				case 0x1016: /*DP_CLAHE_CLIP_LIMIT_Y16*/                    {} break;
-				case 0x1017: /*DP_CLAHE_NR_BINS_Y16*/                       {} break;
-				case 0x1018: /*DP_CLAHE_CONTEXT_DIMENSION_Y16*/             {} break;
-				case 0x1019: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR*/    {} break;
-				case 0x101A: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL*/    {} break;
-				case 0x101B: /*DP_WAVELET_QUANTIZER*/                       {} break;
-				case 0x101C: /*DP_WAVELET_DEADZONE*/                        {} break;
-				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                 {} break;
-				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {} break;
-				case 0x2002: /*UFS_IMAGE_DIMENSIONS_OVER_BLOCK*/            {} break;
-				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
-				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
-				case 0x2005: /*UFS_IMAGE_DIMENSION_TYPE*/                   {} break;
-				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {} break;
-				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {} break;
-				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
-				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {} break;
-				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {} break;
-				case 0x200B: /*UFS_IMAGE_DIMENSION_RANGE*/                  {} break;
-				case 0x200C: /*UFS_IMAGE_DIMENSION_IN_BLOCK*/               {} break;
-				case 0x200F: /*UFS_IMAGE_BLOCK_COMPRESSION_METHOD*/         {} break;
-				case 0x2013: /*UFS_IMAGE_PIXEL_TRANSFORMATION_METHOD*/      {} break;
-				case 0x2014: /*UFS_IMAGE_BLOCK_HEADER_TABLE*/               {} break;
-
-			}
-		} break;
-	}
-}
-
 bool isyntax_validate_dicom_attr(const char* expected, const char* observed) {
 	bool ok = (strcmp(expected, observed) == 0);
 	if (!ok) {
@@ -325,7 +207,7 @@ void isyntax_parser_init(isyntax_t* isyntax) {
 	parser->current_dicom_group_tag = 0;
 	parser->current_dicom_element_tag = 0;
 	parser->attribute_index = 0;
-	parser->parsing_dicom_tag = false;
+	parser->current_node_type = ISYNTAX_NODE_NONE;
 
 	// XML parsing using the yxml library.
 	// https://dev.yorhel.nl/yxml/man
@@ -335,6 +217,14 @@ void isyntax_parser_init(isyntax_t* isyntax) {
 	yxml_init(parser->x, parser->x + 1, yxml_stack_buffer_size);
 }
 
+const char* get_spaces(i32 length) {
+	ASSERT(length >= 0);
+	static const char spaces[] = "                                  ";
+	i32 spaces_len = COUNT(spaces) - 1;
+	i32 offset_from_end = MIN(spaces_len, length);
+	i32 offset = spaces_len - offset_from_end;
+	return spaces + offset;
+}
 
 bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_length, bool is_last_chunk) {
 
@@ -387,23 +277,27 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 			switch(r) {
 				case YXML_ELEMSTART: {
 					// start of an element: '<Tag ..'
+					++parser->node_stack_index;
 					parser->contentcur = parser->contentbuf;
 					*parser->contentcur = '\0';
 					parser->contentlen = 0;
 					parser->attribute_index = 0;
 					if (strcmp(x->elem, "Attribute") == 0) {
-						parser->parsing_dicom_tag = true;
-						parser->parsing_branch_node = false;
+						parser->current_node_type = ISYNTAX_NODE_LEAF;
 					} else if (strcmp(x->elem, "DataObject") == 0) {
-						parser->parsing_dicom_tag = false;
-						parser->parsing_branch_node = true;
+						parser->current_node_type = ISYNTAX_NODE_BRANCH;
+					} else if (strcmp(x->elem, "Array") == 0) {
+						parser->current_node_type = ISYNTAX_NODE_ARRAY;
+						console_print_verbose("%sArray\n", get_spaces(parser->node_stack_index));
 					} else {
-						parser->parsing_dicom_tag = false;
-						parser->parsing_branch_node = false;
+						parser->current_node_type = ISYNTAX_NODE_NONE;
+						console_print_verbose("%selement start: %s\n", get_spaces(parser->node_stack_index), x->elem);
 					}
+					parser->node_stack[parser->node_stack_index].node_type = parser->current_node_type;
+					parser->node_stack[parser->node_stack_index].has_children = false;
+					parser->current_node_has_children = false;
 					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
 
-					if (!parser->parsing_dicom_tag) console_print_verbose("element start: %s\n", x->elem);
 
 				} break;
 				case YXML_CONTENT: {
@@ -411,7 +305,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					if (!parser->contentcur) break;
 
 					// Load iSyntax block header table (and other large XML tags) greedily and bypass yxml parsing overhead
-					if (parser->parsing_dicom_tag) {
+					if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
 						u32 group = parser->current_dicom_group_tag;
 						u32 element = parser->current_dicom_element_tag;
 						bool need_skip = (group == 0x301D && element == 0x2014) || // UFS_IMAGE_BLOCK_HEADER_TABLE
@@ -461,19 +355,39 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					// are also processed. So in that case we need to intervene at an earlier stage, e.g. at
 					// the YXML_CONTENT stage, while we know the
 
-					if (parser->parsing_dicom_tag) {
-						console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x), size:%-8u = %s\n", parser->current_dicom_attribute_name,
-							parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentlen, parser->contentbuf);
-						isyntax_parse_attribute(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
-							  parser->contentbuf, parser->contentlen);
-					} else {
-						console_print_verbose("element end: %s\n", parser->current_element_name);
-						if (parser->contentcur) {
-							if (parser->contentlen > 0) {
-								console_print_verbose("elem content: %s\n", parser->contentbuf);
-							}
-//
+					if (parser->current_node_type == ISYNTAX_NODE_LEAF && !parser->current_node_has_children) {
+						console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), size:%-8u = %s\n", get_spaces(parser->node_stack_index),
+						                      parser->current_dicom_attribute_name,
+						                      parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentlen, parser->contentbuf);
+
+						if (parser->node_stack_index == 2) {
+							isyntax_parse_ufsimport_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+							                        parser->contentbuf, parser->contentlen);
+						} else {
+							isyntax_parse_scannedimage_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+							                                   parser->contentbuf, parser->contentlen);
 						}
+					} else {
+						const char* elem_name = NULL;
+						if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
+							elem_name = "Attribute";
+						} else if (parser->current_node_type == ISYNTAX_NODE_BRANCH) {
+							elem_name = "DataObject";
+						} else if (parser->current_node_type == ISYNTAX_NODE_ARRAY) {
+							elem_name = "Array";
+						}
+
+						console_print_verbose("%selement end: %s\n", get_spaces(parser->node_stack_index), elem_name);
+					}
+
+					// 'Pop' context back to parent node
+					if (parser->node_stack_index > 0) {
+						--parser->node_stack_index;
+						parser->current_node_type = parser->node_stack[parser->node_stack_index].node_type;
+						parser->current_node_has_children = parser->node_stack[parser->node_stack_index].has_children;
+					} else {
+						//TODO: handle error condition
+						console_print_error("iSyntax XML error: closing element without matching start\n");
 					}
 
 				} break;
@@ -508,10 +422,9 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 				case YXML_ATTREND: {
 					// end of attribute '.."'
 					if (parser->attrcur) {
-						if (!parser->parsing_dicom_tag) console_print_verbose("attr %s = %s\n", x->attr, parser->attrbuf);
 						ASSERT(strlen(parser->attrbuf) == parser->attrlen);
 
-						if (parser->parsing_dicom_tag) {
+						if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
 							if (parser->attribute_index == 0 /* Name="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Name");
 								size_t copy_size = MIN(parser->attrlen, sizeof(parser->current_dicom_attribute_name));
@@ -530,17 +443,28 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							} else if (parser->attribute_index == 3 /* PMSVR="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "PMSVR");
 								if (strcmp(parser->attrbuf, "IDataObjectArray") == 0) {
-									console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x), array\n", parser->current_dicom_attribute_name,
+									parser->current_node_has_children = true;
+									parser->node_stack[parser->node_stack_index].has_children = true;
+									console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), array\n", get_spaces(parser->node_stack_index),
+							                              parser->current_dicom_attribute_name,
 									                      parser->current_dicom_group_tag, parser->current_dicom_element_tag);
-									isyntax_parse_attribute(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
-									                        parser->contentbuf, parser->contentlen);
+									if (parser->node_stack_index == 2) { // At level of UfsImport
+										isyntax_parse_ufsimport_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+										                        parser->contentbuf, parser->contentlen);
+									} else {
+										isyntax_parse_scannedimage_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+										                                   parser->contentbuf, parser->contentlen);
+									}
+
 								}
 							}
-						} else if (parser->parsing_branch_node) {
+						} else if (parser->current_node_type == ISYNTAX_NODE_BRANCH) {
 							// A DataObject node is supposed to have one attribute "ObjectType"
 							ASSERT(parser->attribute_index == 0);
 							ASSERT(strcmp(x->attr, "ObjectType") == 0);
-
+							console_print_verbose("%sDataObject %s = %s\n", get_spaces(parser->node_stack_index), x->attr, parser->attrbuf);
+						} else {
+							console_print_verbose("%sattr %s = %s\n", get_spaces(parser->node_stack_index), x->attr, parser->attrbuf);
 						}
 						++parser->attribute_index;
 

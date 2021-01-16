@@ -34,9 +34,33 @@ enum isyntax_image_type_enum {
 	ISYNTAX_IMAGE_TYPE_WSI = 3,
 };
 
+enum isyntax_node_type_enum {
+	ISYNTAX_NODE_NONE = 0,
+	ISYNTAX_NODE_LEAF = 1, // ex. <Attribute Name="DICOM_MANUFACTURER" Group="0x0008" Element="0x0070"PMSVR="IString">PHILIPS</ Attribute>
+	ISYNTAX_NODE_BRANCH = 2, // ex. <DataObject ObjectType="DPScannedImage"> (leaf nodes) </DataObject>
+	ISYNTAX_NODE_ARRAY = 3, // <Array> (contains one or more similar type of leaf/branch nodes)
+};
+
 typedef struct isyntax_image_t {
 	u32 image_type;
+	bool compression_is_lossy;
+	i32 lossy_image_compression_ratio;
+	u8* encoded_image_data;
+	size_t encoded_image_size;
+	u8* block_header_table;
+	size_t block_header_size;
 } isyntax_image_t;
+
+typedef struct isyntax_parser_array_node_t {
+	u32 array_len;
+} isyntax_parser_array_node_t;
+
+typedef struct isyntax_parser_node_t {
+	u32 node_type; // leaf, branch, or array
+	bool has_children;
+} isyntax_parser_node_t;
+
+#define ISYNTAX_MAX_NODE_DEPTH 16
 
 typedef struct isyntax_parser_t {
 	yxml_t* x;
@@ -56,8 +80,10 @@ typedef struct isyntax_parser_t {
 	u32 current_dicom_group_tag;
 	u32 current_dicom_element_tag;
 	i32 attribute_index;
-	bool parsing_dicom_tag;
-	bool parsing_branch_node;
+	u32 current_node_type;
+	bool current_node_has_children;
+	isyntax_parser_node_t node_stack[ISYNTAX_MAX_NODE_DEPTH];
+	i32 node_stack_index;
 	bool initialized;
 } isyntax_parser_t;
 
