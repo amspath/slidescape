@@ -845,11 +845,21 @@ void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint
 void win32_init_opengl(HWND window) {
 	i64 debug_start = get_clock();
 
+	// Set environment variable needed for Mesa3D software driver support
+	// See:
+	// https://github.com/pal1000/mesa-dist-win (section 'OpenGL context configuration override')
+	// https://gitlab.freedesktop.org/mesa/mesa/-/blob/master/src/mesa/main/version.c
+	// https://stackoverflow.com/questions/4788398/changes-via-setenvironmentvariable-do-not-take-effect-in-library-that-uses-geten
+	_putenv_s("MESA_GL_VERSION_OVERRIDE", "4.3FC");
+
 	opengl32_dll_handle = LoadLibraryA("opengl32.dll");
 	if (!opengl32_dll_handle) {
 		win32_diagnostic("LoadLibraryA");
 		console_print("Error initializing OpenGL: failed to load opengl32.dll.\n");
 	}
+
+	// Initializing OpenGL on Windows is somewhat tricky.
+	// https://mariuszbartosik.com/opengl-4-x-initialization-in-windows-without-a-framework/
 
 	// Dynamically import all of the functions we need from opengl32.dll and all the wgl functions
 	wglGetProcAddress_alt = (PFNWGLGETPROCADDRESSPROC) GetProcAddress(opengl32_dll_handle, "wglGetProcAddress");
