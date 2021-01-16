@@ -147,19 +147,27 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 					}
 				} break;
 				case 0x1005: /*PIM_DP_IMAGE_DATA*/                          {} break;
+				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
+				case 0x1014: /*DP_IMAGE_POST_PROCESSING*/                   {} break;
 				case 0x1015: /*DP_SHARPNESS_GAIN_RGB24*/                    {} break;
 				case 0x1016: /*DP_CLAHE_CLIP_LIMIT_Y16*/                    {} break;
 				case 0x1017: /*DP_CLAHE_NR_BINS_Y16*/                       {} break;
 				case 0x1018: /*DP_CLAHE_CONTEXT_DIMENSION_Y16*/             {} break;
+				case 0x1019: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR*/    {} break;
+				case 0x101A: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL*/    {} break;
 				case 0x101B: /*DP_WAVELET_QUANTIZER*/                       {} break;
 				case 0x101C: /*DP_WAVELET_DEADZONE*/                        {} break;
+				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                 {} break;
 				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {} break;
 				case 0x2002: /*UFS_IMAGE_DIMENSIONS_OVER_BLOCK*/            {} break;
+				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
 				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
 				case 0x2005: /*UFS_IMAGE_DIMENSION_TYPE*/                   {} break;
 				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
+				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {} break;
+				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {} break;
 				case 0x200B: /*UFS_IMAGE_DIMENSION_RANGE*/                  {} break;
 				case 0x200C: /*UFS_IMAGE_DIMENSION_IN_BLOCK*/               {} break;
 				case 0x200F: /*UFS_IMAGE_BLOCK_COMPRESSION_METHOD*/         {} break;
@@ -238,6 +246,7 @@ void isyntax_parse_attribute(isyntax_t* isyntax, u32 group, u32 element, const c
 				} break;
 				case 0x1001: /*PIM_DP_UFS_INTERFACE_VERSION*/          {} break; // "5.0"
 				case 0x1002: /*PIM_DP_UFS_BARCODE*/                    {} break; // "<base64-encoded barcode value>"
+				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                 {} break;
 				case 0x1004: /*PIM_DP_IMAGE_TYPE*/                     {         // "MACROIMAGE" or "LABELIMAGE" or "WSI"
 					if ((strcmp(value, "MACROIMAGE") == 0)) {
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
@@ -255,19 +264,27 @@ void isyntax_parse_attribute(isyntax_t* isyntax, u32 group, u32 element, const c
 				} break;
 				case 0x1005: /*PIM_DP_IMAGE_DATA*/                          {} break;
 				case 0x1010: /*PIM_DP_SCANNER_RACK_PRIORITY*/               {} break; // "<u16>"
+				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
+				case 0x1014: /*DP_IMAGE_POST_PROCESSING*/                   {} break;
 				case 0x1015: /*DP_SHARPNESS_GAIN_RGB24*/                    {} break;
 				case 0x1016: /*DP_CLAHE_CLIP_LIMIT_Y16*/                    {} break;
 				case 0x1017: /*DP_CLAHE_NR_BINS_Y16*/                       {} break;
 				case 0x1018: /*DP_CLAHE_CONTEXT_DIMENSION_Y16*/             {} break;
+				case 0x1019: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR*/    {} break;
+				case 0x101A: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL*/    {} break;
 				case 0x101B: /*DP_WAVELET_QUANTIZER*/                       {} break;
 				case 0x101C: /*DP_WAVELET_DEADZONE*/                        {} break;
+				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                 {} break;
 				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {} break;
 				case 0x2002: /*UFS_IMAGE_DIMENSIONS_OVER_BLOCK*/            {} break;
+				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
 				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
 				case 0x2005: /*UFS_IMAGE_DIMENSION_TYPE*/                   {} break;
 				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
+				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {} break;
+				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {} break;
 				case 0x200B: /*UFS_IMAGE_DIMENSION_RANGE*/                  {} break;
 				case 0x200C: /*UFS_IMAGE_DIMENSION_IN_BLOCK*/               {} break;
 				case 0x200F: /*UFS_IMAGE_BLOCK_COMPRESSION_METHOD*/         {} break;
@@ -374,7 +391,16 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					*parser->contentcur = '\0';
 					parser->contentlen = 0;
 					parser->attribute_index = 0;
-					parser->parsing_dicom_tag = (strcmp(x->elem, "Attribute") == 0);
+					if (strcmp(x->elem, "Attribute") == 0) {
+						parser->parsing_dicom_tag = true;
+						parser->parsing_branch_node = false;
+					} else if (strcmp(x->elem, "DataObject") == 0) {
+						parser->parsing_dicom_tag = false;
+						parser->parsing_branch_node = true;
+					} else {
+						parser->parsing_dicom_tag = false;
+						parser->parsing_branch_node = false;
+					}
 					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
 
 					if (!parser->parsing_dicom_tag) console_print_verbose("element start: %s\n", x->elem);
@@ -484,6 +510,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					if (parser->attrcur) {
 						if (!parser->parsing_dicom_tag) console_print_verbose("attr %s = %s\n", x->attr, parser->attrbuf);
 						ASSERT(strlen(parser->attrbuf) == parser->attrlen);
+
 						if (parser->parsing_dicom_tag) {
 							if (parser->attribute_index == 0 /* Name="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Name");
@@ -502,7 +529,17 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 								DUMMY_STATEMENT;
 							} else if (parser->attribute_index == 3 /* PMSVR="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "PMSVR");
+								if (strcmp(parser->attrbuf, "IDataObjectArray") == 0) {
+									console_print_verbose("DICOM: %-40s (0x%04x, 0x%04x), array\n", parser->current_dicom_attribute_name,
+									                      parser->current_dicom_group_tag, parser->current_dicom_element_tag);
+									isyntax_parse_attribute(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+									                        parser->contentbuf, parser->contentlen);
+								}
 							}
+						} else if (parser->parsing_branch_node) {
+							// A DataObject node is supposed to have one attribute "ObjectType"
+							ASSERT(parser->attribute_index == 0);
+							ASSERT(strcmp(x->attr, "ObjectType") == 0);
 
 						}
 						++parser->attribute_index;

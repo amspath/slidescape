@@ -57,6 +57,7 @@ typedef struct isyntax_parser_t {
 	u32 current_dicom_element_tag;
 	i32 attribute_index;
 	bool parsing_dicom_tag;
+	bool parsing_branch_node;
 	bool initialized;
 } isyntax_parser_t;
 
