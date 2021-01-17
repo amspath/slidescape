@@ -23,6 +23,9 @@
 
 #include "yxml.h"
 
+#include "mbedtls/base64.h"
+#include "jpeg_decoder.h"
+
 // TODO: Record relevant metadata in the isyntax_t structure
 // TODO: Add base64 decoding routines
 // --> used in the XML header for barcode, label/macro JPEG data, image block header structure, ICC profiles
@@ -37,7 +40,7 @@ void isyntax_decode_base64_embedded_jpeg_file(isyntax_t* isyntax) {
 	// stub
 }
 
-void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, const char* value, u64 value_len) {
+void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	switch(group) {
 		default: {
@@ -92,7 +95,7 @@ void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 eleme
 	}
 }
 
-void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 element, const char* value, u64 value_len) {
+void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	switch(group) {
 		default: {
@@ -145,7 +148,27 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 						isyntax->parser.current_image = &isyntax->wsi_image;
 					}
 				} break;
-				case 0x1005: /*PIM_DP_IMAGE_DATA*/                          {} break;
+				case 0x1005: { /*PIM_DP_IMAGE_DATA*/
+					isyntax_image_t* image = isyntax->parser.current_image;
+					ASSERT(image);
+					if (image) {
+						size_t decoded_capacity = value_len;
+						u8* decoded = (u8*)malloc(value_len);
+						size_t decoded_len = 0;
+						i32 last_char = value[value_len-1];
+						if (last_char == '/') {
+							value_len--; // The last character may cause the base64 decoding to fail if invalid
+						}
+						if (mbedtls_base64_decode(decoded, decoded_capacity, &decoded_len, (const u8*)value, value_len) == 0) {
+							i32 channels_in_file = 0;
+							image->pixels = jpeg_decode_image(decoded, decoded_len, &image->width, &image->height, &channels_in_file);
+							DUMMY_STATEMENT;
+
+						}
+
+					}
+
+				} break;
 				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
 				case 0x1014: /*DP_IMAGE_POST_PROCESSING*/                   {} break;
 				case 0x1015: /*DP_SHARPNESS_GAIN_RGB24*/                    {} break;
@@ -226,6 +249,22 @@ const char* get_spaces(i32 length) {
 	return spaces + offset;
 }
 
+void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_len, size_t* restrict dest_capacity, void* restrict src, size_t src_len) {
+	ASSERT(dest && dest_len && dest_capacity && src);
+	size_t old_len = *dest_len;
+	size_t new_len = old_len + src_len;
+	size_t capacity = *dest_capacity;
+	if (new_len > capacity) {
+		capacity = next_pow2(new_len);
+		u8* new_ptr = (u8*)realloc(*dest, capacity);
+		if (!new_ptr) panic();
+		*dest = new_ptr;
+		*dest_capacity = capacity;
+	}
+	memcpy(*dest + old_len, src, src_len);
+	*dest_len = new_len;
+}
+
 bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_length, bool is_last_chunk) {
 
 	yxml_t* x = NULL;
@@ -293,8 +332,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						parser->current_node_type = ISYNTAX_NODE_NONE;
 						console_print_verbose("%selement start: %s\n", get_spaces(parser->node_stack_index), x->elem);
 					}
+					memset(parser->node_stack + parser->node_stack_index, 0, sizeof(isyntax_parser_node_t));
 					parser->node_stack[parser->node_stack_index].node_type = parser->current_node_type;
-					parser->node_stack[parser->node_stack_index].has_children = false;
 					parser->current_node_has_children = false;
 					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
 
@@ -313,15 +352,20 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 										 (group == 0x0028 && element == 0x2000);   // DICOM_ICCPROFILE
 
 					    if (need_skip) {
+					    	parser->node_stack[parser->node_stack_index].has_base64_content = true;
 							char* content_start = doc;
 							char* pos = (char*)memchr(content_start, '<', remaining_length);
 							if (pos) {
 								i64 size = pos - content_start;
+								push_to_buffer_maybe_grow((u8**)&parser->contentbuf, &parser->contentlen, &parser->contentbuf_capacity, content_start, size);
+								parser->contentcur = parser->contentbuf + parser->contentlen;
 //								console_print("iSyntax: skipped tag (0x%04x, 0x%04x) content length = %d\n", group, element, size);
 								doc += (size-1); // skip to the next tag
 								remaining_length -= (size-1);
 							} else {
 //								console_print("iSyntax: skipped tag (0x%04x, 0x%04x) content length = %d\n", group, element, remaining_length);
+								push_to_buffer_maybe_grow((u8**)&parser->contentbuf, &parser->contentlen, &parser->contentbuf_capacity, content_start, remaining_length);
+								parser->contentcur = parser->contentbuf + parser->contentlen;
 								remaining_length = 0; // skip to the next chunk
 								break;
 							}

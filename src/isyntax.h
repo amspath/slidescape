@@ -43,6 +43,9 @@ enum isyntax_node_type_enum {
 
 typedef struct isyntax_image_t {
 	u32 image_type;
+	u8* pixels;
+	i32 width;
+	i32 height;
 	bool compression_is_lossy;
 	i32 lossy_image_compression_ratio;
 	u8* encoded_image_data;
@@ -58,6 +61,7 @@ typedef struct isyntax_parser_array_node_t {
 typedef struct isyntax_parser_node_t {
 	u32 node_type; // leaf, branch, or array
 	bool has_children;
+	bool has_base64_content;
 } isyntax_parser_node_t;
 
 #define ISYNTAX_MAX_NODE_DEPTH 16
