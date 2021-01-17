@@ -41,6 +41,57 @@ enum isyntax_node_type_enum {
 	ISYNTAX_NODE_ARRAY = 3, // <Array> (contains one or more similar type of leaf/branch nodes)
 };
 
+#pragma pack(push, 1)
+typedef struct dicom_tag_header_t {
+	u16 group;
+	u16 element;
+	u32 size;
+} dicom_tag_header_t;
+
+typedef struct isyntax_partial_block_header_t {
+	dicom_tag_header_t sequence_element_header;
+	dicom_tag_header_t block_coordinates_header;
+	u32 x_coordinate;
+	u32 y_coordinate;
+	u32 color_component;
+	u32 scale;
+	u32 coefficient;
+	/* [MISSING] dicom_tag_header_t block_data_offset_header; */
+	/* [MISSING] [MISSING] u64 block_data_offset; */
+	/* [MISSING] [MISSING] dicom_tag_header_t block_size_header; */
+	/* [MISSING] [MISSING] u64 block_size; */
+	dicom_tag_header_t block_header_template_id_header;
+	u32 block_header_template_id;
+} isyntax_partial_block_header_t;
+
+typedef struct isyntax_full_block_header_t {
+	dicom_tag_header_t sequence_element_header;
+	dicom_tag_header_t block_coordinates_header;
+	u32 x_coordinate;
+	u32 y_coordinate;
+	u32 color_component;
+	u32 scale;
+	u32 coefficient;
+	dicom_tag_header_t block_data_offset_header;
+	u64 block_data_offset;
+	dicom_tag_header_t block_size_header;
+	u64 block_size;
+	dicom_tag_header_t block_header_template_id_header;
+	u32 block_header_template_id;
+} isyntax_full_block_header_t;
+#pragma pack(pop)
+
+typedef struct isyntax_codeblock_t {
+	u32 x_coordinate;
+	u32 y_coordinate;
+	u32 color_component;
+	u32 scale;
+	u32 coefficient;
+	u64 block_data_offset;
+	u64 block_size;
+	u32 block_header_template_id;
+} isyntax_codeblock_t;
+
 typedef struct isyntax_image_t {
 	u32 image_type;
 	u8* pixels;
@@ -62,6 +113,8 @@ typedef struct isyntax_parser_node_t {
 	u32 node_type; // leaf, branch, or array
 	bool has_children;
 	bool has_base64_content;
+	u16 group;
+	u16 element;
 } isyntax_parser_node_t;
 
 #define ISYNTAX_MAX_NODE_DEPTH 16
@@ -93,9 +146,11 @@ typedef struct isyntax_parser_t {
 
 typedef struct isyntax_t {
 	i64 filesize;
-	isyntax_image_t macro_image;
-	isyntax_image_t label_image;
-	isyntax_image_t wsi_image;
+	isyntax_image_t images[16];
+	i32 image_count;
+	isyntax_image_t* macro_image;
+	isyntax_image_t* label_image;
+	isyntax_image_t* wsi_image;
 	isyntax_parser_t parser;
 } isyntax_t;
 

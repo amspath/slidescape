@@ -25,6 +25,7 @@
 
 #include "mbedtls/base64.h"
 #include "jpeg_decoder.h"
+#include "stb_image.h"
 
 // TODO: Record relevant metadata in the isyntax_t structure
 // TODO: Add base64 decoding routines
@@ -87,7 +88,9 @@ void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 eleme
 				} break;
 				case 0x1001: /*PIM_DP_UFS_INTERFACE_VERSION*/          {} break; // "5.0"
 				case 0x1002: /*PIM_DP_UFS_BARCODE*/                    {} break; // "<base64-encoded barcode value>"
-				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                    {} break;
+				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                    {
+
+				} break;
 				case 0x1010: /*PIM_DP_SCANNER_RACK_PRIORITY*/               {} break; // "<u16>"
 
 			}
@@ -96,6 +99,13 @@ void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 eleme
 }
 
 void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
+
+	// Parse metadata belong to one of the images in the file (either a WSI, LABELIMAGE or MACROIMAGE)
+
+	isyntax_image_t* image = isyntax->parser.current_image;
+	if (!image) {
+		isyntax->parser.current_image = &isyntax->images[0];
+	}
 
 	switch(group) {
 		default: {
@@ -135,39 +145,36 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				} break;
 				case 0x1004: /*PIM_DP_IMAGE_TYPE*/                     {         // "MACROIMAGE" or "LABELIMAGE" or "WSI"
 					if ((strcmp(value, "MACROIMAGE") == 0)) {
+						isyntax->macro_image = isyntax->parser.current_image;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
-						isyntax->macro_image.image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
-						isyntax->parser.current_image = &isyntax->macro_image;
 					} else if ((strcmp(value, "LABELIMAGE") == 0)) {
+						isyntax->label_image = isyntax->parser.current_image;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_LABELIMAGE;
-						isyntax->label_image.image_type = ISYNTAX_IMAGE_TYPE_LABELIMAGE;
-						isyntax->parser.current_image = &isyntax->label_image;
 					} else if ((strcmp(value, "WSI") == 0)) {
+						isyntax->wsi_image = isyntax->parser.current_image;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_WSI;
-						isyntax->wsi_image.image_type = ISYNTAX_IMAGE_TYPE_WSI;
-						isyntax->parser.current_image = &isyntax->wsi_image;
 					}
 				} break;
 				case 0x1005: { /*PIM_DP_IMAGE_DATA*/
-					isyntax_image_t* image = isyntax->parser.current_image;
-					ASSERT(image);
-					if (image) {
-						size_t decoded_capacity = value_len;
-						u8* decoded = (u8*)malloc(value_len);
-						size_t decoded_len = 0;
-						i32 last_char = value[value_len-1];
-						if (last_char == '/') {
-							value_len--; // The last character may cause the base64 decoding to fail if invalid
-						}
-						if (mbedtls_base64_decode(decoded, decoded_capacity, &decoded_len, (const u8*)value, value_len) == 0) {
-							i32 channels_in_file = 0;
-							image->pixels = jpeg_decode_image(decoded, decoded_len, &image->width, &image->height, &channels_in_file);
-							DUMMY_STATEMENT;
-
-						}
-
+					size_t decoded_capacity = value_len;
+					u8* decoded = (u8*)malloc(value_len);
+					size_t decoded_len = 0;
+					i32 last_char = value[value_len-1];
+					if (last_char == '/') {
+						value_len--; // The last character may cause the base64 decoding to fail if invalid
 					}
-
+					if (mbedtls_base64_decode(decoded, decoded_capacity, &decoded_len, (const u8*)value, value_len) == 0) {
+						i32 channels_in_file = 0;
+#if 0
+						// TODO: Why does this crash?
+						image->pixels = jpeg_decode_image(decoded, decoded_len, &image->width, &image->height, &channels_in_file);
+#else
+						// stb_image.h
+						image->pixels = stbi_load_from_memory(decoded, decoded_len, &image->width, &image->height, &channels_in_file, 4);
+#endif
+						// TODO: actually display the image
+						DUMMY_STATEMENT;
+					}
 				} break;
 				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
 				case 0x1014: /*DP_IMAGE_POST_PROCESSING*/                   {} break;
@@ -179,7 +186,7 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x101A: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL*/    {} break;
 				case 0x101B: /*DP_WAVELET_QUANTIZER*/                       {} break;
 				case 0x101C: /*DP_WAVELET_DEADZONE*/                        {} break;
-				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                 {} break;
+				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                  {} break;
 				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {} break;
 				case 0x2002: /*UFS_IMAGE_DIMENSIONS_OVER_BLOCK*/            {} break;
 				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
@@ -194,7 +201,79 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x200C: /*UFS_IMAGE_DIMENSION_IN_BLOCK*/               {} break;
 				case 0x200F: /*UFS_IMAGE_BLOCK_COMPRESSION_METHOD*/         {} break;
 				case 0x2013: /*UFS_IMAGE_PIXEL_TRANSFORMATION_METHOD*/      {} break;
-				case 0x2014: /*UFS_IMAGE_BLOCK_HEADER_TABLE*/               {} break;
+				case 0x2014: { /*UFS_IMAGE_BLOCK_HEADER_TABLE*/
+					size_t decoded_capacity = value_len;
+					u8* decoded = (u8*)malloc(value_len);
+					size_t decoded_len = 0;
+					i32 last_char = value[value_len-1];
+#if 0
+					FILE* test_out = fopen("test_b64.out", "wb");
+					fwrite(value, value_len, 1, test_out);
+					fclose(test_out);
+#endif
+					if (last_char == '/') {
+						value_len--; // The last character may cause the base64 decoding to fail if invalid
+					}
+					if (mbedtls_base64_decode(decoded, decoded_capacity, &decoded_len, (const u8*)value, value_len) == 0) {
+						image->block_header_table = decoded;
+						image->block_header_size = decoded_len;
+
+						u32 header_size = *(u32*) decoded + 0;
+						u8* block_header_start = decoded + 4;
+						dicom_tag_header_t sequence_element = *(dicom_tag_header_t*) (block_header_start);
+						if (sequence_element.size == 40) {
+							// We have a partial header structure, with 'Block Data Offset' and 'Block Size' missing (stored in Seektable)
+							// Full block header size (including the sequence element) is 48 bytes
+							u32 block_count = header_size / 48;
+							u32 should_be_zero = header_size % 48;
+							if (should_be_zero != 0) {
+								// TODO: handle error condition
+								DUMMY_STATEMENT;
+							}
+
+							for (i32 i = 0; i < block_count; ++i) {
+								isyntax_partial_block_header_t* header = ((isyntax_partial_block_header_t*)(block_header_start)) + i;
+								isyntax_codeblock_t codeblock = {};
+								codeblock.x_coordinate = header->x_coordinate;
+								codeblock.y_coordinate = header->y_coordinate;
+								codeblock.color_component = header->color_component;
+								codeblock.scale = header->scale;
+								codeblock.coefficient = header->coefficient;
+								codeblock.block_header_template_id = header->block_header_template_id;
+								DUMMY_STATEMENT;
+							}
+
+						} else if (sequence_element.size == 72) {
+							// We have the complete header structure. (Nothing stored in Seektable)
+							u32 block_count = header_size / 80;
+							u32 should_be_zero = header_size % 80;
+							if (should_be_zero != 0) {
+								// TODO: handle error condition
+								DUMMY_STATEMENT;
+							}
+							for (i32 i = 0; i < block_count; ++i) {
+								isyntax_full_block_header_t* header = ((isyntax_full_block_header_t*)(block_header_start)) + i;
+								isyntax_codeblock_t codeblock = {};
+								codeblock.x_coordinate = header->x_coordinate;
+								codeblock.y_coordinate = header->y_coordinate;
+								codeblock.color_component = header->color_component;
+								codeblock.scale = header->scale;
+								codeblock.coefficient = header->coefficient;
+								codeblock.block_data_offset = header->block_data_offset; // extra
+								codeblock.block_size = header->block_size; // extra
+								codeblock.block_header_template_id = header->block_header_template_id;
+								DUMMY_STATEMENT;
+							}
+						} else {
+							// TODO: handle error condition
+						}
+
+						DUMMY_STATEMENT;
+					} else {
+						free(decoded);
+						//TODO: handle error condition
+					}
+				} break;
 
 			}
 		} break;
@@ -316,27 +395,39 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 			switch(r) {
 				case YXML_ELEMSTART: {
 					// start of an element: '<Tag ..'
+					isyntax_parser_node_t* parent_node = parser->node_stack + parser->node_stack_index;
 					++parser->node_stack_index;
+					isyntax_parser_node_t* node = parser->node_stack + parser->node_stack_index;
+					memset(node, 0, sizeof(isyntax_parser_node_t));
+
 					parser->contentcur = parser->contentbuf;
 					*parser->contentcur = '\0';
 					parser->contentlen = 0;
 					parser->attribute_index = 0;
 					if (strcmp(x->elem, "Attribute") == 0) {
-						parser->current_node_type = ISYNTAX_NODE_LEAF;
+						node->node_type = ISYNTAX_NODE_LEAF;
 					} else if (strcmp(x->elem, "DataObject") == 0) {
-						parser->current_node_type = ISYNTAX_NODE_BRANCH;
+						node->node_type = ISYNTAX_NODE_BRANCH;
+						// We started parsing a new image (which will be either a WSI, LABELIMAGE or MACROIMAGE).
+						if (parent_node->group == 0x301D && parent_node->element == 0x1003 /*PIM_DP_SCANNED_IMAGES*/) {
+							parser->current_image = isyntax->images + isyntax->image_count;
+							++isyntax->image_count;
+						}
+						node->group = parent_node->group;
+						node->element = parent_node->element;
 					} else if (strcmp(x->elem, "Array") == 0) {
-						parser->current_node_type = ISYNTAX_NODE_ARRAY;
+						node->node_type = ISYNTAX_NODE_ARRAY;
 						console_print_verbose("%sArray\n", get_spaces(parser->node_stack_index));
+						// Inherit group and element of parent node (Array doesn't have any; we want to pass on the information to child nodes)
+						node->group = parent_node->group;
+						node->element = parent_node->element;
 					} else {
-						parser->current_node_type = ISYNTAX_NODE_NONE;
+						node->node_type = ISYNTAX_NODE_NONE;
 						console_print_verbose("%selement start: %s\n", get_spaces(parser->node_stack_index), x->elem);
 					}
-					memset(parser->node_stack + parser->node_stack_index, 0, sizeof(isyntax_parser_node_t));
-					parser->node_stack[parser->node_stack_index].node_type = parser->current_node_type;
+					parser->current_node_type = node->node_type;
 					parser->current_node_has_children = false;
 					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
-
 
 				} break;
 				case YXML_CONTENT: {
@@ -362,6 +453,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 //								console_print("iSyntax: skipped tag (0x%04x, 0x%04x) content length = %d\n", group, element, size);
 								doc += (size-1); // skip to the next tag
 								remaining_length -= (size-1);
+								break;
 							} else {
 //								console_print("iSyntax: skipped tag (0x%04x, 0x%04x) content length = %d\n", group, element, remaining_length);
 								push_to_buffer_maybe_grow((u8**)&parser->contentbuf, &parser->contentlen, &parser->contentbuf_capacity, content_start, remaining_length);
