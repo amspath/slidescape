@@ -48,10 +48,12 @@
 
 #if !WINDOWS
 #include <unistd.h> // for access(), F_OK
+#if __SIZEOF_POINTER__==8
 #define fseeko64 fseek
 #define fopen64 fopen
 #define fgetpos64 fgetpos
 #define fsetpos64 fsetpos
+#endif
 #endif
 
 #if defined(__linux__) || (!defined(__APPLE__) && (defined(__unix__) || defined(_POSIX_VERSION)))

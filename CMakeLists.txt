@@ -45,8 +45,15 @@ set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -W
 if (APPLE)
     set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations -Wno-unknown-warning-option")
 endif()
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse2 ${GCC_WARN_OPTIONS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse2 ${GCC_WARN_OPTIONS} -Wno-class-memaccess")
+
+if (CPU_TYPE STREQUAL "x86_64" OR CPU_TYPE STREQUAL "i386")
+    set(GCC_CPU_OPTIONS -mmmx -msse -msse2 -msse3 -mssse3")
+elseif(CPU_TYPE STREQUAL "arm64" OR CPU_TYPE STREQUAL "arm")
+    set(GCC_CPU_OPTIONS "-march=native -mcpu=native")
+endif()
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -Wno-class-memaccess")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
 
 if (NOT(APPLE))
     # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
@@ -166,6 +173,7 @@ set(VIEWER_SOURCE_FILES
         caselist.c
         annotation.cpp
         openslide_api.c
+        ini.c
         imgui/imgui.cpp
         imgui/imgui_demo.cpp
         imgui/imgui_draw.cpp

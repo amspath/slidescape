@@ -7,6 +7,13 @@ macro(simd_fail message)
   endif()
 endmacro()
 
+macro(boolean_number var)
+    if(${var})
+        set(${var} 1 ${ARGN})
+    else()
+        set(${var} 0 ${ARGN})
+    endif()
+endmacro()
 
 
 ###############################################################################
