@@ -90,23 +90,23 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 	min_size.y *= 0.5f;
 
 	if (need_open_file_dialog) {
-		igfd::ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*", "");
+		IGFD::FileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*", "");
 		need_open_file_dialog = false;
 		open_file_dialog_open = true;
 	}
 
 	// display
-	if (igfd::ImGuiFileDialog::Instance()->FileDialog("ChooseFileDlgKey", ImGuiWindowFlags_NoCollapse, min_size, max_size))
+	if (IGFD::FileDialog::Instance()->Display("ChooseFileDlgKey", ImGuiWindowFlags_NoCollapse, min_size, max_size))
 	{
 		// action if OK
-		if (igfd::ImGuiFileDialog::Instance()->IsOk == true)
+		if (IGFD::FileDialog::Instance()->IsOk() == true)
 		{
-			std::string file_path_name = igfd::ImGuiFileDialog::Instance()->GetFilePathName();
+			std::string file_path_name = IGFD::FileDialog::Instance()->GetFilePathName();
 //			std::string filePath = igfd::ImGuiFileDialog::Instance()->GetCurrentPath();
 			load_generic_file(app_state, file_path_name.c_str());
 		}
 		// close
-		igfd::ImGuiFileDialog::Instance()->CloseDialog("ChooseFileDlgKey");
+		IGFD::FileDialog::Instance()->Close();
 		open_file_dialog_open = false;
 	}
 }
