@@ -125,13 +125,13 @@ bool32 load_caselist(caselist_t* caselist, const char* source, const char* casel
 							const char* slide_notes = json_object_get_string(json_slide_obj, "notes");
 
 							if (base_filename) {
-								strncpy(slide->base_filename, base_filename, sizeof(slide->base_filename));
+								strncpy(slide->base_filename, base_filename, sizeof(slide->base_filename)-1);
 							}
 							if (block) {
-								strncpy(slide->block, block, sizeof(slide->block));
+								strncpy(slide->block, block, sizeof(slide->block)-1);
 							}
 							if (stain) {
-								strncpy(slide->stain, stain, sizeof(slide->stain));
+								strncpy(slide->stain, stain, sizeof(slide->stain)-1);
 							}
 							if (slide_notes) {
 								slide->notes = slide_notes;
@@ -147,7 +147,7 @@ bool32 load_caselist(caselist_t* caselist, const char* source, const char* casel
 						slide_info_t* slide = &the_case->slides[0];
 						const char* image_filename = json_object_get_string(json_case_obj, "filename");
 						if (image_filename) {
-							strncpy(slide->base_filename, image_filename, sizeof(slide->base_filename));
+							strncpy(slide->base_filename, image_filename, sizeof(slide->base_filename)-1);
 						}
 					}
 

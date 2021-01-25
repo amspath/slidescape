@@ -1,6 +1,6 @@
 /*
   Slideviewer, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2020  Pieter Valkema
+  Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,21 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#pragma once
-#include "common.h"
-#include "viewer.h"
-#include "platform.h"
+void viewer_init_options(app_state_t* app_state) {
+	ini_t* ini = ini_load_from_file("slideviewer.ini");
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+	ini_begin_section(ini, "General");
+	ini_register_i32(ini, "window_width", &desired_window_width);
+	ini_register_i32(ini, "window_height", &desired_window_height);
+	ini_register_bool(ini, "window_start_maximized", &window_start_maximized);
 
-void win32_gui_new_frame();
-
-void win32_init_gui(app_state_t* app_state);
-// from imgui_impl_win32.cpp
-LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-#ifdef __cplusplus
+	ini_apply(ini);
 }
-#endif
+

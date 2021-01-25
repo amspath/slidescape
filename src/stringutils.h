@@ -30,7 +30,7 @@ void dots_to_underscores(char* s, i32 max);
 const char* one_past_last_slash(const char* s, i32 max);
 const char* get_file_extension(const char* filename);
 void replace_file_extension(char* filename, i32 max_len, const char* new_ext);
-char** split_into_lines(char* buffer, i64* num_lines);
+char** split_into_lines(char* buffer, size_t* num_lines);
 
 #ifdef __cplusplus
 };

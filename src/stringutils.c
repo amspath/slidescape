@@ -110,7 +110,7 @@ void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
 	}
 }
 
-char** split_into_lines(char* buffer, i64* num_lines) {
+char** split_into_lines(char* buffer, size_t* num_lines) {
 	size_t lines_counted = 0;
 	size_t capacity = 0;
 	char** lines = NULL;

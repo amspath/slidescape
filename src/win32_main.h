@@ -59,7 +59,7 @@ void win32_diagnostic(const char* prefix);
 #undef extern
 #endif
 
-extern HWND global_main_window;
+//extern HWND global_main_window;
 
 
 #undef INIT

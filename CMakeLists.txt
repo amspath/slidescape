@@ -47,7 +47,7 @@ if (APPLE)
 endif()
 
 if (CPU_TYPE STREQUAL "x86_64" OR CPU_TYPE STREQUAL "i386")
-    set(GCC_CPU_OPTIONS -mmmx -msse -msse2 -msse3 -mssse3")
+    set(GCC_CPU_OPTIONS "-mmmx -msse -msse2 -msse3 -mssse3")
 elseif(CPU_TYPE STREQUAL "arm64" OR CPU_TYPE STREQUAL "arm")
     set(GCC_CPU_OPTIONS "-march=native -mcpu=native")
 endif()

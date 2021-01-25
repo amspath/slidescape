@@ -179,6 +179,14 @@ void unload_texture(u32 texture) {
 
 void init_opengl_stuff(app_state_t* app_state) {
 
+	for (i32 i = 0; i < COUNT(app_state->pixel_transfer_states); ++i) {
+		pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + i;
+		u32 pbo = 0;
+		glGenBuffers(1, &pbo);
+		transfer_state->pbo = pbo;
+		transfer_state->initialized = true;
+	}
+
 	basic_shader = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
 	basic_shader_u_projection_view_matrix = get_uniform(basic_shader, "projection_view_matrix");
 	basic_shader_u_model_matrix = get_uniform(basic_shader, "model_matrix");

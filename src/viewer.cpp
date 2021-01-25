@@ -50,11 +50,13 @@
 #include "caselist.h"
 #include "annotation.h"
 #include "shader.h"
+#include "ini.h"
 
 #include "viewer_opengl.cpp"
 #include "viewer_io_file.cpp"
 #include "viewer_io_remote.cpp"
 #include "viewer_zoom.cpp"
+#include "viewer_options.cpp"
 
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
@@ -274,12 +276,10 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->initialized = true;
 }
 
-void init_app_state(app_state_t* app_state, window_handle_t main_window) {
+void init_app_state(app_state_t* app_state) {
 	ASSERT(!app_state->initialized); // check sanity
 	ASSERT(app_state->temp_storage_memory == NULL);
 //	memset(app_state, 0, sizeof(app_state_t));
-
-	app_state->main_window = main_window;
 
 	size_t temp_storage_size = MEGABYTES(16); // Note: what is a good size to use here?
 	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
@@ -290,13 +290,6 @@ void init_app_state(app_state_t* app_state, window_handle_t main_window) {
 	app_state->white_level = 0.95f;
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
 
-	for (i32 i = 0; i < COUNT(app_state->pixel_transfer_states); ++i) {
-		pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + i;
-		u32 pbo = 0;
-		glGenBuffers(1, &pbo);
-		transfer_state->pbo = pbo;
-		transfer_state->initialized = true;
-	}
 
 	init_scene(app_state, &app_state->scene);
 

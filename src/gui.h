@@ -28,7 +28,7 @@ extern "C" {
 #endif
 
 #if WINDOWS
-void win32_init_gui(HWND hwnd);
+void win32_init_gui(app_state_t* app_state);
 // from imgui_impl_win32.cpp
 LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #endif

@@ -133,8 +133,8 @@ void platform_sleep(u32 ms) {
 	Sleep(ms);
 }
 
-void message_box(const char* message) {
-	MessageBoxA(global_main_window, message, "Slideviewer", MB_ICONERROR);
+void message_box(app_state_t* app_state, const char* message) {
+	MessageBoxA(app_state->main_window, message, "Slideviewer", MB_ICONERROR);
 }
 
 
@@ -952,7 +952,7 @@ void win32_init_opengl(HWND window) {
 		snprintf(buf, sizeof(buf), "Error: OpenGL version is insufficient.\n"
 							        "Required: %d.%d\n\n"
 		                           "Available on this system:\n%s", major_required, minor_required, version_string);
-		message_box(buf);
+		message_box(nullptr, buf);
 		panic();
 	}
 
@@ -1121,7 +1121,7 @@ void win32_init_opengl(HWND window) {
 }
 
 
-bool win32_process_input(HWND window, app_state_t* app_state) {
+bool win32_process_input(app_state_t* app_state) {
 
 	i64 last_section = get_clock(); // profiling
 
@@ -1161,7 +1161,7 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	// https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmousemovepointsex?redirectedfrom=MSDN
 	POINT cursor_pos;
 	GetCursorPos(&cursor_pos);
-	ScreenToClient(window, &cursor_pos);
+	ScreenToClient(app_state->main_window, &cursor_pos);
 	curr_input->mouse_xy = (v2f){ (float)cursor_pos.x, (float)cursor_pos.y };
 	curr_input->mouse_z = 0;
 
@@ -1175,7 +1175,7 @@ bool win32_process_input(HWND window, app_state_t* app_state) {
 	last_section = profiler_end_section(last_section, "input: (1)", 5.0f);
 
 
-	bool did_idle = win32_process_pending_messages(curr_input, window, app_state->allow_idling_next_frame);
+	bool did_idle = win32_process_pending_messages(curr_input, app_state->main_window, app_state->allow_idling_next_frame);
 //	last_section = profiler_end_section(last_section, "input: (2) process pending messages", 20.0f);
 
 //	win32_process_xinput_controllers();
@@ -1299,7 +1299,7 @@ void win32_init_multithreading() {
 
 }
 
-void win32_init_main_window() {
+void win32_init_main_window(app_state_t* app_state) {
 	main_window_class = (WNDCLASSA){};
 	main_window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	main_window_class.lpfnWndProc = main_window_callback;
@@ -1314,32 +1314,30 @@ void win32_init_main_window() {
 		panic();
 	};
 
-	// TODO: make this configurable
-	int desired_width = 1600;
-	int desired_height = 900;
-
 	RECT desired_window_rect = {};
-	desired_window_rect.right = desired_width;
-	desired_window_rect.bottom = desired_height;
-	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_EX_ACCEPTFILES|WS_MAXIMIZE;
+	desired_window_rect.right = desired_window_width;
+	desired_window_rect.bottom = desired_window_height;
+	DWORD window_style = WS_OVERLAPPEDWINDOW|WS_EX_ACCEPTFILES;
+	if (window_start_maximized) {
+		window_style |= WS_MAXIMIZE;
+	}
 	AdjustWindowRect(&desired_window_rect, window_style, 0);
 	int initial_window_width = desired_window_rect.right - desired_window_rect.left;
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
 
-
-	global_main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
+	app_state->main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
 	                              main_window_class.lpszClassName, "Slideviewer",
 	                                     window_style,
 	                                     0/*CW_USEDEFAULT*/, 0/*CW_USEDEFAULT*/, initial_window_width, initial_window_height,
 	                                     0, 0, g_instance, 0);
-	if (!global_main_window) {
+	if (!app_state->main_window) {
 		win32_diagnostic("CreateWindowExA");
 		panic();
 	}
 
-	win32_init_opengl(global_main_window);
+	win32_init_opengl(app_state->main_window);
 
-	ShowWindow(global_main_window, SW_MAXIMIZE);
+	ShowWindow(app_state->main_window, window_start_maximized ? SW_MAXIMIZE : SW_SHOW);
 
 }
 
@@ -1425,9 +1423,14 @@ int main(int argc, const char** argv) {
 
 	get_system_info();
 
+	app_state_t* app_state = &global_app_state;
+	init_app_state(app_state);
+
+	viewer_init_options(app_state);
+
 	win32_init_timer();
 	win32_init_cursor();
-	win32_init_main_window();
+	win32_init_main_window(app_state);
 	win32_init_multithreading();
 	// Load OpenSlide in the background, we might not need it immediately.
 #if 1
@@ -1440,12 +1443,9 @@ int main(int argc, const char** argv) {
 
 	is_program_running = true;
 
-	win32_init_gui(global_main_window);
+	win32_init_gui(app_state);
 
-    app_state_t* app_state = &global_app_state;
-    init_app_state(app_state, global_main_window);
-
-    init_opengl_stuff(&global_app_state);
+    init_opengl_stuff(app_state);
 
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
@@ -1474,7 +1474,7 @@ int main(int argc, const char** argv) {
 		last_clock = current_clock;
 		delta_t = ATMOST(2.0f / 60.0f, delta_t); // prevent physics overshoot at lag spikes
 
-		bool did_idle = win32_process_input(global_main_window, app_state);
+		bool did_idle = win32_process_input(app_state);
 		if (did_idle) {
 			last_clock = get_clock();
 		}
@@ -1483,7 +1483,7 @@ int main(int argc, const char** argv) {
 		win32_gui_new_frame();
 
 		// Update and render our application
-		win32_window_dimension_t dimension = win32_get_window_dimension(global_main_window);
+		win32_window_dimension_t dimension = win32_get_window_dimension(app_state->main_window);
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 
 		// Render the UI

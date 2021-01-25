@@ -206,7 +206,7 @@ bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer
 void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
 
-void message_box(const char* message);
+void message_box(app_state_t* app_state, const char* message);
 
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
 bool is_queue_work_in_progress(work_queue_t* queue);

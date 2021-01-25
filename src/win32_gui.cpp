@@ -40,7 +40,7 @@ void win32_gui_new_frame() {
 }
 
 
-void win32_init_gui(HWND hwnd) {
+void win32_init_gui(app_state_t* app_state) {
 
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
@@ -60,7 +60,7 @@ void win32_init_gui(HWND hwnd) {
 	style.TouchExtraPadding = ImVec2(0.0f, 1.0f);
 
 	// Setup Platform/Renderer bindings
-	ImGui_ImplWin32_Init(hwnd);
+	ImGui_ImplWin32_Init(app_state->main_window);
 	ImGui_ImplOpenGL3_Init(NULL);
 
 
@@ -95,6 +95,6 @@ void win32_init_gui(HWND hwnd) {
 	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
 
 
-	is_fullscreen = check_fullscreen(global_main_window);
+	is_fullscreen = check_fullscreen(app_state->main_window);
 
 }
