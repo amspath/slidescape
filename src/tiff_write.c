@@ -328,6 +328,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 	i32 source_tile_pitch = level_task->source_bounds_width_in_tiles;
 
 	for (i32 batch = 0; batch < batch_count; ++batch) {
+//		console_print_verbose("  starting batch %d out of %d\n", batch, batch_count);
 		u32 start_tile_index = batch * batch_size;
 		i32 tiles_left = level_task->export_tile_count - start_tile_index;
 		i32 current_batch_size = MIN(tiles_left, batch_size);
@@ -360,6 +361,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 		i32 tiles_to_load = 0;
 
 		for (i32 tile_index = 0; tile_index <= last_source_tile_needed; ++tile_index) {
+			console_print_verbose("   tile %d out of %d\n", tile_index, last_source_tile_needed);
 			tile_t* tile = level_task->source_tiles[tile_index];
 			if (tile_index < first_source_tile_needed) {
 				// Release tiles that are no longer needed.
@@ -870,6 +872,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		export_task.current_image_data_write_offset = export_task.image_data_base_offset;
 
 		for (i32 level = 0; level <= export_task.max_level; ++level) {
+			console_print_verbose("TIFF export region: encoding level %d\n", level);
 			export_bigtiff_encode_level(app_state, image, &export_task, level);
 		}
 		fclose(export_task.fp);

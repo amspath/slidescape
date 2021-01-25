@@ -227,10 +227,14 @@ ini_t* ini_load(char* ini_string, size_t len) {
 
 ini_t* ini_load_from_file(const char* filename) {
 	mem_t* file = platform_read_entire_file(filename);
-	char* data = file ? (char*)file->data : NULL;
-	ini_t* ini = ini_load(data, file->len);
-	free(file);
-	return ini;
+	if (file) {
+		ini_t* ini = ini_load((char*)file->data, file->len);
+		free(file);
+		return ini;
+	} else {
+		ini_t* ini = ini_load("", 0);
+		return ini;
+	}
 }
 
 void ini_sync_value_string(ini_entry_t* entry) {

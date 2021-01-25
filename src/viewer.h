@@ -334,8 +334,8 @@ extern i64 zoom_out_key_times_zoomed_while_holding;
 
 extern v2f simple_view_pos; // used by simple images (remove?)
 extern bool window_start_maximized INIT(=true);
-extern i32 desired_window_width INIT(=1600);
-extern i32 desired_window_height INIT(=900);
+extern i32 desired_window_width INIT(=1280);
+extern i32 desired_window_height INIT(=720);
 
 #undef INIT
 #undef extern

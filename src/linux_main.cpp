@@ -235,6 +235,11 @@ int main(int argc, const char** argv)
     g_argv = argv;
     console_print("Starting up...\n");
     get_system_info();
+
+	app_state_t* app_state = &global_app_state;
+	init_app_state(app_state);
+	viewer_init_options(app_state);
+
     linux_init_multithreading();
 	add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL);
     linux_init_input();
@@ -269,9 +274,13 @@ int main(int argc, const char** argv)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_MAXIMIZED);
-    SDL_Window* window = SDL_CreateWindow("Slideviewer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, window_flags);
+    u32 window_flags = (SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    if (window_start_maximized) {
+    	window_flags |= SDL_WINDOW_MAXIMIZED;
+    }
+    SDL_Window* window = SDL_CreateWindow("Slideviewer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, desired_window_width, desired_window_height, window_flags);
     g_window = window;
+	app_state->main_window = window;
 
     // Load icon
 #if DO_DEBUG
@@ -283,7 +292,7 @@ int main(int argc, const char** argv)
 		int channels_in_file = 0;
 		u8* pixels = stbi_load_from_memory(stringified_icon_bytes, sizeof(stringified_icon_bytes), &x, &y, &channels_in_file, 4);
 		if (pixels) {
-			SDL_Surface* icon = SDL_CreateRGBSurfaceFrom(pixels, x, y, 32, x*4, 0xFF000000, 0x00FF0000, 0x0000FF00, 0x000000FF);
+			SDL_Surface* icon = SDL_CreateRGBSurfaceFrom(pixels, x, y, 32, x*4, 0x000000FF, 0x0000FF00, 0x00FF0000, 0xFF000000);
 			SDL_SetWindowIcon(window, icon);
 			SDL_FreeSurface(icon);
 		}
@@ -373,10 +382,6 @@ int main(int argc, const char** argv)
 //    bool show_another_window = false;
 //    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-
-
-    app_state_t* app_state = &global_app_state;
-    init_app_state(app_state, window);
     init_opengl_stuff(app_state);
 
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
