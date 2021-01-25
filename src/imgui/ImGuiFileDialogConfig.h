@@ -5,8 +5,6 @@
 //#define MAX_FILE_DIALOG_NAME_BUFFER 1024
 //#define MAX_PATH_BUFFER_SIZE 1024
 
-#define USE_IMGUI_TABLES
-
 //#define USE_EXPLORATION_BY_KEYS
 // this mapping by default is for GLFW but you can use another
 //#include <GLFW/glfw3.h> 
@@ -42,6 +40,16 @@
 //#define buttonDriveString "Drives"
 //#define buttonResetPathString "Reset to current directory"
 //#define buttonCreateDirString "Create Directory"
+//#define OverWriteDialogTitleString "The file Already Exist !"
+//#define OverWriteDialogMessageString "Would you like to OverWrite it ?"
+//#define OverWriteDialogConfirmButtonString "Confirm"
+//#define OverWriteDialogCancelButtonString "Cancel"
+
+// DateTimeFormat
+// see strftime functionin <ctime> for customize
+// "%Y/%m/%d %H:%M:%S" give 2021:01:22 11:47:10
+// "%Y/%m/%d %i:%M%p" give 2021:01:22 11:45PM
+//#define DateTimeFormat "%Y/%m/%d %i:%M%p"
 
 // theses icons will appear in table headers
 //#define USE_CUSTOM_SORTING_ICON
@@ -51,7 +59,7 @@
 //#define tableHeaderFileSizeString " Size"
 //#define tableHeaderFileDateString " Date"
 
-//#define USE_BOOKMARK
+#define USE_BOOKMARK
 //#define bookmarkPaneWith 150.0f
 //#define IMGUI_TOGGLE_BUTTON ToggleButton
 //#define bookmarksButtonString "Bookmark"
