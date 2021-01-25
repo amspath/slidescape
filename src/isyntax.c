@@ -23,12 +23,10 @@
 
 #include "yxml.h"
 
-#include "mbedtls/base64.h"
 #include "jpeg_decoder.h"
 #include "stb_image.h"
 
 // TODO: Record relevant metadata in the isyntax_t structure
-// TODO: Add base64 decoding routines
 // --> used in the XML header for barcode, label/macro JPEG data, image block header structure, ICC profiles
 // TODO: Parse seektable
 // TODO: Figure out codeblocks packaging scheme and decompression
@@ -36,6 +34,81 @@
 // TODO: Inverse discrete wavelet transform
 // TODO: Colorspace post-processing (convert YCoCg to RGB)
 // TODO: Add ICC profiles support
+
+// Base64 decoder by Jouni Malinen, original:
+// http://web.mit.edu/freebsd/head/contrib/wpa/src/utils/base64.c
+// Performance comparison of base64 encoders/decoders:
+// https://github.com/gaspardpetit/base64/
+
+/*
+ * Base64 encoding/decoding (RFC1341)
+ * Copyright (c) 2005-2011, Jouni Malinen <j@w1.fi>
+ *
+ * This software may be distributed under the terms of the BSD license.
+ * See README for more details.
+ */
+static const unsigned char base64_table[65] =
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+unsigned char * base64_decode(const unsigned char *src, size_t len,
+                              size_t *out_len)
+{
+	unsigned char dtable[256], *out, *pos, block[4], tmp;
+	size_t i, count, olen;
+	int pad = 0;
+
+	memset(dtable, 0x80, 256);
+	for (i = 0; i < sizeof(base64_table) - 1; i++)
+		dtable[base64_table[i]] = (unsigned char) i;
+	dtable['='] = 0;
+
+	count = 0;
+	for (i = 0; i < len; i++) {
+		if (dtable[src[i]] != 0x80)
+			count++;
+	}
+
+	if (count == 0 || count % 4)
+		return NULL;
+
+	olen = count / 4 * 3;
+	pos = out = malloc(olen);
+	if (out == NULL)
+		return NULL;
+
+	count = 0;
+	for (i = 0; i < len; i++) {
+		tmp = dtable[src[i]];
+		if (tmp == 0x80)
+			continue;
+
+		if (src[i] == '=')
+			pad++;
+		block[count] = tmp;
+		count++;
+		if (count == 4) {
+			*pos++ = (block[0] << 2) | (block[1] >> 4);
+			*pos++ = (block[1] << 4) | (block[2] >> 2);
+			*pos++ = (block[2] << 6) | block[3];
+			count = 0;
+			if (pad) {
+				if (pad == 1)
+					pos--;
+				else if (pad == 2)
+					pos -= 2;
+				else {
+					/* Invalid padding */
+					free(out);
+					return NULL;
+				}
+				break;
+			}
+		}
+	}
+
+	*out_len = pos - out;
+	return out;
+}
 
 void isyntax_decode_base64_embedded_jpeg_file(isyntax_t* isyntax) {
 	// stub
@@ -157,13 +230,13 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				} break;
 				case 0x1005: { /*PIM_DP_IMAGE_DATA*/
 					size_t decoded_capacity = value_len;
-					u8* decoded = (u8*)malloc(value_len);
 					size_t decoded_len = 0;
 					i32 last_char = value[value_len-1];
 					if (last_char == '/') {
 						value_len--; // The last character may cause the base64 decoding to fail if invalid
 					}
-					if (mbedtls_base64_decode(decoded, decoded_capacity, &decoded_len, (const u8*)value, value_len) == 0) {
+					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
+					if (decoded) {
 						i32 channels_in_file = 0;
 #if 0
 						// TODO: Why does this crash?
@@ -172,6 +245,7 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 						// stb_image.h
 						image->pixels = stbi_load_from_memory(decoded, decoded_len, &image->width, &image->height, &channels_in_file, 4);
 #endif
+						free(decoded);
 						// TODO: actually display the image
 						DUMMY_STATEMENT;
 					}
@@ -203,7 +277,6 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x2013: /*UFS_IMAGE_PIXEL_TRANSFORMATION_METHOD*/      {} break;
 				case 0x2014: { /*UFS_IMAGE_BLOCK_HEADER_TABLE*/
 					size_t decoded_capacity = value_len;
-					u8* decoded = (u8*)malloc(value_len);
 					size_t decoded_len = 0;
 					i32 last_char = value[value_len-1];
 #if 0
@@ -213,8 +286,14 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 #endif
 					if (last_char == '/') {
 						value_len--; // The last character may cause the base64 decoding to fail if invalid
+						last_char = value[value_len-1];
 					}
-					if (mbedtls_base64_decode(decoded, decoded_capacity, &decoded_len, (const u8*)value, value_len) == 0) {
+					while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
+						--value_len;
+						last_char = value[value_len-1];
+					}
+					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
+					if (decoded) {
 						image->block_header_table = decoded;
 						image->block_header_size = decoded_len;
 
@@ -230,6 +309,8 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 								// TODO: handle error condition
 								DUMMY_STATEMENT;
 							}
+
+
 
 							for (i32 i = 0; i < block_count; ++i) {
 								isyntax_partial_block_header_t* header = ((isyntax_partial_block_header_t*)(block_header_start)) + i;
@@ -268,9 +349,8 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 							// TODO: handle error condition
 						}
 
-						DUMMY_STATEMENT;
-					} else {
 						free(decoded);
+					} else {
 						//TODO: handle error condition
 					}
 				} break;

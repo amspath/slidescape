@@ -59,6 +59,7 @@ extern bool show_annotations_window;
 extern bool show_annotation_group_assignment_window;
 extern bool show_general_options_window;
 extern bool show_about_window;
+extern bool show_export_region_dialog;
 extern bool show_console_window INIT(= DO_DEBUG);
 extern bool show_menu_bar INIT(= true);
 extern bool gui_want_capture_mouse;
@@ -85,6 +86,10 @@ extern float annotation_hover_distance INIT(= 10.0f);
 extern float annotation_insert_hover_distance INIT(= 25.0f);
 extern bool show_delete_annotation_prompt;
 extern bool dont_ask_to_delete_annotations;
+
+extern i32 desired_region_export_format;
+extern u16 tiff_export_desired_color_space INIT(= TIFF_PHOTOMETRIC_YCBCR);//TIFF_PHOTOMETRIC_RGB;
+extern i32 tiff_export_jpeg_quality INIT(= 80);
 
 #undef INIT
 #undef extern

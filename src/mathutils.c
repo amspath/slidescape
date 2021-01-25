@@ -134,6 +134,15 @@ bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minu
 	return bounds;
 }
 
+bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y) {
+	bounds2i pixel_bounds = {};
+	pixel_bounds.left = (i32) floorf(world_bounds->left / mpp_x);
+	pixel_bounds.right = (i32) ceilf(world_bounds->right / mpp_x);
+	pixel_bounds.top = (i32) floorf(world_bounds->top / mpp_y);
+	pixel_bounds.bottom = (i32) ceilf(world_bounds->bottom / mpp_y);
+	return pixel_bounds;
+}
+
 // https://math.stackexchange.com/questions/330269/the-distance-from-a-point-to-a-line-segment
 // https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr) {

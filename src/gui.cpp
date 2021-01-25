@@ -69,17 +69,6 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 	ImGui::PopStyleVar(1);
 	if (ret) {
 		scene_t* scene = &app_state->scene;
-		bounds2f export_bounds;
-
-		bool can_export = true;
-		if (scene->has_selection_box) {
-			rect2f final_crop_rect = rect2f_recanonicalize(&scene->selection_box);
-			export_bounds = rect2f_to_bounds(&final_crop_rect);
-		} else if (scene->is_cropped) {
-			export_bounds = scene->crop_bounds;
-		} else {
-			can_export = false;
-		}
 
 		static struct {
 			bool open_file;
@@ -90,9 +79,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool select_region;
 			bool deselect;
 			bool crop_region;
-			bool export_region_as_bigtiff;
-			bool export_region_as_jpeg;
-			bool export_region_as_png;
+			bool export_region;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -105,11 +92,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::Separator();
 			if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
 			ImGui::Separator();
-			if (ImGui::BeginMenu("Export", can_export)) {
-				bool enabled = app_state->scene.has_selection_box || app_state->scene.is_cropped;
-				if (ImGui::MenuItem("Export region as BigTIFF...", NULL, &menu_items_clicked.export_region_as_bigtiff,enabled)) {}
-				if (ImGui::MenuItem("Export region as JPEG...", NULL, &menu_items_clicked.export_region_as_jpeg,false)) {}
-				if (ImGui::MenuItem("Export region as PNG...", NULL, &menu_items_clicked.export_region_as_png,false)) {}
+			if (ImGui::BeginMenu("Export", scene->can_export_region)) {
+				if (ImGui::MenuItem("Export region...", NULL, &menu_items_clicked.export_region, scene->can_export_region)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::Separator();
@@ -191,20 +175,10 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			}
 		} else if (prev_is_vsync_enabled != is_vsync_enabled) {
 			set_swap_interval(is_vsync_enabled ? 1 : 0);
-		} else if (menu_items_clicked.export_region_as_bigtiff || menu_items_clicked.export_region_as_jpeg || menu_items_clicked.export_region_as_png) {
+		} else if (menu_items_clicked.export_region) {
 
-			if (can_export) {
-				image_t* image = app_state->loaded_images + 0;
-				if (menu_items_clicked.export_region_as_bigtiff) {
-					char filename[4096];
-					if (save_file_dialog(app_state, filename, sizeof(filename), "BigTIFF\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
-						export_cropped_bigtiff(app_state, image, &image->tiff.tiff, export_bounds, filename, 512, TIFF_PHOTOMETRIC_YCBCR, 80);
-					}
-				} else if (menu_items_clicked.export_region_as_jpeg) {
-
-				} else if (menu_items_clicked.export_region_as_png) {
-
-				}
+			if (scene->can_export_region) {
+				show_export_region_dialog = true;
 			} else {
 				ASSERT(!"Trying to export a region without a selected region");
 			}
@@ -213,6 +187,106 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		}
 	}
 
+}
+
+
+void draw_export_region_dialog(app_state_t* app_state) {
+	if (show_export_region_dialog) {
+		ImGui::OpenPopup("Export region");
+		show_export_region_dialog = false;
+	}
+	// Always center this window when appearing
+	ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+	ImGui::SetNextWindowSize(ImVec2(600.0f, 400.0f), ImGuiCond_Appearing);
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+	if (ImGui::BeginPopupModal("Export region", NULL, 0/*ImGuiWindowFlags_AlwaysAutoResize*/)) {
+		scene_t* scene = &app_state->scene;
+		image_t* image = app_state->loaded_images + 0;
+
+		ImGui::BeginGroup();
+		ImGui::BeginChild("item view", ImVec2(0, -2.0f * ImGui::GetFrameHeightWithSpacing())); // Leave room for 2 lines below us
+
+
+		if (scene->can_export_region) {
+			if (image->mpp_x > 0.0f && image->mpp_y > 0.0f) {
+				bounds2i pixel_bounds = scene->selection_pixel_bounds;
+				ImGui::Text("Selected region (pixel coordinates):\nx=%d\ny=%d\nwidth=%d\nheight=%d",
+							 pixel_bounds.left, pixel_bounds.top,
+							 pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top);
+
+				const char* export_formats[] = {"Tiled TIFF", };//"JPEG", "PNG"}; TODO: implement JPEG and PNG export
+				if (ImGui::BeginCombo("Export format", export_formats[desired_region_export_format])) // The second parameter is the label previewed before opening the combo.
+				{
+					for (i32 i = 0; i < COUNT(export_formats); ++i) {
+						if (ImGui::Selectable(export_formats[i], desired_region_export_format == i)) {
+							desired_region_export_format = i;
+						}
+					}
+					ImGui::EndCombo();
+				}
+
+				if (desired_region_export_format == 0) {
+					if (ImGui::TreeNodeEx("Encoding options", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+						ImGui::SliderInt("JPEG encoding quality", &tiff_export_jpeg_quality, 0, 100);
+						bool prefer_rgb = tiff_export_desired_color_space == TIFF_PHOTOMETRIC_RGB;
+						if (ImGui::Checkbox("Use RGB encoding (instead of YCbCr)", &prefer_rgb)) {
+							tiff_export_desired_color_space = prefer_rgb ? TIFF_PHOTOMETRIC_RGB : TIFF_PHOTOMETRIC_YCBCR;
+						}
+					}
+
+				}
+			}
+
+		}
+		ImGui::EndChild(); // end of top area -- now start drawing bottom area
+
+		const char* filename_hint = "";
+		if (desired_region_export_format == 0) {
+			filename_hint = "output.tiff";
+		} else if (desired_region_export_format == 1) {
+			filename_hint = "output.jpeg";
+		} else if (desired_region_export_format == 2) {
+			filename_hint = "output.png";
+		}
+
+		static char filename[4096];
+		ImGui::InputTextWithHint("##export_region_output_filename", filename_hint, filename, sizeof(filename));
+		ImGui::SameLine();
+		if (ImGui::Button("Browse...")) {
+			if (save_file_dialog(app_state, filename, sizeof(filename), "BigTIFF (*.tiff)\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
+				size_t filename_len = strlen(filename);
+				if (filename_len > 0) {
+					const char* extension = get_file_extension(filename);
+					if (!(strcasecmp(extension, "tiff") == 0 || strcasecmp(extension, "tif") == 0 || strcasecmp(extension, "ptif") == 0)) {
+						// if extension incorrect, append it at the end
+						i64 remaining_len = sizeof(filename) - filename_len;
+						strncpy(filename + filename_len, ".tiff", remaining_len-1);
+					}
+				} else {
+//					console_print_verbose("Export region: save file dialog returned 0\n");
+				}
+			}
+		}
+
+
+		ImGui::SetItemDefaultFocus();
+		if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+			show_export_region_dialog = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Export", ImVec2(120, 0))) {
+			export_cropped_bigtiff(app_state, image, &image->tiff.tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
+			show_export_region_dialog = false;
+			ImGui::CloseCurrentPopup();
+		}
+
+
+		ImGui::EndGroup();
+
+		ImGui::EndPopup();
+	}
 }
 
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
@@ -502,6 +576,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		draw_annotations_window(app_state, input);
 	}
 	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
+	draw_export_region_dialog(app_state);
 
 	if (show_about_window) {
 		ImGui::Begin("About Slideviewer", &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
@@ -558,13 +633,21 @@ void console_clear_log() {
 	console_log_items = NULL;
 }
 
+bool console_fill_screen = false;
 
 void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open) {
 
-	static float desired_fraction_of_height = 0.33f;
+	float desired_fraction_of_height = console_fill_screen ? 1.0f : 0.33f;
 
 	float desired_width = (float) app_state->client_viewport.w;
 	float desired_height = roundf((float)app_state->client_viewport.h * desired_fraction_of_height);
+	if (show_menu_bar) {
+		float vertical_space_left = app_state->client_viewport.h - desired_height;
+		float need_space = 23.0f;
+		if (vertical_space_left < need_space) {
+			desired_height = (float)app_state->client_viewport.h - need_space;
+		}
+	}
 	ImGui::SetNextWindowSize(ImVec2(desired_width, desired_height), ImGuiCond_Always);
 	ImGui::SetNextWindowPos(ImVec2(0,app_state->client_viewport.h - desired_height), ImGuiCond_Always);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -592,6 +675,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	{
 		if (ImGui::Selectable("Clear")) console_clear_log();
 		if (ImGui::MenuItem("Verbose mode", NULL, &is_verbose_mode)) {}
+		if (ImGui::MenuItem("Fill screen", NULL, &console_fill_screen)) {}
 		ImGui::EndPopup();
 	}
 	i32 item_count = sb_count(console_log_items);
@@ -652,7 +736,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 }
 
 void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_type) {
-	i64 num_lines = 0;
+	size_t num_lines = 0;
 	char** lines = split_into_lines(raw, &num_lines);
 	if (lines) {
 		for (i32 i = 0; i < num_lines; ++i) {

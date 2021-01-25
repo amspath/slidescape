@@ -177,8 +177,8 @@ void destroy_buffer(uint8_t *p) {
 	free(p);
 }
 
-void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality,
-                      u8** tables_buffer, u32* tables_size_ptr, u8** jpeg_buffer, u32* jpeg_size_ptr) {
+void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** tables_buffer, u32* tables_size_ptr,
+                      u8** jpeg_buffer, u32* jpeg_size_ptr, bool use_rgb) {
 	struct jpeg_compress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 
@@ -193,6 +193,9 @@ void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality,
 
 	jpeg_set_defaults(&cinfo);
 	jpeg_set_quality(&cinfo, quality, TRUE);
+	if (use_rgb) {
+		jpeg_set_colorspace(&cinfo, JCS_RGB);
+	}
 
 	if (tables_buffer) {
 		jpeg_mem_dest(&cinfo, tables_buffer, (unsigned long*) tables_size_ptr); // libjpeg-turbo will allocate the buffer

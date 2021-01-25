@@ -107,6 +107,7 @@ i32 tile_pos_from_world_pos(float world_pos, float tile_side);
 bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height);
 bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b);
 bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minus_l, float t_minus_b);
+bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y);
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr);
 bool v2f_within_bounds(bounds2f bounds, v2f point);
 

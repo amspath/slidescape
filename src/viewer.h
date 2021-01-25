@@ -245,6 +245,8 @@ typedef struct scene_t {
 	bool8 has_selection_box;
 	v2f cumulative_drag_vector;
 	bounds2f crop_bounds;
+	bounds2i selection_pixel_bounds;
+	bool8 can_export_region;
 	bool8 is_cropped;
 	bool8 initialized;
 } scene_t;

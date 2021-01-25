@@ -156,6 +156,7 @@ typedef struct export_task_data_t {
 	u64 image_data_base_offset;
 	u64 current_image_data_write_offset;
 	FILE* fp;
+	bool use_rgb;
 	bool is_valid;
 	export_level_task_data_t level_task_datas[WSI_MAX_LEVELS];
 } export_task_data_t;
@@ -291,7 +292,7 @@ void construct_new_tile_from_source_tiles(export_task_data_t* export_task, expor
 		u8* compressed_buffer = NULL;
 		u32 compressed_size = 0;
 		jpeg_encode_tile(dest, export_tile_width, export_tile_width, export_task->quality, NULL, NULL,
-		                 &compressed_buffer, &compressed_size);
+		                 &compressed_buffer, &compressed_size, export_task->use_rgb);
 
 		*jpeg_buffer = compressed_buffer;
 		*jpeg_size = compressed_size;
@@ -535,8 +536,8 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 	free(level_task->source_tiles);
 }
 
-bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2f bounds, const char* filename,
-							  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
+bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
+                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
 	if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
 		return false;
 	}
@@ -549,17 +550,12 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		} return false;
 	}
 
-	// Calculate the export dimensions for the base level
-	bounds2i level0_pixel_bounds = {};
-	level0_pixel_bounds.left = (i32) floorf(bounds.left / tiff->mpp_x);
-	level0_pixel_bounds.right = (i32) ceilf(bounds.right / tiff->mpp_x);
-	level0_pixel_bounds.top = (i32) floorf(bounds.top / tiff->mpp_y);
-	level0_pixel_bounds.bottom = (i32) ceilf(bounds.bottom / tiff->mpp_y);
+	// TODO: make ASAP understand the resolution in the exported file
 
 	tiff_ifd_t* source_level0_ifd = tiff->main_image_ifd;
 	u32 tile_width = source_level0_ifd->tile_width;
 	u32 tile_height = source_level0_ifd->tile_height;
-	bool is_tile_aligned = ((level0_pixel_bounds.left % tile_width) == 0) && ((level0_pixel_bounds.top % tile_height) == 0);
+	bool is_tile_aligned = ((level0_bounds.left % tile_width) == 0) && ((level0_bounds.top % tile_height) == 0);
 
 	bool need_reuse_tiles = is_tile_aligned && (desired_photometric_interpretation == source_level0_ifd->color_space)
 	                        && (export_tile_width == tile_width) && (tile_width == tile_height); // only allow square tiles for re-use
@@ -568,6 +564,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	export_task.source_tile_width = tile_width;
 	export_task.export_tile_width = export_tile_width;
 	export_task.quality = quality;
+	export_task.use_rgb = (desired_photometric_interpretation == TIFF_PHOTOMETRIC_RGB);
 
 	FILE* fp = fopen64(filename, "wb");
 	bool32 success = false;
@@ -612,6 +609,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		raw_bigtiff_tag_t tag_samples_per_pixel = {TIFF_TAG_SAMPLES_PER_PIXEL, TIFF_UINT16, 1, .offset = 3};
 		raw_bigtiff_tag_t tag_tile_width = {TIFF_TAG_TILE_WIDTH, TIFF_UINT16, 1, .offset = export_tile_width};
 		raw_bigtiff_tag_t tag_tile_length = {TIFF_TAG_TILE_LENGTH, TIFF_UINT16, 1, .offset = export_tile_width};
+		// NOTE: chroma subsampling is used for YCbCr-encoded images, but not for RGB
 		u16 chroma_subsampling[4] = {2, 2, 0, 0};
 		raw_bigtiff_tag_t tag_chroma_subsampling = {TIFF_TAG_YCBCRSUBSAMPLING, TIFF_UINT16, 2, .offset = *(u64*)(chroma_subsampling)};
 
@@ -654,7 +652,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			u64 tag_count_for_ifd_offset = memrw_push(&tag_buffer, &tag_count_for_ifd, sizeof(u64));
 
 			// Calculate dimensions for the current downsampling level
-			bounds2i pixel_bounds = level0_pixel_bounds;
+			bounds2i pixel_bounds = level0_bounds;
 			pixel_bounds.left >>= level;
 			pixel_bounds.top >>= level;
 			pixel_bounds.right >>= level;
@@ -802,14 +800,16 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			u8* tables_buffer = NULL;
 			u32 tables_size = 0;
 			jpeg_encode_tile(NULL, export_tile_width, export_tile_width, quality, &tables_buffer, &tables_size, NULL,
-			                 NULL);
+			                 NULL, 0);
 			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
 			                      TIFF_TAG_JPEG_TABLES, TIFF_UNDEFINED, tables_size, tables_buffer);
 			++tag_count_for_ifd;
 			if (tables_buffer) free(tables_buffer);
 
-			memrw_push_bigtiff_tag(&tag_buffer, &tag_chroma_subsampling);
-			++tag_count_for_ifd;
+			if (desired_photometric_interpretation == TIFF_PHOTOMETRIC_YCBCR) {
+				memrw_push_bigtiff_tag(&tag_buffer, &tag_chroma_subsampling);
+				++tag_count_for_ifd;
+			}
 
 			// Update the tag count, which was written incorrectly as a placeholder at the beginning of the IFD
 			*(u64*)(tag_buffer.data + tag_count_for_ifd_offset) = tag_count_for_ifd;
