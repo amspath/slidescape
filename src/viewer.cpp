@@ -129,38 +129,38 @@ void unload_all_images(app_state_t *app_state) {
 	app_state->scene.has_selection_box = false;
 }
 
-void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
-	image_t new_image = (image_t){};
-	new_image.type = IMAGE_TYPE_TIFF;
-	new_image.tiff.tiff = tiff;
-	new_image.is_freshly_loaded = true;
-	new_image.mpp_x = tiff.mpp_x;
-	new_image.mpp_y = tiff.mpp_y;
+image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
+	image_t image = (image_t){};
+	image.type = IMAGE_TYPE_TIFF;
+	image.tiff.tiff = tiff;
+	image.is_freshly_loaded = true;
+	image.mpp_x = tiff.mpp_x;
+	image.mpp_y = tiff.mpp_y;
 	ASSERT(tiff.main_image_ifd);
-	new_image.tile_width = tiff.main_image_ifd->tile_width;
-	new_image.tile_height = tiff.main_image_ifd->tile_height;
-	new_image.width_in_pixels = tiff.main_image_ifd->image_width;
-	new_image.width_in_um = tiff.main_image_ifd->image_width * tiff.mpp_x;
-	new_image.height_in_pixels = tiff.main_image_ifd->image_height;
-	new_image.height_in_um = tiff.main_image_ifd->image_height * tiff.mpp_y;
+	image.tile_width = tiff.main_image_ifd->tile_width;
+	image.tile_height = tiff.main_image_ifd->tile_height;
+	image.width_in_pixels = tiff.main_image_ifd->image_width;
+	image.width_in_um = tiff.main_image_ifd->image_width * tiff.mpp_x;
+	image.height_in_pixels = tiff.main_image_ifd->image_height;
+	image.height_in_um = tiff.main_image_ifd->image_height * tiff.mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
 	if (tiff.level_image_ifd_count > 0 && tiff.main_image_ifd->tile_width) {
 
-		memset(new_image.level_images, 0, sizeof(new_image.level_images));
-		new_image.level_count = tiff.max_downsample_level + 1;
+		memset(image.level_images, 0, sizeof(image.level_images));
+		image.level_count = tiff.max_downsample_level + 1;
 
-		if (tiff.level_image_ifd_count > new_image.level_count) {
+		if (tiff.level_image_ifd_count > image.level_count) {
 			panic();
 		}
-		if (new_image.level_count > WSI_MAX_LEVELS) {
+		if (image.level_count > WSI_MAX_LEVELS) {
 			panic();
 		}
 
 		i32 ifd_index = 0;
 		i32 next_ifd_index_to_check_for_match = 0;
 		tiff_ifd_t* ifd = tiff.level_images_ifd + ifd_index;
-		for (i32 level_index = 0; level_index < new_image.level_count; ++level_index) {
-			level_image_t* level_image = new_image.level_images + level_index;
+		for (i32 level_index = 0; level_index < image.level_count; ++level_index) {
+			level_image_t* level_image = image.level_images + level_index;
 
 			i32 wanted_downsample_level = level_index;
 			bool found_ifd = false;
@@ -186,11 +186,11 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				level_image->tile_width = ifd->tile_width;
 				level_image->tile_height = ifd->tile_height;
 #if DO_DEBUG
-				if (level_image->tile_width != new_image.tile_width) {
-					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
+				if (level_image->tile_width != image.tile_width) {
+					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image.tile_width);
 				}
-				if (level_image->tile_height != new_image.tile_height) {
-					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, new_image.tile_width);
+				if (level_image->tile_height != image.tile_height) {
+					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image.tile_width);
 				}
 #endif
 				level_image->um_per_pixel_x = ifd->um_per_pixel_x;
@@ -224,10 +224,10 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 				level_image->exists = false;
 				level_image->downsample_factor = exp2f((float)wanted_downsample_level);
 				// Just in case anyone tries to divide by zero:
-				level_image->tile_width = new_image.tile_width;
-				level_image->tile_height = new_image.tile_height;
-				level_image->um_per_pixel_x = new_image.mpp_x * level_image->downsample_factor;
-				level_image->um_per_pixel_y = new_image.mpp_y * level_image->downsample_factor;
+				level_image->tile_width = image.tile_width;
+				level_image->tile_height = image.tile_height;
+				level_image->um_per_pixel_x = image.mpp_x * level_image->downsample_factor;
+				level_image->um_per_pixel_y = image.mpp_y * level_image->downsample_factor;
 				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
 				level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
 			}
@@ -237,7 +237,9 @@ void add_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 
 		}
 	}
-	sb_push(app_state->loaded_images, new_image);
+	image.is_valid = true;
+	image.is_freshly_loaded = true;
+	return image;
 }
 
 bool32 was_button_pressed(button_state_t* button) {
@@ -362,133 +364,11 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 	}
 }
 
-
-// TODO: refactor delta_t
-// TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
-void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
-
-	i64 last_section = get_clock(); // start profiler section
-
-	// Release the temporary memory that was allocated the previous frame.
-	app_state->temp_arena.used = 0;
-
-//	if (!app_state->initialized) init_app_state(app_state);
-	// Note: the window might get resized, so need to update this every frame
-	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
-
+void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
 	scene_t* scene = &app_state->scene;
-	ASSERT(app_state->initialized);
-	ASSERT(scene->initialized);
 
-	// Note: could be changed to allow e.g. multiple scenes side by side
-	scene->viewport = app_state->client_viewport;
-
-	v2f current_drag_vector = {};
-	scene->clicked = false;
-	scene->right_clicked = false;
-	scene->drag_started = false;
-	scene->drag_ended = false;
-
-	refresh_annotation_pointers(app_state, &scene->annotation_set);
-
-	app_state->input = input;
-
-	// Set up rendering state for the next frame
-	glDrawBuffer(GL_BACK);
-	glDisable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_STENCIL_TEST);
-	glStencilMask(0xFF);
-	glViewport(0, 0, client_width, client_height);
-	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
-
-	app_state->allow_idling_next_frame = true; // but we might set it to false later
-
-	i32 image_count = sb_count(app_state->loaded_images);
-	ASSERT(image_count >= 0);
-
-	if (image_count == 0) {
-		//load_generic_file(app_state, "test.jpeg");
-		do_after_scene_render(app_state, input);
-		return;
-	}
-
-	image_t* image = app_state->loaded_images + app_state->displayed_image;
-
-	// Workaround for drag onto window being registered as a click
-	if (image->is_freshly_loaded) {
-		input->mouse_buttons[0].down = false;
-		input->mouse_buttons[0].transition_count = 0;
-	}
-
-
-	// TODO: mutate state here
-
-	// todo: process even more of the mouse/keyboard input here?
-
-	if (input) {
-		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
-
-		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
-			menu_close_file(app_state);
-			do_after_scene_render(app_state, input);
-			return;
-		}
-
-		if (gui_want_capture_mouse) {
-			// ignore mouse input
-		} else {
-			if (was_button_released(&input->mouse_buttons[0])) {
-				float drag_distance = v2f_length(scene->cumulative_drag_vector);
-				// TODO: tweak this
-				if (drag_distance < 3.0f) {
-					scene->clicked = true;
-				}
-			}
-			if (was_button_released(&input->mouse_buttons[1])) {
-				// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
-				scene->right_clicked = true;
-				/*float drag_distance = v2f_length(scene->cumulative_drag_vector);
-				if (drag_distance < 30.0f) {
-
-				}*/
-			}
-
-			if (input->mouse_buttons[0].down) {
-				// Mouse drag.
-				if (input->mouse_buttons[0].transition_count != 0) {
-					// Don't start dragging if clicked outside the window
-					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
-					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){(i32)input->mouse_xy.x, (i32)input->mouse_xy.y})) {
-						scene->is_dragging = true; // drag start
-						scene->drag_started = true;
-						scene->cumulative_drag_vector = (v2f){};
-//					console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
-					}
-				} else if (scene->is_dragging) {
-					// already started dragging on a previous frame
-					current_drag_vector = input->drag_vector;
-					scene->cumulative_drag_vector.x += current_drag_vector.x;
-					scene->cumulative_drag_vector.y += current_drag_vector.y;
-				}
-				input->drag_vector = (v2f){};
-				mouse_hide();
-			} else {
-				if (input->mouse_buttons[0].transition_count != 0) {
-					mouse_show();
-					scene->is_dragging = false;
-					scene->drag_ended = true;
-//			        console_print("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
-				}
-			}
-		}
-	}
-
-	last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (1)", 5.0f);
-
+	i32 client_width = app_state->client_viewport.w;
+	i32 client_height = app_state->client_viewport.h;
 
 	if (image->type == IMAGE_TYPE_SIMPLE) {
 		// Display a basic image
@@ -530,8 +410,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 		float pan_multiplier = 2.0f;
 		if (scene->is_dragging) {
-			obj_pos.x += current_drag_vector.x * pan_multiplier;
-			obj_pos.y += current_drag_vector.y * pan_multiplier;
+			obj_pos.x += scene->drag_vector.x * pan_multiplier;
+			obj_pos.y += scene->drag_vector.y * pan_multiplier;
 		}
 
 		mat4x4 model_matrix;
@@ -764,8 +644,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (app_state->mouse_mode == MODE_VIEW) {
 				if (scene->is_dragging) {
-					scene->camera.x -= current_drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
-					scene->camera.y -= current_drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
+					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
+					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
 
 					// camera has been updated (now we need to recalculate some things)
 					camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
@@ -855,44 +735,44 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		draw_annotations(app_state, scene, &scene->annotation_set, camera_bounds.min);
 
-		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
+//		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
 		// IO
 
-        float time_elapsed;
-        float max_texture_load_time = 0.007f; // TODO: pin to frame time
+		float time_elapsed;
+		float max_texture_load_time = 0.007f; // TODO: pin to frame time
 #if 1
-        if (!finalize_textures_immediately) {
-            // Finalize textures that were uploaded via PBO the previous frame
-            for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
-                pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
-                if (transfer_state->need_finalization) {
-                    finalize_texture_upload_using_pbo(transfer_state);
-                    tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
-                    tile->texture = transfer_state->texture;
-                }
-                float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-			    if (time_elapsed > max_texture_load_time) {
+		if (!finalize_textures_immediately) {
+			// Finalize textures that were uploaded via PBO the previous frame
+			for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
+				pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
+				if (transfer_state->need_finalization) {
+					finalize_texture_upload_using_pbo(transfer_state);
+					tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
+					tile->texture = transfer_state->texture;
+				}
+				float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+				if (time_elapsed > max_texture_load_time) {
 //			    	console_print("Warning: texture finalization is taking too much time\n");
-			    	break;
-			    }
-            }
+					break;
+				}
+			}
 
 
 
-        }
+		}
 
-        /*time_elapsed = get_seconds_elapsed(last_section, get_clock());
-        if (time_elapsed > 0.005f) {
-            console_print("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
-        }*/
+		/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
+		if (time_elapsed > 0.005f) {
+			console_print("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
+		}*/
 
-        last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
+//		last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
 
 
 #endif
 
-        // TODO: take into account priorities here as well
+		// TODO: take into account priorities here as well
 
 		// Retrieve completed tasks from the worker threads
 		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
@@ -912,12 +792,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						bool need_free_pixel_memory = true;
 						if (tile->need_gpu_residency) {
 							pixel_transfer_state_t* transfer_state =
-							        submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
-                                                                  4, task->pixel_memory, finalize_textures_immediately);
+									submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
+									                              4, task->pixel_memory, finalize_textures_immediately);
 							if (finalize_textures_immediately) {
-                                tile->texture = transfer_state->texture;
+								tile->texture = transfer_state->texture;
 							} else {
-                                transfer_state->userdata = (void*) tile;
+								transfer_state->userdata = (void*) tile;
 								tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
 							}
 
@@ -942,7 +822,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						if (tile->need_gpu_residency) {
 							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->image->tile_width,
 							                                                                       task->image->tile_height, 4,
-                                                                                                   tile->pixels, finalize_textures_immediately);
+							                                                                       tile->pixels, finalize_textures_immediately);
 							tile->texture = transfer_state->texture;
 						} else {
 							ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
@@ -1055,14 +935,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
 
-		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
+//		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
 		i32 max_tiles_to_load = (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
 		i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
 		request_tiles(app_state, image, tile_wishlist, tiles_to_load);
 
-		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
+//		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 
 
 		// RENDERING
@@ -1104,7 +984,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			glUniform1f(basic_shader_u_white_level, 1.0f);
 		}
 
-		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
+//		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
 		if (scene->is_cropped) {
 			// Set up the stencil buffer to prevent rendering outside the image area
@@ -1198,9 +1078,143 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// restore OpenGL state
 		glDisable(GL_STENCIL_TEST);
 
-		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
+//		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
 
 	}
+}
+
+// TODO: refactor delta_t
+// TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
+void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
+
+	i64 last_section = get_clock(); // start profiler section
+
+	// Release the temporary memory that was allocated the previous frame.
+	app_state->temp_arena.used = 0;
+
+//	if (!app_state->initialized) init_app_state(app_state);
+	// Note: the window might get resized, so need to update this every frame
+	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
+
+	scene_t* scene = &app_state->scene;
+	ASSERT(app_state->initialized);
+	ASSERT(scene->initialized);
+
+	// Note: could be changed to allow e.g. multiple scenes side by side
+	scene->viewport = app_state->client_viewport;
+
+	scene->clicked = false;
+	scene->right_clicked = false;
+	scene->drag_started = false;
+	scene->drag_ended = false;
+
+	refresh_annotation_pointers(app_state, &scene->annotation_set);
+
+	app_state->input = input;
+
+	// Set up rendering state for the next frame
+	glDrawBuffer(GL_BACK);
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_STENCIL_TEST);
+	glStencilMask(0xFF);
+	glViewport(0, 0, client_width, client_height);
+	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
+
+	app_state->allow_idling_next_frame = true; // but we might set it to false later
+
+	i32 image_count = sb_count(app_state->loaded_images);
+	ASSERT(image_count >= 0);
+
+	if (image_count == 0) {
+		//load_generic_file(app_state, "test.jpeg");
+		do_after_scene_render(app_state, input);
+		return;
+	}
+
+	image_t* displayed_image = app_state->loaded_images + app_state->displayed_image;
+
+	// Workaround for drag onto window being registered as a click
+	if (displayed_image->is_freshly_loaded) {
+		input->mouse_buttons[0].down = false;
+		input->mouse_buttons[0].transition_count = 0;
+	}
+
+
+	// TODO: mutate state here
+
+	// todo: process even more of the mouse/keyboard input here?
+
+	if (input) {
+		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
+
+		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
+			menu_close_file(app_state);
+			do_after_scene_render(app_state, input);
+			return;
+		}
+
+		if (gui_want_capture_mouse) {
+			// ignore mouse input
+		} else {
+			if (was_button_released(&input->mouse_buttons[0])) {
+				float drag_distance = v2f_length(scene->cumulative_drag_vector);
+				// TODO: tweak this
+				if (drag_distance < 3.0f) {
+					scene->clicked = true;
+				}
+			}
+			if (was_button_released(&input->mouse_buttons[1])) {
+				// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
+				scene->right_clicked = true;
+				/*float drag_distance = v2f_length(scene->cumulative_drag_vector);
+				if (drag_distance < 30.0f) {
+
+				}*/
+			}
+
+			if (input->mouse_buttons[0].down) {
+				// Mouse drag.
+				if (input->mouse_buttons[0].transition_count != 0) {
+					// Don't start dragging if clicked outside the window
+					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
+					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){(i32)input->mouse_xy.x, (i32)input->mouse_xy.y})) {
+						scene->is_dragging = true; // drag start
+						scene->drag_started = true;
+						scene->cumulative_drag_vector = (v2f){};
+//					console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+					}
+				} else if (scene->is_dragging) {
+					// already started dragging on a previous frame
+					scene->drag_vector = input->drag_vector;
+					scene->cumulative_drag_vector.x += scene->drag_vector.x;
+					scene->cumulative_drag_vector.y += scene->drag_vector.y;
+				}
+				input->drag_vector = (v2f){};
+				mouse_hide();
+			} else {
+				if (input->mouse_buttons[0].transition_count != 0) {
+					mouse_show();
+					scene->is_dragging = false;
+					scene->drag_ended = true;
+//			        console_print("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
+				}
+			}
+		}
+	}
+
+	last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (1)", 5.0f);
+
+
+	for (i32 image_index = 0; image_index < image_count; ++image_index) {
+		image_t* image = app_state->loaded_images + image_index;
+		update_and_render_image(app_state, input, delta_t, image);
+	}
+
+
 
 	do_after_scene_render(app_state, input);
 }

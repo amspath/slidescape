@@ -61,7 +61,10 @@ bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_i
 				path_len += snprintf(path_buffer + path_len, sizeof(path_buffer) - path_len, ".tiff");
 			}
 
-			success = load_image_from_file(app_state, path_buffer);
+			unload_all_images(app_state);
+			image_t image = load_image_from_file(app_state, path_buffer);
+			sb_push(app_state->loaded_images, image);
+			success = image.is_valid;
 		}
 	}
 	return success;

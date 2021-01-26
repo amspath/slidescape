@@ -375,9 +375,13 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
-		if (load_image_from_file(app_state, filename)) {
+		unload_all_images(app_state);
+		image_t image = load_image_from_file(app_state, filename);
+		if (image.is_valid) {
 			// Unload any old annotations if necessary
 			unload_and_reinit_annotations(&app_state->scene.annotation_set);
+
+			sb_push(app_state->loaded_images, image);
 
 			// Check if there is an associated ASAP XML annotations file
 			size_t len = strlen(filename);
@@ -400,23 +404,23 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	}
 }
 
-bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
-	unload_all_images(app_state);
+image_t load_image_from_file(app_state_t* app_state, const char *filename) {
 
-	bool32 success = false;
 	const char* ext = get_file_extension(filename);
+
+	image_t image = (image_t){};
 
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
 		// Load using stb_image
-		image_t image = (image_t){};
+
 		image.type = IMAGE_TYPE_SIMPLE;
 		image.simple.channels = 4; // desired: RGBA
 		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
 		if (image.simple.pixels) {
 
 			image.is_freshly_loaded = true;
-					sb_push(app_state->loaded_images, image);
-			success = true;
+			image.is_valid = true;
+			return image;
 
 			//stbi_image_free(image->stbi.pixels);
 		}
@@ -425,18 +429,19 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			add_image_from_tiff(app_state, tiff);
-			success = true;
+			image = create_image_from_tiff(app_state, tiff);
+			return image;
 		} else {
 			tiff_destroy(&tiff);
-			success = false;
-			console_print_error("Opening %s failed\n", filename);
+			image.is_valid = false;
+			return image;
 		}
 	} else if (strcasecmp(ext, "isyntax") == 0) {
 		// Try to open as iSyntax
 		isyntax_t isyntax = {0};
 		if (isyntax_open(&isyntax, filename)) {
-			success = false;
+			image.is_valid = false;
+			return image;
 		}
 	} else {
 		// Try to load the file using OpenSlide
@@ -451,45 +456,45 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 			}
 			if (!is_openslide_available) {
 				console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
-				return false;
+				image.is_valid = false;
+				return image;
 			}
 		}
 
-		// TODO: fix code duplication from add_image_from_tiff()
-		image_t new_image = (image_t){};
-		new_image.type = IMAGE_TYPE_WSI;
-		wsi_t* wsi = &new_image.wsi.wsi;
+		// TODO: fix code duplication from create_image_from_tiff()
+		image.type = IMAGE_TYPE_WSI;
+		wsi_t* wsi = &image.wsi.wsi;
 		load_wsi(wsi, filename);
 		if (wsi->osr) {
-			new_image.is_freshly_loaded = true;
-			new_image.mpp_x = wsi->mpp_x;
-			new_image.mpp_y = wsi->mpp_y;
-			new_image.tile_width = wsi->tile_width;
-			new_image.tile_height = wsi->tile_height;
-			new_image.width_in_pixels = wsi->width;
-			new_image.width_in_um = wsi->width * wsi->mpp_x;
-			new_image.height_in_pixels = wsi->height;
-			new_image.height_in_um = wsi->height * wsi->mpp_y;
+			image.is_freshly_loaded = true;
+			image.mpp_x = wsi->mpp_x;
+			image.mpp_y = wsi->mpp_y;
+			image.tile_width = wsi->tile_width;
+			image.tile_height = wsi->tile_height;
+			image.width_in_pixels = wsi->width;
+			image.width_in_um = wsi->width * wsi->mpp_x;
+			image.height_in_pixels = wsi->height;
+			image.height_in_um = wsi->height * wsi->mpp_y;
 			ASSERT(wsi->levels[0].x_tile_side_in_um > 0);
 			if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
 				ASSERT(wsi->max_downsample_level >= 0);
 
-				memset(new_image.level_images, 0, sizeof(new_image.level_images));
-				new_image.level_count = wsi->max_downsample_level + 1;
+				memset(image.level_images, 0, sizeof(image.level_images));
+				image.level_count = wsi->max_downsample_level + 1;
 
-				// TODO: check against downsample level, see add_image_from_tiff()
-				if (wsi->level_count > new_image.level_count) {
+				// TODO: check against downsample level, see create_image_from_tiff()
+				if (wsi->level_count > image.level_count) {
 					panic();
 				}
-				if (new_image.level_count > WSI_MAX_LEVELS) {
+				if (image.level_count > WSI_MAX_LEVELS) {
 					panic();
 				}
 
 				i32 wsi_level_index = 0;
 				i32 next_wsi_level_index_to_check_for_match = 0;
 				wsi_level_t* wsi_file_level = wsi->levels + wsi_level_index;
-				for (i32 downsample_level = 0; downsample_level < new_image.level_count; ++downsample_level) {
-					level_image_t* downsample_level_image = new_image.level_images + downsample_level;
+				for (i32 downsample_level = 0; downsample_level < image.level_count; ++downsample_level) {
+					level_image_t* downsample_level_image = image.level_images + downsample_level;
 					i32 wanted_downsample_level = downsample_level;
 					bool found_wsi_level_for_downsample_level = false;
 					for (wsi_level_index = next_wsi_level_index_to_check_for_match; wsi_level_index < wsi->level_count; ++wsi_level_index) {
@@ -514,11 +519,11 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 						downsample_level_image->tile_width = wsi_file_level->tile_width;
 						downsample_level_image->tile_height = wsi_file_level->tile_height;
 #if DO_DEBUG
-						if (downsample_level_image->tile_width != new_image.tile_width) {
-							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, new_image.tile_width);
+						if (downsample_level_image->tile_width != image.tile_width) {
+							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, image.tile_width);
 						}
-						if (downsample_level_image->tile_height != new_image.tile_height) {
-							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, new_image.tile_width);
+						if (downsample_level_image->tile_height != image.tile_height) {
+							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, image.tile_width);
 						}
 #endif
 						downsample_level_image->um_per_pixel_x = wsi_file_level->um_per_pixel_x;
@@ -546,10 +551,10 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 						downsample_level_image->exists = false;
 						downsample_level_image->downsample_factor = exp2f((float)wanted_downsample_level);
 						// Just in case anyone tries to divide by zero:
-						downsample_level_image->tile_width = new_image.tile_width;
-						downsample_level_image->tile_height = new_image.tile_height;
-						downsample_level_image->um_per_pixel_x = new_image.mpp_x * downsample_level_image->downsample_factor;
-						downsample_level_image->um_per_pixel_y = new_image.mpp_y * downsample_level_image->downsample_factor;
+						downsample_level_image->tile_width = image.tile_width;
+						downsample_level_image->tile_height = image.tile_height;
+						downsample_level_image->um_per_pixel_x = image.mpp_x * downsample_level_image->downsample_factor;
+						downsample_level_image->um_per_pixel_y = image.mpp_y * downsample_level_image->downsample_factor;
 						downsample_level_image->x_tile_side_in_um = downsample_level_image->um_per_pixel_x * (float)wsi->levels[0].tile_width;
 						downsample_level_image->y_tile_side_in_um = downsample_level_image->um_per_pixel_y * (float)wsi->levels[0].tile_height;
 					}
@@ -557,14 +562,12 @@ bool32 load_image_from_file(app_state_t* app_state, const char *filename) {
 				}
 
 			}
-			ASSERT(new_image.level_count > 0);
-
-			sb_push(app_state->loaded_images, new_image);
-			success = true;
+			ASSERT(image.level_count > 0);
+			image.is_valid = true;
 
 		}
 	}
-	return success;
+	return image;
 
 }
 

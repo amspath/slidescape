@@ -147,6 +147,7 @@ typedef struct {
 	float width_in_um;
 	i64 height_in_pixels;
 	float height_in_um;
+	bool is_valid;
 } image_t;
 
 typedef struct load_tile_task_t {
@@ -243,6 +244,7 @@ typedef struct scene_t {
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
 	rect2f selection_box;
 	bool8 has_selection_box;
+	v2f drag_vector;
 	v2f cumulative_drag_vector;
 	bounds2f crop_bounds;
 	bounds2i selection_pixel_bounds;
@@ -292,9 +294,9 @@ typedef struct app_state_t {
 //  prototypes
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
 void unload_all_images(app_state_t* app_state);
-void add_image_from_tiff(app_state_t* app_state, tiff_t tiff);
+image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff);
 bool32 load_generic_file(app_state_t* app_state, const char* filename);
-bool32 load_image_from_file(app_state_t* app_state, const char* filename);
+image_t load_image_from_file(app_state_t* app_state, const char* filename);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
