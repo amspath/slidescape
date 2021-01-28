@@ -1,6 +1,6 @@
 /*
   Slideviewer, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2020  Pieter Valkema
+  Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
