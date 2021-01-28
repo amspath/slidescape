@@ -163,6 +163,8 @@ typedef struct {
 	float width_in_um;
 	i64 height_in_pixels;
 	float height_in_um;
+	bool is_overlay;
+	v2f origin_offset;
 	bool is_valid;
 } image_t;
 
@@ -256,6 +258,7 @@ typedef struct scene_t {
 	v4f clear_color;
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
+	i32 active_layer;
 	annotation_set_t annotation_set;
 	bool8 clicked;
 	bool8 right_clicked;

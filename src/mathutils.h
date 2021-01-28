@@ -104,7 +104,7 @@ rect2f rect2f_recanonicalize(rect2f* rect);
 bounds2f rect2f_to_bounds(rect2f* rect);
 v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
 i32 tile_pos_from_world_pos(float world_pos, float tile_side);
-bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height);
+bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height, v2f image_pos);
 bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b);
 bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minus_l, float t_minus_b);
 bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y);

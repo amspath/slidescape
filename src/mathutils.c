@@ -104,12 +104,12 @@ i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
 	return tile;
 }
 
-bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height) {
+bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height, v2f image_pos) {
 	bounds2i result = {};
-	result.left = tile_pos_from_world_pos(world_bounds->left, tile_width);
-	result.top = tile_pos_from_world_pos(world_bounds->top, tile_height);
-	result.right = tile_pos_from_world_pos(world_bounds->right, tile_width) + 1;
-	result.bottom = tile_pos_from_world_pos(world_bounds->bottom, tile_height) + 1;
+	result.left = tile_pos_from_world_pos(world_bounds->left - image_pos.x, tile_width);
+	result.top = tile_pos_from_world_pos(world_bounds->top - image_pos.y, tile_height);
+	result.right = tile_pos_from_world_pos(world_bounds->right - image_pos.x, tile_width) + 1;
+	result.bottom = tile_pos_from_world_pos(world_bounds->bottom - image_pos.y, tile_height) + 1;
 	return result;
 }
 

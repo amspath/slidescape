@@ -216,35 +216,58 @@ void draw_layers_window(app_state_t* app_state) {
 
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
+	static i32 selected_image_index = 0;
+	i32 image_count = sb_count(app_state->loaded_images);
+	if (selected_image_index >= image_count) selected_image_index = 0;
+
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
 
-	if (ImGui::BeginTable("layers_table", 3, flags)) {
+	if (ImGui::BeginTable("layers_table", 2, flags)) {
 		// The first column will use the default _WidthStretch when ScrollX is Off and _WidthFixed when ScrollX is On
-		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_NoHide);
-		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
+//		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
 		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
 		ImGui::TableHeadersRow();
 
-		for (i32 image_index = 0; image_index < sb_count(app_state->loaded_images); ++image_index) {
+		for (i32 image_index = 0; image_index < image_count; ++image_index) {
 			image_t* image = app_state->loaded_images + image_index;
-			const char* name = "Image";
+			char name[256];
+			snprintf(name, sizeof(name)-1, "Layer %d", image_index);
 			const char* type = get_image_type_name(image);
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			ImGui::Text("%d", image_index);
-			ImGui::TableNextColumn();
-			ImGui::TextUnformatted(name);
+			bool selected = ImGui::Selectable(name);
+			if (selected) selected_image_index = image_index;
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted(type);
-
 		}
 
 		ImGui::EndTable();
 	}
 
-	if (ImGui::Button("Load overlay...")) {
+	u32 button_flags = 0;
+	bool disable_gui = image_count == 0;
+	if (disable_gui) {
+		button_flags |= ImGuiButtonFlags_Disabled;
+		ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+	}
+	if (ImGui::ButtonEx("Load paired image...", ImVec2(0,0), button_flags)) {
 		open_file_dialog(app_state, FILETYPE_HINT_OVERLAY);
 	}
+	if (disable_gui) {
+		ImGui::PopItemFlag();
+		ImGui::PopStyleVar();
+	}
+
+	if (selected_image_index < image_count) {
+		image_t* image = app_state->loaded_images + selected_image_index;
+		ImGui::Text("Image position offset for layer %d:", selected_image_index);
+		ImGui::DragFloat("Offset X", &image->origin_offset.x, image->mpp_x, 0.0f, 0.0f, "%g");
+		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g");
+	}
+	ImGui::NewLine();
+	ImGui::Text("Currently displayed layer: %d.\nPress F5 to cycle through layers.", app_state->scene.active_layer);
 
 	/*if (ImGui::BeginTable("3ways", 3, flags))
 	{

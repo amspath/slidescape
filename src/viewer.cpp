@@ -617,11 +617,14 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
 
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
+			                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
 			if (scene->is_cropped) {
-				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
+				                                                        drawn_level->x_tile_side_in_um,
+				                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
 				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
 			}
 
@@ -699,7 +702,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		// define view matrix
 		mat4x4 view_matrix;
-		mat4x4_translate(view_matrix, -scene->camera.x, -scene->camera.y, 0.0f);
+		mat4x4_translate(view_matrix, -scene->camera.x + image->origin_offset.x, -scene->camera.y + image->origin_offset.y, 0.0f);
 
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
@@ -770,11 +773,14 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
 
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
+			                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
 			if (scene->is_cropped) {
-				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
+				                                                        drawn_level->x_tile_side_in_um,
+				                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
 				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
 			}
 
@@ -1231,9 +1237,18 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 
+	if (was_key_pressed(input, KEY_F5)) {
+		scene->active_layer++;
+		if (scene->active_layer == image_count) {
+			scene->active_layer = 0;
+		}
+	}
+
 	for (i32 image_index = 0; image_index < image_count; ++image_index) {
-		image_t* image = app_state->loaded_images + image_index;
-		update_and_render_image(app_state, input, delta_t, image);
+		if (image_index == scene->active_layer) {
+			image_t* image = app_state->loaded_images + image_index;
+			update_and_render_image(app_state, input, delta_t, image);
+		}
 	}
 
 
