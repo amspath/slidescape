@@ -120,6 +120,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image options...", NULL, &show_image_options_window)) {}
+			if (ImGui::MenuItem("Layers...", NULL, &show_layers_window)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 			ImGui::Separator();
@@ -146,7 +147,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		if (menu_items_clicked.exit_program) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
-			open_file_dialog(app_state);
+			open_file_dialog(app_state, 0);
 		} else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.open_remote) {
@@ -189,12 +190,63 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 }
 
-void draw_assets_window(app_state_t* app_state) {
+static const char* get_image_type_name(image_t* image) {
+	const char* result = "--";
+	if (image->type == IMAGE_TYPE_SIMPLE) {
+		result = "Simple";
+	} else if (image->type == IMAGE_TYPE_WSI) {
+		if (image->backend == IMAGE_BACKEND_TIFF) {
+			result = "TIFF";
+		} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+			result = "OpenSlide";
+		} else {
+			result = "WSI (?)";
+		}
+	}
+	return result;
+}
+
+void draw_layers_window(app_state_t* app_state) {
+	if (!show_layers_window) return;
+
+	ImGui::SetNextWindowPos(ImVec2(20, 50), ImGuiCond_FirstUseEver);
+	ImGui::SetNextWindowSize(ImVec2(460,541), ImGuiCond_FirstUseEver);
+
+	ImGui::Begin("Layers", &show_layers_window);
+
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
 
-	if (ImGui::BeginTable("3ways", 3, flags))
+	if (ImGui::BeginTable("layers_table", 3, flags)) {
+		// The first column will use the default _WidthStretch when ScrollX is Off and _WidthFixed when ScrollX is On
+		ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_NoHide);
+		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
+		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
+		ImGui::TableHeadersRow();
+
+		for (i32 image_index = 0; image_index < sb_count(app_state->loaded_images); ++image_index) {
+			image_t* image = app_state->loaded_images + image_index;
+			const char* name = "Image";
+			const char* type = get_image_type_name(image);
+			ImGui::TableNextRow();
+			ImGui::TableNextColumn();
+			ImGui::Text("%d", image_index);
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(name);
+			ImGui::TableNextColumn();
+			ImGui::TextUnformatted(type);
+
+		}
+
+		ImGui::EndTable();
+	}
+
+	if (ImGui::Button("Load overlay...")) {
+		open_file_dialog(app_state, FILETYPE_HINT_OVERLAY);
+	}
+
+	/*if (ImGui::BeginTable("3ways", 3, flags))
 	{
 		// The first column will use the default _WidthStretch when ScrollX is Off and _WidthFixed when ScrollX is On
 		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
@@ -255,7 +307,8 @@ void draw_assets_window(app_state_t* app_state) {
 		MyTreeNode::DisplayNode(&nodes[0], nodes);
 
 		ImGui::EndTable();
-	}
+	}*/
+	ImGui::End();
 }
 
 
@@ -646,6 +699,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	}
 	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
 	draw_export_region_dialog(app_state);
+
+	if (show_layers_window) {
+		draw_layers_window(app_state);
+	}
 
 	if (show_about_window) {
 		ImGui::Begin("About Slideviewer", &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);

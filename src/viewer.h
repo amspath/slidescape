@@ -77,11 +77,26 @@ typedef struct wsi_t {
 } wsi_t;
 
 typedef enum {
+	IMAGE_TYPE_NONE,
 	IMAGE_TYPE_SIMPLE,
-	IMAGE_TYPE_TIFF,
+//	IMAGE_TYPE_TIFF,
 	IMAGE_TYPE_WSI,
 } image_type_enum;
 
+typedef enum {
+	IMAGE_BACKEND_NONE,
+	IMAGE_BACKEND_STBI,
+	IMAGE_BACKEND_TIFF,
+	IMAGE_BACKEND_OPENSLIDE,
+} image_backend_enum;
+
+typedef enum filetype_hint_enum {
+	FILETYPE_HINT_NONE = 0,
+	FILETYPE_HINT_CASELIST,
+	FILETYPE_HINT_ANNOTATIONS,
+	FILETYPE_HINT_BASE_IMAGE,
+	FILETYPE_HINT_OVERLAY,
+} filetype_hint_enum;
 
 typedef struct tile_t {
 	u32 tile_index;
@@ -120,6 +135,7 @@ typedef struct {
 
 typedef struct {
 	image_type_enum type;
+	image_backend_enum backend;
 	bool32 is_freshly_loaded; // TODO: remove or refactor, is this still needed?
 	union {
 		struct {
@@ -295,7 +311,7 @@ typedef struct app_state_t {
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
 void unload_all_images(app_state_t* app_state);
 image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff);
-bool32 load_generic_file(app_state_t* app_state, const char* filename);
+bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 image_t load_image_from_file(app_state_t* app_state, const char* filename);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_wsi(wsi_t* wsi, const char* filename);

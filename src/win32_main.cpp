@@ -228,7 +228,7 @@ void toggle_fullscreen(window_handle_t window) {
 	}
 }
 
-void open_file_dialog(app_state_t* app_state) {
+void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
 	// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
 	OPENFILENAME ofn = {};       // common dialog box structure
 	char filename[4096];       // buffer for file name
@@ -251,7 +251,7 @@ void open_file_dialog(app_state_t* app_state) {
 	// Display the Open dialog box.
 	mouse_show();
 	if (GetOpenFileNameA(&ofn)==TRUE) {
-		load_generic_file(&global_app_state, filename);
+		load_generic_file(&global_app_state, filename, filetype_hint);
 	}
 }
 
@@ -299,7 +299,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			HDROP hdrop = (HDROP) wparam;
 			char buffer[2048];
 			if (DragQueryFile(hdrop, 0, buffer, sizeof(buffer))) {
-				load_generic_file(&global_app_state, buffer);
+				load_generic_file(&global_app_state, buffer, 0);
 			}
 			DragFinish(hdrop);
 			SetForegroundWindow(window); // set focus on the window (this does not happen automatically)
@@ -534,7 +534,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 					case 'O': {
 						if (is_down && ctrl_down) {
-							open_file_dialog(&global_app_state);
+							open_file_dialog(&global_app_state, 0);
 						}
 					} break;
 
@@ -1450,7 +1450,7 @@ int main(int argc, const char** argv) {
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
 		const char* filename = g_argv[1];
-		load_generic_file(app_state, filename);
+		load_generic_file(app_state, filename, 0);
 	}
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();

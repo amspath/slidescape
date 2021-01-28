@@ -78,18 +78,27 @@ u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
 void unload_image(image_t* image) {
 	if (image) {
 		if (image->type == IMAGE_TYPE_WSI) {
-			unload_wsi(&image->wsi.wsi);
+			if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+				unload_wsi(&image->wsi.wsi);
+			} else if (image->backend == IMAGE_BACKEND_TIFF) {
+				tiff_destroy(&image->tiff.tiff);
+			} else {
+				ASSERT(!"image backend invalid");
+			}
 		} else if (image->type == IMAGE_TYPE_SIMPLE) {
-			if (image->simple.pixels) {
-				stbi_image_free(image->simple.pixels);
-				image->simple.pixels = NULL;
+			if (image->backend == IMAGE_BACKEND_STBI) {
+				if (image->simple.pixels) {
+					stbi_image_free(image->simple.pixels);
+					image->simple.pixels = NULL;
+				}
+				if (image->simple.texture != 0) {
+					unload_texture(image->simple.texture);
+					image->simple.texture = 0;
+				}
+			} else {
+				ASSERT(!"image backend invalid");
 			}
-			if (image->simple.texture != 0) {
-				unload_texture(image->simple.texture);
-				image->simple.texture = 0;
-			}
-		} else if (image->type == IMAGE_TYPE_TIFF) {
-			tiff_destroy(&image->tiff.tiff);
+
 		}
 
 		for (i32 i = 0; i < image->level_count; ++i) {
@@ -131,7 +140,8 @@ void unload_all_images(app_state_t *app_state) {
 
 image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
 	image_t image = (image_t){};
-	image.type = IMAGE_TYPE_TIFF;
+	image.type = IMAGE_TYPE_WSI;
+	image.backend = IMAGE_BACKEND_TIFF;
 	image.tiff.tiff = tiff;
 	image.is_freshly_loaded = true;
 	image.mpp_x = tiff.mpp_x;
@@ -310,7 +320,7 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 
 
 
-		if (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) {
+		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) {
 			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
 			// (to reduce load on the server)
 			static u32 intermittent = 0;
@@ -449,7 +459,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		draw_rect(image->simple.texture);
 	}
-	else if (image->type == IMAGE_TYPE_TIFF || image->type == IMAGE_TYPE_WSI) {
+	else if (image->type == IMAGE_TYPE_WSI) {
 
 		if (image->is_freshly_loaded) {
 			float times_larger_x = (float)image->width_in_pixels / (float)client_width;
@@ -937,7 +947,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
-		i32 max_tiles_to_load = (image->type == IMAGE_TYPE_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
+		i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
 		i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
 		request_tiles(app_state, image, tile_wishlist, tiles_to_load);

@@ -28,8 +28,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 //	u8* temp_memory = (u8*) thread_memory->aligned_rest_of_thread_memory; //malloc(WSI_BLOCK_SIZE);
 //	memset(temp_memory, 0xFF, WSI_BLOCK_SIZE);
 
-
-	if (image->type == IMAGE_TYPE_TIFF) {
+	ASSERT(image->type == IMAGE_TYPE_WSI);
+	if (image->backend == IMAGE_BACKEND_TIFF) {
 		tiff_t* tiff = &image->tiff.tiff;
 
 		if (tiff->is_remote) {

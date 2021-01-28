@@ -50,8 +50,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	memset(temp_memory, 0xFF, pixel_memory_size);
 	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory;// + WSI_BLOCK_SIZE;
 
-
-	if (image->type == IMAGE_TYPE_TIFF) {
+	ASSERT(image->type == IMAGE_TYPE_WSI);
+	if (image->backend == IMAGE_BACKEND_TIFF) {
 		tiff_t* tiff = &image->tiff.tiff;
 		tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 
@@ -177,7 +177,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				} else if (level_ifd->samples_per_pixel == 3) {
 					// TODO: vectorize: https://stackoverflow.com/questions/7194452/fast-vectorized-conversion-from-rgb-to-bgra
 					u64 pixel_count = level_image->tile_width * level_image->tile_height;
-					i32 source_pos;
+					i32 source_pos = 0;
 					u32* pixel = (u32*) temp_memory;
 					for (u64 i = 0; i < pixel_count; ++i) {
 						pixel[i]=(decompressed[source_pos]<<16) | (decompressed[source_pos+1]<<8) | decompressed[source_pos+2] | (0xff << 24);
@@ -216,7 +216,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			}
 		}
 
-	} else if (image->type == IMAGE_TYPE_WSI) {
+	} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
 		wsi_t* wsi = &image->wsi.wsi;
 		i32 wsi_file_level = level_image->pyramid_image_index;
 		i64 x = (tile_x * level_image->tile_width) << level;
@@ -417,7 +417,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 
 }
 
-bool32 load_generic_file(app_state_t *app_state, const char *filename) {
+bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 	const char* ext = get_file_extension(filename);
 	if (strcasecmp(ext, "json") == 0) {
 		reload_global_caselist(app_state, filename);
@@ -429,7 +429,9 @@ bool32 load_generic_file(app_state_t *app_state, const char *filename) {
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
-		unload_all_images(app_state);
+		if (filetype_hint != FILETYPE_HINT_OVERLAY) {
+			unload_all_images(app_state);
+		}
 		image_t image = load_image_from_file(app_state, filename);
 		if (image.is_valid) {
 			// Unload any old annotations if necessary
@@ -517,6 +519,7 @@ image_t load_image_from_file(app_state_t* app_state, const char *filename) {
 
 		// TODO: fix code duplication from create_image_from_tiff()
 		image.type = IMAGE_TYPE_WSI;
+		image.backend = IMAGE_BACKEND_OPENSLIDE;
 		wsi_t* wsi = &image.wsi.wsi;
 		load_wsi(wsi, filename);
 		if (wsi->osr) {

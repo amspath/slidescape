@@ -55,6 +55,7 @@ extern bool show_demo_window;
 extern bool show_image_options_window;
 extern bool show_open_remote_window;
 extern bool show_slide_list_window;
+extern bool show_layers_window;
 extern bool show_annotations_window;
 extern bool show_annotation_group_assignment_window;
 extern bool show_general_options_window;
