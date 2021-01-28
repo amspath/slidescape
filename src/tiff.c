@@ -287,10 +287,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	// Read and interpret the entries in the IFD
 	for (i32 tag_index = 0; tag_index < tag_count; ++tag_index) {
 		tiff_tag_t* tag = tags + tag_index;
-#if TIFF_VERBOSE
-		console_print("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
-		       tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
-#endif
+		if (is_verbose_mode) {
+			console_print_verbose("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
+						 tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
+		}
 		switch(tag->code) {
 			case TIFF_TAG_NEW_SUBFILE_TYPE: {
 				ifd->tiff_subfiletype = tag->data_u32;
@@ -305,15 +305,13 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->image_height = tag->data_u32;
 			} break;
 			case TIFF_TAG_BITS_PER_SAMPLE: {
-#if TIFF_VERBOSE
 				// TODO: Fix this for regular TIFF
 				if (!tag->data_is_offset) {
 					for (i32 i = 0; i < tag->data_count; ++i) {
 						u16 bits = *(u16*)&tag->data[i*2];
-						console_print("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
+						console_print_verbose("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
 					}
 				}
-#endif
 			} break;
 			case TIFF_TAG_COMPRESSION: {
 				ifd->compression = tag->data_u16;
@@ -324,23 +322,20 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_IMAGE_DESCRIPTION: {
 				ifd->image_description = tiff_read_field_ascii(tiff, tag);
 				ifd->image_description_length = tag->data_count;
-#if TIFF_VERBOSE
-				console_print("%.500s\n", ifd->image_description);
-#endif
+				console_print_verbose("%.500s\n", ifd->image_description);
+			} break;
+			case TIFF_TAG_SAMPLES_PER_PIXEL: {
+				ifd->samples_per_pixel = tag->data_u16;
 			} break;
 			case TIFF_TAG_X_RESOLUTION: {
 				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
 				ifd->x_resolution = resolution;
-#if TIFF_VERBOSE
-				console_print("   %g\n", tiff_rational_to_float(resolution));
-#endif
+				console_print_verbose("   %g\n", tiff_rational_to_float(resolution));
 			} break;
 			case TIFF_TAG_Y_RESOLUTION: {
 				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
 				ifd->y_resolution = resolution;
-#if TIFF_VERBOSE
-				console_print("   %g\n", tiff_rational_to_float(resolution));
-#endif
+				console_print_verbose("   %g\n", tiff_rational_to_float(resolution));
 			} break;
 			case TIFF_TAG_RESOLUTION_UNIT: {
 				ifd->resolution_unit = tag->data_u16; //
@@ -382,9 +377,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				// https://www.awaresystems.be/imaging/tiff/tifftags/ycbcrsubsampling.html
 				ifd->chroma_subsampling_horizontal = *(u16*)&tag->data[0];
 				ifd->chroma_subsampling_vertical = *(u16*)&tag->data[2];
-#if TIFF_VERBOSE
-				console_print("   YCbCrSubsampleHoriz = %d, YCbCrSubsampleVert = %d\n", ifd->chroma_subsampling_horizontal, ifd->chroma_subsampling_vertical);
-#endif
+				console_print_verbose("   YCbCrSubsampleHoriz = %d, YCbCrSubsampleVert = %d\n", ifd->chroma_subsampling_horizontal, ifd->chroma_subsampling_vertical);
 
 			} break;
 			case TIFF_TAG_REFERENCEBLACKWHITE: {
@@ -394,12 +387,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 					free(tags);
 					return false; // failed
 				}
-#if TIFF_VERBOSE
 				for (i32 i = 0; i < tag->data_count; ++i) {
 					tiff_rational_t* reference_black_white = ifd->reference_black_white + i;
-					console_print("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
+					console_print_verbose("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
 				}
-#endif
 			} break;
 			default: {
 			} break;
@@ -443,9 +434,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 	// Read the next IFD
 	if (fread(next_ifd_offset, tiff->bytesize_of_offsets, 1, tiff->fp) != 1) return false;
-#if TIFF_VERBOSE
-	console_print("next ifd offset = %lld\n", *next_ifd_offset);
-#endif
+	console_print_verbose("next ifd offset = %lld\n", *next_ifd_offset);
 	return true; // success
 }
 
@@ -541,9 +530,7 @@ void tiff_post_init(tiff_t* tiff) {
 }
 
 bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
-#if TIFF_VERBOSE
-	console_print("Opening TIFF file %s\n", filename);
-#endif
+	console_print_verbose("Opening TIFF file %s\n", filename);
 	ASSERT(tiff);
 	int ret = 0; (void)ret; // for checking return codes from fgetpos, fsetpos, etc
 	FILE* fp = fopen64(filename, "rb");
@@ -588,9 +575,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 
 				// Read and process the IFDs
 				while (next_ifd_offset != 0) {
-#if TIFF_VERBOSE
-					console_print("Reading IFD #%llu\n", tiff->ifd_count);
-#endif
+					console_print_verbose("Reading IFD #%llu\n", tiff->ifd_count);
 					tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
 					if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
 					sb_push(tiff->ifds, ifd);

@@ -187,6 +187,7 @@ set(VIEWER_SOURCE_FILES
         lz4.c
         parson.c
         yxml.c
+        tif_lzw.c
 )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
@@ -200,7 +201,12 @@ else()
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
-set(LIBRARY_SOURCE_FILES ${JPEG_SOURCE_FILES} ${FREETYPE_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} ${KEYCODE_SOURCE_FILES})
+set(LIBRARY_SOURCE_FILES
+        ${JPEG_SOURCE_FILES}
+        ${FREETYPE_SOURCE_FILES}
+        ${MBEDTLS_SOURCE_FILES}
+        ${KEYCODE_SOURCE_FILES}
+)
 
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)

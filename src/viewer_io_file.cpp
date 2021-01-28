@@ -16,6 +16,8 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "tif_lzw.h"
+
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
 	ASSERT(!"viewer_upload_already_cached_tile_to_gpu() is a dummy, it should not be called");
 }
@@ -55,6 +57,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 		u64 tile_offset = level_ifd->tile_offsets[tile_index];
 		u64 compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
+
+		u16 compression = level_ifd->compression;
 		// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
 		// We need to check for this situation and chicken out if this is the case.
 		if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
@@ -129,18 +133,68 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			size_t bytes_read = pread(tiff->fd, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #endif
 
-			if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
-				// JPEG stream is empty
-			} else {
-				if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
-				                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		            console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			if (compression == TIFF_COMPRESSION_JPEG) {
+				if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
+					// JPEG stream is empty
 				} else {
-					console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
+					                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+//		            console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					} else {
+						console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					}
 				}
+			} else if (level_ifd->compression == TIFF_COMPRESSION_LZW) {
+
+				size_t decompressed_size = level_image->tile_width * level_image->tile_height * level_ifd->samples_per_pixel;
+				u8* decompressed = (u8*)malloc(decompressed_size);
+
+				PseudoTIFF tif = {};
+				tif.tif_rawdata = compressed_tile_data;
+				tif.tif_rawcp = compressed_tile_data;
+				tif.tif_rawdatasize = compressed_tile_size_in_bytes;
+				tif.tif_rawcc = compressed_tile_size_in_bytes;
+				LZWSetupDecode(&tif);
+				LZWPreDecode(&tif, 0);
+				// Check for old bit-reversed codes.
+				int decode_success = 0;
+				if (tif.tif_rawcc >= 2 && tif.tif_rawdata[0] == 0 && (tif.tif_rawdata[1] & 0x1)) {
+					decode_success = LZWDecodeCompat(&tif, decompressed, decompressed_size, 0);
+				} else {
+					decode_success = LZWDecode(&tif, decompressed, decompressed_size, 0);
+				}
+				if (!decode_success) {
+					console_print_error("LZW decompression failed\n");
+				}
+
+				// Convert RGB to BGRA
+				if (level_ifd->samples_per_pixel == 4) {
+					// TODO: convert RGBA to BGRA
+					console_print("LZW decompression: RGBA to BGRA conversion not implemented, assuming already in BGRA\n");
+					ASSERT(decompressed_size == pixel_memory_size);
+					free(temp_memory);
+					temp_memory = decompressed;
+				} else if (level_ifd->samples_per_pixel == 3) {
+					// TODO: vectorize: https://stackoverflow.com/questions/7194452/fast-vectorized-conversion-from-rgb-to-bgra
+					u64 pixel_count = level_image->tile_width * level_image->tile_height;
+					i32 source_pos;
+					u32* pixel = (u32*) temp_memory;
+					for (u64 i = 0; i < pixel_count; ++i) {
+						pixel[i]=(decompressed[source_pos]<<16) | (decompressed[source_pos+1]<<8) | decompressed[source_pos+2] | (0xff << 24);
+						source_pos+=3;
+					}
+					free(decompressed);
+				}
+
+
+			} else {
+				console_print_error("\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
 			}
 
+
+
 		}
+
 
 		// Trim the tile (replace with transparent color) if it extends beyond the image size
 		// TODO: anti-alias edge?
