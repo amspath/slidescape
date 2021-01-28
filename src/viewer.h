@@ -242,7 +242,11 @@ typedef struct scene_t {
 	rect2i viewport;
 	v2f camera;
 	v2f mouse;
+	bounds2f camera_bounds;
+	float r_minus_l;
+	float t_minus_b;
 	zoom_state_t zoom;
+	bool8 need_zoom_reset;
 	bool8 need_zoom_animation;
 	float control_x;
 	float control_y;
@@ -309,6 +313,7 @@ typedef struct app_state_t {
 
 //  prototypes
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
+void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset);
 void unload_all_images(app_state_t* app_state);
 image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff);
 bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);

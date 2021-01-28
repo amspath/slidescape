@@ -441,7 +441,8 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 			tiff.location = (network_location_t){ .hostname = hostname, .portno = portno, .filename = filename };
 
 			unload_all_images(app_state);
-			create_image_from_tiff(app_state, tiff);
+			image_t image = create_image_from_tiff(app_state, tiff);
+			add_image(app_state, image, true);
 			success = true;
 		} else {
 			tiff_destroy(&tiff);

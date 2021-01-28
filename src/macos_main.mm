@@ -85,7 +85,7 @@ SlideviewerView* g_view;
 			{
 				NSURL* url = urls[i];
 				NSString *filename = [url path];
-				load_generic_file(&global_app_state, [filename UTF8String]);
+				load_generic_file(&global_app_state, [filename UTF8String], 0);
 			}
 		}
 	}
@@ -503,7 +503,7 @@ SlideviewerView* g_view;
 {
 
 	NSLog(@"Opening %@\n", filename);
-	load_generic_file(&global_app_state, [filename UTF8String]);
+	load_generic_file(&global_app_state, [filename UTF8String], 0);
 	return YES;
 }
 

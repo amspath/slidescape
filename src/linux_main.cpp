@@ -387,7 +387,7 @@ int main(int argc, const char** argv)
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
     if (g_argc > 1) {
         const char* filename = g_argv[1];
-        load_generic_file(app_state, filename);
+        load_generic_file(app_state, filename, 0);
     }
 
     // Main loop
@@ -414,7 +414,7 @@ int main(int argc, const char** argv)
             } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window)) {
 	            is_program_running = false;
             } else if (event.type == SDL_DROPFILE) {
-            	if (load_generic_file(app_state, event.drop.file)) {
+            	if (load_generic_file(app_state, event.drop.file, 0)) {
 		            // Bring the window to the foreground / set input-focus.
 		            // This makes it possible to immediately interact with the scene.
 		            SDL_RaiseWindow(window);

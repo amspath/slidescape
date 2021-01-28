@@ -429,7 +429,8 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
-		if (filetype_hint != FILETYPE_HINT_OVERLAY) {
+		bool is_base_image = filetype_hint != FILETYPE_HINT_OVERLAY;
+		if (is_base_image) {
 			unload_all_images(app_state);
 		}
 		image_t image = load_image_from_file(app_state, filename);
@@ -437,7 +438,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			// Unload any old annotations if necessary
 			unload_and_reinit_annotations(&app_state->scene.annotation_set);
 
-			sb_push(app_state->loaded_images, image);
+			add_image(app_state, image, is_base_image);
 
 			// Check if there is an associated ASAP XML annotations file
 			size_t len = strlen(filename);

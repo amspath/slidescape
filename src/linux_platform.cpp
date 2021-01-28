@@ -103,7 +103,7 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 		{
 			std::string file_path_name = IGFD::FileDialog::Instance()->GetFilePathName();
 //			std::string filePath = igfd::ImGuiFileDialog::Instance()->GetCurrentPath();
-			load_generic_file(app_state, file_path_name.c_str());
+			load_generic_file(app_state, file_path_name.c_str(), 0);
 		}
 		// close
 		IGFD::FileDialog::Instance()->Close();

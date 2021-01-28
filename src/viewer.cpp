@@ -119,6 +119,13 @@ void unload_image(image_t* image) {
 	}
 }
 
+void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset) {
+	sb_push(app_state->loaded_images, image);
+	if (need_zoom_reset) {
+		app_state->scene.need_zoom_reset = true;
+	}
+}
+
 // TODO: make this based on scene (allow loading multiple images independently side by side)
 void unload_all_images(app_state_t *app_state) {
 	autosave(app_state, true); // save recent changes to annotations, if necessary
@@ -461,289 +468,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 	}
 	else if (image->type == IMAGE_TYPE_WSI) {
 
-		if (image->is_freshly_loaded) {
-			float times_larger_x = (float)image->width_in_pixels / (float)client_width;
-			float times_larger_y = (float)image->height_in_pixels / (float)client_height;
-			float times_larger = MAX(times_larger_x, times_larger_y);
-			float desired_zoom_pos = ceilf(log2f(times_larger * 1.5f));
 
-			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, image->mpp_x, image->mpp_y);
-			scene->camera.x = image->width_in_um / 2.0f;
-			scene->camera.y = image->height_in_um / 2.0f;
-
-			image->is_freshly_loaded = false;
-		}
-
-		zoom_state_t old_zoom = scene->zoom;
-
-		float r_minus_l = scene->zoom.pixel_width * (float) client_width;
-		float t_minus_b = scene->zoom.pixel_height * (float) client_height;
-
-		bounds2f camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
-
-		scene->mouse = scene->camera;
-
-		if (input) {
-
-			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
-
-			i32 dlevel = 0;
-			bool32 used_mouse_to_zoom = false;
-
-			// Zoom in or out using the mouse wheel.
-			if (!gui_want_capture_mouse && input->mouse_z != 0) {
-				dlevel = (input->mouse_z > 0 ? -1 : 1);
-				used_mouse_to_zoom = true;
-			}
-
-			float key_repeat_interval = 0.15f; // in seconds
-
-			scene->control_x = 0.0f;
-			scene->control_y = 0.0f;
-
-			if (!gui_want_capture_keyboard) {
-				if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
-					scene->control_y = 1.0f;
-				}
-				if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
-					scene->control_y = -1.0f;
-				}
-				if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
-					scene->control_x = 1.0f;
-				}
-				if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
-					scene->control_x = -1.0f;
-				}
-
-				// Zoom out using Z or /
-				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
-
-					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash)) {
-						dlevel += 1;
-						zoom_in_key_hold_down_start_time = get_clock();
-						zoom_in_key_times_zoomed_while_holding = 0;
-					} else {
-						float time_elapsed = get_seconds_elapsed(zoom_in_key_hold_down_start_time, get_clock());
-						int zooms = (int) (time_elapsed / key_repeat_interval);
-						if ((zooms - zoom_in_key_times_zoomed_while_holding) == 1) {
-							zoom_in_key_times_zoomed_while_holding = zooms;
-							dlevel += 1;
-						}
-					}
-				}
-
-				// Zoom in using X or .
-				if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)) {
-
-					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period)) {
-						dlevel -= 1;
-						zoom_out_key_hold_down_start_time = get_clock();
-						zoom_out_key_times_zoomed_while_holding = 0;
-					} else {
-						float time_elapsed = get_seconds_elapsed(zoom_out_key_hold_down_start_time, get_clock());
-						int zooms = (int) (time_elapsed / key_repeat_interval);
-						if ((zooms - zoom_out_key_times_zoomed_while_holding) == 1) {
-							zoom_out_key_times_zoomed_while_holding = zooms;
-							dlevel -= 1;
-						}
-					}
-				}
-			}
-
-
-
-			if (dlevel != 0) {
-//		        console_print("mouse_z = %d\n", input->mouse_z);
-
-				i32 new_level = scene->zoom.level + dlevel;
-				if (scene->need_zoom_animation) {
-					i32 residual_dlevel = scene->zoom_target_state.level - scene->zoom.level;
-					new_level += residual_dlevel;
-				}
-				new_level = CLAMP(new_level, viewer_min_level, viewer_max_level);
-				zoom_state_t new_zoom = scene->zoom;
-				zoom_update_pos(&new_zoom, (float) new_level);
-
-				if (new_zoom.level != old_zoom.level) {
-					if (used_mouse_to_zoom) {
-						scene->zoom_pivot = scene->mouse;
-					} else {
-						scene->zoom_pivot = scene->camera;
-					}
-					scene->zoom_target_state = new_zoom;
-					scene->need_zoom_animation = true;
-				}
-
-			}
-
-			if (scene->need_zoom_animation) {
-				float d_zoom = scene->zoom_target_state.pos - scene->zoom.pos;
-
-				float abs_d_zoom = fabsf(d_zoom);
-				if (abs_d_zoom < 1e-5f) {
-					scene->need_zoom_animation = false;
-				}
-				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-				float linear_catch_up_speed = 12.0f * delta_t;
-				float exponential_catch_up_speed = 15.0f * delta_t;
-				if (abs_d_zoom > linear_catch_up_speed) {
-					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
-					         sign_d_zoom;
-				}
-
-				zoom_update_pos(&scene->zoom, scene->zoom.pos + d_zoom);
-
-				// get the relative position of the pivot point on the screen (with x and y between 0 and 1)
-				v2f pivot_relative_to_screen = scene->zoom_pivot;
-				pivot_relative_to_screen.x -= camera_bounds.min.x;
-				pivot_relative_to_screen.y -= camera_bounds.min.y;
-				pivot_relative_to_screen.x /= (float)r_minus_l;
-				pivot_relative_to_screen.y /= (float)t_minus_b;
-
-				// recalculate the camera position
-				r_minus_l = scene->zoom.pixel_width * (float) client_width;
-				t_minus_b = scene->zoom.pixel_height * (float) client_height;
-				camera_bounds = bounds_from_pivot_point(scene->zoom_pivot, pivot_relative_to_screen, r_minus_l, t_minus_b);
-				scene->camera.x = (camera_bounds.right + camera_bounds.left) / 2.0f;
-				scene->camera.y = (camera_bounds.top + camera_bounds.bottom) / 2.0f;
-
-				// camera updated, need to updated mouse position
-				scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-				scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
-
-			}
-
-			if (scene->need_zoom_animation) {
-				app_state->allow_idling_next_frame = false;
-			}
-
-			// Panning should be faster when zoomed in very far.
-			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
-			if (input->keyboard.key_shift.down) {
-				panning_multiplier *= 0.25f;
-			}
-
-			// Panning using the arrow or WASD keys.
-			float panning_speed = 900.0f * delta_t * panning_multiplier;
-			if (scene->control_y != 0.0f) {
-				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->control_y;
-				mouse_hide();
-			}
-			if (scene->control_x != 0.0f) {
-				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->control_x;
-				mouse_hide();
-			}
-
-			// camera has been updated (now we need to recalculate some things)
-			r_minus_l = scene->zoom.pixel_width * (float) client_width;
-			t_minus_b = scene->zoom.pixel_height * (float) client_height;
-			camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
-			scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-			scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
-
-
-			/*if (was_key_pressed(input, KEY_O)) {
-				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
-//				console_print("switching to creation mode\n");
-			}*/
-
-			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
-				app_state->use_image_adjustments = !app_state->use_image_adjustments;
-			}
-
-			if (app_state->mouse_mode == MODE_VIEW) {
-				if (scene->is_dragging) {
-					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
-					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
-
-					// camera has been updated (now we need to recalculate some things)
-					camera_bounds = bounds_from_center_point(scene->camera, r_minus_l, t_minus_b);
-					scene->mouse.x = camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-					scene->mouse.y = camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
-				}
-
-				if (!gui_want_capture_mouse) {
-					// try to hover over / select an annotation
-					if (scene->annotation_set.stored_annotation_count > 0) {
-						interact_with_annotations(app_state, scene, input);
-//				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
-//			    	    	console_print("Selecting took %g ms.\n", selection_ms);
-					}
-
-				}
-
-			} else if (app_state->mouse_mode == MODE_CREATE_SELECTION_BOX) {
-				if (!gui_want_capture_mouse) {
-					if (scene->drag_started) {
-						scene->selection_box = (rect2f){ scene->mouse.x, scene->mouse.y, 0.0f, 0.0f };
-						scene->has_selection_box = true;
-					} else if (scene->is_dragging) {
-						scene->selection_box.w = scene->mouse.x - scene->selection_box.x;
-						scene->selection_box.h = scene->mouse.y - scene->selection_box.y;
-					} else if (scene->drag_ended) {
-						app_state->mouse_mode = MODE_VIEW;
-
-					}
-
-				}
-			}
-
-			// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
-			ASSERT(image->mpp_x > 0.0f && image->mpp_y > 0.0f);
-			if (scene->has_selection_box) {
-				rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
-				bounds2f selection_bounds = rect2f_to_bounds(&recanonicalized_selection_box);
-				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, image->mpp_x, image->mpp_y);
-				scene->can_export_region = true;
-			} else if (scene->is_cropped) {
-				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, image->mpp_x, image->mpp_y);
-				scene->can_export_region = true;
-			} else {
-				scene->can_export_region = false;
-			}
-
-			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE){
-				if (scene->is_dragging) {
-					i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
-					if (coordinate_index >= 0 && coordinate_index < scene->annotation_set.coordinate_count) {
-						coordinate_t* coordinate = scene->annotation_set.coordinates + coordinate_index;
-						coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
-						coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
-						// TODO: invalidate annotation bounds
-						annotations_modified(&scene->annotation_set);
-					}
-				} else if (scene->drag_ended) {
-					app_state->mouse_mode = MODE_VIEW;
-//						scene->annotation_set.is_edit_mode = false;
-
-				}
-
-			}
-
-			/*if (scene->clicked && !gui_want_capture_mouse) {
-				scene->has_selection_box = false; // deselect selection box
-			}*/
-
-			// draw selection box
-			if (scene->has_selection_box){
-				rect2f final_selection_rect = rect2f_recanonicalize(&scene->selection_box);
-				bounds2f bounds = rect2f_to_bounds(&final_selection_rect);
-				v2f points[4];
-				points[0] = (v2f) { bounds.left, bounds.top };
-				points[1] = (v2f) { bounds.left, bounds.bottom };
-				points[2] = (v2f) { bounds.right, bounds.bottom };
-				points[3] = (v2f) { bounds.right, bounds.top };
-				for (i32 i = 0; i < 4; ++i) {
-					points[i] = world_pos_to_screen_pos(points[i], camera_bounds.min, scene->zoom.pixel_width);
-				}
-				rgba_t rgba = {0, 0, 0, 128};
-				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
-			}
-
-		}
-
-		draw_annotations(app_state, scene, &scene->annotation_set, camera_bounds.min);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
@@ -892,7 +617,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
 
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
 			if (scene->is_cropped) {
@@ -960,10 +685,10 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		mat4x4 projection = {};
 		{
-			float l = -0.5f * r_minus_l;
-			float r = +0.5f * r_minus_l;
-			float b = +0.5f * t_minus_b;
-			float t = -0.5f * t_minus_b;
+			float l = -0.5f * scene->r_minus_l;
+			float r = +0.5f * scene->r_minus_l;
+			float b = +0.5f * scene->t_minus_b;
+			float t = -0.5f * scene->t_minus_b;
 			float n = 100.0f;
 			float f = -100.0f;
 			mat4x4_ortho(projection, l, r, b, t, n, f);
@@ -1045,7 +770,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
 
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um, drawn_level->y_tile_side_in_um);
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
 			if (scene->is_cropped) {
@@ -1151,6 +876,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	if (displayed_image->is_freshly_loaded) {
 		input->mouse_buttons[0].down = false;
 		input->mouse_buttons[0].transition_count = 0;
+		displayed_image->is_freshly_loaded = false;
 	}
 
 
@@ -1217,6 +943,292 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 	last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (1)", 5.0f);
+
+	if (displayed_image->type == IMAGE_TYPE_WSI) {
+		if (scene->need_zoom_reset) {
+			float times_larger_x = (float)displayed_image->width_in_pixels / (float)client_width;
+			float times_larger_y = (float)displayed_image->height_in_pixels / (float)client_height;
+			float times_larger = MAX(times_larger_x, times_larger_y);
+			float desired_zoom_pos = ceilf(log2f(times_larger * 1.5f));
+
+			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, displayed_image->mpp_x, displayed_image->mpp_y);
+			scene->camera.x = displayed_image->width_in_um / 2.0f;
+			scene->camera.y = displayed_image->height_in_um / 2.0f;
+
+			scene->need_zoom_reset = false;
+		}
+
+		zoom_state_t old_zoom = scene->zoom;
+
+		scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
+		scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
+
+		scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
+
+		scene->mouse = scene->camera;
+
+		if (input) {
+
+			scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+			scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+
+			i32 dlevel = 0;
+			bool32 used_mouse_to_zoom = false;
+
+			// Zoom in or out using the mouse wheel.
+			if (!gui_want_capture_mouse && input->mouse_z != 0) {
+				dlevel = (input->mouse_z > 0 ? -1 : 1);
+				used_mouse_to_zoom = true;
+			}
+
+			float key_repeat_interval = 0.15f; // in seconds
+
+			scene->control_x = 0.0f;
+			scene->control_y = 0.0f;
+
+			if (!gui_want_capture_keyboard) {
+				if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
+					scene->control_y = 1.0f;
+				}
+				if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
+					scene->control_y = -1.0f;
+				}
+				if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
+					scene->control_x = 1.0f;
+				}
+				if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
+					scene->control_x = -1.0f;
+				}
+
+				// Zoom out using Z or /
+				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
+
+					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash)) {
+						dlevel += 1;
+						zoom_in_key_hold_down_start_time = get_clock();
+						zoom_in_key_times_zoomed_while_holding = 0;
+					} else {
+						float time_elapsed = get_seconds_elapsed(zoom_in_key_hold_down_start_time, get_clock());
+						int zooms = (int) (time_elapsed / key_repeat_interval);
+						if ((zooms - zoom_in_key_times_zoomed_while_holding) == 1) {
+							zoom_in_key_times_zoomed_while_holding = zooms;
+							dlevel += 1;
+						}
+					}
+				}
+
+				// Zoom in using X or .
+				if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)) {
+
+					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period)) {
+						dlevel -= 1;
+						zoom_out_key_hold_down_start_time = get_clock();
+						zoom_out_key_times_zoomed_while_holding = 0;
+					} else {
+						float time_elapsed = get_seconds_elapsed(zoom_out_key_hold_down_start_time, get_clock());
+						int zooms = (int) (time_elapsed / key_repeat_interval);
+						if ((zooms - zoom_out_key_times_zoomed_while_holding) == 1) {
+							zoom_out_key_times_zoomed_while_holding = zooms;
+							dlevel -= 1;
+						}
+					}
+				}
+			}
+
+
+
+			if (dlevel != 0) {
+//		        console_print("mouse_z = %d\n", input->mouse_z);
+
+				i32 new_level = scene->zoom.level + dlevel;
+				if (scene->need_zoom_animation) {
+					i32 residual_dlevel = scene->zoom_target_state.level - scene->zoom.level;
+					new_level += residual_dlevel;
+				}
+				new_level = CLAMP(new_level, viewer_min_level, viewer_max_level);
+				zoom_state_t new_zoom = scene->zoom;
+				zoom_update_pos(&new_zoom, (float) new_level);
+
+				if (new_zoom.level != old_zoom.level) {
+					if (used_mouse_to_zoom) {
+						scene->zoom_pivot = scene->mouse;
+					} else {
+						scene->zoom_pivot = scene->camera;
+					}
+					scene->zoom_target_state = new_zoom;
+					scene->need_zoom_animation = true;
+				}
+
+			}
+
+			if (scene->need_zoom_animation) {
+				float d_zoom = scene->zoom_target_state.pos - scene->zoom.pos;
+
+				float abs_d_zoom = fabsf(d_zoom);
+				if (abs_d_zoom < 1e-5f) {
+					scene->need_zoom_animation = false;
+				}
+				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
+				float linear_catch_up_speed = 12.0f * delta_t;
+				float exponential_catch_up_speed = 15.0f * delta_t;
+				if (abs_d_zoom > linear_catch_up_speed) {
+					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
+					         sign_d_zoom;
+				}
+
+				zoom_update_pos(&scene->zoom, scene->zoom.pos + d_zoom);
+
+				// get the relative position of the pivot point on the screen (with x and y between 0 and 1)
+				v2f pivot_relative_to_screen = scene->zoom_pivot;
+				pivot_relative_to_screen.x -= scene->camera_bounds.min.x;
+				pivot_relative_to_screen.y -= scene->camera_bounds.min.y;
+				pivot_relative_to_screen.x /= (float)scene->r_minus_l;
+				pivot_relative_to_screen.y /= (float)scene->t_minus_b;
+
+				// recalculate the camera position
+				scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
+				scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
+				scene->camera_bounds = bounds_from_pivot_point(scene->zoom_pivot, pivot_relative_to_screen, scene->r_minus_l, scene->t_minus_b);
+				scene->camera.x = (scene->camera_bounds.right + scene->camera_bounds.left) / 2.0f;
+				scene->camera.y = (scene->camera_bounds.top + scene->camera_bounds.bottom) / 2.0f;
+
+				// camera updated, need to updated mouse position
+				scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+				scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+
+			}
+
+			if (scene->need_zoom_animation) {
+				app_state->allow_idling_next_frame = false;
+			}
+
+			// Panning should be faster when zoomed in very far.
+			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
+			if (input->keyboard.key_shift.down) {
+				panning_multiplier *= 0.25f;
+			}
+
+			// Panning using the arrow or WASD keys.
+			float panning_speed = 900.0f * delta_t * panning_multiplier;
+			if (scene->control_y != 0.0f) {
+				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->control_y;
+				mouse_hide();
+			}
+			if (scene->control_x != 0.0f) {
+				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->control_x;
+				mouse_hide();
+			}
+
+			// camera has been updated (now we need to recalculate some things)
+			scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
+			scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
+			scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
+			scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+			scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+
+
+			/*if (was_key_pressed(input, KEY_O)) {
+				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
+//				console_print("switching to creation mode\n");
+			}*/
+
+			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
+				app_state->use_image_adjustments = !app_state->use_image_adjustments;
+			}
+
+			if (app_state->mouse_mode == MODE_VIEW) {
+				if (scene->is_dragging) {
+					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
+					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
+
+					// camera has been updated (now we need to recalculate some things)
+					scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
+					scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
+					scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+				}
+
+				if (!gui_want_capture_mouse) {
+					// try to hover over / select an annotation
+					if (scene->annotation_set.stored_annotation_count > 0) {
+						interact_with_annotations(app_state, scene, input);
+//				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
+//			    	    	console_print("Selecting took %g ms.\n", selection_ms);
+					}
+
+				}
+
+			} else if (app_state->mouse_mode == MODE_CREATE_SELECTION_BOX) {
+				if (!gui_want_capture_mouse) {
+					if (scene->drag_started) {
+						scene->selection_box = (rect2f){ scene->mouse.x, scene->mouse.y, 0.0f, 0.0f };
+						scene->has_selection_box = true;
+					} else if (scene->is_dragging) {
+						scene->selection_box.w = scene->mouse.x - scene->selection_box.x;
+						scene->selection_box.h = scene->mouse.y - scene->selection_box.y;
+					} else if (scene->drag_ended) {
+						app_state->mouse_mode = MODE_VIEW;
+
+					}
+
+				}
+			}
+
+			// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
+			ASSERT(displayed_image->mpp_x > 0.0f && displayed_image->mpp_y > 0.0f);
+			if (scene->has_selection_box) {
+				rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
+				bounds2f selection_bounds = rect2f_to_bounds(&recanonicalized_selection_box);
+				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, displayed_image->mpp_x, displayed_image->mpp_y);
+				scene->can_export_region = true;
+			} else if (scene->is_cropped) {
+				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, displayed_image->mpp_x, displayed_image->mpp_y);
+				scene->can_export_region = true;
+			} else {
+				scene->can_export_region = false;
+			}
+
+			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE){
+				if (scene->is_dragging) {
+					i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
+					if (coordinate_index >= 0 && coordinate_index < scene->annotation_set.coordinate_count) {
+						coordinate_t* coordinate = scene->annotation_set.coordinates + coordinate_index;
+						coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
+						coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
+						// TODO: invalidate annotation bounds
+						annotations_modified(&scene->annotation_set);
+					}
+				} else if (scene->drag_ended) {
+					app_state->mouse_mode = MODE_VIEW;
+//						scene->annotation_set.is_edit_mode = false;
+
+				}
+
+			}
+
+			/*if (scene->clicked && !gui_want_capture_mouse) {
+				scene->has_selection_box = false; // deselect selection box
+			}*/
+
+			// draw selection box
+			if (scene->has_selection_box){
+				rect2f final_selection_rect = rect2f_recanonicalize(&scene->selection_box);
+				bounds2f bounds = rect2f_to_bounds(&final_selection_rect);
+				v2f points[4];
+				points[0] = (v2f) { bounds.left, bounds.top };
+				points[1] = (v2f) { bounds.left, bounds.bottom };
+				points[2] = (v2f) { bounds.right, bounds.bottom };
+				points[3] = (v2f) { bounds.right, bounds.top };
+				for (i32 i = 0; i < 4; ++i) {
+					points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.pixel_width);
+				}
+				rgba_t rgba = {0, 0, 0, 128};
+				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
+			}
+
+		}
+
+		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
+	}
 
 
 	for (i32 image_index = 0; image_index < image_count; ++image_index) {
