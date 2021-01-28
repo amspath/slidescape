@@ -1,4 +1,4 @@
-#version 330
+#version 330 core
 
 in VS_OUT {
     vec2 tex_coord;

@@ -22,15 +22,48 @@ static u32 ebo_rect;
 static u32 vao_rect;
 static bool32 rect_initialized;
 
-u32 basic_shader;
-i32 basic_shader_u_projection_view_matrix;
-i32 basic_shader_u_model_matrix;
-i32 basic_shader_u_tex;
-i32 basic_shader_u_black_level;
-i32 basic_shader_u_white_level;
-i32 basic_shader_u_background_color;
-i32 basic_shader_attrib_location_pos;
-i32 basic_shader_attrib_location_tex_coord;
+static u32 vbo_screen;
+static u32 vao_screen;
+
+typedef struct framebuffer_t {
+	u32 framebuffer;
+	u32 texture;
+	u32 depth_stencil_rbo;
+	i32 width;
+	i32 height;
+	bool initialized;
+} framebuffer_t;
+
+framebuffer_t layer_framebuffers[2];
+
+static bool layer_framebuffers_initialized;
+//static u32 overlay_framebuffer;
+//static u32 overlay_texture;
+
+typedef struct basic_shader_t {
+	u32 program;
+	i32 u_projection_view_matrix;
+	i32 u_model_matrix;
+	i32 u_tex;
+	i32 u_black_level;
+	i32 u_white_level;
+	i32 u_background_color;
+	i32 attrib_location_pos;
+	i32 attrib_location_tex_coord;
+} basic_shader_t;
+
+typedef struct finalblit_shader_t {
+	u32 program;
+	i32 u_texture0;
+	i32 u_texture1;
+	float u_t;
+	i32 attrib_location_pos;
+	i32 attrib_location_tex_coord;
+} finalblit_shader_t;
+
+basic_shader_t basic_shader;
+finalblit_shader_t finalblit_shader;
+
 u32 dummy_texture;
 
 bool finalize_textures_immediately = true;
@@ -73,11 +106,43 @@ void init_draw_rect() {
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)(3*sizeof(float))); // texture coordinates
 	glEnableVertexAttribArray(1);
 
+	glBindVertexArray(0);
+
+}
+
+void init_draw_normalized_quad() {
+	static bool initialized = false;
+	ASSERT(!initialized);
+	initialized = true;
+
+	glGenVertexArrays(1, &vao_screen);
+	glBindVertexArray(vao_screen);
+
+	glGenBuffers(1, &vbo_screen);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_screen);
+
+	static float vertices[] = {
+			-1.0f, -1.0f, 0.0f, 0.0f, // x, y, (z = 0,)  u, v
+			+1.0f, -1.0f, 1.0f, 0.0f,
+			-1.0f, +1.0f, 0.0f, 1.0f,
+
+			-1.0f, +1.0f, 0.0f, 1.0f,
+			+1.0f, -1.0f, 1.0f, 0.0f,
+			+1.0f, +1.0f, 1.0f, 1.0f,
+	};
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+	u32 vertex_stride = 4 * sizeof(float);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)0); // position coordinates
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, vertex_stride, (void*)(2*sizeof(float))); // texture coordinates
+	glEnableVertexAttribArray(1);
 }
 
 void draw_rect(u32 texture) {
 	glBindVertexArray(vao_rect);
 //	glUniform1i(basic_shader_u_tex, 0);
+	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
 }
@@ -177,6 +242,66 @@ void unload_texture(u32 texture) {
 	glDeleteTextures(1, &texture);
 }
 
+void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height) {
+	if (framebuffer->width != width || framebuffer->height != height) {
+		framebuffer->width = width;
+		framebuffer->height = height;
+
+		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
+		glBindTexture(GL_TEXTURE_2D, framebuffer->texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL); // reallocate
+		glBindRenderbuffer(GL_RENDERBUFFER, framebuffer->depth_stencil_rbo);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height); // allocate
+		glBindFramebuffer(GL_FRAMEBUFFER, 0); // unbind
+	}
+}
+
+void init_layer_framebuffers(app_state_t* app_state) {
+	ASSERT(!layer_framebuffers_initialized);
+	layer_framebuffers_initialized = true;
+
+	i32 width = app_state->client_viewport.w;
+	i32 height = app_state->client_viewport.h;
+
+	for (i32 framebuffer_index = 0; framebuffer_index < COUNT(layer_framebuffers); ++framebuffer_index) {
+		framebuffer_t* framebuffer = layer_framebuffers + framebuffer_index;
+		glGenFramebuffers(1, &framebuffer->framebuffer);
+		glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
+
+		framebuffer->width = width;
+		framebuffer->height = height;
+
+		// Generate the texture
+		glGenTextures(1, &framebuffer->texture);
+		glBindTexture(GL_TEXTURE_2D, framebuffer->texture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL); // allocate
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glBindTexture(GL_TEXTURE_2D, 0);
+
+		// Attach the texture to currently bound overlay_framebuffer object
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebuffer->texture, 0);
+
+		// We also want OpenGL to do depth and stencil testing -> add attachments to the overlay_framebuffer
+		// We do not need to sample the depth and stencil buffers, so creating a renderbuffer object (RBO) is sufficient.
+		glGenRenderbuffers(1, &framebuffer->depth_stencil_rbo);
+		glBindRenderbuffer(GL_RENDERBUFFER, framebuffer->depth_stencil_rbo);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height); // allocate
+		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, framebuffer->depth_stencil_rbo);
+
+		// Verify that the overlay_framebuffer is complete
+		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+			console_print_error("OpenGL error (glCheckFramebufferStatus): overlay_framebuffer is not complete\n");
+		}
+		glBindFramebuffer(GL_FRAMEBUFFER, 0); // unbind
+	}
+
+
+
+	// Now that the overlay_framebuffer is complete, we can start rendering to it.
+}
+
 void init_opengl_stuff(app_state_t* app_state) {
 
 	for (i32 i = 0; i < COUNT(app_state->pixel_transfer_states); ++i) {
@@ -187,20 +312,36 @@ void init_opengl_stuff(app_state_t* app_state) {
 		transfer_state->initialized = true;
 	}
 
-	basic_shader = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
-	basic_shader_u_projection_view_matrix = get_uniform(basic_shader, "projection_view_matrix");
-	basic_shader_u_model_matrix = get_uniform(basic_shader, "model_matrix");
-	basic_shader_u_tex = get_uniform(basic_shader, "the_texture");
-	basic_shader_u_black_level = get_uniform(basic_shader, "black_level");
-	basic_shader_u_white_level = get_uniform(basic_shader, "white_level");
-	basic_shader_u_background_color = get_uniform(basic_shader, "bg_color");
-	basic_shader_attrib_location_pos = get_attrib(basic_shader, "pos");
-	basic_shader_attrib_location_tex_coord = get_attrib(basic_shader, "tex_coord");
+	// Load the basic shader program (used to render the scene)
+	basic_shader.program = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
+	basic_shader.u_projection_view_matrix = get_uniform(basic_shader.program, "projection_view_matrix");
+	basic_shader.u_model_matrix = get_uniform(basic_shader.program, "model_matrix");
+	basic_shader.u_tex = get_uniform(basic_shader.program, "the_texture");
+	basic_shader.u_black_level = get_uniform(basic_shader.program, "black_level");
+	basic_shader.u_white_level = get_uniform(basic_shader.program, "white_level");
+	basic_shader.u_background_color = get_uniform(basic_shader.program, "bg_color");
+	basic_shader.attrib_location_pos = get_attrib(basic_shader.program, "pos");
+	basic_shader.attrib_location_tex_coord = get_attrib(basic_shader.program, "tex_coord");
+
+	// load the shader that blits different layers of the scene together
+	finalblit_shader.program = load_basic_shader_program("shaders/finalblit.vert", "shaders/finalblit.frag");
+	finalblit_shader.u_texture0 = get_uniform(finalblit_shader.program, "texture0");
+	finalblit_shader.u_texture1 = get_uniform(finalblit_shader.program, "texture1");
+	finalblit_shader.u_t = get_uniform(finalblit_shader.program, "t");
+	finalblit_shader.attrib_location_pos = get_attrib(finalblit_shader.program, "pos");
+	finalblit_shader.attrib_location_tex_coord = get_attrib(finalblit_shader.program, "tex_coord");
+
+	glUseProgram(finalblit_shader.program);
+	glUniform1i(finalblit_shader.u_texture0, 0);
+	glUniform1i(finalblit_shader.u_texture1, 1);
+
+	init_draw_normalized_quad();
 
 #ifdef STRINGIFY_SHADERS
 	write_stringified_shaders();
 #endif
 	init_draw_rect();
+
 	u32 dummy_texture_color = MAKE_BGRA(255, 255, 0, 255);
 	dummy_texture = load_texture(&dummy_texture_color, 1, 1, GL_BGRA);
 

@@ -437,18 +437,18 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		mat4x4_scale_aniso(model_matrix, model_matrix, image->simple.width * 2, image->simple.height * 2, 1.0f);
 
 
-		glUseProgram(basic_shader);
-		glUniform1i(basic_shader_u_tex, 0);
+		glUseProgram(basic_shader.program);
+		glUniform1i(basic_shader.u_tex, 0);
 
 		if (app_state->use_image_adjustments) {
-			glUniform1f(basic_shader_u_black_level, app_state->black_level);
-			glUniform1f(basic_shader_u_white_level, app_state->white_level);
+			glUniform1f(basic_shader.u_black_level, app_state->black_level);
+			glUniform1f(basic_shader.u_white_level, app_state->white_level);
 		} else {
-			glUniform1f(basic_shader_u_black_level, 0.0f);
-			glUniform1f(basic_shader_u_white_level, 1.0f);
+			glUniform1f(basic_shader.u_black_level, 0.0f);
+			glUniform1f(basic_shader.u_white_level, 1.0f);
 		}
 
-		glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+		glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
 		v2f* view_pos = &simple_view_pos;
 
@@ -460,7 +460,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, ortho_projection, view_matrix);
 
-		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
+		glUniformMatrix4fv(basic_shader.u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
 		// todo: bunch up vertex and index uploads
 
@@ -707,19 +707,19 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
 
-		glUseProgram(basic_shader);
+		glUseProgram(basic_shader.program);
 		glActiveTexture(GL_TEXTURE0);
-		glUniform1i(basic_shader_u_tex, 0);
+		glUniform1i(basic_shader.u_tex, 0);
 
-		glUniformMatrix4fv(basic_shader_u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
+		glUniformMatrix4fv(basic_shader.u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
 
-		glUniform3fv(basic_shader_u_background_color, 1, (GLfloat *) &app_state->clear_color);
+		glUniform3fv(basic_shader.u_background_color, 1, (GLfloat *) &app_state->clear_color);
 		if (app_state->use_image_adjustments) {
-			glUniform1f(basic_shader_u_black_level, app_state->black_level);
-			glUniform1f(basic_shader_u_white_level, app_state->white_level);
+			glUniform1f(basic_shader.u_black_level, app_state->black_level);
+			glUniform1f(basic_shader.u_white_level, app_state->white_level);
 		} else {
-			glUniform1f(basic_shader_u_black_level, 0.0f);
-			glUniform1f(basic_shader_u_white_level, 1.0f);
+			glUniform1f(basic_shader.u_black_level, 0.0f);
+			glUniform1f(basic_shader.u_white_level, 1.0f);
 		}
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
@@ -741,7 +741,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				                   scene->crop_bounds.right - scene->crop_bounds.left,
 				                   scene->crop_bounds.bottom - scene->crop_bounds.top,
 				                   1.0f);
-				glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 				draw_rect(dummy_texture);
 			}
 
@@ -801,7 +801,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 						mat4x4_translate(model_matrix, tile_pos_x, tile_pos_y, 0.0f);
 						mat4x4_scale_aniso(model_matrix, model_matrix, drawn_level->x_tile_side_in_um,
 						                   drawn_level->y_tile_side_in_um, 1.0f);
-						glUniformMatrix4fv(basic_shader_u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+						glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
 						draw_rect(texture);
 					} else {
@@ -823,6 +823,20 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 	}
 }
+
+
+void viewer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 client_height) {
+	// TODO: check if framebuffer needs to be resized?
+//	glDrawBuffer(GL_BACK);
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_STENCIL_TEST);
+	glStencilMask(0xFF);
+	glViewport(0, 0, client_width, client_height);
+	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+}
+
 
 // TODO: refactor delta_t
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
@@ -854,14 +868,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	app_state->input = input;
 
 	// Set up rendering state for the next frame
-	glDrawBuffer(GL_BACK);
-	glDisable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_STENCIL_TEST);
-	glStencilMask(0xFF);
-	glViewport(0, 0, client_width, client_height);
-	glClearColor(app_state->clear_color.r, app_state->clear_color.g, app_state->clear_color.b, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
 	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
 
@@ -1244,12 +1251,56 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 	}
 
-	for (i32 image_index = 0; image_index < image_count; ++image_index) {
-		if (image_index == scene->active_layer) {
-			image_t* image = app_state->loaded_images + image_index;
-			update_and_render_image(app_state, input, delta_t, image);
+
+	if (image_count <= 1) {
+		// Render everything at once
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+		image_t* image = app_state->loaded_images + 0;
+		update_and_render_image(app_state, input, delta_t, image);
+	} else {
+		// We are rendering the scene in two passes.
+		// 1: render to framebuffer
+		// 2: blit framebuffer to screen
+
+		if (!layer_framebuffers_initialized) {
+			init_layer_framebuffers(app_state);
 		}
+
+		for (i32 image_index = 0; image_index < image_count; ++image_index) {
+
+			framebuffer_t* framebuffer = layer_framebuffers + image_index;
+			maybe_resize_overlay(framebuffer, client_width, client_height);
+
+			glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
+			viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+
+//			if (image_index == scene->active_layer) {
+				image_t* image = app_state->loaded_images + image_index;
+				update_and_render_image(app_state, input, delta_t, image);
+//			}
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		}
+
+		// Second pass
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+
+		glUseProgram(finalblit_shader.program);
+		glUniform1f(finalblit_shader.u_t, layer_t);
+		glBindVertexArray(vao_screen);
+		glDisable(GL_DEPTH_TEST); // because we want to make sure the quad always renders in front of everything else
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, layer_framebuffers[0].texture);
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, layer_framebuffers[1].texture);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		glBindVertexArray(0);
 	}
+
+
+
+
 
 
 

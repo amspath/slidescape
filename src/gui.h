@@ -75,6 +75,7 @@ extern ImFont* global_fixed_width_font;
 
 extern i32 viewer_min_level INIT(= -1);
 extern i32 viewer_max_level INIT(= 10);
+extern float layer_t INIT(= 0.5f);
 
 // annotation.cpp
 extern bool auto_assign_last_group;
