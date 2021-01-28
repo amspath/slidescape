@@ -74,11 +74,13 @@ void mouse_hide() {
 }
 
 bool need_open_file_dialog = false;
+u32 open_file_filetype_hint;
 bool open_file_dialog_open = false;
 
-void open_file_dialog(app_state_t* app_state) {
+void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
 	if (!open_file_dialog_open) {
 		need_open_file_dialog = true;
+		open_file_filetype_hint = filetype_hint;
 	}
 }
 
@@ -103,7 +105,7 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 		{
 			std::string file_path_name = IGFD::FileDialog::Instance()->GetFilePathName();
 //			std::string filePath = igfd::ImGuiFileDialog::Instance()->GetCurrentPath();
-			load_generic_file(app_state, file_path_name.c_str(), 0);
+			load_generic_file(app_state, file_path_name.c_str(), open_file_filetype_hint);
 		}
 		// close
 		IGFD::FileDialog::Instance()->Close();
