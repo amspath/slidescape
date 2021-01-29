@@ -143,6 +143,15 @@ bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float
 	return pixel_bounds;
 }
 
+rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y) {
+	rect2f world_rect = {};
+	world_rect.x = pixel_rect.x * mpp_x;
+	world_rect.y = pixel_rect.y * mpp_y;
+	world_rect.w = pixel_rect.w * mpp_x;
+	world_rect.h = pixel_rect.h * mpp_y;
+	return world_rect;
+}
+
 // https://math.stackexchange.com/questions/330269/the-distance-from-a-point-to-a-line-segment
 // https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr) {

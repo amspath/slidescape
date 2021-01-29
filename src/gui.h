@@ -63,6 +63,7 @@ extern bool show_about_window;
 extern bool show_export_region_dialog;
 extern bool show_console_window INIT(= DO_DEBUG);
 extern bool show_menu_bar INIT(= true);
+extern bool load_next_image_as_overlay;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 extern char remote_hostname[64] INIT(= "localhost");
@@ -75,7 +76,8 @@ extern ImFont* global_fixed_width_font;
 
 extern i32 viewer_min_level INIT(= -1);
 extern i32 viewer_max_level INIT(= 10);
-extern float layer_t INIT(= 0.5f);
+extern float layer_t INIT(= 1.0f);
+extern float target_layer_t INIT(= 1.0f);
 
 // annotation.cpp
 extern bool auto_assign_last_group;

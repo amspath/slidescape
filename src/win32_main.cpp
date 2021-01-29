@@ -299,7 +299,8 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			HDROP hdrop = (HDROP) wparam;
 			char buffer[2048];
 			if (DragQueryFile(hdrop, 0, buffer, sizeof(buffer))) {
-				load_generic_file(&global_app_state, buffer, 0);
+				u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+				load_generic_file(&global_app_state, buffer, filetype_hint);
 			}
 			DragFinish(hdrop);
 			SetForegroundWindow(window); // set focus on the window (this does not happen automatically)

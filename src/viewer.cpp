@@ -121,6 +121,7 @@ void unload_image(image_t* image) {
 
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset) {
 	sb_push(app_state->loaded_images, image);
+	app_state->scene.active_layer = sb_count(app_state->loaded_images)-1;
 	if (need_zoom_reset) {
 		app_state->scene.need_zoom_reset = true;
 	}
@@ -1249,7 +1250,23 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (scene->active_layer == image_count) {
 			scene->active_layer = 0;
 		}
+		if (scene->active_layer == 0) {
+			target_layer_t = 0.0f;
+		} else if (scene->active_layer == 1) {
+			target_layer_t = 1.0f;
+		}
 	}
+	{
+		float adjust_speed = 4.0f * delta_t;
+		if (layer_t < target_layer_t) {
+			float delta = MIN((target_layer_t - layer_t), adjust_speed);
+			layer_t += delta;
+		} else if (layer_t > target_layer_t) {
+			float delta = MIN((layer_t - target_layer_t), adjust_speed);
+			layer_t -= delta;
+		}
+	}
+
 
 
 	if (image_count <= 1) {
@@ -1316,6 +1333,15 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	}
 	if (was_key_pressed(input, KEY_F11) && input->keyboard.key_alt.down) {
 		show_menu_bar = !show_menu_bar;
+	}
+	if (was_key_pressed(input, KEY_F6)) {
+		// Load the next image dragged on top of the window as a new layer/overlay instead of a base image.
+		if (sb_count(app_state->loaded_images) >= 1) {
+			load_next_image_as_overlay = true;
+		}
+	}
+	if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_L)) {
+		show_layers_window = !show_layers_window;
 	}
 
 	gui_draw(app_state, curr_input, app_state->client_viewport.w, app_state->client_viewport.h);

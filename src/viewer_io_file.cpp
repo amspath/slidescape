@@ -433,6 +433,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 		if (is_base_image) {
 			unload_all_images(app_state);
 		}
+		load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
 		image_t image = load_image_from_file(app_state, filename);
 		if (image.is_valid) {
 			// Unload any old annotations if necessary

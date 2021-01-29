@@ -414,7 +414,8 @@ int main(int argc, const char** argv)
             } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window)) {
 	            is_program_running = false;
             } else if (event.type == SDL_DROPFILE) {
-            	if (load_generic_file(app_state, event.drop.file, 0)) {
+	            u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+            	if (load_generic_file(app_state, event.drop.file, filetype_hint)) {
 		            // Bring the window to the foreground / set input-focus.
 		            // This makes it possible to immediately interact with the scene.
 		            SDL_RaiseWindow(window);

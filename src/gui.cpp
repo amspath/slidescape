@@ -120,7 +120,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image options...", NULL, &show_image_options_window)) {}
-			if (ImGui::MenuItem("Layers...", NULL, &show_layers_window)) {}
+			if (ImGui::MenuItem("Layers...", "L", &show_layers_window)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 			ImGui::Separator();
@@ -132,6 +132,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				if (ImGui::MenuItem("Enable Vsync", NULL, &is_vsync_enabled)) {}
 				if (ImGui::MenuItem("Show menu bar", "Alt+F11", &show_menu_bar)) {}
+				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -255,21 +256,25 @@ void draw_layers_window(app_state_t* app_state) {
 	if (ImGui::ButtonEx("Load paired image...", ImVec2(0,0), button_flags)) {
 		open_file_dialog(app_state, FILETYPE_HINT_OVERLAY);
 	}
+	ImGui::SameLine();
+	ImGui::Checkbox("Load next dragged image as overlay (F6)", &load_next_image_as_overlay);
+
 	if (disable_gui) {
 		ImGui::PopItemFlag();
 		ImGui::PopStyleVar();
 	}
 
+	ImGui::NewLine();
 	if (selected_image_index < image_count) {
 		image_t* image = app_state->loaded_images + selected_image_index;
-		ImGui::Text("Image position offset for layer %d:", selected_image_index);
+		ImGui::Text("Adjust position offset for layer %d:", selected_image_index);
 		ImGui::DragFloat("Offset X", &image->origin_offset.x, image->mpp_x, 0.0f, 0.0f, "%g");
 		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g");
 	}
 	ImGui::NewLine();
-	ImGui::Text("Currently displayed layer: %d.\nPress F5 to cycle through layers.", app_state->scene.active_layer);
+	ImGui::Text("Currently displayed layer: %d.\nPress F5 to toggle layers.", app_state->scene.active_layer);
 
-	ImGui::SliderFloat("Layer transition", &layer_t, 0.0f, 1.0f);
+	ImGui::SliderFloat("Layer transition", &target_layer_t, 0.0f, 1.0f);
 
 	ImGui::End();
 }
@@ -296,9 +301,27 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		if (scene->can_export_region) {
 			if (image->mpp_x > 0.0f && image->mpp_y > 0.0f) {
 				bounds2i pixel_bounds = scene->selection_pixel_bounds;
-				ImGui::Text("Selected region (pixel coordinates):\nx=%d\ny=%d\nwidth=%d\nheight=%d",
-							 pixel_bounds.left, pixel_bounds.top,
-							 pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top);
+
+				if (ImGui::TreeNodeEx("Adjust region", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+					rect2i export_rect = {pixel_bounds.left, pixel_bounds.top, pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top};
+					bool changed = false;
+					changed = changed || ImGui::InputInt("Offset X##export_pixel_bounds", &export_rect.x);
+					changed = changed || ImGui::InputInt("Offset Y##export_pixel_bounds", &export_rect.y);
+					changed = changed || ImGui::InputInt("Width##export_pixel_bounds", &export_rect.w);
+					changed = changed || ImGui::InputInt("Height##export_pixel_bounds", &export_rect.h);
+
+					if (changed) {
+						scene->selection_box = pixel_rect_to_world_rect(export_rect, image->mpp_x, image->mpp_y);
+						scene->selection_pixel_bounds = (bounds2i){export_rect.x, export_rect.y, export_rect.x + export_rect.w, export_rect.y + export_rect.h};
+//						pixel_bounds = scene->selection_pixel_bounds;
+					}
+				}
+				ImGui::NewLine();
+
+
+//				ImGui::Text("Selected region (pixel coordinates):\nx=%d\ny=%d\nwidth=%d\nheight=%d",
+//							 pixel_bounds.left, pixel_bounds.top,
+//							 pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top);
 
 				const char* export_formats[] = {"Tiled TIFF", };//"JPEG", "PNG"}; TODO: implement JPEG and PNG export
 				if (ImGui::BeginCombo("Export format", export_formats[desired_region_export_format])) // The second parameter is the label previewed before opening the combo.
@@ -355,14 +378,14 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		}
 
 
-		ImGui::SetItemDefaultFocus();
-		if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+		if (ImGui::Button("Export", ImVec2(120, 0))) {
+			export_cropped_bigtiff(app_state, image, &image->tiff.tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
 			show_export_region_dialog = false;
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("Export", ImVec2(120, 0))) {
-			export_cropped_bigtiff(app_state, image, &image->tiff.tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
+		ImGui::SetItemDefaultFocus();
+		if (ImGui::Button("Cancel", ImVec2(120, 0))) {
 			show_export_region_dialog = false;
 			ImGui::CloseCurrentPopup();
 		}
