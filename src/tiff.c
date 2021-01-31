@@ -206,7 +206,7 @@ tiff_rational_t tiff_read_field_rational(tiff_t* tiff, tiff_tag_t* tag) {
 }
 
 float tiff_rational_to_float(tiff_rational_t rational) {
-	float result = ((float)(u32)rational.a) / ((float)(u32)rational.b);
+	float result = (float)((double)(u32)rational.a) / ((double)(u32)rational.b);
 	return result;
 }
 
@@ -455,8 +455,10 @@ void tiff_post_init(tiff_t* tiff) {
 		if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
 			float pixels_per_centimeter_x = tiff_rational_to_float(main_image->x_resolution);
 			float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
+#if !DEMO_MODE
 			tiff->mpp_x = 10000.0f / pixels_per_centimeter_x;
 			tiff->mpp_y = 10000.0f / pixels_per_centimeter_y;
+#endif
 		}
 	}
 

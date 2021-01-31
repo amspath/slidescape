@@ -24,8 +24,9 @@ extern "C" {
 
 #define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
-#define MAKE_BGRA(r,g,b,a) ((a) << 24 | (r) << 16 | (g) << 8 | (b) << 0)
-#define MAKE_RGBA(r,g,b,a) ((a) << 24 | (r) << 0 | (g) << 8 | (b) << 16)
+#define MAKE_BGRA(r,g,b,a) (((u32)(a)) << 24u | ((u32)(r)) << 16u | ((u32)(g)) << 8u | ((u32)(b)) << 0u)
+#define MAKE_RGBA(r,g,b,a) (((u32)(a)) << 24u | ((u32)(r)) << 0u | ((u32)(g)) << 8u | ((u32)(b)) << 16u)
+#define BGRA_SET_ALPHA(p, a) (((p) & 0x00FFFFFF) | (((u32)(a)) << 24u))
 
 #pragma pack(push, 1)
 typedef struct rect2i {

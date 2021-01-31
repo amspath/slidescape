@@ -11,5 +11,7 @@
 
 #define REMOTE_CLIENT_VERBOSE 0
 
-#define SLIDEVIEWER_VERSION "0.29 WIP"
+#define DEMO_MODE 1 // enable temporary hacks for presentation purposes
+
+#define SLIDEVIEWER_VERSION "0.28.2"
 

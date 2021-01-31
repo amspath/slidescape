@@ -27,6 +27,48 @@ void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata)
 	ASSERT(!"viewer_notify_load_tile_completed() is a dummy, it should not be called");
 }
 
+// Adapted from ASAP: see core/PathologyEnums.cpp
+u32 lut[] = {
+		MAKE_BGRA(0, 0, 0, 0),
+		MAKE_BGRA(0, 224, 249, 255),
+		MAKE_BGRA(0, 249, 50, 255),
+		MAKE_BGRA(174, 249, 0, 255),
+		MAKE_BGRA(249, 100, 0, 255),
+		MAKE_BGRA(249, 0, 125, 255),
+		MAKE_BGRA(149, 0, 249, 255),
+		MAKE_BGRA(0, 0, 206, 255),
+		MAKE_BGRA(0, 185, 206, 255),
+		MAKE_BGRA(0, 206, 41, 255),
+		MAKE_BGRA(143, 206, 0, 255),
+		MAKE_BGRA(206, 82, 0, 255),
+		MAKE_BGRA(206, 0, 103, 255),
+		MAKE_BGRA(124, 0, 206, 255),
+		MAKE_BGRA(0, 0, 162, 255),
+		MAKE_BGRA(0, 145, 162, 255),
+		MAKE_BGRA(0, 162, 32, 255),
+		MAKE_BGRA(114, 162, 0, 255),
+		MAKE_BGRA(162, 65, 0, 255),
+		MAKE_BGRA(162, 0, 81, 255),
+		MAKE_BGRA(97, 0, 162, 255),
+		MAKE_BGRA(0, 0, 119, 255),
+		MAKE_BGRA(0, 107, 119, 255),
+		MAKE_BGRA(0, 119, 23, 255),
+		MAKE_BGRA(83, 119, 0, 255),
+		MAKE_BGRA(119, 47, 0, 255),
+		MAKE_BGRA(119, 0, 59, 255),
+		MAKE_BGRA(71, 0, 119, 255),
+		MAKE_BGRA(100, 100, 249, 255),
+		MAKE_BGRA(100, 234, 249, 255)
+};
+
+static inline u32 lookup_color_from_lut(u8 index) {
+	if (index >= COUNT(lut)) {
+		index = 0;
+	}
+	u32 color = lut[index];
+	return color;
+}
+
 void load_tile_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_t* task = (load_tile_task_t*) userdata;
 	i32 level = task->level;
@@ -178,9 +220,17 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					// TODO: vectorize: https://stackoverflow.com/questions/7194452/fast-vectorized-conversion-from-rgb-to-bgra
 					u64 pixel_count = level_image->tile_width * level_image->tile_height;
 					i32 source_pos = 0;
-					u32* pixel = (u32*) temp_memory;
+					u32* pixels = (u32*) temp_memory;
 					for (u64 i = 0; i < pixel_count; ++i) {
-						pixel[i]=(decompressed[source_pos]<<16) | (decompressed[source_pos+1]<<8) | decompressed[source_pos+2] | (0xff << 24);
+						u8 r = decompressed[source_pos];
+//						u8 g = decompressed[source_pos+1];
+//						u8 b = decompressed[source_pos+2];
+//						pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
+						u32 color = lookup_color_from_lut(r);
+#if DEMO_MODE
+						color = BGRA_SET_ALPHA(color, 100);
+#endif
+						pixels[i] = color;
 						source_pos+=3;
 					}
 					free(decompressed);
@@ -434,7 +484,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			unload_all_images(app_state);
 		}
 		load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
-		image_t image = load_image_from_file(app_state, filename);
+		image_t image = load_image_from_file(app_state, filename, filetype_hint);
 		if (image.is_valid) {
 			// Unload any old annotations if necessary
 			unload_and_reinit_annotations(&app_state->scene.annotation_set);
@@ -462,11 +512,12 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 	}
 }
 
-image_t load_image_from_file(app_state_t* app_state, const char *filename) {
+image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 
 	const char* ext = get_file_extension(filename);
 
 	image_t image = (image_t){};
+	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
 
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
 		// Load using stb_image
@@ -487,7 +538,7 @@ image_t load_image_from_file(app_state_t* app_state, const char *filename) {
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			image = create_image_from_tiff(app_state, tiff);
+			image = create_image_from_tiff(app_state, tiff, is_overlay);
 			return image;
 		} else {
 			tiff_destroy(&tiff);

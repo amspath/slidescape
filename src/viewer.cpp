@@ -146,14 +146,47 @@ void unload_all_images(app_state_t *app_state) {
 	app_state->scene.has_selection_box = false;
 }
 
-image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff) {
+void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
+	image->mpp_x = mpp_x;
+	image->mpp_y = mpp_y;
+	if (image->type == IMAGE_TYPE_WSI) {
+		if (image->backend == IMAGE_BACKEND_TIFF) {
+			tiff_t* tiff = &image->tiff.tiff;
+			tiff->mpp_x = mpp_x;
+			tiff->mpp_y = mpp_y;
+			for (i32 i = 0; i < tiff->level_image_ifd_count; ++i) {
+
+			}
+		}
+	}
+}
+
+image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_overlay) {
 	image_t image = (image_t){};
 	image.type = IMAGE_TYPE_WSI;
 	image.backend = IMAGE_BACKEND_TIFF;
 	image.tiff.tiff = tiff;
 	image.is_freshly_loaded = true;
-	image.mpp_x = tiff.mpp_x;
-	image.mpp_y = tiff.mpp_y;
+
+	// TODO: establish the concept of a 'parent image' / fix dimensions not being exactly right
+	// TODO: automatically register (translate/stretch) image
+	// For now, we shall assume that the first loaded image is the parent image, and that the resolution of the overlay
+	// is identical to the parent (although this is sometimes not strictly true, e.g. the TIFF resolution tags in the
+	// Kaggle challenge prostate biopsies are *slightly* different in the base and mask images. But if we take those
+	// resolution tags at face value, the images will not be correctly aligned!)
+	if (is_overlay && sb_count(app_state->loaded_images)) {
+		image_t* parent_image = app_state->loaded_images + 0;
+		ASSERT(parent_image->mpp_x > 0.0f && parent_image->mpp_y > 0.0f);
+		image.mpp_x = parent_image->mpp_x;
+		image.mpp_y = parent_image->mpp_y;
+		tiff.mpp_x = parent_image->mpp_x;
+		tiff.mpp_y = parent_image->mpp_y;
+		// TODO: fixup IFD dimensions
+	} else {
+		image.mpp_x = tiff.mpp_x;
+		image.mpp_y = tiff.mpp_y;
+	}
+
 	ASSERT(tiff.main_image_ifd);
 	image.tile_width = tiff.main_image_ifd->tile_width;
 	image.tile_height = tiff.main_image_ifd->tile_height;
