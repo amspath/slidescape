@@ -227,9 +227,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 //						u8 b = decompressed[source_pos+2];
 //						pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
 						u32 color = lookup_color_from_lut(r);
-#if DEMO_MODE
-						color = BGRA_SET_ALPHA(color, 100);
-#endif
+						color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
 						pixels[i] = color;
 						source_pos+=3;
 					}

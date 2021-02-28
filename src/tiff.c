@@ -455,10 +455,8 @@ void tiff_post_init(tiff_t* tiff) {
 		if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
 			float pixels_per_centimeter_x = tiff_rational_to_float(main_image->x_resolution);
 			float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
-#if !DEMO_MODE
 			tiff->mpp_x = 10000.0f / pixels_per_centimeter_x;
 			tiff->mpp_y = 10000.0f / pixels_per_centimeter_y;
-#endif
 		}
 	}
 
@@ -911,7 +909,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 		ifd->compression = serial_ifd->compression;
 		ifd->color_space = serial_ifd->color_space;
 		ifd->subimage_type = serial_ifd->subimage_type;
-		ifd->level_magnification = serial_ifd->level_magnification;
+		ifd->level_magnification = serial_ifd->level_magnification; // TODO: delete this?
 		ifd->width_in_tiles = serial_ifd->width_in_tiles;
 		ifd->height_in_tiles = serial_ifd->height_in_tiles;
 		ifd->um_per_pixel_x = serial_ifd->um_per_pixel_x;

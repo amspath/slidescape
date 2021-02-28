@@ -149,15 +149,55 @@ void unload_all_images(app_state_t *app_state) {
 void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 	image->mpp_x = mpp_x;
 	image->mpp_y = mpp_y;
+	image->width_in_um = image->width_in_pixels * mpp_x;
+	image->height_in_um = image->height_in_pixels * mpp_y;
+
 	if (image->type == IMAGE_TYPE_WSI) {
+		// shorthand pointers for backend-specific data structure
+		tiff_t* tiff = &image->tiff.tiff;
+		wsi_t* openslide_image = &image->wsi.wsi;
+
 		if (image->backend == IMAGE_BACKEND_TIFF) {
-			tiff_t* tiff = &image->tiff.tiff;
 			tiff->mpp_x = mpp_x;
 			tiff->mpp_y = mpp_y;
-			for (i32 i = 0; i < tiff->level_image_ifd_count; ++i) {
+		} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+			openslide_image->mpp_x = mpp_x;
+			openslide_image->mpp_y = mpp_y;
+		}
 
+		for (i32 i = 0; i < image->level_count; ++i) {
+			level_image_t* level_image = image->level_images + i;
+			level_image->um_per_pixel_x = image->mpp_x * level_image->downsample_factor;
+			level_image->um_per_pixel_y = image->mpp_y * level_image->downsample_factor;
+			level_image->x_tile_side_in_um = level_image->tile_width * level_image->um_per_pixel_x;
+			level_image->y_tile_side_in_um = level_image->tile_height * level_image->um_per_pixel_y;
+
+			// If this downsampling level is 'backed' by a corresponding image pyramid level (not guaranteed),
+			// then we also need to update the dimension info for the backend-specific data structure
+			if (level_image->exists) {
+				i32 pyramid_image_index = level_image->pyramid_image_index;
+				if (image->backend == IMAGE_BACKEND_TIFF) {
+					ASSERT(pyramid_image_index < tiff->ifd_count);
+					tiff_ifd_t* ifd = tiff->ifds + pyramid_image_index;
+					ifd->um_per_pixel_x = level_image->um_per_pixel_x;
+					ifd->um_per_pixel_y = level_image->um_per_pixel_y;
+					ifd->x_tile_side_in_um = level_image->x_tile_side_in_um;
+					ifd->y_tile_side_in_um = level_image->y_tile_side_in_um;
+
+//					TODO: ifd->x_resolution = create_tiff_rational(...);
+//					ifd->y_resolution = create_tiff_rational(...);
+
+				} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+					wsi_level_t* wsi_level = openslide_image->levels + pyramid_image_index;
+					wsi_level->um_per_pixel_x = level_image->um_per_pixel_x;
+					wsi_level->um_per_pixel_y = level_image->um_per_pixel_y;
+					wsi_level->x_tile_side_in_um = level_image->x_tile_side_in_um;
+					wsi_level->y_tile_side_in_um = level_image->y_tile_side_in_um;
+				}
 			}
 		}
+
+
 	}
 }
 
@@ -168,25 +208,8 @@ image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_over
 	image.tiff.tiff = tiff;
 	image.is_freshly_loaded = true;
 
-	// TODO: establish the concept of a 'parent image' / fix dimensions not being exactly right
-	// TODO: automatically register (translate/stretch) image
-	// For now, we shall assume that the first loaded image is the parent image, and that the resolution of the overlay
-	// is identical to the parent (although this is sometimes not strictly true, e.g. the TIFF resolution tags in the
-	// Kaggle challenge prostate biopsies are *slightly* different in the base and mask images. But if we take those
-	// resolution tags at face value, the images will not be correctly aligned!)
-	if (is_overlay && sb_count(app_state->loaded_images)) {
-		image_t* parent_image = app_state->loaded_images + 0;
-		ASSERT(parent_image->mpp_x > 0.0f && parent_image->mpp_y > 0.0f);
-		image.mpp_x = parent_image->mpp_x;
-		image.mpp_y = parent_image->mpp_y;
-		tiff.mpp_x = parent_image->mpp_x;
-		tiff.mpp_y = parent_image->mpp_y;
-		// TODO: fixup IFD dimensions
-	} else {
-		image.mpp_x = tiff.mpp_x;
-		image.mpp_y = tiff.mpp_y;
-	}
-
+	image.mpp_x = tiff.mpp_x;
+	image.mpp_y = tiff.mpp_y;
 	ASSERT(tiff.main_image_ifd);
 	image.tile_width = tiff.main_image_ifd->tile_width;
 	image.tile_height = tiff.main_image_ifd->tile_height;
@@ -288,6 +311,20 @@ image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_over
 
 		}
 	}
+
+	// TODO: establish the concept of a 'parent image' / fix dimensions not being exactly right
+	// TODO: automatically register (translate/stretch) image
+	// For now, we shall assume that the first loaded image is the parent image, and that the resolution of the overlay
+	// is identical to the parent (although this is sometimes not strictly true, e.g. the TIFF resolution tags in the
+	// Kaggle challenge prostate biopsies are *slightly* different in the base and mask images. But if we take those
+	// resolution tags at face value, the images will not be correctly aligned!)
+	if (is_overlay && sb_count(app_state->loaded_images)) {
+		image_t* parent_image = app_state->loaded_images + 0;
+		ASSERT(parent_image->mpp_x > 0.0f && parent_image->mpp_y > 0.0f);
+		image_change_resolution(&image, parent_image->mpp_x, parent_image->mpp_y);
+	}
+
+
 	image.is_valid = true;
 	image.is_freshly_loaded = true;
 	return image;
