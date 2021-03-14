@@ -90,10 +90,7 @@ void win32_init_gui(app_state_t* app_state) {
 	io.Fonts->AddFontDefault();
 //	IM_ASSERT(font != NULL);
 
-
-	unsigned int flags = ImGuiFreeType::MonoHinting;
-	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
-
+	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 
 	is_fullscreen = check_fullscreen(app_state->main_window);
 

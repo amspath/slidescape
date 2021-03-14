@@ -374,8 +374,7 @@ int main(int argc, const char** argv)
 
     io.Fonts->AddFontDefault();
 
-	unsigned int flags = ImGuiFreeType::MonoHinting;
-	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
+	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 
     // Our state
 //    bool show_demo_window = true;

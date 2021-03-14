@@ -495,8 +495,7 @@ SlideviewerView* g_view;
 
     font->Scale = 0.5f;
 
-	unsigned int flags = ImGuiFreeType::LightHinting;
-	ImGuiFreeType::BuildFontAtlas(io.Fonts, flags);
+	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 }
 
 - (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename
