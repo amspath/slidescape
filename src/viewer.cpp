@@ -990,6 +990,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (was_button_released(&input->mouse_buttons[1])) {
 				// Right click doesn't drag the scene, so we can be a bit more tolerant without confusing drags with clicks.
 				scene->right_clicked = true;
+//				scene->right_clicked_xy = input->mouse_xy;
 				/*float drag_distance = v2f_length(scene->cumulative_drag_vector);
 				if (drag_distance < 30.0f) {
 
@@ -1055,6 +1056,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
 			scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+
+			if (scene->right_clicked) {
+				scene->right_clicked_pos = scene->mouse;
+			}
 
 			i32 dlevel = 0;
 			bool32 used_mouse_to_zoom = false;
@@ -1315,7 +1320,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 
-	if (was_key_pressed(input, KEY_F5)) {
+	if (was_key_pressed(input, KEY_F5) || was_key_pressed(input, KEY_Tab)) {
 		scene->active_layer++;
 		if (scene->active_layer == image_count) {
 			scene->active_layer = 0;
@@ -1327,7 +1332,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 	}
 	{
-		float adjust_speed = 4.0f * delta_t;
+		float adjust_speed = 8.0f * delta_t;
 		if (layer_t < target_layer_t) {
 			float delta = MIN((target_layer_t - layer_t), adjust_speed);
 			layer_t += delta;

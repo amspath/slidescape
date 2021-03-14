@@ -473,19 +473,21 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 		caselist_select_first_case(app_state, &app_state->caselist);
 		return true;
 	} else if (strcasecmp(ext, "xml") == 0) {
-		return load_asap_xml_annotations(app_state, filename);
+		// TODO: how to get the correct scale factor for the annotations?
+		// Maybe a placeholder value, which gets updated based on the scale of the scene image?
+		return load_asap_xml_annotations(app_state, filename, (v2f){0.25f, 0.25f});
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
 		bool is_base_image = filetype_hint != FILETYPE_HINT_OVERLAY;
 		if (is_base_image) {
 			unload_all_images(app_state);
+			// Unload any old annotations if necessary
+			unload_and_reinit_annotations(&app_state->scene.annotation_set);
 		}
 		load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
 		image_t image = load_image_from_file(app_state, filename, filetype_hint);
 		if (image.is_valid) {
-			// Unload any old annotations if necessary
-			unload_and_reinit_annotations(&app_state->scene.annotation_set);
 
 			add_image(app_state, image, is_base_image);
 
@@ -497,7 +499,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			replace_file_extension(temp_filename, temp_size, "xml");
 			if (file_exists(temp_filename)) {
 				console_print("Found XML annotations: %s\n", temp_filename);
-				load_asap_xml_annotations(app_state, temp_filename);
+				load_asap_xml_annotations(app_state, temp_filename, (v2f){image.mpp_x, image.mpp_y});
 			}
 			console_print("Loaded '%s'\n", filename);
 			return true;

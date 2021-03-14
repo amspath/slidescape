@@ -23,6 +23,42 @@
 #include "gui.h"
 #include "yxml.h"
 
+void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
+	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+		annotation_set->active_annotations[i]->selected = false;
+	}
+	annotation->selected = true;
+}
+
+void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
+	coordinate_t coordinate = {pos.x, pos.y};
+			sb_push(annotation_set->coordinates, coordinate);
+	i32 coordinate_index = annotation_set->coordinate_count++;
+
+	annotation_t new_annotation = (annotation_t){};
+	new_annotation.type = ANNOTATION_POINT;
+//		new_annotation.name;
+	new_annotation.group_id = annotation_set->last_assigned_annotation_group;
+	new_annotation.coordinate_capacity = 1;
+	new_annotation.coordinate_count = 1;
+	new_annotation.first_coordinate = coordinate_index;
+	new_annotation.has_coordinates = true;
+	// unselect all other annotations, only select the new one
+	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->active_annotations[i];
+		annotation->selected = false;
+	}
+	new_annotation.selected = true;
+
+	sb_push(annotation_set->stored_annotations, new_annotation);
+	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
+
+	sb_push(annotation_set->active_annotation_indices, annotation_stored_index);
+	annotation_set->active_annotation_count++;
+
+	annotations_modified(annotation_set);
+}
+
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 
@@ -76,7 +112,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			// - Basic action: if we are close enough to a coordinate, we 'grab' the coordinate and start dragging it.
 			// - If we are in insert coordinate mode, we instead create a new coordinate at the chosen location
 			//   and then immediately start dragging the new coordinate.
-			if (scene->drag_started && !annotation_set->is_split_mode && hit_annotation->selected) {
+			if (scene->drag_started && !annotation_set->is_split_mode && (hit_annotation->selected || hit_annotation->type == ANNOTATION_POINT)) {
 				if (annotation_set->is_insert_coordinate_mode) {
 					// check if we have clicked close enough to a line segment to insert a coordinate there
 					v2f projected_point = {};
@@ -103,6 +139,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 							hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
 							annotation_set->hovered_coordinate = hit_result.coordinate_index;
 							annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
+							select_annotation(annotation_set, hit_annotation);
 						}
 					}
 				}
@@ -188,6 +225,11 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			annotation_set->is_split_mode = false;
 		}
 
+	}
+
+	// Drop a new dot annotation under the mouse cursor position
+	if (!scene->is_dragging && annotation_set->is_edit_mode && was_key_pressed(input, KEY_Q)) {
+		create_point_annotation(annotation_set, scene->mouse);
 	}
 
 	// unselect all annotations (except if Ctrl held down)
@@ -384,6 +426,46 @@ void annotations_modified(annotation_set_t* annotation_set) {
 	annotation_set->last_modification_time = get_clock();
 }
 
+bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annotation) {
+	bool changed = false;
+	ASSERT(annotation->coordinate_count >= 1);
+	if (annotation->type == ANNOTATION_RECTANGLE) {
+		if (annotation->coordinate_count != 4) {
+			annotation->type = ANNOTATION_POLYGON;
+			changed = true;
+		}
+	}
+	if (annotation->type == ANNOTATION_POINT) {
+		if (annotation->coordinate_count >= 2) {
+			if (annotation->coordinate_count == 2) {
+				annotation->type = ANNOTATION_LINE;
+			} else {
+				annotation->type = ANNOTATION_POLYGON;
+			}
+			changed = true;
+		}
+	} else if (annotation->type == ANNOTATION_LINE) {
+		if (annotation->coordinate_count != 2) {
+			if (annotation->coordinate_count == 1) {
+				annotation->type = ANNOTATION_POINT;
+			} else if (annotation->coordinate_count > 2) {
+				annotation->type = ANNOTATION_POLYGON;
+			}
+			changed = true;
+		}
+	} else if (annotation->type == ANNOTATION_POLYGON) {
+		if (annotation->coordinate_count < 3) {
+			if (annotation->coordinate_count == 2) {
+				annotation->type = ANNOTATION_LINE;
+			} else {
+				annotation->type = ANNOTATION_POINT;
+			}
+			changed = true;
+		}
+	}
+	return changed;
+}
+
 void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, coordinate_t new_coordinate) {
 	if (insert_at_index >= 0 && insert_at_index <= annotation->coordinate_count) {
 		if (annotation->coordinate_count == annotation->coordinate_capacity) {
@@ -403,6 +485,9 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 		++annotation->coordinate_count;
 		*coordinates_at_insertion_point = new_coordinate;
 
+		// The coordinate count has changed, maybe the type needs to change?
+		maybe_change_annotation_type_based_on_coordinate_count(annotation);
+
 		annotation->has_valid_bounds = false;
 		annotations_modified(annotation_set);
 		refresh_annotation_pointers(app_state, annotation_set);
@@ -418,29 +503,38 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index) {
 	// TODO: What happens if there is only one coordinate left?
 	if (coordinate_index_valid_for_annotation(coordinate_index, annotation)) {
-		i32 one_past_last_coordinate = annotation->first_coordinate + annotation->coordinate_count;
-		i32 trailing_coordinate_count = one_past_last_coordinate - (coordinate_index + 1);
-		if (trailing_coordinate_count > 0) {
-			// move the trailing coordinates one place forward
-			size_t temp_size = trailing_coordinate_count * sizeof(coordinate_t);
-			void* temp_copy = alloca(temp_size);
-			memcpy(temp_copy, annotation_set->coordinates + (coordinate_index + 1), temp_size);
-			memcpy(annotation_set->coordinates + coordinate_index, temp_copy, temp_size);
+		if (annotation->coordinate_count <= 1) {
+			// TODO: try to delete the annotation instead
+		} else {
+			i32 one_past_last_coordinate = annotation->first_coordinate + annotation->coordinate_count;
+			i32 trailing_coordinate_count = one_past_last_coordinate - (coordinate_index + 1);
+			if (trailing_coordinate_count > 0) {
+				// move the trailing coordinates one place forward
+				size_t temp_size = trailing_coordinate_count * sizeof(coordinate_t);
+				void* temp_copy = alloca(temp_size);
+				memcpy(temp_copy, annotation_set->coordinates + (coordinate_index + 1), temp_size);
+				memcpy(annotation_set->coordinates + coordinate_index, temp_copy, temp_size);
 
-		}
+			}
 
-		annotation->coordinate_count--;
+			annotation->coordinate_count--;
+
+			// The coordinate count has changed, maybe the type needs to change?
+			maybe_change_annotation_type_based_on_coordinate_count(annotation);
 #if 0
-		// fixing the order field seems unneeded, the order field is ignored in the XML file anyway.
-	for (i32 i = coordinate_index - annotation->first_coordinate; i < annotation->coordinate_count ; ++i) {
-		coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
-		coordinate->order = i;
-	}
+			// fixing the order field seems unneeded, the order field is ignored in the XML file anyway.
+			for (i32 i = coordinate_index - annotation->first_coordinate; i < annotation->coordinate_count ; ++i) {
+				coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + i;
+				coordinate->order = i;
+			}
 #endif
 
-		annotation->has_valid_bounds = false;
-		annotations_modified(annotation_set);
-		annotation_set->selected_coordinate_index = -1;
+			annotation->has_valid_bounds = false;
+			annotations_modified(annotation_set);
+			annotation_set->selected_coordinate_index = -1;
+		}
+
+
 	} else {
 #if DO_DEBUG
 		console_print_error("Error: tried to delete an out of bounds index (coordinate %d, valid range for annotation %d-%d)\n",
@@ -449,6 +543,7 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 	}
 }
 
+// TODO: delete 'slice' of annotations, instead of hardcoded selected ones
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set) {
 	if (!annotation_set->stored_annotations) return;
 	bool has_selected = false;
@@ -558,6 +653,10 @@ void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 ne
 	}
 }
 
+void annotation_draw_coordinate_dot(ImDrawList* draw_list, v2f point, float node_size, rgba_t node_color) {
+	draw_list->AddCircleFilled(point, node_size, *(u32*)(&node_color), 12);
+}
+
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min) {
 	if (!annotation_set->enabled) return;
 
@@ -592,11 +691,24 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
 				points[i] = transformed_pos;
 			}
+
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
-			draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, true, thickness);
+			if (annotation->coordinate_count >= 4) {
+				draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, true, thickness);
+			} else if (annotation->coordinate_count >= 2) {
+				draw_list->AddLine(points[0], points[1], annotation_color, thickness);
+				if (annotation->coordinate_count == 3) {
+					draw_list->AddLine(points[1], points[2], annotation_color, thickness);
+					draw_list->AddLine(points[2], points[0], annotation_color, thickness);
+				}
+			} else if (annotation->coordinate_count == 1) {
+				//annotation_draw_coordinate_dot(draw_list, points[0], annotation_node_size * 0.7f, base_color);
+			}
 
 			// draw coordinate nodes
-			if (annotation->selected && (annotation_show_polygon_nodes_outside_edit_mode || annotation_set->is_edit_mode)) {
+			if (annotation->type == ANNOTATION_POINT ||
+			    (annotation->selected && (annotation_show_polygon_nodes_outside_edit_mode || annotation_set->is_edit_mode))
+					) {
 				bool need_hover = false;
 				v2f hovered_node_point = {};
 				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
@@ -609,24 +721,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						hovered_node_point = point;
 						need_hover = true;
 					} else {
-						float node_size;
-						rgba_t node_color;
-#if 0
-						// for selected coordinates: larger circle and darker color
-						if (coordinate_index == annotation_set->selected_coordinate_index) {
-							node_size = annotation_node_size * 1.2f;
-							node_color = group->color;
-							node_color.r = LERP(0.9f, 0, node_color.r);
-							node_color.g = LERP(0.9f, 0, node_color.g);
-							node_color.b = LERP(0.9f, 0, node_color.b);
-							node_color.a = alpha;
-						} else
-#endif
-						{
-							node_size = annotation_node_size;
-							node_color = base_color;
-						}
-						draw_list->AddCircleFilled(point, node_size, *(u32*)(&node_color), 12);
+						annotation_draw_coordinate_dot(draw_list, point, annotation_node_size, base_color);
 					}
 				}
 				if (need_hover) {
@@ -637,6 +732,9 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					draw_list->AddCircleFilled(hovered_node_point, annotation_node_size * 1.4f, *(u32*)(&hover_color), 12);
 					if (ImGui::BeginPopupContextVoid()) {
 						did_popup = true;
+						if (!annotation->selected) {
+							select_annotation(annotation_set, annotation);
+						}
 						if (ImGui::MenuItem("Delete coordinate", "C")) {
 							delete_coordinate(annotation_set, annotation, annotation_set->hovered_coordinate);
 						};
@@ -697,6 +795,9 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		if (ImGui::BeginPopupContextVoid()) {
 			did_popup = true;
 			if (ImGui::MenuItem("Enable editing", "E", &annotation_set->is_edit_mode)) {}
+			if (ImGui::MenuItem("Create point annotation", "Q")) {
+				create_point_annotation(annotation_set, scene->right_clicked_pos);
+			}
 			if (annotation_set->selection_count > 0) {
 				if (ImGui::MenuItem("Delete selected annotations", "Del")) {
 					if (dont_ask_to_delete_annotations) {
@@ -1081,6 +1182,8 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 			annotation->type = ANNOTATION_RECTANGLE;
 		} else if (strcmp(value, "Polygon") == 0) {
 			annotation->type = ANNOTATION_POLYGON;
+		} else if (strcmp(value, "Dot") == 0) {
+			annotation->type = ANNOTATION_POINT;
 		} else {
 			console_print("Warning: annotation '%s' with unrecognized type '%s', defaulting to 'Polygon'.\n", annotation->name, value);
 			annotation->type = ANNOTATION_POLYGON;
@@ -1088,14 +1191,15 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 	}
 }
 
-void coordinate_set_attribute(coordinate_t* coordinate, const char* attr, const char* value) {
+void coordinate_set_attribute(annotation_set_t* annotation_set, coordinate_t* coordinate, const char* attr,
+                              const char* value) {
 	if (strcmp(attr, "Order") == 0) {
 		// ignored
 //		coordinate->order = atoi(value);
 	} else if (strcmp(attr, "X") == 0) {
-		coordinate->x = atof(value) * 0.25; // TODO: address assumption
+		coordinate->x = atof(value) * annotation_set->mpp.x;
 	} else if (strcmp(attr, "Y") == 0) {
-		coordinate->y = atof(value) * 0.25; // TODO: address assumption
+		coordinate->y = atof(value) * annotation_set->mpp.y;
 	}
 }
 
@@ -1116,6 +1220,7 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	if (annotation_set->groups) sb_free(annotation_set->groups);
 	if (annotation_set->filename) free(annotation_set->filename);
 	memset(annotation_set, 0, sizeof(*annotation_set));
+	annotation_set->mpp = (v2f){1.0f, 1.0f}; // default value shouldn't be zero (has danger of divide-by-zero errors)
 
 	// TODO: check is this still needed?
 	// reserve annotation group 0 for the "None" category
@@ -1123,9 +1228,10 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 }
 
 
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
+bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename, v2f mpp) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 	unload_and_reinit_annotations(annotation_set);
+	annotation_set->mpp = mpp;
 
 	annotation_group_t current_group = {};
 	asap_xml_element_enum current_element_type = ASAP_XML_ELEMENT_NONE;
@@ -1213,6 +1319,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							}
 							if (contentcur == contentbuf_end) {
 								// too long content
+								// TODO: harden against buffer overflow, see approach in isyntax.c
 								console_print("load_asap_xml_annotations(): encountered a too long XML element content\n");
 								goto failed;
 							}
@@ -1265,7 +1372,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 								if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
 									annotation_set_attribute(annotation_set, &sb_last(annotation_set->stored_annotations), x->attr, attrbuf);
 								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_COORDINATE) {
-									coordinate_set_attribute(&sb_last(annotation_set->coordinates), x->attr, attrbuf);
+									coordinate_set_attribute(annotation_set, &sb_last(annotation_set->coordinates), x->attr, attrbuf);
 								} else if (pass == ASAP_XML_PARSE_GROUPS && current_element_type == ASAP_XML_ELEMENT_GROUP) {
 									group_set_attribute(&current_group, x->attr, attrbuf);
 								}
@@ -1311,6 +1418,7 @@ const char* get_annotation_type_name(annotation_type_enum type) {
 		case ANNOTATION_UNKNOWN_TYPE: default: break;
 		case ANNOTATION_RECTANGLE: result = "Rectangle"; break;
 		case ANNOTATION_POLYGON: result = "Polygon"; break;
+		case ANNOTATION_POINT: result = "Dot"; break;
 	}
 	return result;
 
@@ -1362,7 +1470,8 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 				fprintf(fp, "<Coordinates>");
 				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
 					coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
-					fprintf(fp, "<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />", coordinate_index, coordinate->x / 0.25, coordinate->y / 0.25);
+					fprintf(fp, "<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />", coordinate_index,
+			            coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
 				}
 				fprintf(fp, "</Coordinates>");
 			}
@@ -1376,6 +1485,60 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 		fclose(fp);
 
 
+	}
+}
+
+void geojson_print_feature(FILE* fp, annotation_set_t* annotation_set, annotation_t* annotation) {
+	const char* geometry_type;
+	switch(annotation->type) {
+		default:
+		case ANNOTATION_RECTANGLE:
+		case ANNOTATION_POLYGON:
+			geometry_type = "Polygon"; break;
+		case ANNOTATION_POINT:
+			geometry_type = "Point"; break;
+		case ANNOTATION_LINE:
+			geometry_type = "LineString"; break;
+	}
+	fprintf(fp, "  {\n"
+			    "    \"type\": \"Feature\",\n"
+	            "    \"geometry\": {\n"
+			    "      \"type\": \"%s\","
+	            "      \"coordinates\": ", geometry_type);
+	if (annotation->has_coordinates) {
+		for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
+			if (coordinate_index != 0) {
+				fprintf(fp, ", ");
+			}
+			coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
+			fprintf(fp, "[%g, %g]", coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
+		}
+	}
+	fprintf(fp, "\n"
+			     "    }");
+	if (annotation->has_properties) {
+		fprintf(fp,     ",\n"
+		            "    \"properties\": {\n"
+		            "      \"group\": ");
+	}
+	fprintf(fp, "  }\n"
+	            "}");
+
+}
+
+void save_geojson_annotations(annotation_set_t* annotation_set, const char* filename_out) {
+	ASSERT(annotation_set);
+	FILE* fp = fopen(filename_out, "wb");
+	if (fp) {
+		i32 indent = 0;
+		fprintf(fp, "{\n"
+		            "  \"type\": \"FeatureCollection\",\n"
+			        "  \"features\": [\n");
+	}
+	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
+		annotation_t* annotation = annotation_set->active_annotations[annotation_index];
+
+		// stub
 	}
 }
 

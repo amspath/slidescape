@@ -34,6 +34,8 @@ typedef enum annotation_type_enum {
 	ANNOTATION_UNKNOWN_TYPE = 0,
 	ANNOTATION_RECTANGLE = 1,
 	ANNOTATION_POLYGON = 2,
+	ANNOTATION_POINT = 3,
+	ANNOTATION_LINE = 4,
 } annotation_type_enum;
 
 typedef enum asap_xml_element_enum {
@@ -65,6 +67,7 @@ typedef struct annotation_t {
 	bool8 has_coordinates;
 	bool8 selected;
 	bool8 has_valid_bounds;
+	bool8 has_properties;
 } annotation_t;
 
 typedef struct coordinate_t {
@@ -120,6 +123,7 @@ typedef struct annotation_set_t {
 	v2f coordinate_drag_start_offset;
 	i32 last_assigned_annotation_group;
 	bool last_assigned_group_is_valid;
+	v2f mpp; // microns per pixel
 } annotation_set_t;
 
 
@@ -144,7 +148,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
+bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename, v2f mpp);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
 void refresh_annotation_pointers(app_state_t* app_state, annotation_set_t* annotation_set);

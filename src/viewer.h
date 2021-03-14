@@ -244,6 +244,7 @@ typedef struct scene_t {
 	rect2i viewport;
 	v2f camera;
 	v2f mouse;
+	v2f right_clicked_pos;
 	bounds2f camera_bounds;
 	float r_minus_l;
 	float t_minus_b;
