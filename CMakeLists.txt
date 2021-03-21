@@ -171,6 +171,7 @@ set(VIEWER_SOURCE_FILES
         tiff_write.c
         isyntax.c
         caselist.c
+        coco.cpp
         annotation.cpp
         openslide_api.c
         ini.c
