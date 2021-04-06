@@ -63,6 +63,14 @@ void message_box(const char* message) {
     console_print_error("unimplemented: message_box()\n");
 }
 
+void set_window_title(window_handle_t window, const char* title) {
+	SDL_SetWindowTitle(window, title);
+}
+
+void reset_window_title(window_handle_t window) {
+	SDL_SetWindowTitle(window, "Slideviewer");
+}
+
 void set_swap_interval(int interval) {
     SDL_GL_SetSwapInterval(interval);
 }
