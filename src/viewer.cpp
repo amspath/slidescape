@@ -201,40 +201,39 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 	}
 }
 
-image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_overlay) {
-	image_t image = (image_t){};
-	image.type = IMAGE_TYPE_WSI;
-	image.backend = IMAGE_BACKEND_TIFF;
-	image.tiff.tiff = tiff;
-	image.is_freshly_loaded = true;
+bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay) {
+	image->type = IMAGE_TYPE_WSI;
+	image->backend = IMAGE_BACKEND_TIFF;
+	image->tiff.tiff = tiff;
+	image->is_freshly_loaded = true;
 
-	image.mpp_x = tiff.mpp_x;
-	image.mpp_y = tiff.mpp_y;
+	image->mpp_x = tiff.mpp_x;
+	image->mpp_y = tiff.mpp_y;
 	ASSERT(tiff.main_image_ifd);
-	image.tile_width = tiff.main_image_ifd->tile_width;
-	image.tile_height = tiff.main_image_ifd->tile_height;
-	image.width_in_pixels = tiff.main_image_ifd->image_width;
-	image.width_in_um = tiff.main_image_ifd->image_width * tiff.mpp_x;
-	image.height_in_pixels = tiff.main_image_ifd->image_height;
-	image.height_in_um = tiff.main_image_ifd->image_height * tiff.mpp_y;
+	image->tile_width = tiff.main_image_ifd->tile_width;
+	image->tile_height = tiff.main_image_ifd->tile_height;
+	image->width_in_pixels = tiff.main_image_ifd->image_width;
+	image->width_in_um = tiff.main_image_ifd->image_width * tiff.mpp_x;
+	image->height_in_pixels = tiff.main_image_ifd->image_height;
+	image->height_in_um = tiff.main_image_ifd->image_height * tiff.mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
 	if (tiff.level_image_ifd_count > 0 && tiff.main_image_ifd->tile_width) {
 
-		memset(image.level_images, 0, sizeof(image.level_images));
-		image.level_count = tiff.max_downsample_level + 1;
+		memset(image->level_images, 0, sizeof(image->level_images));
+		image->level_count = tiff.max_downsample_level + 1;
 
-		if (tiff.level_image_ifd_count > image.level_count) {
+		if (tiff.level_image_ifd_count > image->level_count) {
 			panic();
 		}
-		if (image.level_count > WSI_MAX_LEVELS) {
+		if (image->level_count > WSI_MAX_LEVELS) {
 			panic();
 		}
 
 		i32 ifd_index = 0;
 		i32 next_ifd_index_to_check_for_match = 0;
 		tiff_ifd_t* ifd = tiff.level_images_ifd + ifd_index;
-		for (i32 level_index = 0; level_index < image.level_count; ++level_index) {
-			level_image_t* level_image = image.level_images + level_index;
+		for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
+			level_image_t* level_image = image->level_images + level_index;
 
 			i32 wanted_downsample_level = level_index;
 			bool found_ifd = false;
@@ -260,11 +259,11 @@ image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_over
 				level_image->tile_width = ifd->tile_width;
 				level_image->tile_height = ifd->tile_height;
 #if DO_DEBUG
-				if (level_image->tile_width != image.tile_width) {
-					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image.tile_width);
+				if (level_image->tile_width != image->tile_width) {
+					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image->tile_width);
 				}
-				if (level_image->tile_height != image.tile_height) {
-					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image.tile_width);
+				if (level_image->tile_height != image->tile_height) {
+					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image->tile_width);
 				}
 #endif
 				level_image->um_per_pixel_x = ifd->um_per_pixel_x;
@@ -298,10 +297,10 @@ image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_over
 				level_image->exists = false;
 				level_image->downsample_factor = exp2f((float)wanted_downsample_level);
 				// Just in case anyone tries to divide by zero:
-				level_image->tile_width = image.tile_width;
-				level_image->tile_height = image.tile_height;
-				level_image->um_per_pixel_x = image.mpp_x * level_image->downsample_factor;
-				level_image->um_per_pixel_y = image.mpp_y * level_image->downsample_factor;
+				level_image->tile_width = image->tile_width;
+				level_image->tile_height = image->tile_height;
+				level_image->um_per_pixel_x = image->mpp_x * level_image->downsample_factor;
+				level_image->um_per_pixel_y = image->mpp_y * level_image->downsample_factor;
 				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
 				level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
 			}
@@ -321,13 +320,13 @@ image_t create_image_from_tiff(app_state_t* app_state, tiff_t tiff, bool is_over
 	if (is_overlay && sb_count(app_state->loaded_images)) {
 		image_t* parent_image = app_state->loaded_images + 0;
 		ASSERT(parent_image->mpp_x > 0.0f && parent_image->mpp_y > 0.0f);
-		image_change_resolution(&image, parent_image->mpp_x, parent_image->mpp_y);
+		image_change_resolution(image, parent_image->mpp_x, parent_image->mpp_y);
 	}
 
 
-	image.is_valid = true;
-	image.is_freshly_loaded = true;
-	return image;
+	image->is_valid = true;
+	image->is_freshly_loaded = true;
+	return image->is_valid;
 }
 
 bool32 was_button_pressed(button_state_t* button) {
@@ -949,6 +948,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	ASSERT(image_count >= 0);
 
 	if (image_count == 0) {
+		if (app_state->is_window_title_set_for_image) {
+			reset_window_title(app_state->main_window);
+		}
 		//load_generic_file(app_state, "test.jpeg");
 		do_after_scene_render(app_state, input);
 		return;
@@ -958,6 +960,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// Workaround for drag onto window being registered as a click
 	if (displayed_image->is_freshly_loaded) {
+		set_window_title(app_state->main_window, displayed_image->name);
+		app_state->is_window_title_set_for_image = true;
 		input->mouse_buttons[0].down = false;
 		input->mouse_buttons[0].transition_count = 0;
 		displayed_image->is_freshly_loaded = false;

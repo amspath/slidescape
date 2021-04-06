@@ -488,12 +488,11 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 		load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
 		image_t image = load_image_from_file(app_state, filename, filetype_hint);
 		if (image.is_valid) {
-
 			add_image(app_state, image, is_base_image);
 
 			// Check if there is an associated ASAP XML annotations file
-			size_t len = strlen(filename);
-			size_t temp_size = len + 5; // add 5 so that we can always append ".xml\0"
+			size_t filename_len = strlen(filename);
+			size_t temp_size = filename_len + 5; // add 5 so that we can always append ".xml\0"
 			char* temp_filename = (char*) alloca(temp_size);
 			strncpy(temp_filename, filename, temp_size);
 			replace_file_extension(temp_filename, temp_size, "xml");
@@ -501,6 +500,9 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 				console_print("Found XML annotations: %s\n", temp_filename);
 				load_asap_xml_annotations(app_state, temp_filename, (v2f){image.mpp_x, image.mpp_y});
 			}
+
+
+
 			console_print("Loaded '%s'\n", filename);
 			return true;
 
@@ -514,10 +516,13 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 
 image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 
-	const char* ext = get_file_extension(filename);
-
 	image_t image = (image_t){};
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
+
+	size_t filename_len = strlen(filename);
+	const char* name = one_past_last_slash(filename, filename_len);
+	strncpy(image.name, name, sizeof(image.name)-1);
+	const char* ext = get_file_extension(filename);
 
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
 		// Load using stb_image
@@ -538,7 +543,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			image = create_image_from_tiff(app_state, tiff, is_overlay);
+			init_image_from_tiff(app_state, &image, tiff, is_overlay);
 			return image;
 		} else {
 			tiff_destroy(&tiff);
@@ -570,7 +575,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 			}
 		}
 
-		// TODO: fix code duplication from create_image_from_tiff()
+		// TODO: fix code duplication from init_image_from_tiff()
 		image.type = IMAGE_TYPE_WSI;
 		image.backend = IMAGE_BACKEND_OPENSLIDE;
 		wsi_t* wsi = &image.wsi.wsi;
@@ -592,7 +597,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 				memset(image.level_images, 0, sizeof(image.level_images));
 				image.level_count = wsi->max_downsample_level + 1;
 
-				// TODO: check against downsample level, see create_image_from_tiff()
+				// TODO: check against downsample level, see init_image_from_tiff()
 				if (wsi->level_count > image.level_count) {
 					panic();
 				}

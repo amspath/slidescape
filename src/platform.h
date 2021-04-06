@@ -205,6 +205,8 @@ void open_file_dialog(app_state_t* app_state, u32 filetype_hint);
 bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string);
 void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
+void set_window_title(window_handle_t window, const char* title);
+void reset_window_title(window_handle_t window);
 
 void message_box(app_state_t* app_state, const char* message);
 

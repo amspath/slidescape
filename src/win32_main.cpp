@@ -140,6 +140,14 @@ void message_box(app_state_t* app_state, const char* message) {
 
 // Window related procecures
 
+void set_window_title(window_handle_t window, const char* title) {
+	SetWindowTextA(window, title);
+}
+
+void reset_window_title(window_handle_t window) {
+	SetWindowTextA(window, "Slideviewer");
+}
+
 void win32_init_cursor() {
 	the_cursor = LoadCursorA(NULL, IDC_ARROW);
 	show_cursor = true;
