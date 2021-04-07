@@ -288,7 +288,6 @@ Example code :
 Load => ImGuiFileDialog::Instance()->DeserializeBookmarks(bookmarString);
 Save => std::string bookmarkString = ImGuiFileDialog::Instance()->SerializeBookmarks();
 
-
 -----------------------------------------------------------------------------------------------------------------
 ## Path Edition :
 -----------------------------------------------------------------------------------------------------------------
@@ -344,6 +343,14 @@ Example code :
 #define OverWriteDialogCancelButtonString "Cancel"
 
 -----------------------------------------------------------------------------------------------------------------
+## Flags :
+-----------------------------------------------------------------------------------------------------------------
+
+flag must be specified in OpenDialog or OpenModal
+* ImGuiFileDialogFlags_ConfirmOverwrite 	=> show confirm to overwrite dialog
+* ImGuiFileDialogFlags_DontShowHiddenFiles 	=> dont show hidden file (file starting with a .)
+
+-----------------------------------------------------------------------------------------------------------------
 ## Open / Save dialog Behavior :
 -----------------------------------------------------------------------------------------------------------------
 
@@ -381,7 +388,7 @@ if (igButton("Open File", buttonSize))
 	IGFD_OpenDialog(cfiledialog,
 		"filedlg",                              // dialog key (make it possible to have different treatment reagrding the dialog key
 		"Open a File",                          // dialog title
-		"c files(*.c/*.h){.c,.h}",              // dialog filter syntax : simple => .h,.c,.pp, etc and collections : text1{filter0,filter1,filter2}, text2{filter0,filter1,filter2}, etc..
+		"c files(*.c *.h){.c,.h}",              // dialog filter syntax : simple => .h,.c,.pp, etc and collections : text1{filter0,filter1,filter2}, text2{filter0,filter1,filter2}, etc..
 		".",                                    // base directory for files scan
 		"",                                     // base filename
 		0,                                      // a fucntion for display a right pane if you want
@@ -472,7 +479,7 @@ ImGuiFontStudio is using also ImGuiFileDialog.
 #ifndef IMGUIFILEDIALOG_H
 #define IMGUIFILEDIALOG_H
 
-#define IMGUIFILEDIALOG_VERSION "v0.5.5"
+#define IMGUIFILEDIALOG_VERSION "v0.5.6"
 
 #ifndef CUSTOM_IMGUIFILEDIALOG_CONFIG
 #include "ImGuiFileDialogConfig.h"
@@ -484,7 +491,12 @@ typedef int ImGuiFileDialogFlags; // -> enum ImGuiFileDialogFlags_
 enum ImGuiFileDialogFlags_
 {
 	ImGuiFileDialogFlags_None = 0,
-	ImGuiFileDialogFlags_ConfirmOverwrite = 1 << 0,
+	ImGuiFileDialogFlags_ConfirmOverwrite = 1 << 0,		// show confirm to overwrite dialog
+	ImGuiFileDialogFlags_DontShowHiddenFiles = 1 << 1,	// dont show hidden file (file starting with a .)
+	ImGuiFileDialogFlags_HideColumnType = 1 << 2,	// hide column file type
+	ImGuiFileDialogFlags_HideColumnSize = 1 << 3,	// hide column file size
+	ImGuiFileDialogFlags_HideColumnDate = 1 << 4,	// hide column file date
+	ImGuiFileDialogFlags_Default = ImGuiFileDialogFlags_None // for the moment we have no defualt options but its comming :)
 };
 
 #ifdef __cplusplus
@@ -545,6 +557,7 @@ namespace IGFD
 		{
 			FIELD_NONE = 0,
 			FIELD_FILENAME,
+			FIELD_TYPE,
 			FIELD_SIZE,
 			FIELD_DATE
 		};
@@ -599,9 +612,10 @@ namespace IGFD
 		bool m_IsOk = false;								
 		bool m_CreateDirectoryMode = false;					// for create directory mode
 		std::string m_HeaderFileName;						// detail view column file
+		std::string m_HeaderFileType;						// detail view column type
 		std::string m_HeaderFileSize;						// detail view column size
 		std::string m_HeaderFileDate;						// detail view column date + time
-		bool m_SortingDirection[3] = { true,true,true };	// detail view // true => Descending, false => Ascending
+		bool m_SortingDirection[4] = { true, true, true, true };	// detail view // true => Descending, false => Ascending
 		SortingFieldEnum m_SortingField = SortingFieldEnum::FIELD_FILENAME;  // detail view sorting column
 
 		std::string dlg_key;
@@ -643,6 +657,8 @@ namespace IGFD
 		char FileNameBuffer[MAX_FILE_DIALOG_NAME_BUFFER] = "";
 		char DirectoryNameBuffer[MAX_FILE_DIALOG_NAME_BUFFER] = "";
 		char SearchBuffer[MAX_FILE_DIALOG_NAME_BUFFER] = "";
+		char VariadicBuffer[MAX_FILE_DIALOG_NAME_BUFFER] = "";
+
 #ifdef USE_BOOKMARK
 		char BookmarkEditBuffer[MAX_FILE_DIALOG_NAME_BUFFER] = "";
 #endif // USE_BOOKMARK
@@ -655,13 +671,13 @@ namespace IGFD
 	public: 
 		static FileDialog* Instance()								// Singleton for easier accces form anywhere but only one dialog at a time
 		{
-			static auto* _instance = new FileDialog();
-			return _instance;
+			static FileDialog _instance;
+			return &_instance;
 		}
 
 	public:
 		FileDialog();												// ImGuiFileDialog Constructor. can be used for have many dialog at same tiem (not possible with singleton)
-		~FileDialog();												// ImGuiFileDialog Destructor
+		virtual ~FileDialog();										// ImGuiFileDialog Destructor
 
 		// standard dialog
 		void OpenDialog(											// open simple dialog (path and fileName can be specified)
@@ -800,14 +816,14 @@ namespace IGFD
 #endif // USE_BOOKMARK
 
 	///////////////////////////////////////////////////////////////////////////////////////
-	/// PRIVATE METHODS ///////////////////////////////////////////////////////////////////
+	/// PROTECTED'S METHODS ///////////////////////////////////////////////////////////////
 	///////////////////////////////////////////////////////////////////////////////////////
 
-	private: 
+	protected: 
 		// dialog parts
-		virtual void DrawHeader();											// draw header part of the dialog (bookmark btn, dir creation, path composer, search bar)
-		virtual void DrawContent();											// draw content part of the dialog (bookmark pane, file list, side pane)
-		virtual bool DrawFooter();											// draw footer part of the dialog (file field, fitler combobox, ok/cancel btn's)
+		virtual void DrawHeader();									// draw header part of the dialog (bookmark btn, dir creation, path composer, search bar)
+		virtual void DrawContent();									// draw content part of the dialog (bookmark pane, file list, side pane)
+		virtual bool DrawFooter();									// draw footer part of the dialog (file field, fitler combobox, ok/cancel btn's)
 
 		// widgets components
 		virtual void DrawDirectoryCreation();						// draw directory creation widget
@@ -818,18 +834,20 @@ namespace IGFD
 #ifdef USE_BOOKMARK
 		virtual void DrawBookMark();								// draw bookmark button
 #endif // USE_BOOKMARK
+
 		// others
+		bool SelectableItem(int vidx, const FileInfoStruct& vInfos, bool vSelected, const char* vFmt, ...);					// selectable item for table
 		void ResetEvents();																									// reset events (path, drives, continue)
-		void SetDefaultFileName(const std::string& vFileName);																// set default fiel name
+		void SetDefaultFileName(const std::string& vFileName);																// set default file name
 		bool SelectDirectory(const FileInfoStruct& vInfos);																	// enter directory 
 		void SelectFileName(const FileInfoStruct& vInfos);																	// select filename
 		void RemoveFileNameInSelection(const std::string& vFileName);														// selection : remove a file name
-		void AddFileNameInSelection(const std::string& vFileName, bool vSetLastSelectionFileName);							// selection  add file name
-		void SetPath(const std::string& vPath);																				// set the path of the dialog, will launch the driectory scan for populate the file listview
-		void FillInfos(FileInfoStruct *vFileInfoStruct);																	// set time dand date infos of a file (detail view mode)
+		void AddFileNameInSelection(const std::string& vFileName, bool vSetLastSelectionFileName);							// selection : add a file name
+		void SetPath(const std::string& vPath);																				// set the path of the dialog, will launch the directory scan for populate the file listview
+		void CompleteFileInfos(FileInfoStruct *vFileInfoStruct);															// set time and date infos of a file (detail view mode)
 		void SortFields(SortingFieldEnum vSortingField = SortingFieldEnum::FIELD_NONE, 	bool vCanChangeOrder = false);		// will sort a column
-		void ScanDir(const std::string& vPath);																				// scan the directory for retriev the file list
-		void SetCurrentDir(const std::string& vPath);																		// define current directory
+		void ScanDir(const std::string& vPath);																				// scan the directory for retrieve the file list
+		void SetCurrentDir(const std::string& vPath);																		// define current directory for scan
 		bool CreateDir(const std::string& vPath);																			// create a directory on the file system
 		std::string ComposeNewPath(std::vector<std::string>::iterator vIter);												// compose a path from the compose path widget
 		void GetDrives();																									// list drives on windows platform

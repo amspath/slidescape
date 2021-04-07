@@ -22,7 +22,7 @@
 //#define FILTER_COMBO_WIDTH 120.0f
 // button widget use for compose path
 //#define IMGUI_PATH_BUTTON ImGui::Button
-// standar button
+// standard button
 //#define IMGUI_BUTTON ImGui::Button
 
 // locales string
@@ -36,6 +36,7 @@
 //#define linkEntryString "[LINK] "
 //#define fileEntryString "[FILE] "
 //#define fileNameString "File Name : "
+//#define dirNameString "Directory Path :"
 //#define buttonResetSearchString "Reset search"
 //#define buttonDriveString "Drives"
 //#define buttonResetPathString "Reset to current directory"
@@ -47,7 +48,7 @@
 
 // DateTimeFormat
 // see strftime functionin <ctime> for customize
-// "%Y/%m/%d %H:%M:%S" give 2021:01:22 11:47:10
+// "%Y/%m/%d %H:%M" give 2021:01:22 11:47
 // "%Y/%m/%d %i:%M%p" give 2021:01:22 11:45PM
 //#define DateTimeFormat "%Y/%m/%d %i:%M%p"
 
@@ -56,10 +57,11 @@
 //#define tableHeaderAscendingIcon "A|"
 //#define tableHeaderDescendingIcon "D|"
 //#define tableHeaderFileNameString " File name"
+//#define tableHeaderFileTypeString " Type"
 //#define tableHeaderFileSizeString " Size"
-//#define tableHeaderFileDateString " Date"
+//#define tableHeaderFileDateTimeString " Date"
 
-#define USE_BOOKMARK
+//#define USE_BOOKMARK
 //#define bookmarkPaneWith 150.0f
 //#define IMGUI_TOGGLE_BUTTON ToggleButton
 //#define bookmarksButtonString "Bookmark"

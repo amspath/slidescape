@@ -31,6 +31,7 @@
 #include "remote.h"
 #include "caselist.h"
 #include "tiff_write.h"
+#include "coco.h"
 
 #define GUI_IMPL
 #include "gui.h"
@@ -80,6 +81,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool deselect;
 			bool crop_region;
 			bool export_region;
+			bool load_coco_test_file;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -133,6 +135,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Enable Vsync", NULL, &is_vsync_enabled)) {}
 				if (ImGui::MenuItem("Show menu bar", "Alt+F11", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
+				if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -186,6 +189,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			}
 
 
+		} else if (menu_items_clicked.load_coco_test_file) {
+			coco_t coco = {};
+			load_coco_from_file(&coco, "C:\\work\\pathol\\compai\\coco\\instances_val2017.json");
 		}
 	}
 

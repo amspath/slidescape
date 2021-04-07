@@ -329,3 +329,7 @@ bool load_coco_from_file(coco_t* coco, const char* json_filename) {
 	return success;
 }
 
+void save_coco(coco_t* coco) {
+	
+}
+
