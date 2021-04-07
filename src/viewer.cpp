@@ -908,6 +908,35 @@ void viewer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 
 }
 
 
+void viewer_control_camera(v2f control) {
+
+}
+
+v2f get_2d_control_from_input(input_t* input) {
+	v2f control = {};
+	if (input) {
+		if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
+			control.y += 1.0f;
+		}
+		if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
+			control.y += -1.0f;
+		}
+		if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
+			control.x += 1.0f;
+		}
+		if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
+			control.x += -1.0f;
+		}
+		// Normalize
+		float length_squared = v2f_length_squared(control);
+		if (length_squared > 1.0f) {
+			float length = sqrtf(length_squared);
+			control = v2f_scale(1.0f / length, control);
+		}
+	}
+	return control;
+}
+
 // TODO: refactor delta_t
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
@@ -1076,22 +1105,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			float key_repeat_interval = 0.15f; // in seconds
 
-			scene->control_x = 0.0f;
-			scene->control_y = 0.0f;
+			scene->control = (v2f){};
 
 			if (!gui_want_capture_keyboard) {
-				if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
-					scene->control_y = 1.0f;
-				}
-				if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
-					scene->control_y = -1.0f;
-				}
-				if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
-					scene->control_x = 1.0f;
-				}
-				if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
-					scene->control_x = -1.0f;
-				}
+
+				scene->control = get_2d_control_from_input(input);
 
 				// Zoom out using Z or /
 				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
@@ -1203,12 +1221,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 900.0f * delta_t * panning_multiplier;
-			if (scene->control_y != 0.0f) {
-				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->control_y;
+			if (scene->control.y != 0.0f) {
+				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->control.y;
 				mouse_hide();
 			}
-			if (scene->control_x != 0.0f) {
-				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->control_x;
+			if (scene->control.x != 0.0f) {
+				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->control.x;
 				mouse_hide();
 			}
 

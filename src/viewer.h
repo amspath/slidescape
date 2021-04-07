@@ -252,8 +252,7 @@ typedef struct scene_t {
 	zoom_state_t zoom;
 	bool8 need_zoom_reset;
 	bool8 need_zoom_animation;
-	float control_x;
-	float control_y;
+	v2f control;
 	v2f zoom_pivot;
 	zoom_state_t zoom_target_state;
 	v2f level_pixel_size;
