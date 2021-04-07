@@ -41,6 +41,11 @@ enum isyntax_node_type_enum {
 	ISYNTAX_NODE_ARRAY = 3, // <Array> (contains one or more similar type of leaf/branch nodes)
 };
 
+enum isyntax_group_0x301D_dicom_element_enum {
+	UFS_IMAGE_GENERAL_HEADERS   = 0x2000,
+	UFS_IMAGE_BLOCK_HEADER_TEMPLATES = 0x2009,
+};
+
 #pragma pack(push, 1)
 typedef struct dicom_tag_header_t {
 	u16 group;
@@ -79,7 +84,26 @@ typedef struct isyntax_full_block_header_t {
 	dicom_tag_header_t block_header_template_id_header;
 	u32 block_header_template_id;
 } isyntax_full_block_header_t;
+
+typedef struct isyntax_seektable_codeblock_header_t {
+	dicom_tag_header_t start_header;
+	dicom_tag_header_t block_data_offset_header;
+	u64 block_data_offset;
+	dicom_tag_header_t block_size_header;
+	u64 block_size;
+} isyntax_seektable_codeblock_header_t;
 #pragma pack(pop)
+
+typedef struct isyntax_image_dimension_range_t {
+	i32 start;
+	i32 step;
+	i32 end;
+	i32 range;
+} isyntax_image_dimension_range_t;
+
+typedef struct isyntax_image_block_header_template_t {
+
+} isyntax_image_block_header_template_t;
 
 typedef struct isyntax_codeblock_t {
 	u32 x_coordinate;
@@ -103,6 +127,9 @@ typedef struct isyntax_image_t {
 	size_t encoded_image_size;
 	u8* block_header_table;
 	size_t block_header_size;
+	i32 codeblock_count;
+	isyntax_codeblock_t* codeblocks;
+	bool header_codeblocks_are_partial;
 } isyntax_image_t;
 
 typedef struct isyntax_parser_array_node_t {
@@ -122,6 +149,7 @@ typedef struct isyntax_parser_node_t {
 typedef struct isyntax_parser_t {
 	yxml_t* x;
 	isyntax_image_t* current_image;
+	i32 running_image_index;
 	u32 current_image_type;
 	char* current_element_name;
 	char* attrbuf;
@@ -139,8 +167,11 @@ typedef struct isyntax_parser_t {
 	i32 attribute_index;
 	u32 current_node_type;
 	bool current_node_has_children;
+	// We need to use negative indexing into the node_stack (max 4) to check
+	isyntax_parser_node_t safety_bytes_for_node_stack[4];
 	isyntax_parser_node_t node_stack[ISYNTAX_MAX_NODE_DEPTH];
 	i32 node_stack_index;
+	u16 image_header_parsing_mode;
 	bool initialized;
 } isyntax_parser_t;
 
