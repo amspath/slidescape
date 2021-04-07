@@ -90,13 +90,14 @@ void memrw_maybe_grow(memrw_t* buffer, u64 new_size) {
 		if (!new_ptr) panic();
 		buffer->data = new_ptr;
 #if DO_DEBUG
-		console_print("memrw_push(): expanded buffer size from %u to %u\n", buffer->capacity, new_capacity);
+		console_print_verbose("memrw_maybe_grow(): expanded buffer size from %u to %u\n", buffer->capacity, new_capacity);
 #endif
 		buffer->capacity = new_capacity;
 	}
 }
 
-u64 memrw_push(memrw_t* buffer, void* data, u64 size) {
+// TODO: do we actually want this to be a dynamic array, or a read/write stream?
+u64 memrw_push_back(memrw_t* buffer, void* data, u64 size) {
 	u64 new_size = buffer->used_size + size;
 	memrw_maybe_grow(buffer, new_size);
 	u64 write_offset = buffer->used_size;
@@ -107,6 +108,7 @@ u64 memrw_push(memrw_t* buffer, void* data, u64 size) {
 		memset(write_pos, 0, size);
 	}
 	buffer->used_size += size;
+	buffer->cursor = buffer->used_size;
 	buffer->used_count += 1;
 	return write_offset;
 }
@@ -126,6 +128,40 @@ memrw_t memrw_create(u64 capacity) {
 void memrw_rewind(memrw_t* buffer) {
 	buffer->used_size = 0;
 	buffer->used_count = 0;
+	buffer->cursor = 0;
+}
+
+void memrw_seek(memrw_t* buffer, i64 offset) {
+	if (offset >= 0 && (i64)offset < buffer->used_size) {
+		buffer->cursor = offset;
+	} else {
+		panic();
+	};
+}
+
+i64 memrw_write(const void* src, memrw_t* buffer, i64 bytes_to_write) {
+	ASSERT(bytes_to_write >= 0);
+	memrw_maybe_grow(buffer, buffer->cursor + bytes_to_write);
+	i64 bytes_left = buffer->capacity - buffer->cursor;
+	if (bytes_left >= 1) {
+		bytes_to_write = MIN(bytes_to_write, bytes_left);
+		memcpy(buffer->data + buffer->cursor, src, bytes_to_write);
+		buffer->cursor += bytes_to_write;
+		buffer->used_size = MAX(buffer->cursor, (i64)buffer->used_size);
+		return bytes_to_write;
+	}
+	return 0;
+}
+
+i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read) {
+	i64 bytes_left = buffer->used_size - buffer->cursor;
+	if (bytes_left >= 1) {
+		bytes_to_read = MIN(bytes_to_read, (size_t)bytes_left);
+		memcpy(dest, buffer->data + buffer->cursor, bytes_to_read);
+		buffer->cursor += bytes_to_read;
+		return bytes_to_read;
+	}
+	return 0;
 }
 
 void memrw_destroy(memrw_t* buffer) {

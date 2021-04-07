@@ -19,6 +19,7 @@
 #include "common.h"
 
 #include "platform.h"
+#define SHEREDOM_JSON_IMPLEMENTATION
 #include "json.h"
 #include "stringutils.h"
 

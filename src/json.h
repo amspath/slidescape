@@ -49,12 +49,16 @@
 #include <stddef.h>
 #include <string.h>
 
+#if 1
+#define json_weak
+#else
 #if defined(_MSC_VER)
 #define json_weak __inline
 #elif defined(__clang__) || defined(__GNUC__)
 #define json_weak __attribute__((weak))
 #else
 #error Non clang, non gcc, non MSVC compiler found!
+#endif
 #endif
 
 #ifdef __cplusplus
@@ -381,6 +385,8 @@ struct json_parse_result_s {
 #ifdef __cplusplus
 } /* extern "C". */
 #endif
+
+#if defined(SHEREDOM_JSON_IMPLEMENTATION)
 
 #include <stdlib.h>
 
@@ -3396,6 +3402,9 @@ void *json_write_pretty(const struct json_value_s *value, const char *indent,
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
+
+#endif // SHEREDOM_JSON_IMPLEMENTATION
+
 #elif defined(_MSC_VER)
 #pragma warning(pop)
 #endif

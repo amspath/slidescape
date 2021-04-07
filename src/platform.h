@@ -62,6 +62,7 @@ typedef struct mem_t {
 
 typedef struct memrw_t {
 	u8* data;
+	i64 cursor;
 	u64 used_size;
 	u64 used_count;
 	u64 capacity;
@@ -220,10 +221,13 @@ void test_multithreading_work_queue();
 bool file_exists(const char* filename);
 
 void memrw_maybe_grow(memrw_t* buffer, u64 new_size);
-u64 memrw_push(memrw_t* buffer, void* data, u64 size);
+u64 memrw_push_back(memrw_t* buffer, void* data, u64 size);
 void memrw_init(memrw_t* buffer, u64 capacity);
 memrw_t memrw_create(u64 capacity);
 void memrw_rewind(memrw_t* buffer);
+void memrw_seek(memrw_t* buffer, i64 offset);
+i64 memrw_write(const void* src, memrw_t* buffer, i64 bytes_to_write);
+i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read);
 void memrw_destroy(memrw_t* buffer);
 
 void get_system_info();

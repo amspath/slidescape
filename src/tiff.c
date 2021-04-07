@@ -632,7 +632,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 
 void memrw_push_tiff_block(memrw_t* buffer, u32 block_type, u32 index, u64 block_length) {
 	serial_block_t block = { .block_type = block_type, .index = index, .length = block_length };
-	memrw_push(buffer, (u8*) &block, sizeof(block));
+	memrw_push_back(buffer, (u8*) &block, sizeof(block));
 }
 
 #define INCLUDE_IMAGE_DESCRIPTION 1
@@ -711,27 +711,27 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 	memrw_maybe_grow(buffer, uncompressed_size);
 
 	memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_HEADER_AND_META, 0, sizeof(serial_block_t));
-	memrw_push(buffer, &serial_header, sizeof(serial_header));
+	memrw_push_back(buffer, &serial_header, sizeof(serial_header));
 
 	memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_IFDS, 0, serial_ifds_block_size);
-	memrw_push(buffer, serial_ifds, serial_ifds_block_size);
+	memrw_push_back(buffer, serial_ifds, serial_ifds_block_size);
 
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
 #if INCLUDE_IMAGE_DESCRIPTION
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_IMAGE_DESCRIPTION, i, ifd->image_description_length);
-		memrw_push(buffer, ifd->image_description, ifd->image_description_length);
+		memrw_push_back(buffer, ifd->image_description, ifd->image_description_length);
 #endif
 		u64 tile_offsets_size = ifd->tile_count * sizeof(ifd->tile_offsets[0]);
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_TILE_OFFSETS, i, tile_offsets_size);
-		memrw_push(buffer, ifd->tile_offsets, tile_offsets_size);
+		memrw_push_back(buffer, ifd->tile_offsets, tile_offsets_size);
 
 		u64 tile_byte_counts_size = ifd->tile_count * sizeof(ifd->tile_byte_counts[0]);
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_TILE_BYTE_COUNTS, i, tile_byte_counts_size);
-		memrw_push(buffer, ifd->tile_byte_counts, tile_byte_counts_size);
+		memrw_push_back(buffer, ifd->tile_byte_counts, tile_byte_counts_size);
 
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_TIFF_JPEG_TABLES, i, ifd->jpeg_tables_length);
-		memrw_push(buffer, ifd->jpeg_tables, ifd->jpeg_tables_length);
+		memrw_push_back(buffer, ifd->jpeg_tables, ifd->jpeg_tables_length);
 
 	}
 
@@ -750,7 +750,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 		// success! We can replace the buffer contents with the compressed data
 		memrw_rewind(buffer);
 		memrw_push_tiff_block(buffer, SERIAL_BLOCK_LZ4_COMPRESSED_DATA, uncompressed_size, compressed_size);
-		memrw_push(buffer, compression_buffer, compressed_size);
+		memrw_push_back(buffer, compression_buffer, compressed_size);
 	} else {
 		console_print_error("Warning: tiff_serialize(): payload LZ4 compression failed\n");
 	}

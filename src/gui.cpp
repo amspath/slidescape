@@ -191,7 +191,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 		} else if (menu_items_clicked.load_coco_test_file) {
 			coco_t coco = {};
-			load_coco_from_file(&coco, "C:\\work\\pathol\\compai\\coco\\instances_val2017.json");
+			if (load_coco_from_file(&coco, "coco_test_in.json")) {
+				save_coco(&coco);
+			}
 		}
 	}
 

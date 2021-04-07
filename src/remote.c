@@ -337,7 +337,7 @@ bool remote_request(tls_connection_t* connection, const char* request, i32 reque
 #ifdef REMOTE_VERBOSE
 		console_print( " %d bytes read\n", len );
 #endif
-		memrw_push(mem_buffer, read_buffer, len);
+		memrw_push_back(mem_buffer, read_buffer, len);
 	}
 	while( 1 );
 
@@ -469,7 +469,7 @@ void do_remote_connection_test() {
 		float seconds_elapsed = close_remote_connection(connection);
 		if (read_ok) {
 			console_print( "Remote connection test (%s): %d bytes read in %g seconds\n", hostname, mem_buffer.used_size, seconds_elapsed );
-			memrw_push(&mem_buffer, "\0", 1);
+			memrw_push_back(&mem_buffer, "\0", 1);
 			FILE* test_out = fopen("test_google.html", "wb");
 			fwrite(mem_buffer.data, mem_buffer.used_size-1, 1, test_out);
 			fclose(test_out);

@@ -100,11 +100,11 @@ static inline void add_fixup(memrw_t* fixups_buffer, u64 offset_to_fix, u64 offs
 	// pointers to the destination buffer might be unstable because the destination buffer might resize.
 	// so instead we are storing it as an offset from the start of the destination buffer.
 	offset_fixup_t new_fixup = {offset_to_fix, offset_from_unknown_base};
-	memrw_push(fixups_buffer, &new_fixup, sizeof(new_fixup));
+	memrw_push_back(fixups_buffer, &new_fixup, sizeof(new_fixup));
 }
 
 static inline u64 memrw_push_bigtiff_tag(memrw_t* buffer, raw_bigtiff_tag_t* tag) {
-	u64 write_offset = memrw_push(buffer, tag, sizeof(*tag));
+	u64 write_offset = memrw_push_back(buffer, tag, sizeof(*tag));
 	return write_offset;
 }
 
@@ -121,7 +121,7 @@ static u64 add_large_bigtiff_tag(memrw_t* tag_buffer, memrw_t* data_buffer, memr
 		u64 write_offset = memrw_push_bigtiff_tag(tag_buffer, &tag);
 		return write_offset;
 	} else {
-		u64 data_offset = memrw_push(data_buffer, tag_data, tag_data_size);
+		u64 data_offset = memrw_push_back(data_buffer, tag_data, tag_data_size);
 		raw_bigtiff_tag_t tag = {tag_code, tag_type, tag_data_count, .offset = data_offset};
 		u64 write_offset = memrw_push_bigtiff_tag(tag_buffer, &tag);
 		// NOTE: we cannot store a raw pointer to the offset we need to fix later, because the buffer
@@ -592,7 +592,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		header.filetype = 0x002B; // BigTIFF
 		header.bigtiff.offset_size = 0x0008;
 		header.bigtiff.always_zero = 0;
-		memrw_push(&tag_buffer, &header, 8);
+		memrw_push_back(&tag_buffer, &header, 8);
 
 		// NOTE: the downsampling level does not necessarily equal the ifd index.
 		i32 source_ifd_index = 0;
@@ -648,10 +648,10 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 			// Offset to the beginning of the next IFD (= 8 bytes directly after the current offset)
 			u64 next_ifd_offset = tag_buffer.used_size + sizeof(u64);
-			memrw_push(&tag_buffer, &next_ifd_offset, sizeof(u64));
+			memrw_push_back(&tag_buffer, &next_ifd_offset, sizeof(u64));
 
 			u64 tag_count_for_ifd = 0;
-			u64 tag_count_for_ifd_offset = memrw_push(&tag_buffer, &tag_count_for_ifd, sizeof(u64));
+			u64 tag_count_for_ifd_offset = memrw_push_back(&tag_buffer, &tag_count_for_ifd, sizeof(u64));
 
 			// Calculate dimensions for the current downsampling level
 			bounds2i pixel_bounds = level0_bounds;
@@ -737,7 +737,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 			// Include the NewSubfileType tag in every IFD except the first one
 			if (level > 0) {
-				memrw_push(&tag_buffer, &tag_new_subfile_type, sizeof(raw_bigtiff_tag_t));
+				memrw_push_back(&tag_buffer, &tag_new_subfile_type, sizeof(raw_bigtiff_tag_t));
 				++tag_count_for_ifd;
 			}
 
@@ -824,7 +824,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		}
 
 		u64 next_ifd_offset_terminator = 0;
-		memrw_push(&tag_buffer, &next_ifd_offset_terminator, sizeof(u64));
+		memrw_push_back(&tag_buffer, &next_ifd_offset_terminator, sizeof(u64));
 
 		// TODO: macro/label images
 

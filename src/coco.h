@@ -65,6 +65,7 @@ typedef struct coco_category_t {
 } coco_category_t;
 
 typedef struct coco_t {
+	size_t original_filesize;
 	coco_info_t info;
 	coco_license_t* licenses;
 	i32 license_count;
@@ -79,4 +80,5 @@ typedef struct coco_t {
 
 bool open_coco(coco_t* coco, const char* json_source, size_t json_length);
 bool load_coco_from_file(coco_t* coco, const char* json_filename);
+void save_coco(coco_t* coco);
 
