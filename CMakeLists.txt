@@ -170,7 +170,7 @@ set(VIEWER_SOURCE_FILES
         tiff.c
         tiff_write.c
         isyntax.c
-        caselist.c
+        caselist.cpp
         coco.cpp
         annotation.cpp
         openslide_api.c
@@ -186,7 +186,6 @@ set(VIEWER_SOURCE_FILES
         jpeg_decoder.c
         remote.c
         lz4.c
-        parson.c
         yxml.c
         tif_lzw.c
 )

@@ -51,7 +51,7 @@ Slideviewer embeds code from the following libraries, under their respective lic
 * [Mbed TLS](https://github.com/ARMmbed/mbedtls) (SSL/TLS and cryptography library)
 * [FreeType](https://www.freetype.org/index.html) (font renderer)
 * [Yxml](https://dev.yorhel.nl/yxml) (XML parser)
-* [Parson](https://github.com/kgabis/parson) (JSON parser)
+* [json.h](https://github.com/sheredom/json.h) (JSON parser)
 * [linmath.h](https://github.com/datenwolf/linmath.h) (linear math library)
 * [stb_image.h](https://github.com/nothings/stb) (image loader)
 * [stretchy_buffer.h](https://github.com/nothings/stb) (typesafe dynamic array for C)

@@ -18,7 +18,6 @@
 
 #pragma once
 #include "common.h"
-#include "parson.h"
 
 #define SLIDE_MAX_PATH 512
 #define SLIDE_MAX_META_STR 128
@@ -39,11 +38,14 @@ typedef struct {
 	const char *notes;
 } case_t;
 
+// avoid including json.h in the header file, and be compatible with C compilation
+typedef struct json_value_s json_value_s;
+
 typedef struct {
 	u32 case_count;
 	case_t *cases;
 	const char** names;
-	JSON_Value* json_root_value;
+	json_value_s* json_root_value;
 	bool32 is_remote;
 	char folder_prefix[SLIDE_MAX_PATH]; // working directory
 	u32 prefix_len;
@@ -54,7 +56,7 @@ void reset_global_caselist(app_state_t* app_state);
 void reload_global_caselist(app_state_t *app_state, const char *filename);
 bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_info_t* slide);
 bool32 caselist_select_first_case(app_state_t* app_state, caselist_t* caselist);
-bool32 load_caselist(caselist_t* caselist, const char* source, const char* caselist_name);
+bool32 load_caselist(caselist_t* caselist, const char* json_source, size_t json_length, const char* caselist_name);
 bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename);
 bool32 load_caselist_from_remote(caselist_t* caselist, const char* hostname, i32 portno, const char* name);
 void caselist_destroy(caselist_t* caselist);
