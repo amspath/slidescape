@@ -908,8 +908,41 @@ void viewer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 
 }
 
 
-void viewer_control_camera(v2f control) {
+v2f viewer_do_2d_control(v2f velocity, v2f control, float dt, float time_since_start_moving, bool is_shift_pressed) {
+	float old_speed = v2f_length(velocity);
+	float control_force = v2f_length(control);
+	float max_force = 120.0f;
+	if (time_since_start_moving < 0.20f) {
+		control_force *= (0.25f + 0.75f * time_since_start_moving * (1.0f / 0.2f)) * max_force;
+	} else {
+		control_force *= max_force;
+	}
+	float friction = 15.0f;
+	friction += control_force * 0.5f;
+	if (is_shift_pressed && control_force > 0.0f) {
+		friction *= 0.25f;
+	}
+	float net_force = control_force - ((1.0f + old_speed * old_speed) * friction);
+	float dv = net_force * dt;
+	float new_speed = ATLEAST(0.0f, old_speed + dv);
 
+#if 0
+	static i32 times_zero;
+	if (new_speed != 0.0f || times_zero < 5) {
+		if (new_speed == 0.0f) {
+			times_zero++;
+		} else times_zero = 0;
+		console_print("old_speed = %g, control_force = %g, friction = %g, net_force = %g, dv = %g, new_speed = %g\n", old_speed, control_force, friction, net_force, dv, new_speed);
+	}
+#endif
+
+	v2f new_velocity = {};
+	if (control_force > 0.01f) {
+		new_velocity = v2f_scale(new_speed, control);
+	} else if (old_speed > 0.01f) {
+		new_velocity = v2f_scale(new_speed / old_speed, velocity);
+	}
+	return new_velocity;
 }
 
 v2f get_2d_control_from_input(input_t* input) {
@@ -1110,6 +1143,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (!gui_want_capture_keyboard) {
 
 				scene->control = get_2d_control_from_input(input);
+				float control_length = v2f_length(scene->control);
+				if (control_length > 0.0f) {
+					scene->time_since_control_start += delta_t;
+				} else {
+					scene->time_since_control_start = 0.0f;
+				}
+
+				scene->panning_velocity = viewer_do_2d_control(scene->panning_velocity, scene->control, delta_t, scene->time_since_control_start, input->keyboard.key_shift.down);
 
 				// Zoom out using Z or /
 				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
@@ -1215,18 +1256,15 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning should be faster when zoomed in very far.
 			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
-			if (input->keyboard.key_shift.down) {
-				panning_multiplier *= 0.25f;
-			}
 
 			// Panning using the arrow or WASD keys.
-			float panning_speed = 900.0f * delta_t * panning_multiplier;
-			if (scene->control.y != 0.0f) {
-				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->control.y;
+			float panning_speed = 1500.0f * delta_t * panning_multiplier;
+			if (scene->panning_velocity.y != 0.0f) {
+				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.y;
 				mouse_hide();
 			}
-			if (scene->control.x != 0.0f) {
-				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->control.x;
+			if (scene->panning_velocity.x != 0.0f) {
+				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.x;
 				mouse_hide();
 			}
 
