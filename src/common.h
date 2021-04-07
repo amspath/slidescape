@@ -106,6 +106,13 @@
 #define sb_raw_capacity(a) stb__sbm(a)
 #define sb_maybegrow       stb__sbmaybegrow
 
+// NOTE: need to define STB_SPRINTF_IMPLEMENTATION in one source file
+#include <stb_sprintf.h>
+#define sprintf   stbsp_sprintf
+#define snprintf  stbsp_snprintf
+#define vsprintf  stbsp_vsprintf
+#define vnsprintf stbsp_vnsprintf
+
 // Typedef choices for numerical types
 typedef int8_t i8;
 typedef int16_t i16;
