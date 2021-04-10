@@ -28,7 +28,6 @@
 
 // TODO: Record relevant metadata in the isyntax_t structure
 // --> used in the XML header for barcode, label/macro JPEG data, image block header structure, ICC profiles
-// TODO: Parse seektable
 // TODO: Figure out codeblocks packaging scheme and decompression
 // TODO: Identify spatial location of codeblocks
 // TODO: Inverse discrete wavelet transform
@@ -774,6 +773,176 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 	}
 }
 
+// Read up to 57 unaligned bits (7 bytes + 1 bit) from a bitstream.
+// Requires that at least 7 safety bytes are present at the end of the stream (don't trigger a segmentation fault)!
+static inline u64 bitstream_read_no_advance(u8** byte_pos, i32* bits_read) {
+	u64 raw = *(u64*)(*byte_pos);
+	i32 bits_remaining_in_current_byte = (*bits_read) % 8;
+	if (bits_remaining_in_current_byte == 0) {
+		bits_remaining_in_current_byte = 8;
+	}
+	raw >>= (8 - bits_remaining_in_current_byte);
+	return raw;
+}
+
+static inline void bitstream_advance(u8** byte_pos, i32* bits_read, i32 bits_to_read) {
+	i32 bits_remaining_in_current_byte = (*bits_read) % 8;
+	i32 bytes_to_advance = ((bits_to_read + 7) - bits_remaining_in_current_byte) / 8;
+	*byte_pos += bytes_to_advance;
+	*bits_read += bits_to_read;
+}
+
+static inline u64 bitstream_read_advance(u8** byte_pos, i32* bits_read, i32 bits_to_read) {
+	u64 raw = *(u64*)(*byte_pos);
+	i32 bits_remaining_in_current_byte = (*bits_read) % 8;
+	if (bits_remaining_in_current_byte == 0) {
+		bits_remaining_in_current_byte = 8;
+	}
+	raw >>= (8 - bits_remaining_in_current_byte);
+	i32 bytes_to_advance = ((bits_to_read + 7) - bits_remaining_in_current_byte) / 8;
+	*byte_pos += bytes_to_advance;
+	*bits_read += bits_to_read;
+	return raw;
+}
+
+#define DO_DEBUG_HUFFMAN_DECODE 0
+#if  DO_DEBUG_HUFFMAN_DECODE
+// partly adapted from stb_image.h
+#define HUFFMAN_FAST_BITS 9
+
+typedef struct huffman_t {
+	u8  fast[1 << HUFFMAN_FAST_BITS];
+	// weirdly, repacking this into AoS is a 10% speed loss, instead of a win
+	u16 code[256];
+	u8  values[256];
+	u8  size[257];
+	u32 maxcode[18];
+	i32    delta[17];   // old 'firstsymbol' - old 'firstcode'
+} huffman_t;
+
+typedef struct hulsken_decoder_t {
+	u64 code_buffer;
+	i32 code_buffer_bits;
+} hulsken_decoder_t;
+
+static void grow_bitstream_buffer_unsafe(hulsken_decoder_t* decoder) {
+	// don't read past end of stream!
+}
+
+static i32 decode_huffman_value(hulsken_decoder_t* decoder, huffman_t* huffman) {
+	if (decoder->code_buffer_bits < 32)  {
+		grow_bitstream_buffer_unsafe(decoder);
+	}
+	// look at the top FAST_BITS and determine what symbol ID it is, if the code is <= FAST_BITS
+	i32 c =  (decoder->code_buffer >> (64 - HUFFMAN_FAST_BITS)) & ((1 << HUFFMAN_FAST_BITS) - 1);
+	i32 symbol = huffman->fast[c];
+	if (symbol < 255) {
+		i32 symbol_size = huffman->size[symbol];
+		if (symbol_size > decoder->code_buffer_bits)
+			return -1;
+		decoder->code_buffer >>= symbol_size;
+		decoder->code_buffer_bits -= symbol_size;
+		return huffman->values[symbol];
+	}
+
+	// stub
+}
+
+void isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, i32 compressor_version) {
+	ASSERT(coeff_count == 1 || coeff_count == 3);
+	ASSERT(compressor_version == 1 || compressor_version == 2);
+	i32 coeff_bit_depth = 16; // fixed value for iSyntax
+	i32 block_width = 128; // fixed value for iSyntax (?)
+	i32 block_height = 128; // fixed value for iSyntax (?)
+	i32 bits_read = 0;
+	i32 block_size_in_bits = codeblock->block_size * 8;
+	i64 serialized_length = 0; // In v1: stored in the first 4 bytes. In v2: derived calculation.
+	u32 bitmasks[3] = { 0x000FFFF, 0x000FFFF, 0x000FFFF }; // default in v1: all ones, can be overridden later
+	i32 total_mask_bits = coeff_bit_depth * coeff_count;
+	u8* byte_pos = codeblock->data;
+	if (compressor_version == 1) {
+		serialized_length = *(u32*)byte_pos;
+		byte_pos += 4;
+		bits_read += 4*8;
+	} else {
+		if (coeff_count == 1) {
+			bitmasks[0] = *(u16*)(byte_pos);
+			byte_pos += 2;
+			bits_read += 2*8;
+			total_mask_bits = _popcnt32(bitmasks[0]);
+		} else if (coeff_count == 3) {
+			bitmasks[0] = *(u16*)(byte_pos);
+			bitmasks[1] = *(u16*)(byte_pos+2);
+			bitmasks[2] = *(u16*)(byte_pos+4);
+			byte_pos += 6;
+			bits_read += 6*8;
+			total_mask_bits = _popcnt32(bitmasks[0]) + _popcnt32(bitmasks[1]) + _popcnt32(bitmasks[2]);
+		} else {
+			panic();
+		}
+		serialized_length = total_mask_bits * (block_width * block_height / 8);
+	}
+	u8 zero_run_symbol = *(u8*)byte_pos++;
+	bits_read += 8;
+	u8 counter_depth = *(u8*)byte_pos++;
+	bits_read += 8;
+
+	if (compressor_version >= 2) {
+		// read bitplane seektable
+		i32 stored_bit_plane_count = total_mask_bits;
+		u32* bitplane_offsets = alloca(stored_bit_plane_count * sizeof(u32));
+		i32 bitplane_ptr_bits = (i32)(log2f(serialized_length)) + 5;
+		for (i32 i = 0; i < stored_bit_plane_count; ++i) {
+			bitplane_offsets[i] = bitstream_read_advance(&byte_pos, &bits_read, bitplane_ptr_bits);
+		}
+	}
+
+	// Read Huffman table
+	i32 huffman_symbol_bits = 8;
+	size_t lut_size = 1 << huffman_symbol_bits;
+	u8* huffman_lut = alloca(lut_size);
+	memset(huffman_lut, 0, lut_size);
+	u64 tree_pos = 0;
+	i32 tree_depth = 1;
+	do {
+		// Read a chunk of bits large enough to 'always' have the whole Huffman code, followed by the 8-bit symbol.
+		// 40 bytes should be sufficient for a Huffman code of at most 32 bits.
+		i32 bits_to_advance = 0;
+		u64 blob = bitstream_read_no_advance(&byte_pos, &bits_read); // gives back between 57 and 64 bits.
+		bool is_leaf = blob & 1;
+		++bits_to_advance;
+		while (!is_leaf) {
+			++bits_to_advance;
+			tree_pos <<= 1;
+			is_leaf = ((blob >> tree_depth) & 1);
+			++tree_depth;
+		}
+		u32 huffman_code = tree_pos; // fix this, bit reverse?
+		blob >>= bits_to_advance;
+
+
+		u8 symbol = (u8)blob;
+		bits_to_advance += 8;
+
+		bitstream_advance(&byte_pos, &bits_read, bits_to_advance);
+
+		// pop to parent node
+		--tree_depth;
+	} while(tree_depth > 0);
+
+	DUMMY_STATEMENT;
+
+}
+
+void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
+	if (fp && !codeblock->data) {
+		codeblock->data = calloc(1, codeblock->block_size + 8); // TODO: pool allocator
+		fseeko64(fp, codeblock->block_data_offset, SEEK_SET);
+		fread(codeblock->data, codeblock->block_size, 1, fp);
+	}
+}
+#endif // DO_DEBUG_HUFFMAN_DECODE
+
 bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 	ASSERT(isyntax);
@@ -839,10 +1008,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, true);
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 
-					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)(header_length * 100) / isyntax->filesize);
-					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
-					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
-					console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
+					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
+//					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
+//					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+//					console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
 					break;
 				} else {
 					// We didn't find the end of the XML header. We need to read more chunks to find it.
@@ -872,27 +1041,32 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 #if 0
 			// Padding
 			// 1: Uniform padding with black pixels on all sides
-			i32 per_level_padding = 3; // for Legall 5/3 wavelet transform
-			i32 num_levels = 9; // TODO: get from UFSGeneralImageHeader UFS_IMAGE_DIMENSION_RANGES
-			i32 padding = (per_level_padding << num_levels) - per_level_padding;
+			i64 per_level_padding = 3; // for Legall 5/3 wavelet transform
+			i64 num_levels = 9; // TODO: get from UFSGeneralImageHeader UFS_IMAGE_DIMENSION_RANGES
+			i64 padding = (per_level_padding << num_levels) - per_level_padding;
 
 			// 2: further padding on the right and bottom side.
 			// (To ensure that the image dimensions are a multiple of the codeblock size.)
 			i64 base_image_width = 148480;
 			i64 base_image_height = 93184;
-			i32 block_width = 128;
-			i32 block_height = 128;
+			i64 block_width = 128;
+			i64 block_height = 128;
 			i64 grid_width = ((base_image_width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
 			i64 grid_height = ((base_image_height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
 #endif
 
 			isyntax_image_t* wsi_image = isyntax->wsi_image;
 			if (wsi_image) {
+				io_begin = get_clock(); // for performance measurement
 				fseeko64(fp, isyntax_data_offset, SEEK_SET);
 				if (wsi_image->header_codeblocks_are_partial) {
 					// The seektable is required to be present, because the block header table did not contain all information.
 					dicom_tag_header_t seektable_header_tag = {};
 					fread(&seektable_header_tag, sizeof(dicom_tag_header_t), 1, fp);
+
+					io_ticks_elapsed += (get_clock() - io_begin);
+					parse_begin = get_clock();
+
 					if (seektable_header_tag.group == 0x301D && seektable_header_tag.element == 0x2015) {
 						i32 seektable_size = seektable_header_tag.size;
 						if (seektable_size < 0) {
@@ -920,11 +1094,21 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 								codeblock->block_size = seektable_entry->block_size;
 								++actual_real_codeblock_index;
 								if (actual_real_codeblock_index == wsi_image->codeblock_count) {
+#if DO_DEBUG_HUFFMAN_DECODE
+									debug_read_codeblock_from_file(codeblock, fp);
+									isyntax_hulsken_decompress(codeblock, 3, 1);
+#endif
+
 									break; // we're done!
 								}
 							}
 
 						}
+						parse_ticks_elapsed += (get_clock() - parse_begin);
+						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
+						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
+						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+						console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
 					} else {
 						// TODO: error
 					}

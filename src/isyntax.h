@@ -112,6 +112,7 @@ typedef struct isyntax_codeblock_t {
 	u32 scale;
 	u32 coefficient;
 	u64 block_data_offset;
+	u8* data;
 	u64 block_size;
 	u32 block_header_template_id;
 } isyntax_codeblock_t;
