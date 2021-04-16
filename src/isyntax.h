@@ -115,6 +115,7 @@ typedef struct isyntax_codeblock_t {
 	u8* data;
 	u64 block_size;
 	u32 block_header_template_id;
+	u64 decompressed_size;
 } isyntax_codeblock_t;
 
 typedef struct isyntax_image_t {

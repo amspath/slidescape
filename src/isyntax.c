@@ -773,84 +773,67 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 	}
 }
 
-// Read up to 57 unaligned bits (7 bytes + 1 bit) from a bitstream.
+
+// Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant beast first).
 // Requires that at least 7 safety bytes are present at the end of the stream (don't trigger a segmentation fault)!
-static inline u64 bitstream_read_no_advance(u8** byte_pos, i32* bits_read) {
-	u64 raw = *(u64*)(*byte_pos);
-	i32 bits_remaining_in_current_byte = (*bits_read) % 8;
-	if (bits_remaining_in_current_byte == 0) {
-		bits_remaining_in_current_byte = 8;
-	}
-	raw >>= (8 - bits_remaining_in_current_byte);
+static inline u64 bitstream_lsb_read(u8* buffer, u32 pos) {
+	u64 raw = *(u64*)(buffer + pos / 8);
+	raw >>= pos % 8;
 	return raw;
 }
 
-static inline void bitstream_advance(u8** byte_pos, i32* bits_read, i32 bits_to_read) {
-	i32 bits_remaining_in_current_byte = (*bits_read) % 8;
-	i32 bytes_to_advance = ((bits_to_read + 7) - bits_remaining_in_current_byte) / 8;
-	*byte_pos += bytes_to_advance;
-	*bits_read += bits_to_read;
-}
-
-static inline u64 bitstream_read_advance(u8** byte_pos, i32* bits_read, i32 bits_to_read) {
-	u64 raw = *(u64*)(*byte_pos);
-	i32 bits_remaining_in_current_byte = (*bits_read) % 8;
-	if (bits_remaining_in_current_byte == 0) {
-		bits_remaining_in_current_byte = 8;
-	}
-	raw >>= (8 - bits_remaining_in_current_byte);
-	i32 bytes_to_advance = ((bits_to_read + 7) - bits_remaining_in_current_byte) / 8;
-	*byte_pos += bytes_to_advance;
+static inline u64 bitstream_lsb_read_advance(u8* buffer, i32* bits_read, i32 bits_to_read) {
+	u64 raw = *(u64*)(buffer + (*bits_read / 8));
+	raw >>= (*bits_read / 8);
 	*bits_read += bits_to_read;
 	return raw;
 }
 
-#define DO_DEBUG_HUFFMAN_DECODE 0
-#if  DO_DEBUG_HUFFMAN_DECODE
+
 // partly adapted from stb_image.h
-#define HUFFMAN_FAST_BITS 9
+#define HUFFMAN_FAST_BITS 12
 
 typedef struct huffman_t {
-	u8  fast[1 << HUFFMAN_FAST_BITS];
-	// weirdly, repacking this into AoS is a 10% speed loss, instead of a win
+	u16  fast[1 << HUFFMAN_FAST_BITS];
 	u16 code[256];
-	u8  values[256];
-	u8  size[257];
-	u32 maxcode[18];
-	i32    delta[17];   // old 'firstsymbol' - old 'firstcode'
+	u8  size[256];
 } huffman_t;
 
-typedef struct hulsken_decoder_t {
-	u64 code_buffer;
-	i32 code_buffer_bits;
-} hulsken_decoder_t;
-
-static void grow_bitstream_buffer_unsafe(hulsken_decoder_t* decoder) {
-	// don't read past end of stream!
+void save_code_in_huffman_fast_lookup_table(huffman_t* h, u32 code, u32 code_width, u8 symbol) {
+	ASSERT(code_width <= HUFFMAN_FAST_BITS);
+	i32 duplicate_bits = HUFFMAN_FAST_BITS - code_width;
+	for (u32 i = 0; i < (1 << duplicate_bits); ++i) {
+		u32 address = (i << code_width) | code;
+		h->fast[address] = symbol;
+	}
 }
 
-static i32 decode_huffman_value(hulsken_decoder_t* decoder, huffman_t* huffman) {
-	if (decoder->code_buffer_bits < 32)  {
-		grow_bitstream_buffer_unsafe(decoder);
-	}
-	// look at the top FAST_BITS and determine what symbol ID it is, if the code is <= FAST_BITS
-	i32 c =  (decoder->code_buffer >> (64 - HUFFMAN_FAST_BITS)) & ((1 << HUFFMAN_FAST_BITS) - 1);
-	i32 symbol = huffman->fast[c];
-	if (symbol < 255) {
-		i32 symbol_size = huffman->size[symbol];
-		if (symbol_size > decoder->code_buffer_bits)
-			return -1;
-		decoder->code_buffer >>= symbol_size;
-		decoder->code_buffer_bits -= symbol_size;
-		return huffman->values[symbol];
-	}
+u32 max_code_size;
+u32 symbol_counts[256];
+u64 fast_count;
+u64 nonfast_count;
 
-	// stub
-}
-
-void isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, i32 compressor_version) {
+u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, i32 compressor_version) {
 	ASSERT(coeff_count == 1 || coeff_count == 3);
 	ASSERT(compressor_version == 1 || compressor_version == 2);
+
+	// Read the header information stored in the codeblock.
+	// The layout varies depending on the version of the compressor used (version 1 or 2).
+	// All integers are stored little-endian, least-significant bit first.
+	//
+	// Version 1 layout:
+	//   uint32 : serialized length (in bytes)
+	//   uint8 : zero run symbol
+	//   uint8 : zero run counter size (in bits)
+	// Version 2 layout:
+	//   coeff_count (== 1 or 3) * coeff_bit_depth bits : 1 or 3 bitmasks, indicating which bitplanes are present
+	//   uint8 : zero run symbol
+	//   uint8 : zero run counter size (in bits)
+	//   (variable length) : bitplane seektable (contains offsets to each of the bitplanes)
+
+	// After the header section, the rest of the codeblock contains a Huffman tree, followed by a Huffman-coded
+	// message of 8-bit Huffman symbols, interspersed with 'zero run' symbols (for run-length encoding of zeroes).
+
 	i32 coeff_bit_depth = 16; // fixed value for iSyntax
 	i32 block_width = 128; // fixed value for iSyntax (?)
 	i32 block_height = 128; // fixed value for iSyntax (?)
@@ -882,9 +865,9 @@ void isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 		}
 		serialized_length = total_mask_bits * (block_width * block_height / 8);
 	}
-	u8 zero_run_symbol = *(u8*)byte_pos++;
+	u8 zerorun_symbol = *(u8*)byte_pos++;
 	bits_read += 8;
-	u8 counter_depth = *(u8*)byte_pos++;
+	u8 zero_counter_size = *(u8*)byte_pos++;
 	bits_read += 8;
 
 	if (compressor_version >= 2) {
@@ -893,52 +876,214 @@ void isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 		u32* bitplane_offsets = alloca(stored_bit_plane_count * sizeof(u32));
 		i32 bitplane_ptr_bits = (i32)(log2f(serialized_length)) + 5;
 		for (i32 i = 0; i < stored_bit_plane_count; ++i) {
-			bitplane_offsets[i] = bitstream_read_advance(&byte_pos, &bits_read, bitplane_ptr_bits);
+			bitplane_offsets[i] = bitstream_lsb_read_advance(codeblock->data, &bits_read, bitplane_ptr_bits);
 		}
 	}
 
 	// Read Huffman table
-	i32 huffman_symbol_bits = 8;
-	size_t lut_size = 1 << huffman_symbol_bits;
-	u8* huffman_lut = alloca(lut_size);
-	memset(huffman_lut, 0, lut_size);
-	u64 tree_pos = 0;
-	i32 tree_depth = 1;
-	do {
-		// Read a chunk of bits large enough to 'always' have the whole Huffman code, followed by the 8-bit symbol.
-		// 40 bytes should be sufficient for a Huffman code of at most 32 bits.
-		i32 bits_to_advance = 0;
-		u64 blob = bitstream_read_no_advance(&byte_pos, &bits_read); // gives back between 57 and 64 bits.
-		bool is_leaf = blob & 1;
-		++bits_to_advance;
-		while (!is_leaf) {
-			++bits_to_advance;
-			tree_pos <<= 1;
-			is_leaf = ((blob >> tree_depth) & 1);
-			++tree_depth;
+	huffman_t huffman = {};
+	memset(huffman.fast, 0x80, sizeof(huffman.fast));
+	u32 fast_mask = (1 << HUFFMAN_FAST_BITS) - 1;
+	{
+		i32 code_size = 0;
+		u32 code = 0;
+		do {
+			// Read a chunk of bits large enough to 'always' have the whole Huffman code, followed by the 8-bit symbol.
+			// A blob of 57-64 bits is more than sufficient for a Huffman code of at most 16 bits.
+			// The bitstream is organized least significant bit first (treat as one giant little-endian integer).
+			// To read bits in the stream, look at the lowest bit positions. To advance the stream, shift right.
+			i32 bits_to_advance = 1;
+			u64 blob = bitstream_lsb_read(codeblock->data, bits_read); // gives back between 57 and 64 bits.
+
+			// 'Descend' into the tree until we hit a leaf node.
+			bool is_leaf = blob & 1;
+			// TODO: intrinsic?
+			while (!is_leaf) {
+				++bits_to_advance;
+				blob >>= 1;
+				is_leaf = (blob & 1);
+				++code_size;
+			}
+			blob >>= 1;
+
+			// Read 8-bit Huffman symbol
+			u8 symbol = (u8)(blob);
+			huffman.code[symbol] = code;
+			huffman.size[symbol] = code_size;
+
+			if (code_size <= HUFFMAN_FAST_BITS) {
+				// We can accelerate decoding of small Huffman codes by storing them in a lookup table.
+				// However, for the longer codes this becomes inefficient so in those cases we need another method.
+				save_code_in_huffman_fast_lookup_table(&huffman, code, code_size, symbol);
+				++fast_count;
+			} else {
+				// TODO: how to make this fast?
+				u32 prefix = code & fast_mask;
+				u16 old_fast_data = huffman.fast[prefix];
+				u8 old_max_size = old_fast_data & 0x1F;
+				u8 new_max_size = MAX(old_max_size, code_size);
+				huffman.fast[prefix] = 256 + new_max_size;
+				++nonfast_count;
+			}
+			if (code_size > max_code_size) {
+				max_code_size = code_size;
+//			    console_print("found the biggest code size: %d\n", code_size);
+			}
+			symbol_counts[symbol]++;
+
+			bits_to_advance += 8;
+			bits_read += bits_to_advance;
+
+			// traverse back up the tree: find last zero -> flip to one
+			if (code_size == 0) {
+				break; // already done; this happens if there is only a root node, no leaves
+			}
+			u32 code_high_bit = (1 << (code_size - 1));
+			bool found_zero = (~code) & code_high_bit;
+			while (!found_zero) {
+				--code_size;
+				if (code_size == 0) break;
+				code &= code_high_bit - 1;
+				code_high_bit >>= 1;
+				found_zero = (~code) & code_high_bit;
+			}
+			code |= code_high_bit;
+		} while(code_size > 0);
+	}
+
+#if 0 // for running without decoding, for debugging and performance measurements
+	u8* output_buffer = NULL;
+#else
+	// Decode the message
+	u8* output_buffer = (u8*)malloc(serialized_length);
+
+	u32 zerorun_code = huffman.code[zerorun_symbol];
+	u32 zerorun_code_size = huffman.size[zerorun_symbol];
+	if (zerorun_code_size == 0) zerorun_code_size = 1; // handle special case of the 'empty' Huffman tree (root node is leaf node)
+	u32 zerorun_code_mask = (1 << zerorun_code_size) - 1;
+
+	u32 zero_counter_mask = (1 << zero_counter_size) - 1;
+	i32 decompressed_length = 0;
+	while (bits_read < block_size_in_bits) {
+		if (decompressed_length >= serialized_length) {
+			break; // done
 		}
-		u32 huffman_code = tree_pos; // fix this, bit reverse?
-		blob >>= bits_to_advance;
+		i32 symbol = 0;
+		i32 code_size = 1;
+		u64 blob = bitstream_lsb_read(codeblock->data, bits_read);
+		u32 fast_index = blob & fast_mask;
+		u16 c = huffman.fast[fast_index];
+		if (c <= 255) {
+			// Lookup the symbol directly.
+			symbol = c;
+			code_size = huffman.size[symbol];
+		} else {
+			// TODO: super naive and slow implementation, accelerate this!
+			bool match = false;
+			for (i32 i = 0; i < 256; ++i) {
+				u8 test_size = huffman.size[i];
+				if (test_size <= HUFFMAN_FAST_BITS) continue;
+				u16 test_code = huffman.code[i];
+				if ((blob & ((1 << test_size)-1)) == test_code) {
+					// match
+					code_size = test_size;
+					symbol = i;
+					match = true;
+					break;
+				}
+			}
+			if (!match) {
+				DUMMY_STATEMENT;
+			}
+		}
 
+		if (code_size == 0) code_size = 1; // handle special case of the 'empty' Huffman tree (root node is leaf node)
 
-		u8 symbol = (u8)blob;
-		bits_to_advance += 8;
+		blob >>= code_size;
+		bits_read += code_size;
 
-		bitstream_advance(&byte_pos, &bits_read, bits_to_advance);
+		// Handle run-length encoding of zeroes
+		if (symbol == zerorun_symbol) {
+			u32 numzeroes = blob & zero_counter_mask;
+			bits_read += zero_counter_size;
+			// A 'zero run' with length of zero means that this is not a zero run after all, but rather
+			// the 'escaped' zero run symbol itself which should be outputted.
+			if (numzeroes > 0) {
+				if (compressor_version == 2) ++numzeroes; // v2 stores actual count minus one
+				if (decompressed_length + numzeroes >= serialized_length) {
+					// Reached the end, terminate
+					memset(output_buffer + decompressed_length, 0, MIN(serialized_length - decompressed_length, numzeroes));
+					decompressed_length += numzeroes;
+					break;
+				}
+				// If the next Huffman symbol is also the zero run symbol, then their counters actually refer to the same zero run.
+				// Basically, each extra zero run symbol expands the 'zero counter' bit depth, i.e.:
+				//   n zero symbols -> depth becomes n * counter_bits
+				u32 total_zero_counter_size = zero_counter_size;
+				for(;;) {
+					// Peek ahead in the bitstream, grab any additional zero run symbols, and recalculate numzeroes.
+					blob = bitstream_lsb_read(codeblock->data, bits_read);
+					u8 next_code = (blob & zerorun_code_mask);
+					if (next_code == zerorun_code) {
+						// The zero run continues
+						blob >>= zerorun_code_size;
+						u32 counter_extra_bits = blob & zero_counter_mask;
+						if (compressor_version == 2) ++counter_extra_bits; // v2 stores actual count minus one
+						numzeroes <<= zero_counter_size;
+						numzeroes |= (counter_extra_bits);
+						total_zero_counter_size += zero_counter_size;
+						bits_read += zerorun_code_size + zero_counter_size;
+						if (decompressed_length + numzeroes >= serialized_length) {
+							break; // Reached the end, terminate
+						}
+					} else {
+						break; // no next zero run symbol, the zero run is finished
+					}
+				}
 
-		// pop to parent node
-		--tree_depth;
-	} while(tree_depth > 0);
+				i32 bytes_to_write = MIN(serialized_length - decompressed_length, numzeroes);
+				ASSERT(bytes_to_write > 0);
+				memset(output_buffer + decompressed_length, 0, bytes_to_write);
+				decompressed_length += numzeroes;
+			} else {
+				// This is not a 'zero run' after all, but an escaped symbol. So output the symbol.
+				output_buffer[decompressed_length++] = symbol;
+			}
+		} else {
+			output_buffer[decompressed_length++] = symbol;
+		}
 
-	DUMMY_STATEMENT;
+	}
+#endif
+
+	if (serialized_length != decompressed_length) {
+		ASSERT(!"size mismatch");
+		console_print("iSyntax: size mismatch in block %d (size=%d): expected %d observed %d\n",
+				codeblock->block_data_offset, codeblock->block_size, serialized_length, decompressed_length);
+	}
+	codeblock->decompressed_size = decompressed_length;
+	return output_buffer;
 
 }
+
+#define DO_DEBUG_HUFFMAN_DECODE 0
+#if  DO_DEBUG_HUFFMAN_DECODE
 
 void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 	if (fp && !codeblock->data) {
 		codeblock->data = calloc(1, codeblock->block_size + 8); // TODO: pool allocator
 		fseeko64(fp, codeblock->block_data_offset, SEEK_SET);
 		fread(codeblock->data, codeblock->block_size, 1, fp);
+
+#if 0
+		char out_filename[512];
+		snprintf(out_filename, 512, "codeblocks/%d.bin", codeblock->block_data_offset);
+		FILE* out = fopen(out_filename, "wb");
+		if (out) {
+			fwrite(codeblock->data, codeblock->block_size, 1, out);
+			fclose(out);
+		}
+#endif
 	}
 }
 #endif // DO_DEBUG_HUFFMAN_DECODE
@@ -1088,17 +1233,35 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						i32 actual_real_codeblock_index = 0;
 						for (i32 i = 0; i < seektable_entry_count; ++i) {
 							isyntax_seektable_codeblock_header_t* seektable_entry = codeblock_headers + i;
+							ASSERT(seektable_entry->block_data_offset_header.group == 0x301D);
+							ASSERT(seektable_entry->block_data_offset_header.element == 0x2010);
 							if (seektable_entry->block_data_offset != 0) {
 								isyntax_codeblock_t* codeblock = wsi_image->codeblocks + actual_real_codeblock_index;
 								codeblock->block_data_offset = seektable_entry->block_data_offset;
 								codeblock->block_size = seektable_entry->block_size;
+#if DO_DEBUG_HUFFMAN_DECODE
+								// Debug test:
+								// Decompress codeblocks in the seektable.
+								if (1 || actual_real_codeblock_index == wsi_image->codeblock_count-1) {
+									// Only parse 'non-empty'/'background' codeblocks
+									if (codeblock->block_size > 8 /*&& codeblock->block_data_offset == 129572464*/) {
+										debug_read_codeblock_from_file(codeblock, fp);
+										u8* decompressed = isyntax_hulsken_decompress(codeblock, 3, 1);
+										if (decompressed) {
+#if 0
+											FILE* out = fopen("hulskendecompressed4.raw", "wb");
+											if(out) {
+												fwrite(decompressed, codeblock->decompressed_size, 1, out);
+												fclose(out);
+											}
+#endif
+											free(decompressed);
+										}
+									}
+								}
+#endif
 								++actual_real_codeblock_index;
 								if (actual_real_codeblock_index == wsi_image->codeblock_count) {
-#if DO_DEBUG_HUFFMAN_DECODE
-									debug_read_codeblock_from_file(codeblock, fp);
-									isyntax_hulsken_decompress(codeblock, 3, 1);
-#endif
-
 									break; // we're done!
 								}
 							}
