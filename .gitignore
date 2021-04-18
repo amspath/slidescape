@@ -8,3 +8,7 @@ build/
 data/
 openslide/
 *.tiff
+*.isyntax
+*.json
+*.xml
+*.orig

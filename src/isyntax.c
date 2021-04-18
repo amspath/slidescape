@@ -283,9 +283,7 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x101A: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL*/    {} break;
 				case 0x101B: /*DP_WAVELET_QUANTIZER*/                       {} break;
 				case 0x101C: /*DP_WAVELET_DEADZONE*/                        {} break;
-				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                  {
-					isyntax->parser.image_header_parsing_mode = UFS_IMAGE_GENERAL_HEADERS;
-				} break;
+				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                  {} break;
 				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {} break;
 				case 0x2002: /*UFS_IMAGE_DIMENSIONS_OVER_BLOCK*/            {} break;
 				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
@@ -294,20 +292,39 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
-				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {
-					isyntax->parser.image_header_parsing_mode = UFS_IMAGE_BLOCK_HEADER_TEMPLATES;
-				} break;
-				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {
-
-				} break;
+				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {} break;
+				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {} break;
 				case 0x200B: /*UFS_IMAGE_DIMENSION_RANGE*/                  {
 					isyntax_image_dimension_range_t range = {};
 					parse_three_integers(value, &range.start, &range.step, &range.end);
 					range.range = (range.end + range.step) - range.start;
-					if (isyntax->parser.image_header_parsing_mode == UFS_IMAGE_BLOCK_HEADER_TEMPLATES) {
-
-					} else if (isyntax->parser.image_header_parsing_mode == UFS_IMAGE_GENERAL_HEADERS) {
-
+					if (isyntax->parser.data_object_flags & ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate) {
+						isyntax_header_template_t* template = isyntax->header_templates + isyntax->parser.header_template_index;
+						switch(isyntax->parser.dimension_index) {
+							default: break;
+							case 0: template->tile_width = range.range; break;
+							case 1: template->tile_height = range.range; break;
+							case 2: template->color_component = range.start; break;
+							case 3: template->scale = range.start; break;
+							case 4: template->waveletcoeff = (range.start == 0) ? 1 : 3; break;
+						}
+						DUMMY_STATEMENT;
+					} else if (isyntax->parser.data_object_flags & ISYNTAX_OBJECT_UFSImageGeneralHeader) {
+						switch(isyntax->parser.dimension_index) {
+							default: break;
+							case 0: {
+								image->offset_x = range.start;
+								image->width = range.range;
+							} break;
+							case 1: {
+								image->offset_y = range.start;
+								image->height = range.range;
+							} break;
+							case 2: break; // always 3 color channels ("Y" "Co" "Cg"), no need to check
+							case 3: image->num_levels = range.range; break;
+							case 4: break; // always 4 wavelet coefficients ("LL" "LH" "HL" "HH"), no need to check
+						}
+						DUMMY_STATEMENT;
 					}
 					DUMMY_STATEMENT;
 				} break;
@@ -525,6 +542,9 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					++parser->node_stack_index;
 					isyntax_parser_node_t* node = parser->node_stack + parser->node_stack_index;
 					memset(node, 0, sizeof(isyntax_parser_node_t));
+					// Inherit group and element of parent node
+					node->group = parent_node->group;
+					node->element = parent_node->element;
 
 					parser->contentcur = parser->contentbuf;
 					*parser->contentcur = '\0';
@@ -534,14 +554,29 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						node->node_type = ISYNTAX_NODE_LEAF;
 					} else if (strcmp(x->elem, "DataObject") == 0) {
 						node->node_type = ISYNTAX_NODE_BRANCH;
-						node->group = parent_node->group;
-						node->element = parent_node->element;
+						// push into the data object stack, to keep track of which type of DataObject we are parsing
+						// (we need this information to restore state when the XML element ends)
+						++parser->data_object_stack_index;
+						parser->data_object_stack[parser->data_object_stack_index] = parent_node->element;
+						// set relevant flag for which data object type we are now parsing
+						u32 flags = parser->data_object_flags;
+						switch(parent_node->element) {
+							default: break;
+							case 0:                                       flags |= ISYNTAX_OBJECT_DPUfsImport; break;
+							case PIM_DP_SCANNED_IMAGES:                   flags |= ISYNTAX_OBJECT_DPScannedImage; break;
+							case UFS_IMAGE_GENERAL_HEADERS:               flags |= ISYNTAX_OBJECT_UFSImageGeneralHeader; break;
+							case UFS_IMAGE_BLOCK_HEADER_TEMPLATES:        flags |= ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate; break;
+							case UFS_IMAGE_DIMENSIONS:                    flags |= ISYNTAX_OBJECT_UFSImageDimension; break;
+							case UFS_IMAGE_DIMENSION_RANGES:              flags |= ISYNTAX_OBJECT_UFSImageDimensionRange; break;
+							case DP_COLOR_MANAGEMENT:                     flags |= ISYNTAX_OBJECT_DPColorManagement; break;
+							case DP_IMAGE_POST_PROCESSING:                flags |= ISYNTAX_OBJECT_DPImagePostProcessing; break;
+							case DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor; break;
+							case DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel; break;
+						}
+						parser->data_object_flags = flags;
 					} else if (strcmp(x->elem, "Array") == 0) {
 						node->node_type = ISYNTAX_NODE_ARRAY;
 						console_print_verbose("%sArray\n", get_spaces(parser->node_stack_index));
-						// Inherit group and element of parent node (Array doesn't have any; we want to pass on the information to child nodes)
-						node->group = parent_node->group;
-						node->element = parent_node->element;
 					} else {
 						node->node_type = ISYNTAX_NODE_NONE;
 						console_print_verbose("%selement start: %s\n", get_spaces(parser->node_stack_index), x->elem);
@@ -638,19 +673,38 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						const char* elem_name = NULL;
 						if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
 							// End of a leaf node WITH children.
-							// Clear some data that no longer applies when we are 'popping out of' some specific tags.
-							if (parser->node_stack[parser->node_stack_index].group == 0x301D) {
-								switch(parser->node_stack[parser->node_stack_index].element) {
-									default: break;
-									case UFS_IMAGE_GENERAL_HEADERS:
-									case UFS_IMAGE_BLOCK_HEADER_TEMPLATES: {
-										parser->image_header_parsing_mode = 0;
-									} break;
-								}
-							}
 							elem_name = "Attribute";
 						} else if (parser->current_node_type == ISYNTAX_NODE_BRANCH) {
 							elem_name = "DataObject";
+							// pop data object stack
+							u16 element = parser->data_object_stack[parser->data_object_stack_index];
+							--parser->data_object_stack_index;
+							// reset relevant data for the data object type we are now no longer parsing
+							u32 flags = parser->data_object_flags;
+							switch(element) {
+								default: break;
+								case 0:                                       flags &= ~ISYNTAX_OBJECT_DPUfsImport; break;
+								case PIM_DP_SCANNED_IMAGES:                   flags &= ~ISYNTAX_OBJECT_DPScannedImage; break;
+								case UFS_IMAGE_GENERAL_HEADERS: {
+									flags &= ~ISYNTAX_OBJECT_UFSImageGeneralHeader;
+									parser->dimension_index = 0;
+								} break;
+								case UFS_IMAGE_BLOCK_HEADER_TEMPLATES: {
+									flags &= ~ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate;
+									++parser->header_template_index;
+									parser->dimension_index = 0;
+								} break;
+								case UFS_IMAGE_DIMENSIONS:                    flags &= ~ISYNTAX_OBJECT_UFSImageDimension; break;
+								case UFS_IMAGE_DIMENSION_RANGES: {
+									flags &= ~ISYNTAX_OBJECT_UFSImageDimensionRange;
+									++parser->dimension_index;
+								} break;
+								case DP_COLOR_MANAGEMENT:                     flags &= ~ISYNTAX_OBJECT_DPColorManagement; break;
+								case DP_IMAGE_POST_PROCESSING:                flags &= ~ISYNTAX_OBJECT_DPImagePostProcessing; break;
+								case DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR: flags &= ~ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor; break;
+								case DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL: flags &= ~ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel; break;
+							}
+							parser->data_object_flags = flags;
 						} else if (parser->current_node_type == ISYNTAX_NODE_ARRAY) {
 							elem_name = "Array";
 						}
@@ -1062,6 +1116,33 @@ u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, 
 				codeblock->block_data_offset, codeblock->block_size, serialized_length, decompressed_length);
 	}
 	codeblock->decompressed_size = decompressed_length;
+
+	if (compressor_version == 1) {
+		// If there are empty bitplanes: bitmasks stored at end of data
+		i32 bytes_per_sample = 2; // ((coeff_bit_depth+7)/8);
+		u64 expected_length = (total_mask_bits * block_width * block_height) / 8;
+		i32 expected_bitmask_bits = (decompressed_length*8) / (block_width * block_height);
+		if (decompressed_length < expected_length) {
+			if (coeff_count == 1) {
+				byte_pos = output_buffer + decompressed_length - 2;
+				bitmasks[0] = *(u16*)(output_buffer + decompressed_length - 2);
+				total_mask_bits = _popcnt32(bitmasks[0]);
+			} else if (coeff_count == 3) {
+				byte_pos = output_buffer + decompressed_length - 6;
+				bitmasks[0] = *(u16*)(byte_pos);
+				bitmasks[1] = *(u16*)(byte_pos+2);
+				bitmasks[2] = *(u16*)(byte_pos+4);
+				total_mask_bits = _popcnt32(bitmasks[0]) + _popcnt32(bitmasks[1]) + _popcnt32(bitmasks[2]);
+			} else {
+				panic(); // TODO: fail condition
+			}
+			expected_length = (total_mask_bits * block_width * block_height) / 8 + (coeff_count * 2);
+			ASSERT(decompressed_length == expected_length);
+		}
+	}
+
+
+
 	return output_buffer;
 
 }
@@ -1182,26 +1263,43 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				}
 			}
 
-			// TODO: account for padding
-#if 0
-			// Padding
-			// 1: Uniform padding with black pixels on all sides
-			i64 per_level_padding = 3; // for Legall 5/3 wavelet transform
-			i64 num_levels = 9; // TODO: get from UFSGeneralImageHeader UFS_IMAGE_DIMENSION_RANGES
-			i64 padding = (per_level_padding << num_levels) - per_level_padding;
-
-			// 2: further padding on the right and bottom side.
-			// (To ensure that the image dimensions are a multiple of the codeblock size.)
-			i64 base_image_width = 148480;
-			i64 base_image_height = 93184;
-			i64 block_width = 128;
-			i64 block_height = 128;
-			i64 grid_width = ((base_image_width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
-			i64 grid_height = ((base_image_height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
-#endif
 
 			isyntax_image_t* wsi_image = isyntax->wsi_image;
 			if (wsi_image) {
+
+				// Padding
+				// 1: Uniform padding with black pixels on all sides
+				i64 per_level_padding = 3; // for Legall 5/3 wavelet transform
+				i64 num_levels = wsi_image->num_levels; // TODO: get from UFSGeneralImageHeader UFS_IMAGE_DIMENSION_RANGES
+				i64 padding = (per_level_padding << num_levels) - per_level_padding;
+
+				// 2: further padding on the right and bottom side.
+				// (To ensure that the image dimensions are a multiple of the codeblock size.)
+				i64 base_image_width = wsi_image->width;//148480;
+				i64 base_image_height = wsi_image->height;//93184;
+				i64 padded_width = base_image_width + 2 * padding;
+				i64 padded_height = base_image_height + 2 * padding;
+				i64 block_width = 128;
+				i64 block_height = 128;
+				i64 grid_width = ((padded_width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
+				i64 grid_height = ((padded_height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
+
+				u64 base_level_codeblock_count = grid_height * grid_width;
+				u64 total_codeblock_count = 0;
+				for (i32 i = 0; i < wsi_image->num_levels; ++i) {
+					isyntax_level_t* level = wsi_image->levels + i;
+					level->codeblock_count = base_level_codeblock_count >> (i * 2);
+					level->codeblocks = (isyntax_codeblock_t*)calloc(1, level->codeblock_count * sizeof(isyntax_codeblock_t));
+					total_codeblock_count += level->codeblock_count;
+					level->scale = i;
+					level->tile_width = block_width >> (i + 1);
+					level->tile_height = block_height >> (i + 1);
+					level->width_in_tiles = grid_width >> i;
+					level->height_in_tiles = grid_height >> i;
+				}
+
+
+
 				io_begin = get_clock(); // for performance measurement
 				fseeko64(fp, isyntax_data_offset, SEEK_SET);
 				if (wsi_image->header_codeblocks_are_partial) {
@@ -1222,6 +1320,16 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						isyntax_seektable_codeblock_header_t* codeblock_headers =
 								(isyntax_seektable_codeblock_header_t*) malloc(seektable_size);
 						fread(codeblock_headers, seektable_size, 1, fp);
+
+						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
+							i32 relative_x = (i32)codeblock->x_coordinate - wsi_image->offset_x;
+							i32 relative_y = (i32)codeblock->y_coordinate - wsi_image->offset_y;
+							if (relative_x <= 22) {
+								DUMMY_STATEMENT;
+							}
+							DUMMY_STATEMENT;
+						}
 
 						// Now fill in the missing data.
 						// NOTE: The number of codeblock entries in the seektable is much greater than the number of
@@ -1246,7 +1354,11 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 									// Only parse 'non-empty'/'background' codeblocks
 									if (codeblock->block_size > 8 /*&& codeblock->block_data_offset == 129572464*/) {
 										debug_read_codeblock_from_file(codeblock, fp);
-										u8* decompressed = isyntax_hulsken_decompress(codeblock, 3, 1);
+										isyntax_header_template_t* template = isyntax->header_templates + codeblock->block_header_template_id;
+										if (template->waveletcoeff != 3) {
+											DUMMY_STATEMENT;
+										}
+										u8* decompressed = isyntax_hulsken_decompress(codeblock, template->waveletcoeff, 1);
 										if (decompressed) {
 #if 0
 											FILE* out = fopen("hulskendecompressed4.raw", "wb");

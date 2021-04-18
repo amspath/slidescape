@@ -32,6 +32,7 @@
 #include "caselist.h"
 #include "tiff_write.h"
 #include "coco.h"
+#include "isyntax.h"
 
 #define GUI_IMPL
 #include "gui.h"
@@ -82,6 +83,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool crop_region;
 			bool export_region;
 			bool load_coco_test_file;
+			bool load_isyntax_test_file;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -136,6 +138,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Show menu bar", "Alt+F11", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
 				if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
+				if (ImGui::MenuItem("Load iSyntax test file", NULL, &menu_items_clicked.load_isyntax_test_file)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -193,6 +196,10 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			coco_t coco = {};
 			if (load_coco_from_file(&coco, "coco_test_in.json")) {
 				save_coco(&coco);
+			}
+		} else if (menu_items_clicked.load_isyntax_test_file) {
+			isyntax_t isyntax = {};
+			if (isyntax_open(&isyntax, "sample.isyntax")) {
 			}
 		}
 	}

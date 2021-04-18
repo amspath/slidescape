@@ -42,8 +42,28 @@ enum isyntax_node_type_enum {
 };
 
 enum isyntax_group_0x301D_dicom_element_enum {
-	UFS_IMAGE_GENERAL_HEADERS   = 0x2000,
-	UFS_IMAGE_BLOCK_HEADER_TEMPLATES = 0x2009,
+	PIM_DP_SCANNED_IMAGES                   = 0x1003, // DPScannedImage
+	UFS_IMAGE_GENERAL_HEADERS               = 0x2000, // UFSImageGeneralHeader
+	UFS_IMAGE_DIMENSIONS                    = 0x2003, // UFSImageDimension
+	UFS_IMAGE_BLOCK_HEADER_TEMPLATES        = 0x2009, // UFSImageBlockHeaderTemplate
+	UFS_IMAGE_DIMENSION_RANGES              = 0x200a, // UFSImageDimensionRange
+	DP_COLOR_MANAGEMENT                     = 0x200b, // DPColorManagement
+	DP_IMAGE_POST_PROCESSING                = 0x1014, // DPImagePostProcessing
+	DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR = 0x1019, // DPWaveletQuantizerSeetingsPerColor
+	DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL = 0x101a, // DPWaveletQuantizerSeetingsPerLevel
+};
+
+enum isyntax_data_object_flag_enum {
+	ISYNTAX_OBJECT_DPUfsImport = 1,
+	ISYNTAX_OBJECT_DPScannedImage = 2,
+	ISYNTAX_OBJECT_UFSImageGeneralHeader = 4,
+	ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate = 8,
+	ISYNTAX_OBJECT_UFSImageDimension = 0x10,
+	ISYNTAX_OBJECT_UFSImageDimensionRange = 0x20,
+	ISYNTAX_OBJECT_DPColorManagement = 0x40,
+	ISYNTAX_OBJECT_DPImagePostProcessing = 0x80,
+	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor = 0x100,
+	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel = 0x200,
 };
 
 #pragma pack(push, 1)
@@ -102,8 +122,12 @@ typedef struct isyntax_image_dimension_range_t {
 } isyntax_image_dimension_range_t;
 
 typedef struct isyntax_image_block_header_template_t {
-
-} isyntax_image_block_header_template_t;
+	u32 tile_width;      // 256, 512, 1024, ...
+	u32 tile_height;     // 256, 512, 1024, ...
+	u8 color_component;  // 0=Y 1=Co 2=Cg
+	u8 scale;            // range 0-8
+	u8 waveletcoeff;     // either 1 for LL, or 3 for LH+HL+HH
+} isyntax_header_template_t;
 
 typedef struct isyntax_codeblock_t {
 	u32 x_coordinate;
@@ -118,11 +142,25 @@ typedef struct isyntax_codeblock_t {
 	u64 decompressed_size;
 } isyntax_codeblock_t;
 
+typedef struct isyntax_level_t {
+	i32 scale;
+	i32 tile_width;
+	i32 tile_height;
+	i32 width_in_tiles;
+	i32 height_in_tiles;
+	u64 codeblock_count;
+	isyntax_codeblock_t* codeblocks;
+} isyntax_level_t;
+
 typedef struct isyntax_image_t {
 	u32 image_type;
 	u8* pixels;
 	i32 width;
 	i32 height;
+	i32 offset_x;
+	i32 offset_y;
+	i32 num_levels;
+	isyntax_level_t levels[16];
 	bool compression_is_lossy;
 	i32 lossy_image_compression_ratio;
 	u8* encoded_image_data;
@@ -173,7 +211,11 @@ typedef struct isyntax_parser_t {
 	isyntax_parser_node_t safety_bytes_for_node_stack[4];
 	isyntax_parser_node_t node_stack[ISYNTAX_MAX_NODE_DEPTH];
 	i32 node_stack_index;
-	u16 image_header_parsing_mode;
+	u16 data_object_stack[ISYNTAX_MAX_NODE_DEPTH];
+	i32 data_object_stack_index;
+	u32 data_object_flags;
+	i32 header_template_index;
+	i32 dimension_index;
 	bool initialized;
 } isyntax_parser_t;
 
@@ -181,6 +223,7 @@ typedef struct isyntax_t {
 	i64 filesize;
 	isyntax_image_t images[16];
 	i32 image_count;
+	isyntax_header_template_t header_templates[64];
 	isyntax_image_t* macro_image;
 	isyntax_image_t* label_image;
 	isyntax_image_t* wsi_image;
