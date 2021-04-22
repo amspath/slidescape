@@ -867,7 +867,7 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, i32 compressor_version) {
+u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, i32 compressor_version) {
 	ASSERT(coeff_count == 1 || coeff_count == 3);
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
@@ -1006,10 +1006,10 @@ u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, 
 	}
 
 #if 0 // for running without decoding, for debugging and performance measurements
-	u8* output_buffer = NULL;
+	u8* decompressed_buffer = NULL;
 #else
 	// Decode the message
-	u8* output_buffer = (u8*)malloc(serialized_length);
+	u8* decompressed_buffer = (u8*)malloc(serialized_length);
 
 	u32 zerorun_code = huffman.code[zerorun_symbol];
 	u32 zerorun_code_size = huffman.size[zerorun_symbol];
@@ -1066,7 +1066,7 @@ u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, 
 				if (compressor_version == 2) ++numzeroes; // v2 stores actual count minus one
 				if (decompressed_length + numzeroes >= serialized_length) {
 					// Reached the end, terminate
-					memset(output_buffer + decompressed_length, 0, MIN(serialized_length - decompressed_length, numzeroes));
+					memset(decompressed_buffer + decompressed_length, 0, MIN(serialized_length - decompressed_length, numzeroes));
 					decompressed_length += numzeroes;
 					break;
 				}
@@ -1097,14 +1097,14 @@ u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, 
 
 				i32 bytes_to_write = MIN(serialized_length - decompressed_length, numzeroes);
 				ASSERT(bytes_to_write > 0);
-				memset(output_buffer + decompressed_length, 0, bytes_to_write);
+				memset(decompressed_buffer + decompressed_length, 0, bytes_to_write);
 				decompressed_length += numzeroes;
 			} else {
 				// This is not a 'zero run' after all, but an escaped symbol. So output the symbol.
-				output_buffer[decompressed_length++] = symbol;
+				decompressed_buffer[decompressed_length++] = symbol;
 			}
 		} else {
-			output_buffer[decompressed_length++] = symbol;
+			decompressed_buffer[decompressed_length++] = symbol;
 		}
 
 	}
@@ -1117,18 +1117,32 @@ u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, 
 	}
 	codeblock->decompressed_size = decompressed_length;
 
+	i32 bytes_per_bitplane = (block_width * block_height) / 8;
 	if (compressor_version == 1) {
-		// If there are empty bitplanes: bitmasks stored at end of data
+
 		i32 bytes_per_sample = 2; // ((coeff_bit_depth+7)/8);
-		u64 expected_length = (total_mask_bits * block_width * block_height) / 8;
 		i32 expected_bitmask_bits = (decompressed_length*8) / (block_width * block_height);
+
+		// try to deduce the number of coefficients without knowing the header information
+		// TODO: this should not be necessary! Remove this code once we reliably know coeff_count from the header information
+		i32 extra_bits = (decompressed_length*8) % (block_width * block_height);
+		if (extra_bits > 0) {
+			if (coeff_count != 1 && extra_bits == 1*16) {
+				coeff_count = 1;
+			} else if (coeff_count != 3 && extra_bits == 3*16) {
+				coeff_count = 3;
+			}
+			total_mask_bits = coeff_bit_depth * coeff_count;
+		}
+
+		// If there are empty bitplanes: bitmasks stored at end of data
+		u64 expected_length = total_mask_bits * bytes_per_bitplane;
 		if (decompressed_length < expected_length) {
 			if (coeff_count == 1) {
-				byte_pos = output_buffer + decompressed_length - 2;
-				bitmasks[0] = *(u16*)(output_buffer + decompressed_length - 2);
+				bitmasks[0] = *(u16*)(decompressed_buffer + decompressed_length - 2);
 				total_mask_bits = _popcnt32(bitmasks[0]);
 			} else if (coeff_count == 3) {
-				byte_pos = output_buffer + decompressed_length - 6;
+				byte_pos = decompressed_buffer + decompressed_length - 6;
 				bitmasks[0] = *(u16*)(byte_pos);
 				bitmasks[1] = *(u16*)(byte_pos+2);
 				bitmasks[2] = *(u16*)(byte_pos+4);
@@ -1141,9 +1155,73 @@ u8* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, 
 		}
 	}
 
+	// unpack bitplanes
+	i32 compressed_bitplane_index = 0;
+	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
+	u16* coeff_buffer = (u16*)calloc(1, coeff_buffer_size);
+	u16* final_coeff_buffer = (u16*)calloc(1, coeff_buffer_size); // this copy will have the snake-order reshuffling undone
+
+	for (i32 coeff_index = 0; coeff_index < coeff_count; ++coeff_index) {
+		u16 bitmask = bitmasks[coeff_index];
+		u16* current_coeff_buffer = coeff_buffer + (coeff_index * (block_width * block_height));
+#if 1
+
+		i32 bit = 0;
+		while (bitmask) {
+			if (bitmask & 1) {
+				ASSERT((block_width * block_height % 8) == 0);
+				u8* bitplane = decompressed_buffer + (compressed_bitplane_index * bytes_per_bitplane);
+				for (i32 i = 0; i < block_width * block_height; i += 8) {
+					i32 j = i/8;
+					i32 shift_amount = 15 - bit; // bitplanes are stored sign, msb ... lsb
+					// TODO: SIMD stuff; this step is SLOW
+					u8 b = bitplane[j];
+					current_coeff_buffer[i+0] |= (b >> 0) << shift_amount;
+					current_coeff_buffer[i+1] |= (b >> 1) << shift_amount;
+					current_coeff_buffer[i+2] |= (b >> 2) << shift_amount;
+					current_coeff_buffer[i+3] |= (b >> 3) << shift_amount;
+					current_coeff_buffer[i+4] |= (b >> 4) << shift_amount;
+					current_coeff_buffer[i+5] |= (b >> 5) << shift_amount;
+					current_coeff_buffer[i+6] |= (b >> 6) << shift_amount;
+					current_coeff_buffer[i+7] |= (b >> 7) << shift_amount;
+				}
+				++compressed_bitplane_index;
+			}
+			bitmask >>= 1;
+			++bit;
+
+		}
+
+		// Reshuffle snake-order
+		if (bit > 0) {
+			i32 area_stride_x = block_width / 4;
+			for (i32 area4x4_index = 0; area4x4_index < ((block_width * block_height) / 16); ++area4x4_index) {
+				i32 area_base_index = area4x4_index * 16;
+				i32 area_x = (area4x4_index % area_stride_x) * 4;
+				i32 area_y = (area4x4_index / area_stride_x) * 4;
+
+				u64 area_y0 = *(u64*)&current_coeff_buffer[area_base_index];
+				u64 area_y1 = *(u64*)&current_coeff_buffer[area_base_index+4];
+				u64 area_y2 = *(u64*)&current_coeff_buffer[area_base_index+8];
+				u64 area_y3 = *(u64*)&current_coeff_buffer[area_base_index+12];
+
+				*(u64*)(final_coeff_buffer + (area_y+0) * block_width + area_x) = area_y0;
+				*(u64*)(final_coeff_buffer + (area_y+1) * block_width + area_x) = area_y1;
+				*(u64*)(final_coeff_buffer + (area_y+2) * block_width + area_x) = area_y2;
+				*(u64*)(final_coeff_buffer + (area_y+3) * block_width + area_x) = area_y3;
+			}
+		}
+#endif
+
+	}
+
+	free(coeff_buffer);
+	free(decompressed_buffer);
+//	free(final_coeff_buffer);
 
 
-	return output_buffer;
+
+	return final_coeff_buffer;
 
 }
 
@@ -1358,7 +1436,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 										if (template->waveletcoeff != 3) {
 											DUMMY_STATEMENT;
 										}
-										u8* decompressed = isyntax_hulsken_decompress(codeblock, template->waveletcoeff, 1);
+										if (actual_real_codeblock_index % 1000 == 0) {
+											console_print_verbose("reading codeblock %d\n", actual_real_codeblock_index);
+										}
+										u16* decompressed = isyntax_hulsken_decompress(codeblock, template->waveletcoeff, 1);
 										if (decompressed) {
 #if 0
 											FILE* out = fopen("hulskendecompressed4.raw", "wb");
