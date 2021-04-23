@@ -845,12 +845,19 @@ static inline u64 bitstream_lsb_read_advance(u8* buffer, i32* bits_read, i32 bit
 
 
 // partly adapted from stb_image.h
-#define HUFFMAN_FAST_BITS 12
+#define HUFFMAN_FAST_BITS 11   // optimal value may depend on various factors, CPU cache etc.
+
+// Lookup table for (1 << n) - 1
+static const u16 size_bitmasks[17]={0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535};
 
 typedef struct huffman_t {
-	u16  fast[1 << HUFFMAN_FAST_BITS];
+	u16 fast[1 << HUFFMAN_FAST_BITS];
 	u16 code[256];
 	u8  size[256];
+	u16 nonfast_symbols[256];
+	u16 nonfast_code[256];
+	u16 nonfast_size[256];
+	u16 nonfast_size_masks[256];
 } huffman_t;
 
 void save_code_in_huffman_fast_lookup_table(huffman_t* h, u32 code, u32 code_width, u8 symbol) {
@@ -937,10 +944,12 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 	// Read Huffman table
 	huffman_t huffman = {};
 	memset(huffman.fast, 0x80, sizeof(huffman.fast));
+	memset(huffman.nonfast_size_masks, 0xFF, sizeof(huffman.nonfast_size_masks));
 	u32 fast_mask = (1 << HUFFMAN_FAST_BITS) - 1;
 	{
 		i32 code_size = 0;
 		u32 code = 0;
+		i32 nonfast_symbol_index = 0;
 		do {
 			// Read a chunk of bits large enough to 'always' have the whole Huffman code, followed by the 8-bit symbol.
 			// A blob of 57-64 bits is more than sufficient for a Huffman code of at most 16 bits.
@@ -971,12 +980,17 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 				save_code_in_huffman_fast_lookup_table(&huffman, code, code_size, symbol);
 				++fast_count;
 			} else {
-				// TODO: how to make this fast?
+				// TODO: how to make this faster?
 				u32 prefix = code & fast_mask;
 				u16 old_fast_data = huffman.fast[prefix];
-				u8 old_max_size = old_fast_data & 0x1F;
-				u8 new_max_size = MAX(old_max_size, code_size);
-				huffman.fast[prefix] = 256 + new_max_size;
+				u8 old_lowest_symbol_index = old_fast_data & 0xFF;
+				u8 new_lowest_symbol_index = MIN(old_lowest_symbol_index, nonfast_symbol_index);
+				huffman.fast[prefix] = 256 + new_lowest_symbol_index;
+				huffman.nonfast_symbols[nonfast_symbol_index] = symbol;
+				huffman.nonfast_code[nonfast_symbol_index] = code;
+				huffman.nonfast_size[nonfast_symbol_index] = code_size;
+				huffman.nonfast_size_masks[nonfast_symbol_index] = size_bitmasks[code_size];
+				++nonfast_symbol_index;
 				++nonfast_count;
 			}
 			if (code_size > max_code_size) {
@@ -1007,6 +1021,8 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 
 #if 0 // for running without decoding, for debugging and performance measurements
 	u8* decompressed_buffer = NULL;
+	i32 decompressed_length = 0;
+	return NULL;
 #else
 	// Decode the message
 	u8* decompressed_buffer = (u8*)malloc(serialized_length);
@@ -1034,18 +1050,47 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 		} else {
 			// TODO: super naive and slow implementation, accelerate this!
 			bool match = false;
-			for (i32 i = 0; i < 256; ++i) {
-				u8 test_size = huffman.size[i];
+			u8 lowest_possible_symbol_index = c & 0xFF;
+
+#if 1
+			for (i32 i = lowest_possible_symbol_index; i < 256; ++i) {
+				u8 test_size = huffman.nonfast_size[i];
 				if (test_size <= HUFFMAN_FAST_BITS) continue;
-				u16 test_code = huffman.code[i];
-				if ((blob & ((1 << test_size)-1)) == test_code) {
+				u16 test_code = huffman.nonfast_code[i];
+				if ((blob & size_bitmasks[test_size]) == test_code) {
 					// match
 					code_size = test_size;
-					symbol = i;
+					symbol = huffman.nonfast_symbols[i];
 					match = true;
 					break;
 				}
 			}
+#else
+			// SIMD version using SSE2, unfortunately slower than the version above.
+			// Can it be made faster?
+			i32 the_symbol = 0;
+			for (i32 i = lowest_possible_symbol_index/8; i < 256; i += 8) {
+				__m128i_u size_mask = _mm_loadu_si128((__m128i_u*)(huffman.nonfast_size_masks + i));
+				__m128i_u code = _mm_loadu_si128((__m128i_u*)(huffman.nonfast_code + i));
+				__m128i_u test = _mm_set1_epi16((u16)blob);
+				test = _mm_and_si128(test, size_mask);
+				__m128i hit = _mm_cmpeq_epi16(test, code);
+				u32 hit_mask = _mm_movemask_epi8(hit);
+				if (hit_mask) {
+					unsigned long first_bit = 0;
+					_BitScanForward(&first_bit, hit_mask);
+					i32 symbol_index = i + first_bit / 2;
+					symbol = huffman.nonfast_symbols[symbol_index];
+					code_size = huffman.nonfast_size[symbol_index];
+					match = true;
+					break;
+				}
+			}
+			DUMMY_STATEMENT;
+			if (the_symbol != symbol) {
+				DUMMY_STATEMENT;
+			}
+#endif
 			if (!match) {
 				DUMMY_STATEMENT;
 			}
@@ -1174,16 +1219,30 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 				for (i32 i = 0; i < block_width * block_height; i += 8) {
 					i32 j = i/8;
 					i32 shift_amount = 15 - bit; // bitplanes are stored sign, msb ... lsb
-					// TODO: SIMD stuff; this step is SLOW
 					u8 b = bitplane[j];
-					current_coeff_buffer[i+0] |= (b >> 0) << shift_amount;
-					current_coeff_buffer[i+1] |= (b >> 1) << shift_amount;
-					current_coeff_buffer[i+2] |= (b >> 2) << shift_amount;
-					current_coeff_buffer[i+3] |= (b >> 3) << shift_amount;
-					current_coeff_buffer[i+4] |= (b >> 4) << shift_amount;
-					current_coeff_buffer[i+5] |= (b >> 5) << shift_amount;
-					current_coeff_buffer[i+6] |= (b >> 6) << shift_amount;
-					current_coeff_buffer[i+7] |= (b >> 7) << shift_amount;
+					if (b == 0) continue;
+#if 0
+					// TODO: SIMD stuff; this step is SLOW
+					current_coeff_buffer[i+0] |= ((b >> 0) & 1) << shift_amount;
+					current_coeff_buffer[i+1] |= ((b >> 1) & 1) << shift_amount;
+					current_coeff_buffer[i+2] |= ((b >> 2) & 1) << shift_amount;
+					current_coeff_buffer[i+3] |= ((b >> 3) & 1) << shift_amount;
+					current_coeff_buffer[i+4] |= ((b >> 4) & 1) << shift_amount;
+					current_coeff_buffer[i+5] |= ((b >> 5) & 1) << shift_amount;
+					current_coeff_buffer[i+6] |= ((b >> 6) & 1) << shift_amount;
+					current_coeff_buffer[i+7] |= ((b >> 7) & 1) << shift_amount;
+#else
+					// This SIMD implementation is ~20% faster compared to the simple version above.
+					// Can it be made faster?
+					__m128i* dst = (__m128i*) (current_coeff_buffer+i);
+					uint64_t t = _bswap64(((0x8040201008040201ULL*b) & 0x8080808080808080ULL) >> 7);
+					__m128i v_t = _mm_set_epi64x(0, t);
+					__m128i array_of_bools = _mm_unpacklo_epi8(v_t, _mm_setzero_si128());
+					__m128i masks = _mm_slli_epi16(array_of_bools, shift_amount);
+					__m128i result = _mm_or_si128(*dst, masks);
+					*dst = result;
+#endif
+					DUMMY_STATEMENT;
 				}
 				++compressed_bitplane_index;
 			}
