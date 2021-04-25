@@ -453,7 +453,7 @@ bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annota
 			}
 			changed = true;
 		}
-	} else if (annotation->type == ANNOTATION_POLYGON) {
+	} else if (annotation->type == ANNOTATION_POLYGON || annotation->type == ANNOTATION_SPLINE) {
 		if (annotation->coordinate_count < 3) {
 			if (annotation->coordinate_count == 2) {
 				annotation->type = ANNOTATION_LINE;
@@ -1182,6 +1182,8 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 			annotation->type = ANNOTATION_RECTANGLE;
 		} else if (strcmp(value, "Polygon") == 0) {
 			annotation->type = ANNOTATION_POLYGON;
+		} else if (strcmp(value, "Spline") == 0) {
+			annotation->type = ANNOTATION_SPLINE;
 		} else if (strcmp(value, "Dot") == 0) {
 			annotation->type = ANNOTATION_POINT;
 		} else {
@@ -1418,6 +1420,7 @@ const char* get_annotation_type_name(annotation_type_enum type) {
 		case ANNOTATION_UNKNOWN_TYPE: default: break;
 		case ANNOTATION_RECTANGLE: result = "Rectangle"; break;
 		case ANNOTATION_POLYGON: result = "Polygon"; break;
+		case ANNOTATION_SPLINE: result = "Spline"; break;
 		case ANNOTATION_POINT: result = "Dot"; break;
 	}
 	return result;
@@ -1494,6 +1497,7 @@ void geojson_print_feature(FILE* fp, annotation_set_t* annotation_set, annotatio
 		default:
 		case ANNOTATION_RECTANGLE:
 		case ANNOTATION_POLYGON:
+		case ANNOTATION_SPLINE:
 			geometry_type = "Polygon"; break;
 		case ANNOTATION_POINT:
 			geometry_type = "Point"; break;

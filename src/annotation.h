@@ -36,6 +36,7 @@ typedef enum annotation_type_enum {
 	ANNOTATION_POLYGON = 2,
 	ANNOTATION_POINT = 3,
 	ANNOTATION_LINE = 4,
+	ANNOTATION_SPLINE = 5,
 } annotation_type_enum;
 
 typedef enum asap_xml_element_enum {
