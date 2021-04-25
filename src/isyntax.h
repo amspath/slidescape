@@ -118,12 +118,12 @@ typedef struct isyntax_image_dimension_range_t {
 	i32 start;
 	i32 step;
 	i32 end;
-	i32 range;
+	i32 numsteps;
 } isyntax_image_dimension_range_t;
 
 typedef struct isyntax_image_block_header_template_t {
-	u32 tile_width;      // 256, 512, 1024, ...
-	u32 tile_height;     // 256, 512, 1024, ...
+	u32 block_width;      // e.g. 128
+	u32 block_height;     // e.g. 128
 	u8 color_component;  // 0=Y 1=Co 2=Cg
 	u8 scale;            // range 0-8
 	u8 waveletcoeff;     // either 1 for LL, or 3 for LH+HL+HH
@@ -140,6 +140,9 @@ typedef struct isyntax_codeblock_t {
 	u64 block_size;
 	u32 block_header_template_id;
 	u64 decompressed_size;
+	i32 x_adjusted;
+	i32 y_adjusted;
+	u64 block_id;
 } isyntax_codeblock_t;
 
 typedef struct isyntax_level_t {
@@ -148,7 +151,7 @@ typedef struct isyntax_level_t {
 	i32 tile_height;
 	i32 width_in_tiles;
 	i32 height_in_tiles;
-	u64 codeblock_count;
+	u64 tile_count;
 	isyntax_codeblock_t* codeblocks;
 } isyntax_level_t;
 

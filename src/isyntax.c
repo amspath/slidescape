@@ -34,6 +34,8 @@
 // TODO: Colorspace post-processing (convert YCoCg to RGB)
 // TODO: Add ICC profiles support
 
+#define PER_LEVEL_PADDING 3
+
 // Base64 decoder by Jouni Malinen, original:
 // http://web.mit.edu/freebsd/head/contrib/wpa/src/utils/base64.c
 // Performance comparison of base64 encoders/decoders:
@@ -297,13 +299,14 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x200B: /*UFS_IMAGE_DIMENSION_RANGE*/                  {
 					isyntax_image_dimension_range_t range = {};
 					parse_three_integers(value, &range.start, &range.step, &range.end);
-					range.range = (range.end + range.step) - range.start;
+					i32 step_nonzero = (range.step != 0) ? range.step : 1;
+					range.numsteps = ((range.end + range.step) - range.start) / step_nonzero;
 					if (isyntax->parser.data_object_flags & ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate) {
 						isyntax_header_template_t* template = isyntax->header_templates + isyntax->parser.header_template_index;
 						switch(isyntax->parser.dimension_index) {
 							default: break;
-							case 0: template->tile_width = range.range; break;
-							case 1: template->tile_height = range.range; break;
+							case 0: template->block_width = range.numsteps; break;
+							case 1: template->block_height = range.numsteps; break;
 							case 2: template->color_component = range.start; break;
 							case 3: template->scale = range.start; break;
 							case 4: template->waveletcoeff = (range.start == 0) ? 1 : 3; break;
@@ -314,14 +317,14 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 							default: break;
 							case 0: {
 								image->offset_x = range.start;
-								image->width = range.range;
+								image->width = range.numsteps;
 							} break;
 							case 1: {
 								image->offset_y = range.start;
-								image->height = range.range;
+								image->height = range.numsteps;
 							} break;
 							case 2: break; // always 3 color channels ("Y" "Co" "Cg"), no need to check
-							case 3: image->num_levels = range.range; break;
+							case 3: image->num_levels = range.numsteps; break;
 							case 4: break; // always 4 wavelet coefficients ("LL" "LH" "HL" "HH"), no need to check
 						}
 						DUMMY_STATEMENT;
@@ -1221,7 +1224,7 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 					i32 shift_amount = 15 - bit; // bitplanes are stored sign, msb ... lsb
 					u8 b = bitplane[j];
 					if (b == 0) continue;
-#if 0
+#if !defined(__SSE2__)
 					// TODO: SIMD stuff; this step is SLOW
 					current_coeff_buffer[i+0] |= ((b >> 0) & 1) << shift_amount;
 					current_coeff_buffer[i+1] |= ((b >> 1) & 1) << shift_amount;
@@ -1305,6 +1308,39 @@ void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 	}
 }
 #endif // DO_DEBUG_HUFFMAN_DECODE
+
+static inline i32 get_first_valid_coef_pixel(i32 scale) {
+	i32 result = (PER_LEVEL_PADDING << scale) - (PER_LEVEL_PADDING - 1);
+	return result;
+}
+
+static inline i32 get_first_valid_ll_pixel(i32 scale) {
+	i32 result = get_first_valid_coef_pixel(scale) + (1 << scale);
+	return result;
+}
+
+
+static void test_output_block_header(isyntax_image_t* wsi_image) {
+	FILE* test_block_header_fp = fopen("test_block_header.csv", "wb");
+	if (test_block_header_fp) {
+		fprintf(test_block_header_fp, "x_coordinate,y_coordinate,color_component,scale,coefficient,block_data_offset,block_data_size,block_header_template_id\n");
+
+		for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+			isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
+			fprintf(test_block_header_fp, "%d,%d,%d,%d,%d,%d,%d,%d\n",
+			        codeblock->x_coordinate - wsi_image->offset_x,
+			        codeblock->y_coordinate - wsi_image->offset_y,
+			        codeblock->color_component,
+			        codeblock->scale,
+			        codeblock->coefficient,
+			        codeblock->block_data_offset,
+			        codeblock->block_size,
+			        codeblock->block_header_template_id);
+		}
+
+		fclose(test_block_header_fp);
+	}
+}
 
 bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
@@ -1404,38 +1440,80 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			isyntax_image_t* wsi_image = isyntax->wsi_image;
 			if (wsi_image) {
 
+				i64 block_width = isyntax->header_templates[0].block_width;
+				i64 block_height = isyntax->header_templates[0].block_height;
+				i64 tile_width = block_width << 1; // tile dimension AFTER inverse wavelet transform
+				i64 tile_height = block_height << 1;
+
 				// Padding
 				// 1: Uniform padding with black pixels on all sides
-				i64 per_level_padding = 3; // for Legall 5/3 wavelet transform
-				i64 num_levels = wsi_image->num_levels; // TODO: get from UFSGeneralImageHeader UFS_IMAGE_DIMENSION_RANGES
-				i64 padding = (per_level_padding << num_levels) - per_level_padding;
+				i64 num_levels = wsi_image->num_levels;
+				ASSERT(num_levels >= 0);
+				i64 padding = (PER_LEVEL_PADDING << num_levels) - PER_LEVEL_PADDING;
 
 				// 2: further padding on the right and bottom side.
 				// (To ensure that the image dimensions are a multiple of the codeblock size.)
-				i64 base_image_width = wsi_image->width;//148480;
-				i64 base_image_height = wsi_image->height;//93184;
+				i64 base_image_width = wsi_image->width;
+				i64 base_image_height = wsi_image->height;
 				i64 padded_width = base_image_width + 2 * padding;
 				i64 padded_height = base_image_height + 2 * padding;
-				i64 block_width = 128;
-				i64 block_height = 128;
+
 				i64 grid_width = ((padded_width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
 				i64 grid_height = ((padded_height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
 
-				u64 base_level_codeblock_count = grid_height * grid_width;
-				u64 total_codeblock_count = 0;
+				i64 h_coeff_tile_count = 0; // number of tiles with LH/HL/HH coefficients
+				i64 base_level_tile_count = grid_height * grid_width;
 				for (i32 i = 0; i < wsi_image->num_levels; ++i) {
 					isyntax_level_t* level = wsi_image->levels + i;
-					level->codeblock_count = base_level_codeblock_count >> (i * 2);
-					level->codeblocks = (isyntax_codeblock_t*)calloc(1, level->codeblock_count * sizeof(isyntax_codeblock_t));
-					total_codeblock_count += level->codeblock_count;
+					level->tile_count = base_level_tile_count >> (i * 2);
+					h_coeff_tile_count += level->tile_count;
+					level->codeblocks = (isyntax_codeblock_t*)calloc(1, level->tile_count * sizeof(isyntax_codeblock_t));
 					level->scale = i;
 					level->tile_width = block_width >> (i + 1);
 					level->tile_height = block_height >> (i + 1);
 					level->width_in_tiles = grid_width >> i;
 					level->height_in_tiles = grid_height >> i;
 				}
+				// The highest level has LL tiles in addition to LH/HL/HH tiles
+				i64 ll_coeff_tile_count = base_level_tile_count >> ((num_levels - 1) * 2);
+				i64 total_coeff_tile_count = h_coeff_tile_count + ll_coeff_tile_count;
+				i64 total_codeblock_count = total_coeff_tile_count * 3; // for 3 color channels
 
+				for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+					isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
 
+					// Calculate adjusted codeblock coordinates so that they fit the origin of the image
+					codeblock->x_adjusted = (i32)codeblock->x_coordinate - wsi_image->offset_x;
+					codeblock->y_adjusted = (i32)codeblock->y_coordinate - wsi_image->offset_y;
+
+					// Calculate the block ID
+					// adapted from extract_block_header.py
+					bool is_ll = codeblock->coefficient == 0;
+					u32 block_id = 0;
+					i32 maxscale = is_ll ? codeblock->scale + 1 : codeblock->scale;
+					for (i32 scale = 0; scale < maxscale; ++scale) {
+						block_id += wsi_image->levels[scale].tile_count;
+					}
+
+					i32 offset;
+					if (is_ll) {
+						offset = get_first_valid_ll_pixel(codeblock->scale);
+					} else {
+						offset = get_first_valid_coef_pixel(codeblock->scale);
+					}
+					i32 x = codeblock->x_adjusted - offset;
+					i32 y = codeblock->y_adjusted - offset;
+					i32 block_x = x / (tile_width << codeblock->scale);
+					i32 block_y = y / (tile_height << codeblock->scale);
+
+					i32 grid_stride = grid_width >> codeblock->scale;
+					block_id += block_y * grid_stride + block_x;
+
+					i32 tiles_per_color = total_coeff_tile_count;
+					block_id += codeblock->color_component * tiles_per_color;
+					codeblock->block_id = block_id;
+					DUMMY_STATEMENT;
+				}
 
 				io_begin = get_clock(); // for performance measurement
 				fseeko64(fp, isyntax_data_offset, SEEK_SET);
@@ -1454,19 +1532,9 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							ASSERT(wsi_image->codeblock_count > 0);
 							seektable_size = sizeof(isyntax_seektable_codeblock_header_t) * wsi_image->codeblock_count;
 						}
-						isyntax_seektable_codeblock_header_t* codeblock_headers =
+						isyntax_seektable_codeblock_header_t* seektable =
 								(isyntax_seektable_codeblock_header_t*) malloc(seektable_size);
-						fread(codeblock_headers, seektable_size, 1, fp);
-
-						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
-							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
-							i32 relative_x = (i32)codeblock->x_coordinate - wsi_image->offset_x;
-							i32 relative_y = (i32)codeblock->y_coordinate - wsi_image->offset_y;
-							if (relative_x <= 22) {
-								DUMMY_STATEMENT;
-							}
-							DUMMY_STATEMENT;
-						}
+						fread(seektable, seektable_size, 1, fp);
 
 						// Now fill in the missing data.
 						// NOTE: The number of codeblock entries in the seektable is much greater than the number of
@@ -1475,50 +1543,49 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						// Luckily, we can easily identify the entries that need to be discarded.
 						// (They have the data offset (and data size) set to 0.)
 						i32 seektable_entry_count = seektable_size / sizeof(isyntax_seektable_codeblock_header_t);
-						i32 actual_real_codeblock_index = 0;
-						for (i32 i = 0; i < seektable_entry_count; ++i) {
-							isyntax_seektable_codeblock_header_t* seektable_entry = codeblock_headers + i;
+
+						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
+							isyntax_seektable_codeblock_header_t* seektable_entry = seektable + codeblock->block_id;
 							ASSERT(seektable_entry->block_data_offset_header.group == 0x301D);
 							ASSERT(seektable_entry->block_data_offset_header.element == 0x2010);
-							if (seektable_entry->block_data_offset != 0) {
-								isyntax_codeblock_t* codeblock = wsi_image->codeblocks + actual_real_codeblock_index;
-								codeblock->block_data_offset = seektable_entry->block_data_offset;
-								codeblock->block_size = seektable_entry->block_size;
-#if DO_DEBUG_HUFFMAN_DECODE
-								// Debug test:
-								// Decompress codeblocks in the seektable.
-								if (1 || actual_real_codeblock_index == wsi_image->codeblock_count-1) {
-									// Only parse 'non-empty'/'background' codeblocks
-									if (codeblock->block_size > 8 /*&& codeblock->block_data_offset == 129572464*/) {
-										debug_read_codeblock_from_file(codeblock, fp);
-										isyntax_header_template_t* template = isyntax->header_templates + codeblock->block_header_template_id;
-										if (template->waveletcoeff != 3) {
-											DUMMY_STATEMENT;
-										}
-										if (actual_real_codeblock_index % 1000 == 0) {
-											console_print_verbose("reading codeblock %d\n", actual_real_codeblock_index);
-										}
-										u16* decompressed = isyntax_hulsken_decompress(codeblock, template->waveletcoeff, 1);
-										if (decompressed) {
+							codeblock->block_data_offset = seektable_entry->block_data_offset;
+							codeblock->block_size = seektable_entry->block_size;
+
 #if 0
-											FILE* out = fopen("hulskendecompressed4.raw", "wb");
-											if(out) {
-												fwrite(decompressed, codeblock->decompressed_size, 1, out);
-												fclose(out);
-											}
-#endif
-											free(decompressed);
+							// Debug test:
+								// Decompress codeblocks in the seektable.
+							if (1 || i == wsi_image->codeblock_count-1) {
+								// Only parse 'non-empty'/'background' codeblocks
+								if (codeblock->block_size > 8 /*&& codeblock->block_data_offset == 129572464*/) {
+									debug_read_codeblock_from_file(codeblock, fp);
+									isyntax_header_template_t* template = isyntax->header_templates + codeblock->block_header_template_id;
+									if (template->waveletcoeff != 3) {
+										DUMMY_STATEMENT;
+									}
+									if (i % 1000 == 0) {
+										console_print_verbose("reading codeblock %d\n", i);
+									}
+									u16* decompressed = isyntax_hulsken_decompress(codeblock, template->waveletcoeff, 1);
+									if (decompressed) {
+#if 0
+										FILE* out = fopen("hulskendecompressed4.raw", "wb");
+										if(out) {
+											fwrite(decompressed, codeblock->decompressed_size, 1, out);
+											fclose(out);
 										}
+#endif
+										free(decompressed);
 									}
 								}
-#endif
-								++actual_real_codeblock_index;
-								if (actual_real_codeblock_index == wsi_image->codeblock_count) {
-									break; // we're done!
-								}
 							}
+#endif
 
 						}
+#if 0
+						test_output_block_header(wsi_image);
+#endif
+
 						parse_ticks_elapsed += (get_clock() - parse_begin);
 						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
 						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
@@ -1532,20 +1599,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				// TODO: error
 			}
 
-
-
-			// Process the XML header
-#if 0
-			char* xml_header = read_buffer;
-			xml_header[header_length] = '\0';
-
-			isyntax_parse_xml_header(isyntax, xml_header, header_length);
-
 #if 0 // dump XML header for testing
 			FILE* test_out = fopen("isyntax_header.xml", "wb");
 			fwrite(xml_header, header_length, 1, test_out);
 			fclose(test_out);
-#endif
 #endif
 
 			// TODO: further implement iSyntax support
