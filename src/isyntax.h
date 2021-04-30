@@ -143,6 +143,8 @@ typedef struct isyntax_codeblock_t {
 	i32 x_adjusted;
 	i32 y_adjusted;
 	u64 block_id;
+	u16* decoded;
+	i32* transformed;
 } isyntax_codeblock_t;
 
 typedef struct isyntax_level_t {
@@ -235,6 +237,7 @@ typedef struct isyntax_t {
 
 // function prototypes
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
+u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_version);
 
 
 #ifdef __cplusplus

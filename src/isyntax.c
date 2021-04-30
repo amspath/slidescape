@@ -16,6 +16,22 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+/*
+  Decoder for whole-slide image files in iSyntax format.
+
+  This implementation is based on the documentation on the iSyntax format released by Philips:
+  https://www.openpathology.philips.com/isyntax/
+
+  See the following documents, and the accompanying source code samples:
+  - "Fast Compression Method for Medical Images on the Web", by Bas Hulsken
+    https://arxiv.org/abs/2005.08713
+  - The description of the iSyntax image files:
+    https://www.openpathology.philips.com/wp-content/uploads/isyntax/4522%20207%2043941_2020_04_24%20Pathology%20iSyntax%20image%20format.pdf
+
+  This implementation does not require the Philips iSyntax SDK.
+*/
+
+
 #include "common.h"
 #include "platform.h"
 
@@ -26,15 +42,608 @@
 #include "jpeg_decoder.h"
 #include "stb_image.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
+
 // TODO: Record relevant metadata in the isyntax_t structure
 // --> used in the XML header for barcode, label/macro JPEG data, image block header structure, ICC profiles
-// TODO: Figure out codeblocks packaging scheme and decompression
-// TODO: Identify spatial location of codeblocks
 // TODO: Inverse discrete wavelet transform
 // TODO: Colorspace post-processing (convert YCoCg to RGB)
 // TODO: Add ICC profiles support
 
 #define PER_LEVEL_PADDING 3
+
+// Code from the openjp2 library:
+// inverse discrete wavelet transform (5/3)
+
+// See: https://github.com/uclouvain/openjpeg
+// The OpenJPEG license information is included below:
+/*
+ * The copyright in this software is being made available under the 2-clauses
+ * BSD License, included below. This software may be subject to other third
+ * party and contributor rights, including patent rights, and no such rights
+ * are granted under this license.
+ *
+ * Copyright (c) 2002-2014, Universite catholique de Louvain (UCL), Belgium
+ * Copyright (c) 2002-2014, Professor Benoit Macq
+ * Copyright (c) 2001-2003, David Janssens
+ * Copyright (c) 2002-2003, Yannick Verschueren
+ * Copyright (c) 2003-2007, Francois-Olivier Devaux
+ * Copyright (c) 2003-2014, Antonin Descampe
+ * Copyright (c) 2005, Herve Drolon, FreeImage Team
+ * Copyright (c) 2007, Jonathan Ballard <dzonatas@dzonux.net>
+ * Copyright (c) 2007, Callum Lerwick <seg@haxxed.com>
+ * Copyright (c) 2017, IntoPIX SA <support@intopix.com>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS `AS IS'
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+// End of OpenJPEG copyright notice.
+
+#ifdef __AVX2__
+/** Number of int32 values in a AVX2 register */
+#define VREG_INT_COUNT       8
+#else
+/** Number of int32 values in a SSE2 register */
+#define VREG_INT_COUNT       4
+#endif
+
+/** Number of columns that we can process in parallel in the vertical pass */
+#define PARALLEL_COLS_53     (2*VREG_INT_COUNT)
+
+typedef struct dwt_local {
+	i32* mem;
+	i32 dn;   /* number of elements in high pass band */
+	i32 sn;   /* number of elements in low pass band */
+	i32 cas;  /* 0 = start on even coord, 1 = start on odd coord */
+} opj_dwt_t;
+
+static void  opj_idwt53_h_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiledp) {
+	i32 i, j;
+	const i32* in_even = &tiledp[0];
+	const i32* in_odd = &tiledp[sn];
+
+	i32 d1c, d1n, s1n, s0c, s0n;
+
+	ASSERT(len > 1);
+
+	/* Improved version of the TWO_PASS_VERSION: */
+	/* Performs lifting in one single iteration. Saves memory */
+	/* accesses and explicit interleaving. */
+	s1n = in_even[0];
+	d1n = in_odd[0];
+	s0n = s1n - ((d1n + 1) >> 1);
+
+	for (i = 0, j = 1; i < (len - 3); i += 2, j++) {
+		d1c = d1n;
+		s0c = s0n;
+
+		s1n = in_even[j];
+		d1n = in_odd[j];
+
+		s0n = s1n - ((d1c + d1n + 2) >> 2);
+
+		tmp[i  ] = s0c;
+		tmp[i + 1] = d1c + ((s0c + s0n) >> 1);
+	}
+
+	tmp[i] = s0n;
+
+	if (len & 1) {
+		tmp[len - 1] = in_even[(len - 1) / 2] - ((d1n + 1) >> 1);
+		tmp[len - 2] = d1n + ((s0n + tmp[len - 1]) >> 1);
+	} else {
+		tmp[len - 1] = d1n + s0n;
+	}
+	memcpy(tiledp, tmp, (u32)len * sizeof(i32));
+}
+
+static void  opj_idwt53_h_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiledp) {
+	i32 i, j;
+	const i32* in_even = &tiledp[sn];
+	const i32* in_odd = &tiledp[0];
+
+	i32 s1, s2, dc, dn;
+
+	ASSERT(len > 2);
+
+	/* Improved version of the TWO_PASS_VERSION: */
+	/* Performs lifting in one single iteration. Saves memory */
+	/* accesses and explicit interleaving. */
+
+	s1 = in_even[1];
+	dc = in_odd[0] - ((in_even[0] + s1 + 2) >> 2);
+	tmp[0] = in_even[0] + dc;
+
+	for (i = 1, j = 1; i < (len - 2 - !(len & 1)); i += 2, j++) {
+
+		s2 = in_even[j + 1];
+
+		dn = in_odd[j] - ((s1 + s2 + 2) >> 2);
+		tmp[i  ] = dc;
+		tmp[i + 1] = s1 + ((dn + dc) >> 1);
+
+		dc = dn;
+		s1 = s2;
+	}
+
+	tmp[i] = dc;
+
+	if (!(len & 1)) {
+		dn = in_odd[len / 2 - 1] - ((s1 + 1) >> 1);
+		tmp[len - 2] = s1 + ((dn + dc) >> 1);
+		tmp[len - 1] = dn;
+	} else {
+		tmp[len - 1] = s1 + dc;
+	}
+	memcpy(tiledp, tmp, (u32)len * sizeof(i32));
+}
+
+/* <summary>                            */
+/* Inverse 5-3 wavelet transform in 1-D for one row. */
+/* </summary>                           */
+/* Performs interleave, inverse wavelet transform and copy back to buffer */
+static void opj_idwt53_h(const opj_dwt_t *dwt, i32* tiledp) {
+#ifdef STANDARD_SLOW_VERSION
+	/* For documentation purpose */
+    opj_dwt_interleave_h(dwt, tiledp);
+    opj_dwt_decode_1(dwt);
+    memcpy(tiledp, dwt->mem, (u32)(dwt->sn + dwt->dn) * sizeof(i32));
+#else
+	const i32 sn = dwt->sn;
+	const i32 len = sn + dwt->dn;
+	if (dwt->cas == 0) { /* Left-most sample is on even coordinate */
+		if (len > 1) {
+			opj_idwt53_h_cas0(dwt->mem, sn, len, tiledp);
+		} else {
+			/* Unmodified value */
+		}
+	} else { /* Left-most sample is on odd coordinate */
+		if (len == 1) {
+			tiledp[0] /= 2;
+		} else if (len == 2) {
+			i32* out = dwt->mem;
+			const i32* in_even = &tiledp[sn];
+			const i32* in_odd = &tiledp[0];
+			out[1] = in_odd[0] - ((in_even[0] + 1) >> 1);
+			out[0] = in_even[0] + out[1];
+			memcpy(tiledp, dwt->mem, (u32)len * sizeof(i32));
+		} else if (len > 2) {
+			opj_idwt53_h_cas1(dwt->mem, sn, len, tiledp);
+		}
+	}
+#endif
+}
+
+#if (defined(__SSE2__) || defined(__AVX2__)) && !defined(STANDARD_SLOW_VERSION)
+
+/* Conveniency macros to improve the readabilty of the formulas */
+#if __AVX2__
+#define VREG        __m256i
+#define LOAD_CST(x) _mm256_set1_epi32(x)
+#define LOAD(x)     _mm256_load_si256((const VREG*)(x))
+#define LOADU(x)    _mm256_loadu_si256((const VREG*)(x))
+#define STORE(x,y)  _mm256_store_si256((VREG*)(x),(y))
+#define STOREU(x,y) _mm256_storeu_si256((VREG*)(x),(y))
+#define ADD(x,y)    _mm256_add_epi32((x),(y))
+#define SUB(x,y)    _mm256_sub_epi32((x),(y))
+#define SAR(x,y)    _mm256_srai_epi32((x),(y))
+#else
+#define VREG        __m128i
+#define LOAD_CST(x) _mm_set1_epi32(x)
+#define LOAD(x)     _mm_load_si128((const VREG*)(x))
+#define LOADU(x)    _mm_loadu_si128((const VREG*)(x))
+#define STORE(x,y)  _mm_store_si128((VREG*)(x),(y))
+#define STOREU(x,y) _mm_storeu_si128((VREG*)(x),(y))
+#define ADD(x,y)    _mm_add_epi32((x),(y))
+#define SUB(x,y)    _mm_sub_epi32((x),(y))
+#define SAR(x,y)    _mm_srai_epi32((x),(y))
+#endif
+#define ADD3(x,y,z) ADD(ADD(x,y),z)
+
+static void opj_idwt53_v_final_memcpy(i32* tiledp_col, const i32* tmp, i32 len, size_t stride) {
+	for (i32 i = 0; i < len; ++i) {
+		/* A memcpy(&tiledp_col[i * stride + 0],
+					&tmp[PARALLEL_COLS_53 * i + 0],
+					PARALLEL_COLS_53 * sizeof(i32))
+		   would do but would be a tiny bit slower.
+		   We can take here advantage of our knowledge of alignment */
+		STOREU(&tiledp_col[(size_t)i * stride + 0],
+		       LOAD(&tmp[PARALLEL_COLS_53 * i + 0]));
+		STOREU(&tiledp_col[(size_t)i * stride + VREG_INT_COUNT],
+		       LOAD(&tmp[PARALLEL_COLS_53 * i + VREG_INT_COUNT]));
+	}
+}
+
+/** Vertical inverse 5x3 wavelet transform for 8 columns in SSE2, or
+ * 16 in AVX2, when top-most pixel is on even coordinate */
+static void opj_idwt53_v_cas0_mcols_SSE2_OR_AVX2( i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+	const i32* in_even = &tiledp_col[0];
+	const i32* in_odd = &tiledp_col[(size_t)sn * stride];
+
+	i32 i;
+	size_t j;
+	VREG d1c_0, d1n_0, s1n_0, s0c_0, s0n_0;
+	VREG d1c_1, d1n_1, s1n_1, s0c_1, s0n_1;
+	const VREG two = LOAD_CST(2);
+
+	ASSERT(len > 1);
+#if __AVX2__
+	ASSERT(PARALLEL_COLS_53 == 16);
+    ASSERT(VREG_INT_COUNT == 8);
+#else
+	ASSERT(PARALLEL_COLS_53 == 8);
+	ASSERT(VREG_INT_COUNT == 4);
+#endif
+
+	/* Note: loads of input even/odd values must be done in a unaligned */
+	/* fashion. But stores in tmp can be done with aligned store, since */
+	/* the temporary buffer is properly aligned */
+	ASSERT((size_t)tmp % (sizeof(i32) * VREG_INT_COUNT) == 0);
+
+	s1n_0 = LOADU(in_even + 0);
+	s1n_1 = LOADU(in_even + VREG_INT_COUNT);
+	d1n_0 = LOADU(in_odd);
+	d1n_1 = LOADU(in_odd + VREG_INT_COUNT);
+
+	/* s0n = s1n - ((d1n + 1) >> 1); <==> */
+	/* s0n = s1n - ((d1n + d1n + 2) >> 2); */
+	s0n_0 = SUB(s1n_0, SAR(ADD3(d1n_0, d1n_0, two), 2));
+	s0n_1 = SUB(s1n_1, SAR(ADD3(d1n_1, d1n_1, two), 2));
+
+	for (i = 0, j = 1; i < (len - 3); i += 2, j++) {
+		d1c_0 = d1n_0;
+		s0c_0 = s0n_0;
+		d1c_1 = d1n_1;
+		s0c_1 = s0n_1;
+
+		s1n_0 = LOADU(in_even + j * stride);
+		s1n_1 = LOADU(in_even + j * stride + VREG_INT_COUNT);
+		d1n_0 = LOADU(in_odd + j * stride);
+		d1n_1 = LOADU(in_odd + j * stride + VREG_INT_COUNT);
+
+		/*s0n = s1n - ((d1c + d1n + 2) >> 2);*/
+		s0n_0 = SUB(s1n_0, SAR(ADD3(d1c_0, d1n_0, two), 2));
+		s0n_1 = SUB(s1n_1, SAR(ADD3(d1c_1, d1n_1, two), 2));
+
+		STORE(tmp + PARALLEL_COLS_53 * (i + 0), s0c_0);
+		STORE(tmp + PARALLEL_COLS_53 * (i + 0) + VREG_INT_COUNT, s0c_1);
+
+		/* d1c + ((s0c + s0n) >> 1) */
+		STORE(tmp + PARALLEL_COLS_53 * (i + 1) + 0,
+		      ADD(d1c_0, SAR(ADD(s0c_0, s0n_0), 1)));
+		STORE(tmp + PARALLEL_COLS_53 * (i + 1) + VREG_INT_COUNT,
+		      ADD(d1c_1, SAR(ADD(s0c_1, s0n_1), 1)));
+	}
+
+	STORE(tmp + PARALLEL_COLS_53 * (i + 0) + 0, s0n_0);
+	STORE(tmp + PARALLEL_COLS_53 * (i + 0) + VREG_INT_COUNT, s0n_1);
+
+	if (len & 1) {
+		VREG tmp_len_minus_1;
+		s1n_0 = LOADU(in_even + (size_t)((len - 1) / 2) * stride);
+		/* tmp_len_minus_1 = s1n - ((d1n + 1) >> 1); */
+		tmp_len_minus_1 = SUB(s1n_0, SAR(ADD3(d1n_0, d1n_0, two), 2));
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1), tmp_len_minus_1);
+		/* d1n + ((s0n + tmp_len_minus_1) >> 1) */
+		STORE(tmp + PARALLEL_COLS_53 * (len - 2),
+		      ADD(d1n_0, SAR(ADD(s0n_0, tmp_len_minus_1), 1)));
+
+		s1n_1 = LOADU(in_even + (size_t)((len - 1) / 2) * stride + VREG_INT_COUNT);
+		/* tmp_len_minus_1 = s1n - ((d1n + 1) >> 1); */
+		tmp_len_minus_1 = SUB(s1n_1, SAR(ADD3(d1n_1, d1n_1, two), 2));
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + VREG_INT_COUNT,
+		      tmp_len_minus_1);
+		/* d1n + ((s0n + tmp_len_minus_1) >> 1) */
+		STORE(tmp + PARALLEL_COLS_53 * (len - 2) + VREG_INT_COUNT,
+		      ADD(d1n_1, SAR(ADD(s0n_1, tmp_len_minus_1), 1)));
+
+	} else {
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + 0,
+		      ADD(d1n_0, s0n_0));
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + VREG_INT_COUNT,
+		      ADD(d1n_1, s0n_1));
+	}
+
+	opj_idwt53_v_final_memcpy(tiledp_col, tmp, len, stride);
+}
+
+
+/** Vertical inverse 5x3 wavelet transform for 8 columns in SSE2, or
+ * 16 in AVX2, when top-most pixel is on odd coordinate */
+static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+	i32 i;
+	size_t j;
+
+	VREG s1_0, s2_0, dc_0, dn_0;
+	VREG s1_1, s2_1, dc_1, dn_1;
+	const VREG two = LOAD_CST(2);
+
+	const i32* in_even = &tiledp_col[(size_t)sn * stride];
+	const i32* in_odd = &tiledp_col[0];
+
+	ASSERT(len > 2);
+#if __AVX2__
+	ASSERT(PARALLEL_COLS_53 == 16);
+    ASSERT(VREG_INT_COUNT == 8);
+#else
+	ASSERT(PARALLEL_COLS_53 == 8);
+	ASSERT(VREG_INT_COUNT == 4);
+#endif
+
+	/* Note: loads of input even/odd values must be done in a unaligned */
+	/* fashion. But stores in tmp can be done with aligned store, since */
+	/* the temporary buffer is properly aligned */
+	ASSERT((size_t)tmp % (sizeof(i32) * VREG_INT_COUNT) == 0);
+
+	s1_0 = LOADU(in_even + stride);
+	/* in_odd[0] - ((in_even[0] + s1 + 2) >> 2); */
+	dc_0 = SUB(LOADU(in_odd + 0),
+	           SAR(ADD3(LOADU(in_even + 0), s1_0, two), 2));
+	STORE(tmp + PARALLEL_COLS_53 * 0, ADD(LOADU(in_even + 0), dc_0));
+
+	s1_1 = LOADU(in_even + stride + VREG_INT_COUNT);
+	/* in_odd[0] - ((in_even[0] + s1 + 2) >> 2); */
+	dc_1 = SUB(LOADU(in_odd + VREG_INT_COUNT),
+	           SAR(ADD3(LOADU(in_even + VREG_INT_COUNT), s1_1, two), 2));
+	STORE(tmp + PARALLEL_COLS_53 * 0 + VREG_INT_COUNT,
+	      ADD(LOADU(in_even + VREG_INT_COUNT), dc_1));
+
+	for (i = 1, j = 1; i < (len - 2 - !(len & 1)); i += 2, j++) {
+
+		s2_0 = LOADU(in_even + (j + 1) * stride);
+		s2_1 = LOADU(in_even + (j + 1) * stride + VREG_INT_COUNT);
+
+		/* dn = in_odd[j * stride] - ((s1 + s2 + 2) >> 2); */
+		dn_0 = SUB(LOADU(in_odd + j * stride),
+		           SAR(ADD3(s1_0, s2_0, two), 2));
+		dn_1 = SUB(LOADU(in_odd + j * stride + VREG_INT_COUNT),
+		           SAR(ADD3(s1_1, s2_1, two), 2));
+
+		STORE(tmp + PARALLEL_COLS_53 * i, dc_0);
+		STORE(tmp + PARALLEL_COLS_53 * i + VREG_INT_COUNT, dc_1);
+
+		/* tmp[i + 1] = s1 + ((dn + dc) >> 1); */
+		STORE(tmp + PARALLEL_COLS_53 * (i + 1) + 0,
+		      ADD(s1_0, SAR(ADD(dn_0, dc_0), 1)));
+		STORE(tmp + PARALLEL_COLS_53 * (i + 1) + VREG_INT_COUNT,
+		      ADD(s1_1, SAR(ADD(dn_1, dc_1), 1)));
+
+		dc_0 = dn_0;
+		s1_0 = s2_0;
+		dc_1 = dn_1;
+		s1_1 = s2_1;
+	}
+	STORE(tmp + PARALLEL_COLS_53 * i, dc_0);
+	STORE(tmp + PARALLEL_COLS_53 * i + VREG_INT_COUNT, dc_1);
+
+	if (!(len & 1)) {
+		/*dn = in_odd[(len / 2 - 1) * stride] - ((s1 + 1) >> 1); */
+		dn_0 = SUB(LOADU(in_odd + (size_t)(len / 2 - 1) * stride),
+		           SAR(ADD3(s1_0, s1_0, two), 2));
+		dn_1 = SUB(LOADU(in_odd + (size_t)(len / 2 - 1) * stride + VREG_INT_COUNT),
+		           SAR(ADD3(s1_1, s1_1, two), 2));
+
+		/* tmp[len - 2] = s1 + ((dn + dc) >> 1); */
+		STORE(tmp + PARALLEL_COLS_53 * (len - 2) + 0,
+		      ADD(s1_0, SAR(ADD(dn_0, dc_0), 1)));
+		STORE(tmp + PARALLEL_COLS_53 * (len - 2) + VREG_INT_COUNT,
+		      ADD(s1_1, SAR(ADD(dn_1, dc_1), 1)));
+
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + 0, dn_0);
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + VREG_INT_COUNT, dn_1);
+	} else {
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + 0, ADD(s1_0, dc_0));
+		STORE(tmp + PARALLEL_COLS_53 * (len - 1) + VREG_INT_COUNT,
+		      ADD(s1_1, dc_1));
+	}
+
+	opj_idwt53_v_final_memcpy(tiledp_col, tmp, len, stride);
+}
+
+#undef VREG
+#undef LOAD_CST
+#undef LOADU
+#undef LOAD
+#undef STORE
+#undef STOREU
+#undef ADD
+#undef ADD3
+#undef SUB
+#undef SAR
+
+#endif /* (defined(__SSE2__) || defined(__AVX2__)) && !defined(STANDARD_SLOW_VERSION) */
+
+#if !defined(STANDARD_SLOW_VERSION)
+/** Vertical inverse 5x3 wavelet transform for one column, when top-most
+ * pixel is on even coordinate */
+static void opj_idwt3_v_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+	i32 i, j;
+	i32 d1c, d1n, s1n, s0c, s0n;
+
+	ASSERT(len > 1);
+
+	/* Performs lifting in one single iteration. Saves memory */
+	/* accesses and explicit interleaving. */
+
+	s1n = tiledp_col[0];
+	d1n = tiledp_col[(size_t)sn * stride];
+	s0n = s1n - ((d1n + 1) >> 1);
+
+	for (i = 0, j = 0; i < (len - 3); i += 2, j++) {
+		d1c = d1n;
+		s0c = s0n;
+
+		s1n = tiledp_col[(size_t)(j + 1) * stride];
+		d1n = tiledp_col[(size_t)(sn + j + 1) * stride];
+
+		s0n = s1n - ((d1c + d1n + 2) >> 2);
+
+		tmp[i  ] = s0c;
+		tmp[i + 1] = d1c + ((s0c + s0n) >> 1);
+	}
+
+	tmp[i] = s0n;
+
+	if (len & 1) {
+		tmp[len - 1] =
+				tiledp_col[(size_t)((len - 1) / 2) * stride] -
+				((d1n + 1) >> 1);
+		tmp[len - 2] = d1n + ((s0n + tmp[len - 1]) >> 1);
+	} else {
+		tmp[len - 1] = d1n + s0n;
+	}
+
+	for (i = 0; i < len; ++i) {
+		tiledp_col[(size_t)i * stride] = tmp[i];
+	}
+}
+
+/** Vertical inverse 5x3 wavelet transform for one column, when top-most
+ * pixel is on odd coordinate */
+static void opj_idwt3_v_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+	i32 i, j;
+	i32 s1, s2, dc, dn;
+	const i32* in_even = &tiledp_col[(size_t)sn * stride];
+	const i32* in_odd = &tiledp_col[0];
+
+	ASSERT(len > 2);
+
+	/* Performs lifting in one single iteration. Saves memory */
+	/* accesses and explicit interleaving. */
+
+	s1 = in_even[stride];
+	dc = in_odd[0] - ((in_even[0] + s1 + 2) >> 2);
+	tmp[0] = in_even[0] + dc;
+	for (i = 1, j = 1; i < (len - 2 - !(len & 1)); i += 2, j++) {
+
+		s2 = in_even[(size_t)(j + 1) * stride];
+
+		dn = in_odd[(size_t)j * stride] - ((s1 + s2 + 2) >> 2);
+		tmp[i  ] = dc;
+		tmp[i + 1] = s1 + ((dn + dc) >> 1);
+
+		dc = dn;
+		s1 = s2;
+	}
+	tmp[i] = dc;
+	if (!(len & 1)) {
+		dn = in_odd[(size_t)(len / 2 - 1) * stride] - ((s1 + 1) >> 1);
+		tmp[len - 2] = s1 + ((dn + dc) >> 1);
+		tmp[len - 1] = dn;
+	} else {
+		tmp[len - 1] = s1 + dc;
+	}
+
+	for (i = 0; i < len; ++i) {
+		tiledp_col[(size_t)i * stride] = tmp[i];
+	}
+}
+#endif /* !defined(STANDARD_SLOW_VERSION) */
+
+/* <summary>                            */
+/* Inverse vertical 5-3 wavelet transform in 1-D for several columns. */
+/* </summary>                           */
+/* Performs interleave, inverse wavelet transform and copy back to buffer */
+static void opj_idwt53_v(const opj_dwt_t *dwt, i32* tiledp_col, size_t stride, i32 nb_cols) {
+#ifdef STANDARD_SLOW_VERSION
+	/* For documentation purpose */
+    i32 k, c;
+    for (c = 0; c < nb_cols; c ++) {
+        opj_dwt_interleave_v(dwt, tiledp_col + c, stride);
+        opj_dwt_decode_1(dwt);
+        for (k = 0; k < dwt->sn + dwt->dn; ++k) {
+            tiledp_col[c + k * stride] = dwt->mem[k];
+        }
+    }
+#else
+	const i32 sn = dwt->sn;
+	const i32 len = sn + dwt->dn;
+	if (dwt->cas == 0) {
+		/* If len == 1, unmodified value */
+
+#if (defined(__SSE2__) || defined(__AVX2__))
+		if (len > 1 && nb_cols == PARALLEL_COLS_53) {
+			/* Same as below general case, except that thanks to SSE2/AVX2 */
+			/* we can efficiently process 8/16 columns in parallel */
+			opj_idwt53_v_cas0_mcols_SSE2_OR_AVX2(dwt->mem, sn, len, tiledp_col, stride);
+			return;
+		}
+#endif
+		if (len > 1) {
+			i32 c;
+			for (c = 0; c < nb_cols; c++, tiledp_col++) {
+				opj_idwt3_v_cas0(dwt->mem, sn, len, tiledp_col, stride);
+			}
+			return;
+		}
+	} else {
+		if (len == 1) {
+			i32 c;
+			for (c = 0; c < nb_cols; c++, tiledp_col++) {
+				tiledp_col[0] /= 2;
+			}
+			return;
+		}
+
+		if (len == 2) {
+			i32 c;
+			i32* out = dwt->mem;
+			for (c = 0; c < nb_cols; c++, tiledp_col++) {
+				i32 i;
+				const i32* in_even = &tiledp_col[(size_t)sn * stride];
+				const i32* in_odd = &tiledp_col[0];
+
+				out[1] = in_odd[0] - ((in_even[0] + 1) >> 1);
+				out[0] = in_even[0] + out[1];
+
+				for (i = 0; i < len; ++i) {
+					tiledp_col[(size_t)i * stride] = out[i];
+				}
+			}
+
+			return;
+		}
+
+#if (defined(__SSE2__) || defined(__AVX2__))
+		if (len > 2 && nb_cols == PARALLEL_COLS_53) {
+			/* Same as below general case, except that thanks to SSE2/AVX2 */
+			/* we can efficiently process 8/16 columns in parallel */
+			opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(dwt->mem, sn, len, tiledp_col, stride);
+			return;
+		}
+#endif
+		if (len > 2) {
+			i32 c;
+			for (c = 0; c < nb_cols; c++, tiledp_col++) {
+				opj_idwt3_v_cas1(dwt->mem, sn, len, tiledp_col, stride);
+			}
+			return;
+		}
+	}
+#endif
+}
+// End of openjp2 code.
+
 
 // Base64 decoder by Jouni Malinen, original:
 // http://web.mit.edu/freebsd/head/contrib/wpa/src/utils/base64.c
@@ -110,6 +719,7 @@ unsigned char * base64_decode(const unsigned char *src, size_t len,
 	*out_len = pos - out;
 	return out;
 }
+// end of base64 decoder.
 
 // similar to atoi(), but also returning the string position so we can chain calls one after another.
 static const char* atoi_and_advance(const char* str, i32* dest) {
@@ -831,6 +1441,248 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 }
 
 
+// Convert between signed magnitude and two's complement
+// https://stackoverflow.com/questions/21837008/how-to-convert-from-sign-magnitude-to-twos-complement
+static inline i16 signed_magnitude_to_twos_complement_16(u16 x) {
+	u16 m = -(x >> 15);
+	i16 result = (~m & x) | (((x & (u16)0x8000) - x) & m);
+	return result;
+}
+
+static inline i32 twos_complement_to_signed_magnitude(u32 x) {
+	u32 m = -(x >> 31);
+	i32 result = (~m & x) | (((x & 0x80000000) - x) & m);
+	return result;
+}
+
+
+void debug_convert_wavelet_coefficients_to_image(isyntax_codeblock_t* codeblock) {
+	if (codeblock->decoded) {
+		i32 coeff_count = codeblock->coefficient ? 3 : 1;
+		for (i32 i = 0; i < coeff_count; ++i) {
+			u8* decoded_8bit = (u8*)malloc(128*128);
+			u16* decoded = codeblock->decoded + (i * (128*128));
+			for (i32 j = 0; j < 128*128; ++j) {
+				u16 magnitude = decoded[j] & 0x7fff;
+				decoded_8bit[j] = ATMOST(255, magnitude);
+			}
+
+			char filename[512];
+			snprintf(filename, sizeof(filename), "debug_codeblock_%d.png", i);
+			stbi_write_png(filename, 128, 128, 1, decoded_8bit, 128);
+			free(decoded_8bit);
+		}
+
+	}
+}
+
+/*void debug_convert_wavelet_coefficients_to_image3(i32* color0, i32* color1, i32* color2, i32 width, i32 height, const char* filename) {
+	if (color0) {
+		u8* decoded_8bit = (u8*)malloc(width*height);
+		for (i32 i = 0; i < width * height; ++i) {
+			u16 magnitude = (u16)twos_complement_to_signed_magnitude(color0[i]);
+			decoded_8bit[i] = ATMOST(255, magnitude);
+		}
+
+		stbi_write_png(filename, width, height, 1, decoded_8bit, width);
+		free(decoded_8bit);
+	}
+}*/
+
+void debug_convert_wavelet_coefficients_to_image2(i32* coefficients, i32 width, i32 height, const char* filename) {
+	if (coefficients) {
+		u8* decoded_8bit = (u8*)malloc(width*height);
+		for (i32 i = 0; i < width * height; ++i) {
+			u16 magnitude = (u16)twos_complement_to_signed_magnitude(coefficients[i]);
+			decoded_8bit[i] = ATMOST(255, magnitude);
+		}
+
+		stbi_write_png(filename, width, height, 1, decoded_8bit, width);
+		free(decoded_8bit);
+	}
+}
+
+static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codeblock_t* h_block, i32 block_width, i32 block_height, i32 which_color) {
+	u16* ll = ll_block->decoded;
+	u16* hl = h_block->decoded;
+	u16* lh = h_block->decoded + block_width * block_height;
+	u16* hh = h_block->decoded + 2 * block_width * block_height;
+
+	// Prepare the input buffer containing both LL and LH/Hl/HH coefficients.
+	// LL | HL
+	// LH | HH
+	size_t input_buffer_size = block_width * block_height * 4 * sizeof(i32);
+	i32* input = (i32*)_aligned_malloc(input_buffer_size, 32);
+	i32 input_stride = block_width * 2;
+	for (i32 y = 0; y < block_height; ++y) {
+		i32* pos = input + y * input_stride;
+		for (i32 x = 0; x < block_width; ++x) {
+			*pos++ = signed_magnitude_to_twos_complement_16(*ll++);
+		}
+		for (i32 x = 0; x < block_width; ++x) {
+			*pos++ = signed_magnitude_to_twos_complement_16(*hl++);
+		}
+	}
+	for (i32 y = 0; y < block_height; ++y) {
+		i32* pos = input + (y+block_height) * input_stride;
+		for (i32 x = 0; x < block_width; ++x) {
+			*pos++ = signed_magnitude_to_twos_complement_16(*lh++);
+		}
+		for (i32 x = 0; x < block_width; ++x) {
+			*pos++ = signed_magnitude_to_twos_complement_16(*hh++);
+		}
+	}
+
+	char filename[512];
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
+
+
+	// Horizontal pass
+	opj_dwt_t h = {};
+	size_t dwt_mem_size = (MAX(block_width, block_height)*2) * PARALLEL_COLS_53 * sizeof(i32);
+	h.mem = (i32*)_aligned_malloc(dwt_mem_size, 32);
+	h.sn = block_width; // number of elements in low pass band
+	h.dn = block_width; // number of elements in high pass band
+	h.cas = 1;
+
+	for (i32 y = 0; y < block_height*2; ++y) {
+		i32* input_row = input + y * input_stride;
+		opj_idwt53_h(&h, input_row);
+	}
+
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
+
+
+	// Vertical pass
+	opj_dwt_t v = {};
+	v.mem = h.mem;
+	v.sn = block_height; // number of elements in low pass band
+	v.dn = block_height; // number of elements in high pass band
+	v.cas = 1;
+
+	i32 x;
+	i32 tile_width = block_width * 2;
+	for (x = 0; x + PARALLEL_COLS_53 <= tile_width; x += PARALLEL_COLS_53) {
+		opj_idwt53_v(&v, input + x, input_stride, PARALLEL_COLS_53);
+	}
+	if (x < tile_width) {
+		opj_idwt53_v(&v, input + x, input_stride, (tile_width - x));
+	}
+
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
+
+	return input;
+}
+
+// Example codeblock order for a 'chunk' in the file:
+// x        y       color   scale   coeff   offset      size    header_template_id
+// 66302	66302	0	    8	    1	    850048253	8270	18
+// 65918	65918	0	    7	    1	    850056531	17301	19
+// 98686	65918	0	    7	    1	    850073840	14503	19
+// 65918	98686	0	    7	    1	    850088351	8	    19
+// 98686	98686	0	    7	    1	    850088367	8	    19
+// 65726	65726	0	    6	    1	    850088383	26838	20
+// 82110	65726	0	    6	    1	    850115229	11215	20
+// 98494	65726	0	    6	    1	    850126452	6764	20
+// 114878	65726	0	    6	    1	    850133224	25409	20
+// 65726	82110	0	    6	    1	    850158641	21369	20
+// 82110	82110	0	    6	    1	    850180018	8146	20
+// 98494	82110	0	    6	    1	    850188172	4919	20
+// 114878	82110	0	    6	    1	    850193099	19908	20
+// 65726	98494	0	    6	    1	    850213015	8	    20
+// 82110	98494	0	    6	    1	    850213031	8	    20
+// 98494	98494	0	    6	    1	    850213047	8	    20
+// 114878	98494	0	    6	    1	    850213063	8	    20
+// 65726	114878	0	    6	    1	    850213079	8	    20
+// 82110	114878	0	    6	    1	    850213095	8	    20
+// 98494	114878	0	    6	    1	    850213111	8	    20
+// 114878	114878	0	    6	    1	    850213127	8	    20
+// 66558	66558	0	    8	    0	    850213143	5558	21    <- LL codeblock
+
+// The above pattern repeats for the other 2 color channels (1 and 2).
+// The LL codeblock is only present at the highest scales.
+
+void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isyntax_image_t* wsi, i32 base_codeblock_index, bool has_ll) {
+	i32 chunk_codeblock_count = 21; // 1 + 4 + 16 (for scale n, n-1, n-2)
+	if (has_ll) ++chunk_codeblock_count;
+	chunk_codeblock_count *= 3; // for 3 color channels
+
+	u64 offset0 = wsi->codeblocks[base_codeblock_index].block_data_offset;
+	isyntax_codeblock_t* last_codeblock = wsi->codeblocks + base_codeblock_index + chunk_codeblock_count - 1;
+	u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
+	u64 read_size = offset1 - offset0;
+
+	u8* chunk = NULL;
+	if (fp) {
+		chunk = calloc(1, read_size + 8); // TODO: pool allocator
+		fseeko64(fp, offset0, SEEK_SET);
+		fread(chunk, read_size, 1, fp);
+
+		for (i32 i = 0; i < chunk_codeblock_count; ++i) {
+			isyntax_codeblock_t* codeblock = wsi->codeblocks + base_codeblock_index + i;
+			i64 offset_in_chunk = codeblock->block_data_offset - offset0;
+			ASSERT(offset_in_chunk >= 0);
+
+			codeblock->data = chunk + offset_in_chunk;
+			codeblock->decoded = isyntax_hulsken_decompress(codeblock, 1); // TODO: free using _aligned_free()
+#if 0
+			char out_filename[512];
+			snprintf(out_filename, 512, "codeblocks/chunk_codeblock_%d_%d_%d.raw", i, codeblock->scale, codeblock->coefficient);
+			FILE* out = fopen(out_filename, "wb");
+			if (out) {
+				fwrite(codeblock->decoded, decoded_codeblock_size_per_coefficient * (codeblock->coefficient ? 3 : 1), 1, out);
+				fclose(out);
+			}
+
+			if (i == 0) debug_convert_wavelet_coefficients_to_image(codeblock);
+#endif
+		}
+
+#if 0
+		char out_filename[512];
+		snprintf(out_filename, 512, "codeblocks/chunk.bin");
+		FILE* out = fopen(out_filename, "wb");
+		if (out) {
+			fwrite(chunk, read_size, 1, out);
+			fclose(out);
+		}
+#endif
+		// TODO: where best to (pre)calculate this?
+		u32 block_width = isyntax->header_templates[0].block_width;
+		u32 block_height = isyntax->header_templates[0].block_height;
+
+		if (has_ll) {
+			isyntax_codeblock_t* h_blocks[3];
+			isyntax_codeblock_t* ll_blocks[3];
+			i32 h_block_indices[3] = {0, 22, 44};
+			i32 ll_block_indices[3] = {21, 21+22, 21+44};
+			for (i32 i = 0; i < 3; ++i) {
+				h_blocks[i] = wsi->codeblocks + base_codeblock_index + h_block_indices[i];
+				ll_blocks[i] = wsi->codeblocks + base_codeblock_index + ll_block_indices[i];
+			}
+			for (i32 i = 0; i < 3; ++i) {
+				isyntax_codeblock_t* h_block =  h_blocks[i];
+				isyntax_codeblock_t* ll_block = ll_blocks[i];
+				h_block->transformed = isyntax_idwt_top_level_tile(ll_block, h_block, block_width, block_height, i);
+			}
+			// TODO: recombine colors
+//			debug_convert_wavelet_coefficients_to_image3(h_blocks[0]->transformed, h_blocks[1]->transformed, h_blocks[2]->transformed, block_width*2, block_height*2, "debug_tile_color.png")
+		}
+
+		// Inverse discrete wavelet transform
+		if (has_ll) {
+
+
+		}
+
+	}
+
+}
+
+
 // Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant beast first).
 // Requires that at least 7 safety bytes are present at the end of the stream (don't trigger a segmentation fault)!
 static inline u64 bitstream_lsb_read(u8* buffer, u32 pos) {
@@ -877,8 +1729,7 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count, i32 compressor_version) {
-	ASSERT(coeff_count == 1 || coeff_count == 3);
+u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_version) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
 	// Read the header information stored in the codeblock.
@@ -898,9 +1749,18 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 	// After the header section, the rest of the codeblock contains a Huffman tree, followed by a Huffman-coded
 	// message of 8-bit Huffman symbols, interspersed with 'zero run' symbols (for run-length encoding of zeroes).
 
+	i32 coeff_count = (codeblock->coefficient == 1) ? 3 : 1;
 	i32 coeff_bit_depth = 16; // fixed value for iSyntax
 	i32 block_width = 128; // fixed value for iSyntax (?)
 	i32 block_height = 128; // fixed value for iSyntax (?)
+
+	// Early out if dummy/empty block
+	if (codeblock->block_size <= 8) {
+		size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
+		u16* coeff_buffer = (u16*)calloc(1, coeff_buffer_size);
+		return coeff_buffer;
+	}
+
 	i32 bits_read = 0;
 	i32 block_size_in_bits = codeblock->block_size * 8;
 	i64 serialized_length = 0; // In v1: stored in the first 4 bytes. In v2: derived calculation.
@@ -1206,12 +2066,15 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 	// unpack bitplanes
 	i32 compressed_bitplane_index = 0;
 	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
-	u16* coeff_buffer = (u16*)calloc(1, coeff_buffer_size);
-	u16* final_coeff_buffer = (u16*)calloc(1, coeff_buffer_size); // this copy will have the snake-order reshuffling undone
+	u16* coeff_buffer = (u16*)_aligned_malloc(coeff_buffer_size, 32);
+	u16* final_coeff_buffer = (u16*)_aligned_malloc(coeff_buffer_size, 32); // this copy will have the snake-order reshuffling undone
+	memset(coeff_buffer, 0, coeff_buffer_size);
+	memset(final_coeff_buffer, 0, coeff_buffer_size);
 
 	for (i32 coeff_index = 0; coeff_index < coeff_count; ++coeff_index) {
 		u16 bitmask = bitmasks[coeff_index];
 		u16* current_coeff_buffer = coeff_buffer + (coeff_index * (block_width * block_height));
+		u16* current_final_coeff_buffer = final_coeff_buffer + (coeff_index * (block_width * block_height));
 #if 1
 
 		i32 bit = 0;
@@ -1221,7 +2084,9 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 				u8* bitplane = decompressed_buffer + (compressed_bitplane_index * bytes_per_bitplane);
 				for (i32 i = 0; i < block_width * block_height; i += 8) {
 					i32 j = i/8;
-					i32 shift_amount = 15 - bit; // bitplanes are stored sign, msb ... lsb
+					// What is the order bitplanes are stored in, actually??
+					i32 shift_amount = (bit == 0) ? 15 : bit - 1; // bitplanes are stored sign, lsb ... msb
+//					i32 shift_amount = 15 - bit; // bitplanes are stored sign, msb ... lsb
 					u8 b = bitplane[j];
 					if (b == 0) continue;
 #if !defined(__SSE2__)
@@ -1253,7 +2118,7 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 			++bit;
 
 		}
-
+#if 1
 		// Reshuffle snake-order
 		if (bit > 0) {
 			i32 area_stride_x = block_width / 4;
@@ -1267,28 +2132,30 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 coeff_count,
 				u64 area_y2 = *(u64*)&current_coeff_buffer[area_base_index+8];
 				u64 area_y3 = *(u64*)&current_coeff_buffer[area_base_index+12];
 
-				*(u64*)(final_coeff_buffer + (area_y+0) * block_width + area_x) = area_y0;
-				*(u64*)(final_coeff_buffer + (area_y+1) * block_width + area_x) = area_y1;
-				*(u64*)(final_coeff_buffer + (area_y+2) * block_width + area_x) = area_y2;
-				*(u64*)(final_coeff_buffer + (area_y+3) * block_width + area_x) = area_y3;
+				*(u64*)(current_final_coeff_buffer + (area_y+0) * block_width + area_x) = area_y0;
+				*(u64*)(current_final_coeff_buffer + (area_y+1) * block_width + area_x) = area_y1;
+				*(u64*)(current_final_coeff_buffer + (area_y+2) * block_width + area_x) = area_y2;
+				*(u64*)(current_final_coeff_buffer + (area_y+3) * block_width + area_x) = area_y3;
 			}
+
+			/*for (i32 i = 0; i < block_width * block_height; ++i) {
+				final_coeff_buffer[i] = signed_magnitude_to_twos_complement_16(final_coeff_buffer[i]);
+			}*/
 		}
+#endif
 #endif
 
 	}
 
-	free(coeff_buffer);
+	_aligned_free(coeff_buffer);
 	free(decompressed_buffer);
-//	free(final_coeff_buffer);
+//	_aligned_free(final_coeff_buffer);
 
 
 
 	return final_coeff_buffer;
 
 }
-
-#define DO_DEBUG_HUFFMAN_DECODE 0
-#if  DO_DEBUG_HUFFMAN_DECODE
 
 void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 	if (fp && !codeblock->data) {
@@ -1307,7 +2174,6 @@ void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 #endif
 	}
 }
-#endif // DO_DEBUG_HUFFMAN_DECODE
 
 static inline i32 get_first_valid_coef_pixel(i32 scale) {
 	i32 result = (PER_LEVEL_PADDING << scale) - (PER_LEVEL_PADDING - 1);
@@ -1448,7 +2314,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				// Padding
 				// 1: Uniform padding with black pixels on all sides
 				i64 num_levels = wsi_image->num_levels;
-				ASSERT(num_levels >= 0);
+				ASSERT(num_levels >= 1);
 				i64 padding = (PER_LEVEL_PADDING << num_levels) - PER_LEVEL_PADDING;
 
 				// 2: further padding on the right and bottom side.
@@ -1584,6 +2450,15 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						}
 #if 0
 						test_output_block_header(wsi_image);
+#endif
+
+#if 0
+
+
+						// inverse wavelet transform test (single color channel)
+						i32 codeblock_index = 296166;
+						debug_decode_wavelet_transformed_chunk(isyntax, fp, wsi_image, codeblock_index, true);
+
 #endif
 
 						parse_ticks_elapsed += (get_clock() - parse_begin);
