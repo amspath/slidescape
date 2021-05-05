@@ -875,6 +875,7 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 				new_item.text = strdup(line);
 				new_item.has_color = has_color;
 				new_item.item_type = item_type;
+				// TODO: critical section, make multi-threading proof!
 				sb_push(console_log_items, new_item);
 			}
 		}
@@ -887,7 +888,7 @@ void console_print(const char* fmt, ...) {
 	char buf[4096];
 	va_list args;
 	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, args);
+	vsnprintf(buf, sizeof(buf)-1, fmt, args);
 	fprintf(stdout, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
 	va_end(args);
@@ -900,7 +901,7 @@ void console_print_verbose(const char* fmt, ...) {
 	char buf[4096];
 	va_list args;
 	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, args);
+	vsnprintf(buf, sizeof(buf)-1, fmt, args);
 	fprintf(stdout, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
 	va_end(args);
@@ -913,7 +914,7 @@ void console_print_error(const char* fmt, ...) {
 	char buf[4096];
 	va_list args;
 	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf), fmt, args);
+	vsnprintf(buf, sizeof(buf)-1, fmt, args);
 	fprintf(stderr, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
 	va_end(args);

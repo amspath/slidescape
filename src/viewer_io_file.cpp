@@ -114,7 +114,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
 
 		if (tiff->is_remote) {
-			console_print("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			fprintf(stderr, "[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
 
 			i32 bytes_read = 0;
@@ -134,7 +134,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 						                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
 //		                    console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 						} else {
-							console_print_error("[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+							fprintf(stderr, "[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 							failed = true;
 						}
 					}
@@ -160,7 +160,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
 //		            console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 					} else {
-						console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+						fprintf(stderr, "thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 						failed = true;
 					}
 				}
@@ -184,14 +184,14 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					decode_success = LZWDecode(&tif, decompressed, decompressed_size, 0);
 				}
 				if (!decode_success) {
-					console_print_error("LZW decompression failed\n");
+					fprintf(stderr, "LZW decompression failed\n");
 					failed = true;
 				}
 
 				// Convert RGB to BGRA
 				if (level_ifd->samples_per_pixel == 4) {
 					// TODO: convert RGBA to BGRA
-					console_print("LZW decompression: RGBA to BGRA conversion not implemented, assuming already in BGRA\n");
+					fprintf(stderr, "LZW decompression: RGBA to BGRA conversion not implemented, assuming already in BGRA\n");
 					ASSERT(decompressed_size == pixel_memory_size);
 					free(temp_memory);
 					temp_memory = decompressed;
@@ -215,7 +215,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 
 			} else {
-				console_print_error("\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
+				fprintf(stderr, "\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
 				failed = true;
 			}
 
@@ -259,7 +259,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		isyntax_tile_t isyntax_tile = isyntax_level->tiles[tile_index];
 
 		if (isyntax_tile.codeblock_index == 0) {
-			console_print_error("thread %d: tile level %d, tile %d (%d, %d): tile doesn't exist\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			fprintf(stderr, "thread %d: tile level %d, tile %d (%d, %d): tile doesn't exist\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 			failed = true;
 		} else {
 			isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index;
@@ -303,7 +303,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				i32* Cg_coefficients = h_blocks[2]->transformed;
 				isyntax_wavelet_coefficients_to_bgr_tile((rgba_t*)temp_memory, Y_coefficients, Co_coefficients, Cg_coefficients, tile_width * tile_height);
 			} else {
-				console_print_error("thread %d: tile level %d, tile %d (%d, %d): recursive inverse DWT not implemented\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+				fprintf(stderr, "thread %d: tile level %d, tile %d (%d, %d): recursive inverse DWT not implemented\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 				failed = true;
 			}
 		}
@@ -311,7 +311,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 
 	} else {
-		console_print_error("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		fprintf(stderr, "thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		failed = true;
 	}
 

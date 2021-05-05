@@ -27,7 +27,8 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 		i32 entry_to_submit = queue->next_entry_to_submit;
 		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
 		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
-			console_print_error("Warning: work queue is overflowing - job is cancelled\n");
+			// TODO: fix multithreading problem: completion queue overflowing
+			fprintf(stderr, "Warning: work queue is overflowing - job is cancelled\n");
 			return false;
 		}
 
