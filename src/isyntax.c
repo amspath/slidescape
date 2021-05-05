@@ -1502,6 +1502,19 @@ void debug_convert_wavelet_coefficients_to_image2(i32* coefficients, i32 width, 
 	}
 }
 
+static u32 wavelet_coefficient_to_color_value(i32 coefficient) {
+	u32 magnitude = ((u32)twos_complement_to_signed_magnitude(coefficient) & ~0x80000000);
+	return magnitude;
+}
+
+static rgba_t ycocg_to_rgb(i32 Y, i32 Co, i32 Cg) {
+	i32 tmp = Y - Cg/2;
+	i32 G = tmp + Cg;
+	i32 B = tmp - Co/2;
+	i32 R = B + Co;
+	return (rgba_t){ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255};
+}
+
 static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codeblock_t* h_block, i32 block_width, i32 block_height, i32 which_color) {
 	u16* ll = ll_block->decoded;
 	u16* hl = h_block->decoded;
@@ -1669,14 +1682,19 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 				h_block->transformed = isyntax_idwt_top_level_tile(ll_block, h_block, block_width, block_height, i);
 			}
 			// TODO: recombine colors
-//			debug_convert_wavelet_coefficients_to_image3(h_blocks[0]->transformed, h_blocks[1]->transformed, h_blocks[2]->transformed, block_width*2, block_height*2, "debug_tile_color.png")
+			u32 tile_width = block_width * 2;
+			u32 tile_height = block_height * 2;
+			rgba_t* final = (rgba_t*)malloc(tile_width * tile_height * (sizeof(rgba_t)));
+			i32* Y_coefficients = h_blocks[0]->transformed;
+			i32* Co_coefficients = h_blocks[1]->transformed;
+			i32* Cg_coefficients = h_blocks[2]->transformed;
+			for (i32 i = 0; i < tile_width * tile_height; ++i) {
+				i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
+				final[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
+			}
+			stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, final, tile_width * 4);
 		}
 
-		// Inverse discrete wavelet transform
-		if (has_ll) {
-
-
-		}
 
 	}
 
