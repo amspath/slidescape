@@ -29,6 +29,7 @@ extern "C" {
 #include "mathutils.h"
 #include "arena.h"
 #include "tiff.h"
+#include "isyntax.h"
 #include "openslide_api.h"
 #include "caselist.h"
 #include "annotation.h"
@@ -88,6 +89,7 @@ typedef enum {
 	IMAGE_BACKEND_STBI,
 	IMAGE_BACKEND_TIFF,
 	IMAGE_BACKEND_OPENSLIDE,
+	IMAGE_BACKEND_ISYNTAX,
 } image_backend_enum;
 
 typedef enum filetype_hint_enum {
@@ -150,6 +152,9 @@ typedef struct {
 		struct {
 			tiff_t tiff;
 		} tiff;
+		struct {
+			isyntax_t isyntax;
+		} isyntax;
 		struct {
 			wsi_t wsi;
 		} wsi;
@@ -323,6 +328,7 @@ tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset);
 void unload_all_images(app_state_t* app_state);
 bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay);
+bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* isyntax, bool is_overlay);
 bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);

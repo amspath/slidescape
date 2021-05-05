@@ -92,6 +92,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	memset(temp_memory, 0xFF, pixel_memory_size);
 	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory;// + WSI_BLOCK_SIZE;
 
+	bool failed = false;
 	ASSERT(image->type == IMAGE_TYPE_WSI);
 	if (image->backend == IMAGE_BACKEND_TIFF) {
 		tiff_t* tiff = &image->tiff.tiff;
@@ -134,6 +135,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 //		                    console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 						} else {
 							console_print_error("[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+							failed = true;
 						}
 					}
 
@@ -145,32 +147,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			free(read_buffer);
 		} else {
 #if WINDOWS
-			// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
-			// offset in the file where we want to do the read operation
-			LARGE_INTEGER offset = {.QuadPart = (i64)tile_offset};
-			thread_memory->overlapped = (OVERLAPPED) {};
-			thread_memory->overlapped.Offset = offset.LowPart;
-			thread_memory->overlapped.OffsetHigh = (DWORD)offset.HighPart;
-			thread_memory->overlapped.hEvent = thread_memory->async_io_event;
-			ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
-
-			if (!ReadFile(tiff->win32_file_handle, compressed_tile_data,
-			              compressed_tile_size_in_bytes, NULL, &thread_memory->overlapped)) {
-				DWORD error = GetLastError();
-				if (error != ERROR_IO_PENDING) {
-					win32_diagnostic("ReadFile");
-				}
-			}
-
-			// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
-			DWORD bytes_read = 0;
-			if (!GetOverlappedResult(tiff->win32_file_handle, &thread_memory->overlapped, &bytes_read, TRUE)) {
-				win32_diagnostic("GetOverlappedResult");
-			}
-			// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
-			if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
-				win32_diagnostic("WaitForSingleObject");
-			}
+			win32_overlapped_read(thread_memory, tiff->win32_file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #else
 			size_t bytes_read = pread(tiff->fd, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #endif
@@ -184,6 +161,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 //		            console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 					} else {
 						console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+						failed = true;
 					}
 				}
 			} else if (level_ifd->compression == TIFF_COMPRESSION_LZW) {
@@ -207,6 +185,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				}
 				if (!decode_success) {
 					console_print_error("LZW decompression failed\n");
+					failed = true;
 				}
 
 				// Convert RGB to BGRA
@@ -237,6 +216,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 			} else {
 				console_print_error("\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
+				failed = true;
 			}
 
 
@@ -270,13 +250,78 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		i64 x = (tile_x * level_image->tile_width) << level;
 		i64 y = (tile_y * level_image->tile_height) << level;
 		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
+	} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+//		console_print_error("thread %d: tile level %d, tile %d (%d, %d): TYRING\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+
+		isyntax_t* isyntax = &image->isyntax.isyntax;
+		isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+		isyntax_level_t* isyntax_level = wsi_image->levels + level;
+		isyntax_tile_t isyntax_tile = isyntax_level->tiles[tile_index];
+
+		if (isyntax_tile.codeblock_index == 0) {
+			console_print_error("thread %d: tile level %d, tile %d (%d, %d): tile doesn't exist\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			failed = true;
+		} else {
+			isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index;
+
+			if (level == wsi_image->num_levels - 1) {
+				i32 chunk_codeblock_count = 22*3; // 1 + 4 + 16 (for scale n, n-1, n-2) + 1 (LL block)
+
+				u64 offset0 = wsi_image->codeblocks[isyntax_tile.codeblock_chunk_index].block_data_offset;
+				isyntax_codeblock_t* last_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index + chunk_codeblock_count - 1;
+				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
+				u64 read_size = offset1 - offset0;
+				u8* chunk = compressed_tile_data;
+
+#if WINDOWS
+				// TODO: 64 bit read offsets?
+				win32_overlapped_read(thread_memory, isyntax->win32_file_handle, chunk, read_size, offset0);
+#else
+				size_t bytes_read = pread(isyntax->fd, compressed_tile_data, chunk, offset0);
+#endif
+
+				isyntax_codeblock_t* h_blocks[3];
+				isyntax_codeblock_t* ll_blocks[3];
+				i32 h_block_indices[3] = {0, 22, 44};
+				i32 ll_block_indices[3] = {21, 21+22, 21+44};
+				for (i32 i = 0; i < 3; ++i) {
+					h_blocks[i] = top_chunk_codeblock + h_block_indices[i];
+					ll_blocks[i] = top_chunk_codeblock + ll_block_indices[i];
+				}
+				for (i32 i = 0; i < 3; ++i) {
+					isyntax_codeblock_t* h_block =  h_blocks[i];
+					isyntax_codeblock_t* ll_block = ll_blocks[i];
+					isyntax_decompress_codeblock_in_chunk(h_block, chunk, offset0);
+					isyntax_decompress_codeblock_in_chunk(ll_block, chunk, offset0);
+					h_block->transformed = isyntax_idwt_top_level_tile(ll_block, h_block, isyntax->block_width, isyntax->block_height, i);
+				}
+				// TODO: recombine colors
+				u32 tile_width = isyntax->block_width * 2;
+				u32 tile_height = isyntax->block_height * 2;
+				i32* Y_coefficients = h_blocks[0]->transformed;
+				i32* Co_coefficients = h_blocks[1]->transformed;
+				i32* Cg_coefficients = h_blocks[2]->transformed;
+				isyntax_wavelet_coefficients_to_bgr_tile((rgba_t*)temp_memory, Y_coefficients, Co_coefficients, Cg_coefficients, tile_width * tile_height);
+			} else {
+				console_print_error("thread %d: tile level %d, tile %d (%d, %d): recursive inverse DWT not implemented\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+				failed = true;
+			}
+		}
+
+
+
 	} else {
 		console_print_error("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-
+		failed = true;
 	}
 
 
 	finish_up:;
+
+	if (failed && temp_memory != NULL) {
+		free(temp_memory);
+		temp_memory = NULL;
+	}
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 #if 1
@@ -554,7 +599,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 		// Try to open as iSyntax
 		isyntax_t isyntax = {0};
 		if (isyntax_open(&isyntax, filename)) {
-			image.is_valid = false;
+			init_image_from_isyntax(app_state, &image, &isyntax, is_overlay);
 			return image;
 		}
 	} else {

@@ -142,19 +142,24 @@ typedef struct isyntax_codeblock_t {
 	u64 decompressed_size;
 	i32 x_adjusted;
 	i32 y_adjusted;
+	i32 block_x;
+	i32 block_y;
 	u64 block_id;
 	u16* decoded;
 	i32* transformed;
 } isyntax_codeblock_t;
 
+typedef struct isyntax_tile_t {
+	u32 codeblock_index;
+	u32 codeblock_chunk_index;
+} isyntax_tile_t;
+
 typedef struct isyntax_level_t {
 	i32 scale;
-	i32 tile_width;
-	i32 tile_height;
 	i32 width_in_tiles;
 	i32 height_in_tiles;
 	u64 tile_count;
-	isyntax_codeblock_t* codeblocks;
+	isyntax_tile_t* tiles;
 } isyntax_level_t;
 
 typedef struct isyntax_image_t {
@@ -176,10 +181,6 @@ typedef struct isyntax_image_t {
 	isyntax_codeblock_t* codeblocks;
 	bool header_codeblocks_are_partial;
 } isyntax_image_t;
-
-typedef struct isyntax_parser_array_node_t {
-	u32 array_len;
-} isyntax_parser_array_node_t;
 
 typedef struct isyntax_parser_node_t {
 	u32 node_type; // leaf, branch, or array
@@ -212,8 +213,6 @@ typedef struct isyntax_parser_t {
 	i32 attribute_index;
 	u32 current_node_type;
 	bool current_node_has_children;
-	// We need to use negative indexing into the node_stack (max 4) to check
-	isyntax_parser_node_t safety_bytes_for_node_stack[4];
 	isyntax_parser_node_t node_stack[ISYNTAX_MAX_NODE_DEPTH];
 	i32 node_stack_index;
 	u16 data_object_stack[ISYNTAX_MAX_NODE_DEPTH];
@@ -226,19 +225,34 @@ typedef struct isyntax_parser_t {
 
 typedef struct isyntax_t {
 	i64 filesize;
+#if WINDOWS
+	HANDLE win32_file_handle;
+#else
+	int fd;
+#endif
 	isyntax_image_t images[16];
 	i32 image_count;
 	isyntax_header_template_t header_templates[64];
-	isyntax_image_t* macro_image;
-	isyntax_image_t* label_image;
-	isyntax_image_t* wsi_image;
+	i32 macro_image_index;
+	i32 label_image_index;
+	i32 wsi_image_index;
 	isyntax_parser_t parser;
+	float mpp_x;
+	float mpp_y;
+	i32 block_width;
+	i32 block_height;
+	i32 tile_width;
+	i32 tile_height;
 } isyntax_t;
 
 // function prototypes
-bool isyntax_open(isyntax_t* isyntax, const char* filename);
 u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_version);
-
+bool isyntax_open(isyntax_t* isyntax, const char* filename);
+void isyntax_destroy(isyntax_t* isyntax);
+i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codeblock_t* h_block, i32 block_width, i32 block_height, i32 which_color);
+void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count);
+void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count);
+void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, u8* chunk, u64 chunk_base_offset);
 
 #ifdef __cplusplus
 }

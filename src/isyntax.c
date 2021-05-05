@@ -45,10 +45,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
 
-// TODO: Record relevant metadata in the isyntax_t structure
-// --> used in the XML header for barcode, label/macro JPEG data, image block header structure, ICC profiles
-// TODO: Inverse discrete wavelet transform
-// TODO: Colorspace post-processing (convert YCoCg to RGB)
+// TODO: Implement recursive inverse wavelet transform
+// TODO: Improve performance and stability
 // TODO: Add ICC profiles support
 
 #define PER_LEVEL_PADDING 3
@@ -853,14 +851,17 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				} break;
 				case 0x1004: /*PIM_DP_IMAGE_TYPE*/                     {         // "MACROIMAGE" or "LABELIMAGE" or "WSI"
 					if ((strcmp(value, "MACROIMAGE") == 0)) {
-						isyntax->macro_image = isyntax->parser.current_image;
+						isyntax->macro_image_index = isyntax->parser.running_image_index;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
+						image->image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
 					} else if ((strcmp(value, "LABELIMAGE") == 0)) {
-						isyntax->label_image = isyntax->parser.current_image;
+						isyntax->label_image_index = isyntax->parser.running_image_index;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_LABELIMAGE;
+						image->image_type = ISYNTAX_IMAGE_TYPE_LABELIMAGE;
 					} else if ((strcmp(value, "WSI") == 0)) {
-						isyntax->wsi_image = isyntax->parser.current_image;
+						isyntax->wsi_image_index = isyntax->parser.running_image_index;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_WSI;
+						image->image_type = ISYNTAX_IMAGE_TYPE_WSI;
 					}
 				} break;
 				case 0x1005: { /*PIM_DP_IMAGE_DATA*/
@@ -902,7 +903,14 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
 				case 0x2005: /*UFS_IMAGE_DIMENSION_TYPE*/                   {} break;
 				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {} break;
-				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {} break;
+				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {
+					float mpp = atof(value);
+					if (isyntax->parser.dimension_index == 0 /*x*/) {
+						isyntax->mpp_x = mpp;
+					} else if (isyntax->parser.dimension_index == 1 /*y*/) {
+						isyntax->mpp_y = mpp;
+					}
+				} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
 				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {} break;
 				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {} break;
@@ -1515,7 +1523,31 @@ static rgba_t ycocg_to_rgb(i32 Y, i32 Co, i32 Cg) {
 	return (rgba_t){ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255};
 }
 
-static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codeblock_t* h_block, i32 block_width, i32 block_height, i32 which_color) {
+static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
+	i32 tmp = Y - Cg/2;
+	i32 G = tmp + Cg;
+	i32 B = tmp - Co/2;
+	i32 R = B + Co;
+	return (rgba_t){ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255};
+}
+
+void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count) {
+	for (i32 i = 0; i < pixel_count; ++i) {
+		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
+		dest[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
+	}
+}
+
+void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count) {
+	for (i32 i = 0; i < pixel_count; ++i) {
+		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
+		dest[i] = ycocg_to_bgr(Y, Co_coefficients[i], Cg_coefficients[i]);
+	}
+}
+
+#define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
+
+i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codeblock_t* h_block, i32 block_width, i32 block_height, i32 which_color) {
 	u16* ll = ll_block->decoded;
 	u16* hl = h_block->decoded;
 	u16* lh = h_block->decoded + block_width * block_height;
@@ -1546,10 +1578,11 @@ static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_c
 		}
 	}
 
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	char filename[512];
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
 	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
-
+#endif
 
 	// Horizontal pass
 	opj_dwt_t h = {};
@@ -1564,9 +1597,10 @@ static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_c
 		opj_idwt53_h(&h, input_row);
 	}
 
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
 	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
-
+#endif
 
 	// Vertical pass
 	opj_dwt_t v = {};
@@ -1584,9 +1618,11 @@ static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_c
 		opj_idwt53_v(&v, input + x, input_stride, (tile_width - x));
 	}
 
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
 	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
-
+#endif
+	_aligned_free(h.mem);
 	return input;
 }
 
@@ -1617,6 +1653,13 @@ static i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_c
 
 // The above pattern repeats for the other 2 color channels (1 and 2).
 // The LL codeblock is only present at the highest scales.
+
+void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, u8* chunk, u64 chunk_base_offset) {
+	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
+	ASSERT(offset_in_chunk >= 0);
+	codeblock->data = chunk + offset_in_chunk;
+	codeblock->decoded = isyntax_hulsken_decompress(codeblock, 1);
+}
 
 void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isyntax_image_t* wsi, i32 base_codeblock_index, bool has_ll) {
 	i32 chunk_codeblock_count = 21; // 1 + 4 + 16 (for scale n, n-1, n-2)
@@ -1664,8 +1707,8 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 		}
 #endif
 		// TODO: where best to (pre)calculate this?
-		u32 block_width = isyntax->header_templates[0].block_width;
-		u32 block_height = isyntax->header_templates[0].block_height;
+		u32 block_width = isyntax->block_width;
+		u32 block_height = isyntax->block_height;
 
 		if (has_ll) {
 			isyntax_codeblock_t* h_blocks[3];
@@ -1692,7 +1735,9 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 				i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
 				final[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
 			}
+#if 0
 			stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, final, tile_width * 4);
+#endif
 		}
 
 
@@ -2209,17 +2254,21 @@ static void test_output_block_header(isyntax_image_t* wsi_image) {
 	if (test_block_header_fp) {
 		fprintf(test_block_header_fp, "x_coordinate,y_coordinate,color_component,scale,coefficient,block_data_offset,block_data_size,block_header_template_id\n");
 
-		for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+		for (i32 i = 0; i < wsi_image->codeblock_count; i += 1/*21*3*/) {
 			isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
 			fprintf(test_block_header_fp, "%d,%d,%d,%d,%d,%d,%d,%d\n",
-			        codeblock->x_coordinate - wsi_image->offset_x,
-			        codeblock->y_coordinate - wsi_image->offset_y,
+			        codeblock->x_adjusted,
+			        codeblock->y_adjusted,
 			        codeblock->color_component,
 			        codeblock->scale,
 			        codeblock->coefficient,
 			        codeblock->block_data_offset,
 			        codeblock->block_size,
 			        codeblock->block_header_template_id);
+
+//			if (codeblock->scale == wsi_image->num_levels-1) {
+//				i+=3; // skip extra LL blocks;
+//			}
 		}
 
 		fclose(test_block_header_fp);
@@ -2291,7 +2340,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, true);
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 
-					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
+//					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
 //					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 //					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 //					console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
@@ -2320,14 +2369,26 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				}
 			}
 
+			if (isyntax->mpp_x <= 0.0f) {
+				isyntax->mpp_x = 0.25f; // should usually be 0.25; zero or below can never be right
+			}
+			if (isyntax->mpp_y <= 0.0f) {
+				isyntax->mpp_y = 0.25f;
+			}
 
-			isyntax_image_t* wsi_image = isyntax->wsi_image;
-			if (wsi_image) {
+			isyntax->block_width = isyntax->header_templates[0].block_width;
+			isyntax->block_height = isyntax->header_templates[0].block_height;
+			isyntax->tile_width = isyntax->block_width * 2; // tile dimension AFTER inverse wavelet transform
+			isyntax->tile_height = isyntax->block_height * 2;
 
-				i64 block_width = isyntax->header_templates[0].block_width;
-				i64 block_height = isyntax->header_templates[0].block_height;
-				i64 tile_width = block_width << 1; // tile dimension AFTER inverse wavelet transform
-				i64 tile_height = block_height << 1;
+
+			isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+			if (wsi_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
+
+				i64 block_width = isyntax->block_width;
+				i64 block_height = isyntax->block_height;
+				i64 tile_width = isyntax->tile_width;
+				i64 tile_height = isyntax->tile_height;
 
 				// Padding
 				// 1: Uniform padding with black pixels on all sides
@@ -2351,10 +2412,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					isyntax_level_t* level = wsi_image->levels + i;
 					level->tile_count = base_level_tile_count >> (i * 2);
 					h_coeff_tile_count += level->tile_count;
-					level->codeblocks = (isyntax_codeblock_t*)calloc(1, level->tile_count * sizeof(isyntax_codeblock_t));
 					level->scale = i;
-					level->tile_width = block_width >> (i + 1);
-					level->tile_height = block_height >> (i + 1);
 					level->width_in_tiles = grid_width >> i;
 					level->height_in_tiles = grid_height >> i;
 				}
@@ -2387,11 +2445,13 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					}
 					i32 x = codeblock->x_adjusted - offset;
 					i32 y = codeblock->y_adjusted - offset;
-					i32 block_x = x / (tile_width << codeblock->scale);
-					i32 block_y = y / (tile_height << codeblock->scale);
+					codeblock->x_adjusted = x;
+					codeblock->y_adjusted = y;
+					codeblock->block_x = x / (tile_width << codeblock->scale);
+					codeblock->block_y = y / (tile_height << codeblock->scale);
 
 					i32 grid_stride = grid_width >> codeblock->scale;
-					block_id += block_y * grid_stride + block_x;
+					block_id += codeblock->block_y * grid_stride + codeblock->block_x;
 
 					i32 tiles_per_color = total_coeff_tile_count;
 					block_id += codeblock->color_component * tiles_per_color;
@@ -2478,12 +2538,45 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						debug_decode_wavelet_transformed_chunk(isyntax, fp, wsi_image, codeblock_index, true);
 
 #endif
+						// Create tables for spatial lookup of codeblock from tile coordinates
+						for (i32 i = 0; i < wsi_image->num_levels; ++i) {
+							isyntax_level_t* level = wsi_image->levels + i;
+							// NOTE: Tile entry with codeblock_index == 0 will mean there is no codeblock for this tile (empty/background)
+							level->tiles = (isyntax_tile_t*) calloc(1, level->tile_count * sizeof(isyntax_tile_t));
+						}
+						i32 current_chunk_codeblock_index = 0;
+						i32 next_chunk_codeblock_index = 0;
+						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
+							if (codeblock->color_component != 0) {
+								// don't let color channels 1 and 2 overwrite what was already set
+								i = next_chunk_codeblock_index; // skip ahead
+								codeblock = wsi_image->codeblocks + i;
+								if (i >= wsi_image->codeblock_count) break;
+							}
+							// Keep track of where we are in the 'chunk' of codeblocks
+							if (i == next_chunk_codeblock_index) {
+								i32 chunk_codeblock_count = 21*3;
+								if (codeblock->scale == wsi_image->num_levels-1) {
+									chunk_codeblock_count += 3; // LL codeblocks only exist at the highest level (1 per color channel)
+								}
+								current_chunk_codeblock_index = i;
+								next_chunk_codeblock_index = i + chunk_codeblock_count;
+							}
+							isyntax_level_t* level = wsi_image->levels + codeblock->scale;
+							i32 tile_index = codeblock->block_y * level->width_in_tiles + codeblock->block_x;
+							ASSERT(tile_index < level->tile_count);
+							level->tiles[tile_index].codeblock_index = i;
+							level->tiles[tile_index].codeblock_chunk_index = current_chunk_codeblock_index;
+
+						}
+
 
 						parse_ticks_elapsed += (get_clock() - parse_begin);
-						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
-						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
-						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
-						console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
+//						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
+//						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
+//						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+						console_print("   iSyntax loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
 					} else {
 						// TODO: error
 					}
@@ -2492,11 +2585,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				// TODO: error
 			}
 
-#if 0 // dump XML header for testing
-			FILE* test_out = fopen("isyntax_header.xml", "wb");
-			fwrite(xml_header, header_length, 1, test_out);
-			fclose(test_out);
-#endif
 
 			// TODO: further implement iSyntax support
 			success = true;
@@ -2505,8 +2593,55 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			free(read_buffer);
 		}
 		fclose(fp);
+
+		if (success) {
+#if WINDOWS
+			// TODO: make async I/O platform agnostic
+			// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
+			// http://vec3.ca/using-win32-asynchronous-io/
+			isyntax->win32_file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+			                                         FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
+			                                         /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
+			                                         NULL);
+#else
+			tiff->fd = open(filename, O_RDONLY);
+				if (tiff->fd == -1) {
+					console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
+					return false;
+				} else {
+					// success
+				}
+
+#endif
+		}
 	}
 	return success;
 }
 
-
+void isyntax_destroy(isyntax_t* isyntax) {
+	for (i32 image_index = 0; image_index < isyntax->image_count; ++image_index) {
+		isyntax_image_t* isyntax_image = isyntax->images + image_index;
+		if (isyntax_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
+			if (isyntax_image->codeblocks) {
+				free(isyntax_image->codeblocks);
+				isyntax_image->codeblocks = NULL;
+			}
+			for (i32 i = 0; i < isyntax_image->num_levels; ++i) {
+				isyntax_level_t* level = isyntax_image->levels + i;
+				if (level->tiles) {
+					free(level->tiles);
+					level->tiles = NULL;
+				}
+			}
+		}
+	}
+#if WINDOWS
+	if (isyntax->win32_file_handle) {
+		CloseHandle(isyntax->win32_file_handle);
+	}
+#else
+	if (isyntax->fd) {
+		close(isyntax->fd);
+	}
+#endif
+}

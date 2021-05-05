@@ -94,6 +94,42 @@ void win32_diagnostic(const char* prefix) {
     LocalFree(message_buffer);
 }
 
+HANDLE win32_open_overlapped_file_handle(const char* filename) {
+	HANDLE handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+	                            FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
+	                            /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
+	                            NULL);
+	return handle;
+}
+
+void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
+	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
+	// offset in the file where we want to do the read operation
+	LARGE_INTEGER offset_ = {.QuadPart = (i64)offset};
+	thread_memory->overlapped = (OVERLAPPED) {};
+	thread_memory->overlapped.Offset = offset_.LowPart;
+	thread_memory->overlapped.OffsetHigh = (DWORD)offset_.HighPart;
+	thread_memory->overlapped.hEvent = thread_memory->async_io_event;
+	ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
+
+	if (!ReadFile(file_handle, dest, read_size, NULL, &thread_memory->overlapped)) {
+		DWORD error = GetLastError();
+		if (error != ERROR_IO_PENDING) {
+			win32_diagnostic("ReadFile");
+		}
+	}
+
+	// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
+	DWORD bytes_read = 0;
+	if (!GetOverlappedResult(file_handle, &thread_memory->overlapped, &bytes_read, TRUE)) {
+		win32_diagnostic("GetOverlappedResult");
+	}
+	// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
+	if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
+		win32_diagnostic("WaitForSingleObject");
+	}
+}
+
 void load_openslide_task(int logical_thread_index, void* userdata) {
 	is_openslide_available = init_openslide();
 	is_openslide_loading_done = true;

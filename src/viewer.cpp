@@ -82,6 +82,8 @@ void unload_image(image_t* image) {
 				unload_wsi(&image->wsi.wsi);
 			} else if (image->backend == IMAGE_BACKEND_TIFF) {
 				tiff_destroy(&image->tiff.tiff);
+			} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+				isyntax_destroy(&image->isyntax.isyntax);
 			} else {
 				ASSERT(!"image backend invalid");
 			}
@@ -156,6 +158,8 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 		// shorthand pointers for backend-specific data structure
 		tiff_t* tiff = &image->tiff.tiff;
 		wsi_t* openslide_image = &image->wsi.wsi;
+		isyntax_t* isyntax = &image->isyntax.isyntax;
+
 
 		if (image->backend == IMAGE_BACKEND_TIFF) {
 			tiff->mpp_x = mpp_x;
@@ -163,6 +167,9 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 		} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
 			openslide_image->mpp_x = mpp_x;
 			openslide_image->mpp_y = mpp_y;
+		} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+			isyntax->mpp_x = mpp_x;
+			isyntax->mpp_y = mpp_y;
 		}
 
 		for (i32 i = 0; i < image->level_count; ++i) {
@@ -193,6 +200,8 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 					wsi_level->um_per_pixel_y = level_image->um_per_pixel_y;
 					wsi_level->x_tile_side_in_um = level_image->x_tile_side_in_um;
 					wsi_level->y_tile_side_in_um = level_image->y_tile_side_in_um;
+				} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+					// TODO: stub
 				}
 			}
 		}
@@ -321,6 +330,82 @@ bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, b
 		image_t* parent_image = app_state->loaded_images + 0;
 		ASSERT(parent_image->mpp_x > 0.0f && parent_image->mpp_y > 0.0f);
 		image_change_resolution(image, parent_image->mpp_x, parent_image->mpp_y);
+	}
+
+
+	image->is_valid = true;
+	image->is_freshly_loaded = true;
+	return image->is_valid;
+}
+
+bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* isyntax, bool is_overlay) {
+	image->type = IMAGE_TYPE_WSI;
+	image->backend = IMAGE_BACKEND_ISYNTAX;
+	image->isyntax.isyntax = *isyntax;
+	isyntax = &image->isyntax.isyntax;
+	image->is_freshly_loaded = true;
+
+	image->mpp_x = isyntax->mpp_x;
+	image->mpp_y = isyntax->mpp_y;
+	isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+	image->tile_width = isyntax->tile_width;
+	image->tile_height = isyntax->tile_height;
+	image->width_in_pixels = wsi_image->width;
+	image->width_in_um = wsi_image->width * isyntax->mpp_x;
+	image->height_in_pixels = wsi_image->height;
+	image->height_in_um = wsi_image->height * isyntax->mpp_y;
+	// TODO: fix code duplication with tiff_deserialize()
+	if (wsi_image->num_levels > 0 && isyntax->tile_width) {
+
+		memset(image->level_images, 0, sizeof(image->level_images));
+		image->level_count = wsi_image->num_levels;
+
+		if (image->level_count > WSI_MAX_LEVELS) {
+			panic();
+		}
+
+		for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
+			level_image_t* level_image = image->level_images + level_index;
+			isyntax_level_t* isyntax_level = wsi_image->levels + level_index;
+
+			level_image->exists = true;
+			level_image->pyramid_image_index = level_index; // not used
+			level_image->downsample_factor = exp2f((float)level_index);
+			level_image->tile_count = isyntax_level->tile_count;
+			level_image->width_in_tiles = isyntax_level->width_in_tiles;
+			ASSERT(level_image->width_in_tiles > 0);
+			level_image->height_in_tiles = isyntax_level->height_in_tiles;
+			level_image->tile_width = isyntax->tile_width;
+			level_image->tile_height = isyntax->tile_height;
+			level_image->um_per_pixel_x = level_image->downsample_factor * isyntax->mpp_x;
+			level_image->um_per_pixel_y = level_image->downsample_factor * isyntax->mpp_y;
+			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * isyntax->tile_width;
+			level_image->y_tile_side_in_um = level_image->um_per_pixel_x * isyntax->tile_height;
+			ASSERT(level_image->x_tile_side_in_um > 0);
+			ASSERT(level_image->y_tile_side_in_um > 0);
+			level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
+			for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+				tile_t* tile = level_image->tiles + tile_index;
+				// Facilitate some introspection by storing self-referential information
+				// in the tile_t struct. This is needed for some specific cases where we
+				// pass around pointers to tile_t structs without caring exactly where they
+				// came from.
+				// (Specific example: we use this when exporting a selected region as BigTIFF)
+				tile->tile_index = tile_index;
+				tile->tile_x = tile_index % level_image->width_in_tiles;
+				tile->tile_y = tile_index / level_image->width_in_tiles;
+
+				isyntax_tile_t* isyntax_tile = isyntax_level->tiles + tile_index;
+				if (isyntax_tile->codeblock_index == 0) {
+					tile->is_empty = true;
+				}
+			}
+
+
+			DUMMY_STATEMENT;
+
+
+		}
 	}
 
 
@@ -615,6 +700,8 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 						if (need_free_pixel_memory) {
 							free(task->pixel_memory);
 						}
+					} else {
+						tile->is_empty = true; // failed; don't resubmit!
 					}
 
 					free(entry.data);

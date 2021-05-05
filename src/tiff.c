@@ -596,10 +596,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				// TODO: make async I/O platform agnostic
 				// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 				// http://vec3.ca/using-win32-asynchronous-io/
-				tiff->win32_file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
-		                                                 FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
-		                                                 /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
-		                                                 NULL);
+				tiff->win32_file_handle = win32_open_overlapped_file_handle(filename);
 #else
 				tiff->fd = open(filename, O_RDONLY);
 				if (tiff->fd == -1) {

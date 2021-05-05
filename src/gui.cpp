@@ -215,6 +215,8 @@ static const char* get_image_type_name(image_t* image) {
 			result = "TIFF";
 		} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
 			result = "OpenSlide";
+		} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+			result = "iSyntax";
 		} else {
 			result = "WSI (?)";
 		}
