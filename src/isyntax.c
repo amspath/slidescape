@@ -1265,13 +1265,10 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 				case YXML_ELEMEND: {
 					// end of an element: '.. />' or '</Tag>'
 
-					// NOTE: for a leaf node, it is sufficient to wait for an YXML_ELEMEND, and process it here.
-					// (The 'content' is just a string -> easy to handle attributes + content at the same time.)
-					// But, for an array node, the YXML_ELEMEND won't be triggered until all of its child nodes
-					// are also processed. So in that case we need to intervene at an earlier stage, e.g. at
-					// the YXML_CONTENT stage, while we know the
-
 					if (parser->current_node_type == ISYNTAX_NODE_LEAF && !parser->current_node_has_children) {
+						// Leaf node WITHOUT children.
+						// In this case we didn't already parse the attributes at the YXML_ATTREND stage.
+						// Now at the YXML_ELEMEND stage we can parse the complete tag at once (attributes + content).
 						console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), size:%-8u = %s\n", get_spaces(parser->node_stack_index),
 						                      parser->current_dicom_attribute_name,
 						                      parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentlen, parser->contentbuf);
@@ -1291,6 +1288,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						}
 					} else {
 						// We have reached the end of a branch or array node, or a leaf node WITH children.
+						// In this case, the attributes have already been parsed at the YXML_ATTREND stage.
+						// Because their content is not text but child nodes, we do not need to touch the content buffer.
 						const char* elem_name = NULL;
 						if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
 							// End of a leaf node WITH children.
@@ -1396,6 +1395,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							} else if (parser->attribute_index == 3 /* PMSVR="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "PMSVR");
 								if (strcmp(parser->attrbuf, "IDataObjectArray") == 0) {
+									// Leaf node WITH children.
+									// Don't wait until YXML_ELEMEND to parse the attributes (this is the only opportunity we have!)
 									parser->current_node_has_children = true;
 									parser->node_stack[parser->node_stack_index].has_children = true;
 									console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), array\n", get_spaces(parser->node_stack_index),
@@ -1654,17 +1655,18 @@ i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codebloc
 // The above pattern repeats for the other 2 color channels (1 and 2).
 // The LL codeblock is only present at the highest scales.
 
-void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, u8* chunk, u64 chunk_base_offset) {
+void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
 	codeblock->data = chunk + offset_in_chunk;
-	codeblock->decoded = isyntax_hulsken_decompress(codeblock, 1);
+	codeblock->decoded = isyntax_hulsken_decompress(codeblock, block_width, block_height, 1);
 }
 
 void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isyntax_image_t* wsi, i32 base_codeblock_index, bool has_ll) {
-	i32 chunk_codeblock_count = 21; // 1 + 4 + 16 (for scale n, n-1, n-2)
-	if (has_ll) ++chunk_codeblock_count;
-	chunk_codeblock_count *= 3; // for 3 color channels
+	isyntax_codeblock_t* base_codeblock = wsi->codeblocks + base_codeblock_index;
+
+	i32 codeblocks_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(base_codeblock->scale, has_ll);
+	i32 chunk_codeblock_count = codeblocks_per_color * 3;
 
 	u64 offset0 = wsi->codeblocks[base_codeblock_index].block_data_offset;
 	isyntax_codeblock_t* last_codeblock = wsi->codeblocks + base_codeblock_index + chunk_codeblock_count - 1;
@@ -1683,7 +1685,7 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 			ASSERT(offset_in_chunk >= 0);
 
 			codeblock->data = chunk + offset_in_chunk;
-			codeblock->decoded = isyntax_hulsken_decompress(codeblock, 1); // TODO: free using _aligned_free()
+			codeblock->decoded = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1); // TODO: free using _aligned_free()
 #if 0
 			char out_filename[512];
 			snprintf(out_filename, 512, "codeblocks/chunk_codeblock_%d_%d_%d.raw", i, codeblock->scale, codeblock->coefficient);
@@ -1713,8 +1715,8 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 		if (has_ll) {
 			isyntax_codeblock_t* h_blocks[3];
 			isyntax_codeblock_t* ll_blocks[3];
-			i32 h_block_indices[3] = {0, 22, 44};
-			i32 ll_block_indices[3] = {21, 21+22, 21+44};
+			i32 h_block_indices[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
+			i32 ll_block_indices[3] = {codeblocks_per_color - 1, 2 * codeblocks_per_color - 1, 3 * codeblocks_per_color - 1};
 			for (i32 i = 0; i < 3; ++i) {
 				h_blocks[i] = wsi->codeblocks + base_codeblock_index + h_block_indices[i];
 				ll_blocks[i] = wsi->codeblocks + base_codeblock_index + ll_block_indices[i];
@@ -1746,7 +1748,7 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 }
 
 
-// Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant beast first).
+// Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant bit first).
 // Requires that at least 7 safety bytes are present at the end of the stream (don't trigger a segmentation fault)!
 static inline u64 bitstream_lsb_read(u8* buffer, u32 pos) {
 	u64 raw = *(u64*)(buffer + pos / 8);
@@ -1792,7 +1794,7 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_version) {
+u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, i32 compressor_version) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
 	// Read the header information stored in the codeblock.
@@ -1814,8 +1816,6 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_v
 
 	i32 coeff_count = (codeblock->coefficient == 1) ? 3 : 1;
 	i32 coeff_bit_depth = 16; // fixed value for iSyntax
-	i32 block_width = 128; // fixed value for iSyntax (?)
-	i32 block_height = 128; // fixed value for iSyntax (?)
 
 	// Early out if dummy/empty block
 	if (codeblock->block_size <= 8) {
@@ -1978,10 +1978,9 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_v
 			bool match = false;
 			u8 lowest_possible_symbol_index = c & 0xFF;
 
-#if 1
+#if 1//(defined(__SSE2__) && defined(__AVX__))
 			for (i32 i = lowest_possible_symbol_index; i < 256; ++i) {
 				u8 test_size = huffman.nonfast_size[i];
-				if (test_size <= HUFFMAN_FAST_BITS) continue;
 				u16 test_code = huffman.nonfast_code[i];
 				if ((blob & size_bitmasks[test_size]) == test_code) {
 					// match
@@ -1992,7 +1991,8 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 compressor_v
 				}
 			}
 #else
-			// SIMD version using SSE2, unfortunately slower than the version above.
+			// SIMD version using SSE2, about as fast as the version above
+			// (Need to compile with AVX enabled, otherwise unaligned loads will make it slower)
 			// Can it be made faster?
 			i32 the_symbol = 0;
 			for (i32 i = lowest_possible_symbol_index/8; i < 256; i += 8) {
@@ -2248,6 +2248,20 @@ static inline i32 get_first_valid_ll_pixel(i32 scale) {
 	return result;
 }
 
+i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll) {
+	i32 rel_level = level % 3;
+	i32 codeblock_count;
+	if (rel_level == 0) {
+		codeblock_count = 1;
+	} else if (rel_level == 1) {
+		codeblock_count = 1 + 4;
+	} else {
+		codeblock_count = 1 + 4 + 16;
+	}
+	if (has_ll) ++codeblock_count;
+	return codeblock_count;
+}
+
 
 static void test_output_block_header(isyntax_image_t* wsi_image) {
 	FILE* test_block_header_fp = fopen("test_block_header.csv", "wb");
@@ -2257,8 +2271,10 @@ static void test_output_block_header(isyntax_image_t* wsi_image) {
 		for (i32 i = 0; i < wsi_image->codeblock_count; i += 1/*21*3*/) {
 			isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
 			fprintf(test_block_header_fp, "%d,%d,%d,%d,%d,%d,%d,%d\n",
-			        codeblock->x_adjusted,
-			        codeblock->y_adjusted,
+//			        codeblock->x_adjusted,
+//			        codeblock->y_adjusted,
+			        codeblock->x_coordinate - wsi_image->offset_x,
+			        codeblock->y_coordinate - wsi_image->offset_y,
 			        codeblock->color_component,
 			        codeblock->scale,
 			        codeblock->coefficient,
@@ -2381,7 +2397,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			isyntax->tile_width = isyntax->block_width * 2; // tile dimension AFTER inverse wavelet transform
 			isyntax->tile_height = isyntax->block_height * 2;
 
-
 			isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
 			if (wsi_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
 
@@ -2390,21 +2405,11 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				i64 tile_width = isyntax->tile_width;
 				i64 tile_height = isyntax->tile_height;
 
-				// Padding
-				// 1: Uniform padding with black pixels on all sides
 				i64 num_levels = wsi_image->num_levels;
 				ASSERT(num_levels >= 1);
-				i64 padding = (PER_LEVEL_PADDING << num_levels) - PER_LEVEL_PADDING;
-
-				// 2: further padding on the right and bottom side.
-				// (To ensure that the image dimensions are a multiple of the codeblock size.)
-				i64 base_image_width = wsi_image->width;
-				i64 base_image_height = wsi_image->height;
-				i64 padded_width = base_image_width + 2 * padding;
-				i64 padded_height = base_image_height + 2 * padding;
-
-				i64 grid_width = ((padded_width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
-				i64 grid_height = ((padded_height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
+//				i64 padding = (PER_LEVEL_PADDING << num_levels) - PER_LEVEL_PADDING;
+				i64 grid_width = ((wsi_image->width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
+				i64 grid_height = ((wsi_image->height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
 
 				i64 h_coeff_tile_count = 0; // number of tiles with LH/HL/HH coefficients
 				i64 base_level_tile_count = grid_height * grid_width;
@@ -2510,7 +2515,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 									if (i % 1000 == 0) {
 										console_print_verbose("reading codeblock %d\n", i);
 									}
-									u16* decompressed = isyntax_hulsken_decompress(codeblock, template->waveletcoeff, 1);
+									u16* decompressed = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1);
 									if (decompressed) {
 #if 0
 										FILE* out = fopen("hulskendecompressed4.raw", "wb");
@@ -2519,14 +2524,14 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 											fclose(out);
 										}
 #endif
-										free(decompressed);
+										_aligned_free(decompressed);
 									}
 								}
 							}
 #endif
 
 						}
-#if 0
+#if 1
 						test_output_block_header(wsi_image);
 #endif
 
@@ -2558,7 +2563,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							if (i == next_chunk_codeblock_index) {
 								i32 chunk_codeblock_count = 21*3;
 								if (codeblock->scale == wsi_image->num_levels-1) {
-									chunk_codeblock_count += 3; // LL codeblocks only exist at the highest level (1 per color channel)
+									chunk_codeblock_count = isyntax_get_chunk_codeblocks_per_color_for_level(codeblock->scale, true) * 3;
 								}
 								current_chunk_codeblock_index = i;
 								next_chunk_codeblock_index = i + chunk_codeblock_count;

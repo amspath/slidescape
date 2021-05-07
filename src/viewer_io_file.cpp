@@ -265,7 +265,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index;
 
 			if (level == wsi_image->num_levels - 1) {
-				i32 chunk_codeblock_count = 22*3; // 1 + 4 + 16 (for scale n, n-1, n-2) + 1 (LL block)
+				i32 codeblocks_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(level, true); // 1 + 4 + 16 (for scale n, n-1, n-2) + 1 (LL block)
+				i32 chunk_codeblock_count = codeblocks_per_color * 3;
 
 				u64 offset0 = wsi_image->codeblocks[isyntax_tile.codeblock_chunk_index].block_data_offset;
 				isyntax_codeblock_t* last_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index + chunk_codeblock_count - 1;
@@ -282,8 +283,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 				isyntax_codeblock_t* h_blocks[3];
 				isyntax_codeblock_t* ll_blocks[3];
-				i32 h_block_indices[3] = {0, 22, 44};
-				i32 ll_block_indices[3] = {21, 21+22, 21+44};
+				i32 h_block_indices[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
+				i32 ll_block_indices[3] = {codeblocks_per_color - 1, 2 * codeblocks_per_color - 1, 3 * codeblocks_per_color - 1};
 				for (i32 i = 0; i < 3; ++i) {
 					h_blocks[i] = top_chunk_codeblock + h_block_indices[i];
 					ll_blocks[i] = top_chunk_codeblock + ll_block_indices[i];
@@ -291,8 +292,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				for (i32 i = 0; i < 3; ++i) {
 					isyntax_codeblock_t* h_block =  h_blocks[i];
 					isyntax_codeblock_t* ll_block = ll_blocks[i];
-					isyntax_decompress_codeblock_in_chunk(h_block, chunk, offset0);
-					isyntax_decompress_codeblock_in_chunk(ll_block, chunk, offset0);
+					isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, chunk, offset0);
+					isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, chunk, offset0);
 					h_block->transformed = isyntax_idwt_top_level_tile(ll_block, h_block, isyntax->block_width, isyntax->block_height, i);
 				}
 				// TODO: recombine colors
