@@ -201,12 +201,6 @@ static void  opj_idwt53_h_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiled
 /* </summary>                           */
 /* Performs interleave, inverse wavelet transform and copy back to buffer */
 static void opj_idwt53_h(const opj_dwt_t *dwt, i32* tiledp) {
-#ifdef STANDARD_SLOW_VERSION
-	/* For documentation purpose */
-    opj_dwt_interleave_h(dwt, tiledp);
-    opj_dwt_decode_1(dwt);
-    memcpy(tiledp, dwt->mem, (u32)(dwt->sn + dwt->dn) * sizeof(i32));
-#else
 	const i32 sn = dwt->sn;
 	const i32 len = sn + dwt->dn;
 	if (dwt->cas == 0) { /* Left-most sample is on even coordinate */
@@ -229,10 +223,9 @@ static void opj_idwt53_h(const opj_dwt_t *dwt, i32* tiledp) {
 			opj_idwt53_h_cas1(dwt->mem, sn, len, tiledp);
 		}
 	}
-#endif
 }
 
-#if (defined(__SSE2__) || defined(__AVX2__)) && !defined(STANDARD_SLOW_VERSION)
+#if (defined(__SSE2__) || defined(__AVX2__))
 
 /* Conveniency macros to improve the readabilty of the formulas */
 #if __AVX2__
@@ -471,7 +464,6 @@ static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(i32* tmp, const i32 sn, const i
 
 #endif /* (defined(__SSE2__) || defined(__AVX2__)) && !defined(STANDARD_SLOW_VERSION) */
 
-#if !defined(STANDARD_SLOW_VERSION)
 /** Vertical inverse 5x3 wavelet transform for one column, when top-most
  * pixel is on even coordinate */
 static void opj_idwt3_v_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
@@ -556,24 +548,12 @@ static void opj_idwt3_v_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiledp_
 		tiledp_col[(size_t)i * stride] = tmp[i];
 	}
 }
-#endif /* !defined(STANDARD_SLOW_VERSION) */
 
 /* <summary>                            */
 /* Inverse vertical 5-3 wavelet transform in 1-D for several columns. */
 /* </summary>                           */
 /* Performs interleave, inverse wavelet transform and copy back to buffer */
 static void opj_idwt53_v(const opj_dwt_t *dwt, i32* tiledp_col, size_t stride, i32 nb_cols) {
-#ifdef STANDARD_SLOW_VERSION
-	/* For documentation purpose */
-    i32 k, c;
-    for (c = 0; c < nb_cols; c ++) {
-        opj_dwt_interleave_v(dwt, tiledp_col + c, stride);
-        opj_dwt_decode_1(dwt);
-        for (k = 0; k < dwt->sn + dwt->dn; ++k) {
-            tiledp_col[c + k * stride] = dwt->mem[k];
-        }
-    }
-#else
 	const i32 sn = dwt->sn;
 	const i32 len = sn + dwt->dn;
 	if (dwt->cas == 0) {
@@ -638,7 +618,6 @@ static void opj_idwt53_v(const opj_dwt_t *dwt, i32* tiledp_col, size_t stride, i
 			return;
 		}
 	}
-#endif
 }
 // End of openjp2 code.
 
@@ -1548,29 +1527,298 @@ void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, i32* Y_coefficients,
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
 
-i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codeblock_t* h_block, i32 block_width, i32 block_height, i32 which_color) {
-	u16* ll = ll_block->decoded;
-	u16* hl = h_block->decoded;
-	u16* lh = h_block->decoded + block_width * block_height;
-	u16* hh = h_block->decoded + 2 * block_width * block_height;
+static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
+	i32 coefficients_per_block = block_width * block_height;
 
-	// Prepare the input buffer containing both LL and LH/Hl/HH coefficients.
-	// LL | HL
-	// LH | HH
-	size_t input_buffer_size = block_width * block_height * 4 * sizeof(i32);
-	i32* input = (i32*)_aligned_malloc(input_buffer_size, 32);
-	i32 input_stride = block_width * 2;
-	for (i32 y = 0; y < block_height; ++y) {
-		i32* pos = input + y * input_stride;
-		for (i32 x = 0; x < block_width; ++x) {
-			*pos++ = signed_magnitude_to_twos_complement_16(*ll++);
-		}
-		for (i32 x = 0; x < block_width; ++x) {
-			*pos++ = signed_magnitude_to_twos_complement_16(*hl++);
+	u16* hl_blocks[16];
+	for (i32 i = 0; i < 16; ++i) {
+		hl_blocks[i] = h_blocks[i];
+	}
+	u16* lh_blocks[16];
+	for (i32 i = 0; i < 16; ++i) {
+		lh_blocks[i] = h_blocks[i] + coefficients_per_block;
+	}
+	u16* hh_blocks[16];
+	for (i32 i = 0; i < 16; ++i) {
+		hh_blocks[i] = h_blocks[i] + 2 * coefficients_per_block;
+	}
+
+	i32 pad_r = 0;
+	i32 pad_l = 0;
+	i32 pad_lr = pad_r + pad_l;
+
+	i32 quadrant_width = block_width * 4;
+	i32 quadrant_height = block_height * 4;
+	i32 quadrant_width_padded = quadrant_width + pad_lr;
+	i32 quadrant_height_padded = quadrant_height + pad_lr;
+	i32 quadrant_stride = quadrant_width_padded;
+	i32 full_width_padded = quadrant_width_padded * 2;
+	i32 full_height_padded = quadrant_height_padded * 2;
+
+	i32* idwt = (i32*)calloc(1, full_width_padded * full_height_padded * sizeof(i32));
+	i32 idwt_stride = full_width_padded;
+
+	// Recursive variant (non-top level):
+	// LL is read from already transformed coefficients from the parent block (32-bit integers)
+	// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
+
+	// Copy the LL quadrant first
+	i32* ll = ll_block;
+	for (i32 y = 0; y < quadrant_height; ++y) {
+		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		for (i32 x = 0; x < quadrant_width; ++x) {
+			*pos++ = *ll++;
 		}
 	}
+	// Fill in upper right (HL) quadrant
+	i32 y_dest = pad_r;
+	for (i32 block_y = 0; block_y < 4; ++block_y) {
+		u16** hl_row = hl_blocks + (block_y * 4);
+		for (i32 y = 0; y < block_height; ++y) {
+			i32* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
+			for (i32 block_x = 0; block_x < 4; ++block_x) {
+				for (i32 x = 0; x < block_width; ++x) {
+					*pos++ = signed_magnitude_to_twos_complement_16(*(hl_row[block_x])++);
+				}
+			}
+		}
+	}
+	y_dest = quadrant_height_padded + pad_r;
+	for (i32 block_y = 0; block_y < 4; ++block_y) {
+		u16** lh_row = lh_blocks + (block_y * 4);
+		u16** hh_row = hh_blocks + (block_y * 4);
+		for (i32 y = 0; y < block_height; ++y) {
+			i32* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
+			for (i32 block_x = 0; block_x < 4; ++block_x) {
+				for (i32 x = 0; x < block_width; ++x) {
+					*pos++ = signed_magnitude_to_twos_complement_16(*(lh_row[block_x])++);
+				}
+			}
+			pos += pad_lr;
+			for (i32 block_x = 0; block_x < 4; ++block_x) {
+				for (i32 x = 0; x < block_width; ++x) {
+					*pos++ = signed_magnitude_to_twos_complement_16(*(hh_row[block_x])++);
+				}
+			}
+		}
+	}
+
+
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
+	char filename[512];
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+#endif
+
+	// Horizontal pass
+	opj_dwt_t h = {};
+	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(i32);
+	h.mem = (i32*)_aligned_malloc(dwt_mem_size, 32);
+	h.sn = quadrant_width_padded; // number of elements in low pass band
+	h.dn = quadrant_width_padded; // number of elements in high pass band
+	h.cas = 1;
+
+	for (i32 y = pad_r; y < full_height_padded - pad_l; ++y) {
+		i32* input_row = idwt + y * idwt_stride;
+		opj_idwt53_h(&h, input_row);
+	}
+
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+#endif
+
+	// Vertical pass
+	opj_dwt_t v = {};
+	v.mem = h.mem;
+	v.sn = quadrant_height_padded; // number of elements in low pass band
+	v.dn = quadrant_height_padded; // number of elements in high pass band
+	v.cas = 1;
+
+	i32 x;
+	i32 last_x = full_width_padded - pad_l;
+	for (x = pad_r; x + PARALLEL_COLS_53 <= last_x; x += PARALLEL_COLS_53) {
+		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
+	}
+	if (x < last_x) {
+		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
+	}
+
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+#endif
+	_aligned_free(h.mem);
+	return idwt;
+
+}
+
+
+static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
+	i32 coefficients_per_block = block_width * block_height;
+	u16* hl_00 = h_blocks[0];
+	u16* lh_00 = h_blocks[0] + coefficients_per_block;
+	u16* hh_00 = h_blocks[0] + 2 * coefficients_per_block;
+	u16* hl_01 = h_blocks[1];
+	u16* lh_01 = h_blocks[1] + coefficients_per_block;
+	u16* hh_01 = h_blocks[1] + 2 * coefficients_per_block;
+	u16* hl_10 = h_blocks[2];
+	u16* lh_10 = h_blocks[2] + coefficients_per_block;
+	u16* hh_10 = h_blocks[2] + 2 * coefficients_per_block;
+	u16* hl_11 = h_blocks[3];
+	u16* lh_11 = h_blocks[3] + coefficients_per_block;
+	u16* hh_11 = h_blocks[3] + 2 * coefficients_per_block;
+
+	i32 pad_r = 0;
+	i32 pad_l = 0;
+	i32 pad_lr = pad_r + pad_l;
+
+	i32 quadrant_width = block_width * 2;
+	i32 quadrant_height = block_height * 2;
+	i32 quadrant_width_padded = quadrant_width + pad_lr;
+	i32 quadrant_height_padded = quadrant_height + pad_lr;
+	i32 quadrant_stride = quadrant_width_padded;
+	i32 full_width_padded = quadrant_width_padded * 2;
+	i32 full_height_padded = quadrant_height_padded * 2;
+
+	i32* idwt = (i32*)calloc(1, full_width_padded * full_height_padded * sizeof(i32));
+	i32 idwt_stride = full_width_padded;
+
+	// Recursive variant (non-top level):
+	// LL is read from already transformed coefficients from the parent block (32-bit integers)
+	// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
+
+	// Copy the LL quadrant first
+	i32* ll = ll_block;
+	for (i32 y = 0; y < quadrant_height; ++y) {
+		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		for (i32 x = 0; x < quadrant_width; ++x) {
+			*pos++ = *ll++;
+		}
+	}
+	// Fill in upper right (HL) quadrant
 	for (i32 y = 0; y < block_height; ++y) {
-		i32* pos = input + (y+block_height) * input_stride;
+		i32* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_00++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_01++); }
+	}
+	for (i32 y = block_height; y < quadrant_height; ++y) {
+		i32* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_10++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_11++); }
+	}
+	// Fill in lower quadrants (LH and HH)
+	for (i32 y = quadrant_height_padded; y < quadrant_height_padded + block_height; ++y) {
+		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_00++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_01++); }
+		pos += pad_lr;
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_00++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_01++); }
+	}
+	for (i32 y = quadrant_height_padded + block_height; y < quadrant_height_padded + quadrant_height; ++y) {
+		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_10++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_11++); }
+		pos += pad_lr;
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_10++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_11++); }
+	}
+
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
+	char filename[512];
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+#endif
+
+	// Horizontal pass
+	opj_dwt_t h = {};
+	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(i32);
+	h.mem = (i32*)_aligned_malloc(dwt_mem_size, 32);
+	h.sn = quadrant_width_padded; // number of elements in low pass band
+	h.dn = quadrant_width_padded; // number of elements in high pass band
+	h.cas = 1;
+
+	for (i32 y = pad_r; y < full_height_padded - pad_l; ++y) {
+		i32* input_row = idwt + y * idwt_stride;
+		opj_idwt53_h(&h, input_row);
+	}
+
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+#endif
+
+	// Vertical pass
+	opj_dwt_t v = {};
+	v.mem = h.mem;
+	v.sn = quadrant_height_padded; // number of elements in low pass band
+	v.dn = quadrant_height_padded; // number of elements in high pass band
+	v.cas = 1;
+
+	i32 x;
+	i32 last_x = full_width_padded - pad_l;
+	for (x = pad_r; x + PARALLEL_COLS_53 <= last_x; x += PARALLEL_COLS_53) {
+		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
+	}
+	if (x < last_x) {
+		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
+	}
+
+#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
+	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+#endif
+	_aligned_free(h.mem);
+	return idwt;
+
+	return idwt;
+}
+
+i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color) {
+	u16* hl = h_block;
+	u16* lh = h_block + block_width * block_height;
+	u16* hh = h_block + 2 * block_width * block_height;
+
+	// Prepare the idwt buffer containing both LL and LH/Hl/HH coefficients.
+	// LL | HL
+	// LH | HH
+	size_t idwt_buffer_size = block_width * block_height * 4 * sizeof(i32);
+	i32* idwt = (i32*)_aligned_malloc(idwt_buffer_size, 32);
+	i32 idwt_stride = block_width * 2;
+	i32 ll_stride = (is_top_level) ? block_width : block_width * 2;
+
+	// Stitch the top quadrants (LL and HL) together
+	if (is_top_level) {
+		// Top level: LL/HL/LH/HH are all read directly from a codeblock (16-bit signed magnitude)
+		for (i32 y = 0; y < block_height; ++y) {
+			i32* pos = idwt + y * idwt_stride;
+			u16* ll = ((u16*)ll_block) + y * ll_stride;
+			for (i32 x = 0; x < block_width; ++x) {
+				*pos++ = signed_magnitude_to_twos_complement_16(*ll++);
+			}
+			for (i32 x = 0; x < block_width; ++x) {
+				*pos++ = signed_magnitude_to_twos_complement_16(*hl++);
+			}
+		}
+	} else {
+		// Recursive variant (non-top level):
+		// LL is read from already transformed coefficients from the parent block (32-bit integers)
+		// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
+		for (i32 y = 0; y < block_height; ++y) {
+			i32* pos = idwt + y * idwt_stride;
+			i32* ll = ((i32*)ll_block) + y * ll_stride;
+			for (i32 x = 0; x < block_width; ++x) {
+				*pos++ = *ll++;
+			}
+			for (i32 x = 0; x < block_width; ++x) {
+				*pos++ = signed_magnitude_to_twos_complement_16(*hl++);
+			}
+		}
+	}
+	// Now add the lower quadrants (LH and HH)
+	for (i32 y = 0; y < block_height; ++y) {
+		i32* pos = idwt + (y + block_height) * idwt_stride;
 		for (i32 x = 0; x < block_width; ++x) {
 			*pos++ = signed_magnitude_to_twos_complement_16(*lh++);
 		}
@@ -1582,7 +1830,7 @@ i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codebloc
 #if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	char filename[512];
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
+	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
 #endif
 
 	// Horizontal pass
@@ -1594,13 +1842,13 @@ i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codebloc
 	h.cas = 1;
 
 	for (i32 y = 0; y < block_height*2; ++y) {
-		i32* input_row = input + y * input_stride;
+		i32* input_row = idwt + y * idwt_stride;
 		opj_idwt53_h(&h, input_row);
 	}
 
 #if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
+	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
 #endif
 
 	// Vertical pass
@@ -1613,19 +1861,20 @@ i32* isyntax_idwt_top_level_tile(isyntax_codeblock_t* ll_block, isyntax_codebloc
 	i32 x;
 	i32 tile_width = block_width * 2;
 	for (x = 0; x + PARALLEL_COLS_53 <= tile_width; x += PARALLEL_COLS_53) {
-		opj_idwt53_v(&v, input + x, input_stride, PARALLEL_COLS_53);
+		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
 	}
 	if (x < tile_width) {
-		opj_idwt53_v(&v, input + x, input_stride, (tile_width - x));
+		opj_idwt53_v(&v, idwt + x, idwt_stride, (tile_width - x));
 	}
 
 #if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(input, block_width * 2, block_height * 2, filename);
+	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
 #endif
 	_aligned_free(h.mem);
-	return input;
+	return idwt;
 }
+
 
 // Example codeblock order for a 'chunk' in the file:
 // x        y       color   scale   coeff   offset      size    header_template_id
@@ -1715,16 +1964,17 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 		if (has_ll) {
 			isyntax_codeblock_t* h_blocks[3];
 			isyntax_codeblock_t* ll_blocks[3];
-			i32 h_block_indices[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
+			i32 block_color_offsets[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
 			i32 ll_block_indices[3] = {codeblocks_per_color - 1, 2 * codeblocks_per_color - 1, 3 * codeblocks_per_color - 1};
 			for (i32 i = 0; i < 3; ++i) {
-				h_blocks[i] = wsi->codeblocks + base_codeblock_index + h_block_indices[i];
+				h_blocks[i] = wsi->codeblocks + base_codeblock_index + block_color_offsets[i];
 				ll_blocks[i] = wsi->codeblocks + base_codeblock_index + ll_block_indices[i];
 			}
 			for (i32 i = 0; i < 3; ++i) {
 				isyntax_codeblock_t* h_block =  h_blocks[i];
 				isyntax_codeblock_t* ll_block = ll_blocks[i];
-				h_block->transformed = isyntax_idwt_top_level_tile(ll_block, h_block, block_width, block_height, i);
+				h_block->transformed = isyntax_idwt_tile(ll_block->decoded, h_block->decoded, block_width, block_height,
+				                                         true, 0);
 			}
 			// TODO: recombine colors
 			u32 tile_width = block_width * 2;
@@ -1737,9 +1987,77 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 				i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
 				final[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
 			}
-#if 0
-			stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, final, tile_width * 4);
+#if 1
+			stbi_write_png("debug_dwt_output_level2.png", tile_width, tile_height, 4, final, tile_width * 4);
 #endif
+			i32* color_buffers_level1[3] = {};
+			i32* color_buffers_level0[3] = {};
+			i32 remaining_levels_in_chunk = base_codeblock->scale % 3;
+			if (remaining_levels_in_chunk-- >= 1) {
+				isyntax_codeblock_t* parent_blocks[3];
+				for (i32 i = 0; i < 3; ++i) {
+					parent_blocks[i] = wsi->codeblocks + base_codeblock_index + block_color_offsets[i] + 1;
+				}
+
+				// stitch blocks together
+				for (i32 color = 0; color < 3; ++color) {
+					u16* h_decoded_blocks[4] = {};
+					for (i32 i = 0; i < 4; ++i) {
+						isyntax_codeblock_t* codeblock = wsi->codeblocks + base_codeblock_index + i + 1 + block_color_offsets[color];
+						h_decoded_blocks[i] = codeblock->decoded;
+					}
+					color_buffers_level1[color] = isyntax_idwt_first_recursion(h_blocks[color]->transformed, h_decoded_blocks, block_width, block_height, color);
+				}
+				u32 full_width = block_width * 4;
+				u32 full_height = block_height * 4;
+				rgba_t* final2 = (rgba_t*)malloc(full_width * full_height * (sizeof(rgba_t)));
+				Y_coefficients = color_buffers_level1[0];
+				Co_coefficients = color_buffers_level1[1];
+				Cg_coefficients = color_buffers_level1[2];
+				for (i32 i = 0; i < full_width * full_height; ++i) {
+					i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
+					final2[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
+				}
+#if 1
+				stbi_write_png("debug_dwt_output_level1.png", full_width, full_height, 4, final2, full_width * 4);
+#endif
+				DUMMY_STATEMENT;
+
+			}
+			if (remaining_levels_in_chunk-- >= 1) {
+				isyntax_codeblock_t* parent_blocks[3];
+				for (i32 i = 0; i < 3; ++i) {
+					parent_blocks[i] = wsi->codeblocks + base_codeblock_index + block_color_offsets[i] + 1;
+				}
+
+				// stitch blocks together
+				for (i32 color = 0; color < 3; ++color) {
+					u16* h_decoded_blocks[16] = {};
+					isyntax_codeblock_t* base_codeblock_for_level = wsi->codeblocks + base_codeblock_index + block_color_offsets[color] + 5;
+					for (i32 i = 0; i < 16; ++i) {
+						isyntax_codeblock_t* codeblock = base_codeblock_for_level + i;
+						h_decoded_blocks[i] = codeblock->decoded;
+					}
+					color_buffers_level0[color] = isyntax_idwt_second_recursion(color_buffers_level1[color], h_decoded_blocks, block_width, block_height, color);
+				}
+				u32 full_width = block_width * 8;
+				u32 full_height = block_height * 8;
+				rgba_t* final2 = (rgba_t*)malloc(full_width * full_height * (sizeof(rgba_t)));
+				Y_coefficients = color_buffers_level0[0];
+				Co_coefficients = color_buffers_level0[1];
+				Cg_coefficients = color_buffers_level0[2];
+				for (i32 i = 0; i < full_width * full_height; ++i) {
+					i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
+					final2[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
+				}
+#if 1
+				stbi_write_png("debug_dwt_output_level0.png", full_width, full_height, 4, final2, full_width * 4);
+#endif
+				DUMMY_STATEMENT;
+
+			}
+
+
 		}
 
 
@@ -2433,7 +2751,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					codeblock->x_adjusted = (i32)codeblock->x_coordinate - wsi_image->offset_x;
 					codeblock->y_adjusted = (i32)codeblock->y_coordinate - wsi_image->offset_y;
 
-					// Calculate the block ID
+					// Calculate the block ID (= index into the seektable)
 					// adapted from extract_block_header.py
 					bool is_ll = codeblock->coefficient == 0;
 					u32 block_id = 0;
@@ -2495,6 +2813,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
 							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
+							if (codeblock->block_id > seektable_entry_count) {
+								ASSERT(!"block ID out of bounds");
+								continue;
+							}
 							isyntax_seektable_codeblock_header_t* seektable_entry = seektable + codeblock->block_id;
 							ASSERT(seektable_entry->block_data_offset_header.group == 0x301D);
 							ASSERT(seektable_entry->block_data_offset_header.element == 0x2010);
@@ -2503,7 +2825,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 #if 0
 							// Debug test:
-								// Decompress codeblocks in the seektable.
+							// Decompress codeblocks in the seektable.
 							if (1 || i == wsi_image->codeblock_count-1) {
 								// Only parse 'non-empty'/'background' codeblocks
 								if (codeblock->block_size > 8 /*&& codeblock->block_data_offset == 129572464*/) {
@@ -2531,14 +2853,14 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 #endif
 
 						}
-#if 1
+#if 0
 						test_output_block_header(wsi_image);
 #endif
 
 #if 0
 
 
-						// inverse wavelet transform test (single color channel)
+						// inverse wavelet transform test
 						i32 codeblock_index = 296166;
 						debug_decode_wavelet_transformed_chunk(isyntax, fp, wsi_image, codeblock_index, true);
 
@@ -2554,16 +2876,18 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
 							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
 							if (codeblock->color_component != 0) {
-								// don't let color channels 1 and 2 overwrite what was already set
+								// Don't let color channels 1 and 2 overwrite what was already set
 								i = next_chunk_codeblock_index; // skip ahead
 								codeblock = wsi_image->codeblocks + i;
 								if (i >= wsi_image->codeblock_count) break;
 							}
 							// Keep track of where we are in the 'chunk' of codeblocks
 							if (i == next_chunk_codeblock_index) {
-								i32 chunk_codeblock_count = 21*3;
+								i32 chunk_codeblock_count;
 								if (codeblock->scale == wsi_image->num_levels-1) {
 									chunk_codeblock_count = isyntax_get_chunk_codeblocks_per_color_for_level(codeblock->scale, true) * 3;
+								} else {
+									chunk_codeblock_count = 21*3;
 								}
 								current_chunk_codeblock_index = i;
 								next_chunk_codeblock_index = i + chunk_codeblock_count;

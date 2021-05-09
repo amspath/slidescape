@@ -294,7 +294,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					isyntax_codeblock_t* ll_block = ll_blocks[i];
 					isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, chunk, offset0);
 					isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, chunk, offset0);
-					h_block->transformed = isyntax_idwt_top_level_tile(ll_block, h_block, isyntax->block_width, isyntax->block_height, i);
+					h_block->transformed = isyntax_idwt_tile(ll_block->decoded, h_block->decoded,
+					                                         isyntax->block_width, isyntax->block_height, true, i);
 				}
 				// TODO: recombine colors
 				u32 tile_width = isyntax->block_width * 2;
