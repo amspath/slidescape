@@ -45,8 +45,12 @@
 #define write_barrier do { _WriteBarrier(); _mm_sfence(); } while (0)
 #define read_barrier _ReadBarrier()
 
-static inline void atomic_increment(volatile i32* x) {
-	InterlockedIncrement((volatile long*)x);
+static inline i32 atomic_increment(volatile i32* x) {
+	return InterlockedIncrement((volatile long*)x);
+}
+
+static inline i32 atomic_decrement(volatile i32* x) {
+	return InterlockedDecrement((volatile long*)x);
 }
 
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
@@ -61,8 +65,12 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 #define write_barrier
 #define read_barrier
 
-static inline void atomic_increment(volatile i32* x) {
-	OSAtomicIncrement32(x);
+static inline i32 atomic_increment(volatile i32* x) {
+	return OSAtomicIncrement32(x);
+}
+
+static inline i32 atomic_decrement(volatile i32* x) {
+	return OSAtomicDecrement32(x);
 }
 
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
@@ -75,8 +83,12 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 #define write_barrier
 #define read_barrier
 
-static inline void atomic_increment(volatile i32* x) {
-    __sync_fetch_and_add(x, 1);
+static inline i32 atomic_increment(volatile i32* x) {
+    return __sync_add_and_fetch(x, 1);
+}
+
+static inline i32 atomic_decrement(volatile i32* x) {
+    return __sync_sub_and_fetch(x, 1);
 }
 
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {

@@ -1462,6 +1462,7 @@ int main(int argc, const char** argv) {
 	create_ico();
 #endif
 
+	console_printer_benaphore = benaphore_create();
 	console_print("Starting up...\n");
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);

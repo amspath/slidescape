@@ -211,3 +211,37 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 	return end;
 }
 #endif
+
+// Based on:
+// https://preshing.com/20120226/roll-your-own-lightweight-mutex/
+
+
+benaphore_t benaphore_create(void) {
+	benaphore_t result = {};
+#if WINDOWS
+	result.semaphore = CreateSemaphore(NULL, 0, 1, NULL);
+#else
+#error // TODO: implement benaphores on Linux, macOS
+#endif
+	return result;
+}
+
+void benaphore_destroy(benaphore_t* benaphore) {
+#if WINDOWS
+	CloseHandle(benaphore->semaphore);
+#else
+#endif
+}
+
+void benaphore_lock(benaphore_t* benaphore) {
+	if (atomic_increment(&benaphore->counter) > 1) {
+		WaitForSingleObject(benaphore->semaphore, INFINITE);
+	}
+}
+
+void benaphore_unlock(benaphore_t* benaphore) {
+	if (atomic_decrement(&benaphore->counter) > 0) {
+		ReleaseSemaphore(benaphore->semaphore, 1, NULL);
+	}
+}
+

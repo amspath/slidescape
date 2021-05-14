@@ -752,6 +752,7 @@ struct console_log_item_t {
 console_log_item_t* console_log_items; //sb
 
 void console_clear_log() {
+	benaphore_lock(&console_printer_benaphore);
 	for (int i = 0; i < sb_count(console_log_items); i++) {
 		console_log_item_t* item = console_log_items + i;
 		if (item->text) {
@@ -760,6 +761,7 @@ void console_clear_log() {
 	}
 	sb_free(console_log_items);
 	console_log_items = NULL;
+	benaphore_unlock(&console_printer_benaphore);
 }
 
 bool console_fill_screen = false;
@@ -807,6 +809,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 		if (ImGui::MenuItem("Fill screen", NULL, &console_fill_screen)) {}
 		ImGui::EndPopup();
 	}
+	benaphore_lock(&console_printer_benaphore);
 	i32 item_count = sb_count(console_log_items);
 	if (item_count > 0) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
@@ -837,6 +840,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 		ImGui::PopFont();
 		ImGui::PopStyleVar();
 	}
+	benaphore_unlock(&console_printer_benaphore);
 	if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
 		ImGui::SetScrollHereY(0.0f);
 
@@ -876,7 +880,9 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 				new_item.has_color = has_color;
 				new_item.item_type = item_type;
 				// TODO: critical section, make multi-threading proof!
+				benaphore_lock(&console_printer_benaphore);
 				sb_push(console_log_items, new_item);
+				benaphore_unlock(&console_printer_benaphore);
 			}
 		}
 		free(lines);

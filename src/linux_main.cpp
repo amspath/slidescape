@@ -233,6 +233,7 @@ int main(int argc, const char** argv)
 
     g_argc = argc;
     g_argv = argv;
+	console_printer_benaphore = benaphore_create();
     console_print("Starting up...\n");
     get_system_info();
 

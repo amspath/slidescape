@@ -91,6 +91,11 @@ typedef struct work_queue_t {
 	work_queue_entry_t entries[256];
 } work_queue_t;
 
+typedef struct benaphore_t {
+	void* semaphore;
+	volatile i32 counter;
+} benaphore_t;
+
 typedef struct platform_thread_info_t {
 	i32 logical_thread_index;
 	work_queue_t* queue;
@@ -232,6 +237,11 @@ void memrw_destroy(memrw_t* buffer);
 
 void get_system_info();
 
+benaphore_t benaphore_create(void);
+void benaphore_destroy(benaphore_t* benaphore);
+void benaphore_lock(benaphore_t* benaphore);
+void benaphore_unlock(benaphore_t* benaphore);
+
 #if IS_SERVER
 #define console_print printf
 #define console_print_error(...) fprintf(stderr, __VA_ARGS__)
@@ -271,6 +281,7 @@ extern bool is_macos;
 extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
 extern bool is_verbose_mode INIT(= false);
+extern benaphore_t console_printer_benaphore;
 
 #undef INIT
 #undef extern

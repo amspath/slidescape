@@ -740,6 +740,7 @@ int main(int argc, const char* argv[])
 {
 	g_argc = argc;
 	g_argv = argv;
+	console_printer_benaphore = benaphore_create();
 	fprintf(stderr, "Starting up...\n");
 	get_system_info();
 	macos_init_multithreading();
