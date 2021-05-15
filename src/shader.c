@@ -63,22 +63,33 @@ void write_stringified_shaders() {
 		// Adapted from bin2c:
 		// https://github.com/gwilymk/bin2c
 
-		bool32 need_comma = false;
-		fprintf(f_output, "const char stringified_shader_source__%s[%i] = {", name, source_len + 1);
+		fprintf(f_output, "const char stringified_shader_source__%s[%i] = \n\t", name, source_len + 1);
+		bool is_line_start = true;
 		for (i32 i = 0; i < source_len + 1; ++i) {
-			if (need_comma)
-				fprintf(f_output, ", ");
-			else
-				need_comma = 1;
-			if ((i % 11) == 0)
-				fprintf(f_output, "\n\t");
+			if (is_line_start) {
+				fprintf(f_output, "\"");
+				is_line_start = false;
+			}
 			if (i == source_len) {
-				fprintf(f_output, "0");
-			} else {
-				fprintf(f_output, "0x%.2x", source[i] & 0xff);
+				fprintf(f_output, "\";\n\n"); break;
+			} else switch(source[i]) {
+				default: fputc(source[i] & 0xff, f_output); break;
+				case '\r': break; // ignore
+				case '\n': {
+					if (i == source_len - 1) {
+						fprintf(f_output, "\\n\";\n\n");
+						goto done;
+					} else {
+						fprintf(f_output, "\\n\"\n\t");
+						is_line_start = true;
+					}
+				} break;
+				case '\"': fprintf(f_output, "\\\""); break;
+				case '\\': fprintf(f_output, "\\\\"); break;
+				case '\t': fprintf(f_output, "\\t"); break;
 			}
 		}
-		fprintf(f_output, "\n};\n\n");
+		done:;
 
 	}
 
