@@ -483,8 +483,6 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 	autosave_annotations(app_state, annotation_set, force_ignore_delay);
 }
 
-
-
 void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
 	scene_t* scene = &app_state->scene;
 
@@ -510,34 +508,20 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				};
 
 		// Set up model matrix: scale and translate to the correct world position
-		static v2f obj_pos;
-		if (image->is_freshly_loaded) {
-			// TODO: don't immediately upload freshly loaded images to prevent crashing
+		if (image->simple.texture == 0 && image->simple.pixels != NULL) {
 			image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, GL_RGBA);
-			/*glEnable(GL_TEXTURE_2D);
-			glGenTextures(1, &image->simple.texture);
-			//glActiveTexture(GL_TEXTURE0);
-			glBindTexture(GL_TEXTURE_2D, image->simple.texture);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->simple.width, image->simple.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->simple.pixels);
-*/
-			obj_pos = (v2f) {50, 100};
+//			image->origin_offset = (v2f) {50, 100};
 			image->is_freshly_loaded = false;
 		}
 		float pan_multiplier = 2.0f;
 		if (scene->is_dragging) {
-			obj_pos.x += scene->drag_vector.x * pan_multiplier;
-			obj_pos.y += scene->drag_vector.y * pan_multiplier;
+			image->origin_offset.x += scene->drag_vector.x * pan_multiplier;
+			image->origin_offset.y += scene->drag_vector.y * pan_multiplier;
 		}
 
 		mat4x4 model_matrix;
 		mat4x4_identity(model_matrix);
-		mat4x4_translate_in_place(model_matrix, obj_pos.x, obj_pos.y, 0.0f);
+		mat4x4_translate_in_place(model_matrix, image->origin_offset.x, image->origin_offset.y, 0.0f);
 		mat4x4_scale_aniso(model_matrix, model_matrix, image->simple.width * 2, image->simple.height * 2, 1.0f);
 
 
