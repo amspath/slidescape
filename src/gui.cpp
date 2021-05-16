@@ -65,7 +65,23 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickne
 	draw_list->AddPolyline((ImVec2*)points, count, color, true, thickness);
 }
 
+bool enable_load_debug_coco_file;
+bool enable_load_debug_isyntax_file;
+const char* coco_test_filename = "coco_test_in.json";
+const char* isyntax_test_filename = "1.isyntax";
+
+void check_presence_of_debug_test_files() {
+	static bool checked;
+	if (!checked) {
+		enable_load_debug_coco_file = file_exists(coco_test_filename);
+		enable_load_debug_isyntax_file = file_exists(isyntax_test_filename);
+		checked = true;
+	}
+}
+
 void gui_draw_main_menu_bar(app_state_t* app_state) {
+	check_presence_of_debug_test_files();
+
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 	bool ret = ImGui::BeginMainMenuBar();
 	ImGui::PopStyleVar(1);
@@ -94,8 +110,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
 			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
 			ImGui::Separator();
-			if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
-			ImGui::Separator();
+
 			if (ImGui::BeginMenu("Export", scene->can_export_region)) {
 				if (ImGui::MenuItem("Export region...", NULL, &menu_items_clicked.export_region, scene->can_export_region)) {}
 				ImGui::EndMenu();
@@ -133,12 +148,18 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Show console", "F3", &show_console_window)) {}
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
+				ImGui::Separator();
+				if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
+				ImGui::Separator();
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
-				if (ImGui::MenuItem("Enable Vsync", NULL, &is_vsync_enabled)) {}
 				if (ImGui::MenuItem("Show menu bar", "Alt+F11", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
-				if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
-				if (ImGui::MenuItem("Load iSyntax test file", NULL, &menu_items_clicked.load_isyntax_test_file)) {}
+				if (enable_load_debug_coco_file) {
+					if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
+				}
+				if (enable_load_debug_isyntax_file) {
+					if (ImGui::MenuItem("Load iSyntax test file", NULL, &menu_items_clicked.load_isyntax_test_file, enable_load_debug_isyntax_file)) {}
+				}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -194,12 +215,12 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 		} else if (menu_items_clicked.load_coco_test_file) {
 			coco_t coco = {};
-			if (load_coco_from_file(&coco, "coco_test_in.json")) {
+			if (load_coco_from_file(&coco, coco_test_filename)) {
 				save_coco(&coco);
 			}
 		} else if (menu_items_clicked.load_isyntax_test_file) {
 			isyntax_t isyntax = {};
-			if (isyntax_open(&isyntax, "1.isyntax")) {
+			if (isyntax_open(&isyntax, isyntax_test_filename)) {
 			}
 		}
 	}
@@ -289,7 +310,7 @@ void draw_layers_window(app_state_t* app_state) {
 		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g");
 	}
 	ImGui::NewLine();
-	ImGui::Text("Currently displayed layer: %d.\nPress F5 to toggle layers.", app_state->scene.active_layer);
+	ImGui::Text("Currently displayed layer: %d.\nPress Tab to toggle layers.", app_state->scene.active_layer);
 
 	ImGui::SliderFloat("Layer transition", &target_layer_t, 0.0f, 1.0f);
 

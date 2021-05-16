@@ -1042,6 +1042,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	if (image_count == 0) {
 		if (app_state->is_window_title_set_for_image) {
 			reset_window_title(app_state->main_window);
+			app_state->is_window_title_set_for_image = false;
 		}
 		//load_generic_file(app_state, "test.jpeg");
 		do_after_scene_render(app_state, input);
