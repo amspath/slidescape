@@ -82,9 +82,9 @@ typedef struct isyntax_partial_block_header_t {
 	u32 scale;
 	u32 coefficient;
 	/* [MISSING] dicom_tag_header_t block_data_offset_header; */
-	/* [MISSING] [MISSING] u64 block_data_offset; */
-	/* [MISSING] [MISSING] dicom_tag_header_t block_size_header; */
-	/* [MISSING] [MISSING] u64 block_size; */
+	/* [MISSING] u64 block_data_offset; */
+	/* [MISSING] dicom_tag_header_t block_size_header; */
+	/* [MISSING] u64 block_size; */
 	dicom_tag_header_t block_header_template_id_header;
 	u32 block_header_template_id;
 } isyntax_partial_block_header_t;
@@ -122,8 +122,8 @@ typedef struct isyntax_image_dimension_range_t {
 } isyntax_image_dimension_range_t;
 
 typedef struct isyntax_image_block_header_template_t {
-	u32 block_width;      // e.g. 128
-	u32 block_height;     // e.g. 128
+	u32 block_width;     // e.g. 128
+	u32 block_height;    // e.g. 128
 	u8 color_component;  // 0=Y 1=Co 2=Cg
 	u8 scale;            // range 0-8
 	u8 waveletcoeff;     // either 1 for LL, or 3 for LH+HL+HH
@@ -149,15 +149,31 @@ typedef struct isyntax_codeblock_t {
 	i32* transformed;
 } isyntax_codeblock_t;
 
+// Quadrants (for codeblocks relating to their higher DWT level)
+enum {
+	ISYNTAX_NW = 0,
+	ISYNTAX_NE = 1,
+	ISYNTAX_SW = 2,
+	ISYNTAX_SE = 3,
+};
+
 typedef struct isyntax_tile_t {
 	u32 codeblock_index;
 	u32 codeblock_chunk_index;
+	u32 parent_codeblock_index;
+	u32 parent_quadrant;
+	i32* transformed_ll[3];
 } isyntax_tile_t;
 
 typedef struct isyntax_level_t {
 	i32 scale;
 	i32 width_in_tiles;
 	i32 height_in_tiles;
+	float downsample_factor;
+	float um_per_pixel_x;
+	float um_per_pixel_y;
+	float x_tile_side_in_um;
+	float y_tile_side_in_um;
 	u64 tile_count;
 	isyntax_tile_t* tiles;
 } isyntax_level_t;
@@ -169,7 +185,8 @@ typedef struct isyntax_image_t {
 	i32 height;
 	i32 offset_x;
 	i32 offset_y;
-	i32 num_levels;
+	i32 level_count;
+	i32 max_scale;
 	isyntax_level_t levels[16];
 	bool compression_is_lossy;
 	i32 lossy_image_compression_ratio;
@@ -180,6 +197,7 @@ typedef struct isyntax_image_t {
 	i32 codeblock_count;
 	isyntax_codeblock_t* codeblocks;
 	bool header_codeblocks_are_partial;
+	bool first_load_complete;
 } isyntax_image_t;
 
 typedef struct isyntax_parser_node_t {

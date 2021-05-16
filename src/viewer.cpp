@@ -65,6 +65,14 @@ tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	return result;
 }
 
+tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 tile_index) {
+	ASSERT(image);
+	ASSERT(scale < image->level_count);
+	level_image_t* level_image = image->level_images + scale;
+	tile_t* tile = level_image->tiles + tile_index;
+	return tile;
+}
+
 u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
 	level_image_t* level_image = image->level_images + level;
 
@@ -355,10 +363,10 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 	image->height_in_pixels = wsi_image->height;
 	image->height_in_um = wsi_image->height * isyntax->mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
-	if (wsi_image->num_levels > 0 && isyntax->tile_width) {
+	if (wsi_image->level_count > 0 && isyntax->tile_width) {
 
 		memset(image->level_images, 0, sizeof(image->level_images));
-		image->level_count = wsi_image->num_levels;
+		image->level_count = wsi_image->level_count;
 
 		if (image->level_count > WSI_MAX_LEVELS) {
 			panic();
@@ -476,65 +484,6 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 }
 
 
-void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
-	if (tiles_to_load > 0){
-		app_state->allow_idling_next_frame = false;
-
-
-
-		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) {
-			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
-			// (to reduce load on the server)
-			static u32 intermittent = 0;
-			++intermittent;
-			u32 intermittent_interval = 1;
-			intermittent_interval = 5; // reduce load on remote server; can be tweaked
-			if (intermittent % intermittent_interval == 0) {
-				load_tile_task_batch_t* batch = (load_tile_task_batch_t*) calloc(1, sizeof(load_tile_task_batch_t));
-				batch->task_count = ATMOST(COUNT(batch->tile_tasks), tiles_to_load);
-				memcpy(batch->tile_tasks, wishlist, batch->task_count * sizeof(load_tile_task_t));
-				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, batch)) {
-					// success
-					for (i32 i = 0; i < batch->task_count; ++i) {
-						load_tile_task_t* task = batch->tile_tasks + i;
-						tile_t* tile = task->tile;
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
-					}
-				}
-			}
-		} else {
-			// regular file loading
-			for (i32 i = 0; i < tiles_to_load; ++i) {
-				load_tile_task_t* task = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-				*task = wishlist[i];
-
-				tile_t* tile = task->tile;
-				if (tile->is_cached && tile->texture == 0 && task->need_gpu_residency) {
-					// only GPU upload needed
-					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, task)) {
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
-					}
-				} else {
-					if (add_work_queue_entry(&global_work_queue, load_tile_func, task)) {
-						// TODO: should we even allow this to fail?
-						// success
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
-					}
-				}
-
-
-			}
-		}
-
-
-	}
-}
 
 void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
 	scene_t* scene = &app_state->scene;
@@ -625,6 +574,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 
 
+
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
 		// IO
@@ -674,7 +624,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 				if (entry.callback == viewer_notify_load_tile_completed) {
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
-					tile_t* tile = task->tile;
+					tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 					ASSERT(tile);
 					tile->is_submitted_for_loading = false;
 
@@ -682,7 +632,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 						bool need_free_pixel_memory = true;
 						if (tile->need_gpu_residency) {
 							pixel_transfer_state_t* transfer_state =
-									submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_width,
+									submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
 									                              4, task->pixel_memory, finalize_textures_immediately);
 							if (finalize_textures_immediately) {
 								tile->texture = transfer_state->texture;
@@ -751,11 +701,11 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		// The lowest needed level might be lower than the actual current downsampling level,
 		// because some levels may not have image data available (-> need to fall back to lower level).
 		ASSERT(image->level_count >= 0);
-		i32 highest_visible_level = ATLEAST(image->level_count - 1, 0);
-		i32 lowest_visible_level = ATLEAST(scene->zoom.level, 0);
-		lowest_visible_level = ATMOST(highest_visible_level, lowest_visible_level);
-		for (; lowest_visible_level > 0; --lowest_visible_level) {
-			if (image->level_images[lowest_visible_level].exists) {
+		i32 highest_visible_scale = ATLEAST(image->level_count - 1, 0);
+		i32 lowest_visible_scale = ATLEAST(scene->zoom.level, 0);
+		lowest_visible_scale = ATMOST(highest_visible_scale, lowest_visible_scale);
+		for (; lowest_visible_scale > 0; --lowest_visible_scale) {
+			if (image->level_images[lowest_visible_scale].exists) {
 				break; // done, no need to go lower
 			}
 		}
@@ -765,9 +715,9 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		i32 num_tasks_on_wishlist = 0;
 		float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
 
-		for (i32 level = highest_visible_level; level >= lowest_visible_level; --level) {
-			ASSERT(level >= 0 && level < COUNT(image->level_images));
-			level_image_t *drawn_level = image->level_images + level;
+		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
+			ASSERT(scale >= 0 && scale < COUNT(image->level_images));
+			level_image_t *drawn_level = image->level_images + scale;
 			if (!drawn_level->exists) {
 				continue; // no image data
 			}
@@ -785,13 +735,11 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
 			}
 
-			i32 base_priority = (image->level_count - level) * 100; // highest priority for the most zoomed in levels
+			i32 base_priority = (image->level_count - scale) * 100; // highest priority for the most zoomed in levels
 
 
 			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
 				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
-
-
 
 					tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
 					if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
@@ -809,22 +757,18 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 					float priority_bonus = (1.0f - tile_distance_from_center_of_screen) * 300.0f; // can be tweaked.
 					i32 tile_priority = base_priority + (i32)priority_bonus;
 
-
-
 					if (num_tasks_on_wishlist >= COUNT(tile_wishlist)) {
 						break;
 					}
 					tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
-							.image = image, .tile = tile, .level = level, .tile_x = tile_x, .tile_y = tile_y,
+							.image = image, .tile = tile, .level = scale, .tile_x = tile_x, .tile_y = tile_y,
 							.priority = tile_priority,
 							.need_gpu_residency = true,
 							.need_keep_in_cache = tile->need_keep_in_cache,
 							.completion_callback = viewer_notify_load_tile_completed,
 					};
-
 				}
 			}
-
 		}
 //		console_print("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
 
@@ -838,7 +782,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		request_tiles(app_state, image, tile_wishlist, tiles_to_load);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
-
 
 		// RENDERING
 
@@ -922,7 +865,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 
 		// Draw all levels within the viewport, up to the current zoom factor
-		for (i32 level = lowest_visible_level; level <= highest_visible_level; ++level) {
+		for (i32 level = lowest_visible_scale; level <= highest_visible_scale; ++level) {
 			level_image_t *drawn_level = image->level_images + level;
 			if (!drawn_level->exists) {
 				continue;

@@ -44,14 +44,20 @@ static inline void* arena_current_pos(arena_t* arena) {
 	return arena->base + arena->used;
 }
 
-#define arena_push_struct(arena, type) ((type*)push_size_((arena), sizeof(type)))
-#define arena_push_array(arena, count, type) ((type*) push_size_((arena), (count)* sizeof(type)))
-#define arena_push_size(arena, size) push_size_((arena), (size))
-static inline void* push_size_(arena_t* arena, size_t size) {
+#define arena_push_struct(arena, type) ((type*)arena_push_size((arena), sizeof(type)))
+#define arena_push_array(arena, count, type) ((type*) arena_push_size((arena), (count)* sizeof(type)))
+static inline void* arena_push_size(arena_t* arena, size_t size) {
 	ASSERT((arena->used + size) <= arena->size);
 	void* result = arena->base + arena->used;
 	arena->used += size;
 	return result;
+}
+
+static inline void arena_align(arena_t* arena, u32 alignment) {
+	ASSERT(alignment > 0);
+	i64 pos = (i64)arena->base + arena->used;
+	i64 new_pos = ((pos + alignment - 1) / alignment) * alignment;
+	arena->used += (new_pos - pos);
 }
 
 static inline temp_memory_t begin_temp_memory(arena_t* arena) {

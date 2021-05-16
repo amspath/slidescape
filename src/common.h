@@ -137,6 +137,7 @@ typedef int8_t bool8;
 #endif
 #define ATLEAST(a, b) MAX(a, b)
 #define ATMOST(a, b) MIN(a, b)
+#define ABS(x) ((x) < 0 ? -(x) : (x))
 
 #define LERP(t,a,b)               ( (a) + (t) * (float) ((b)-(a)) )
 #define UNLERP(t,a,b)             ( ((t) - (a)) / (float) ((b) - (a)) )

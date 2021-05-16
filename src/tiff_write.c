@@ -405,8 +405,8 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
 					if (task->pixel_memory) {
 						bool need_free_pixel_memory = true;
-						if (task->tile) {
-							tile_t* tile = task->tile;
+						tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+						if (tile) {
 							tile->is_submitted_for_loading = false;
 							if (tile->need_gpu_residency) {
 								/*pixel_transfer_state_t* transfer_state =

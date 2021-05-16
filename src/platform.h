@@ -20,6 +20,7 @@
 
 #include "common.h"
 #include "mathutils.h"
+#include "arena.h"
 
 #include "keycode.h"
 #include "keytable.h"
@@ -101,9 +102,12 @@ typedef struct platform_thread_info_t {
 	work_queue_t* queue;
 } platform_thread_info_t;
 
+#define MAX_ASYNC_IO_EVENTS 32
+
 typedef struct {
 #if WINDOWS
-	HANDLE async_io_event;
+	HANDLE async_io_events[MAX_ASYNC_IO_EVENTS];
+	i32 async_io_index;
 	OVERLAPPED overlapped;
 #else
 	// TODO: implement this
@@ -112,6 +116,7 @@ typedef struct {
 	u64 thread_memory_usable_size; // free space from aligned_rest_of_thread_memory onward
 	void* aligned_rest_of_thread_memory;
 	u32 pbo;
+	arena_t temp_arena;
 } thread_memory_t;
 
 typedef struct button_state_t {

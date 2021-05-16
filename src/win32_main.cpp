@@ -106,13 +106,14 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 	// offset in the file where we want to do the read operation
 	LARGE_INTEGER offset_ = {.QuadPart = (i64)offset};
-	thread_memory->overlapped = (OVERLAPPED) {};
-	thread_memory->overlapped.Offset = offset_.LowPart;
-	thread_memory->overlapped.OffsetHigh = (DWORD)offset_.HighPart;
-	thread_memory->overlapped.hEvent = thread_memory->async_io_event;
-	ResetEvent(thread_memory->async_io_event); // reset the event to unsignaled state
+	OVERLAPPED overlapped = {};
+	overlapped = (OVERLAPPED) {};
+	overlapped.Offset = offset_.LowPart;
+	overlapped.OffsetHigh = (DWORD)offset_.HighPart;
+	overlapped.hEvent = thread_memory->async_io_events[0];
+	ResetEvent(thread_memory->async_io_events[0]); // reset the event to unsignaled state
 
-	if (!ReadFile(file_handle, dest, read_size, NULL, &thread_memory->overlapped)) {
+	if (!ReadFile(file_handle, dest, read_size, NULL, &overlapped)) {
 		DWORD error = GetLastError();
 		if (error != ERROR_IO_PENDING) {
 			win32_diagnostic("ReadFile");
@@ -121,13 +122,21 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 
 	// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
 	DWORD bytes_read = 0;
-	if (!GetOverlappedResult(file_handle, &thread_memory->overlapped, &bytes_read, TRUE)) {
+	if (!GetOverlappedResult(file_handle, &overlapped, &bytes_read, TRUE)) {
 		win32_diagnostic("GetOverlappedResult");
 	}
 	// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
-	if(WaitForSingleObject(thread_memory->overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
+	if(WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
 		win32_diagnostic("WaitForSingleObject");
 	}
+}
+
+// TODO: Queue I/O to run, then query later?
+i32 win32_add_async_io_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
+	i32 io_index = thread_memory->async_io_index;
+	//stub
+
+	return io_index;
 }
 
 void load_openslide_task(int logical_thread_index, void* userdata) {
@@ -1253,10 +1262,13 @@ DWORD WINAPI thread_proc(void* parameter) {
 	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[thread_info->logical_thread_index];
 	memset(thread_memory, 0, sizeof(thread_memory_t));
 
-	thread_memory->async_io_event = CreateEventA(NULL, TRUE, FALSE, NULL);
-	if (!thread_memory->async_io_event) {
-		win32_diagnostic("CreateEvent");
+	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
+		thread_memory->async_io_events[i] = CreateEventA(NULL, TRUE, FALSE, NULL);
+		if (!thread_memory->async_io_events[i]) {
+			win32_diagnostic("CreateEvent");
+		}
 	}
+
 	thread_memory->thread_memory_raw_size = thread_memory_size;
 
 	thread_memory->aligned_rest_of_thread_memory = (void*)

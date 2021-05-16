@@ -199,7 +199,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			}
 		} else if (menu_items_clicked.load_isyntax_test_file) {
 			isyntax_t isyntax = {};
-			if (isyntax_open(&isyntax, "sample.isyntax")) {
+			if (isyntax_open(&isyntax, "1.isyntax")) {
 			}
 		}
 	}

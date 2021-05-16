@@ -173,6 +173,7 @@ set(VIEWER_SOURCE_FILES
         caselist.cpp
         coco.cpp
         annotation.cpp
+        tile_streamer.cpp
         openslide_api.c
         ini.c
         imgui/imgui.cpp

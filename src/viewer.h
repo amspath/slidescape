@@ -188,8 +188,10 @@ typedef struct load_tile_task_t {
 
 typedef struct viewer_notify_tile_completed_task_t {
 	u8* pixel_memory;
-	tile_t* tile;
+	i32 scale;
+	i32 tile_index;
 	i32 tile_width;
+	i32 tile_height;
 } viewer_notify_tile_completed_task_t;
 
 
@@ -294,6 +296,14 @@ typedef struct pixel_transfer_state_t {
 	bool8 initialized;
 } pixel_transfer_state_t;
 
+
+typedef struct tile_streamer_t {
+	image_t* image;
+	v2f origin_offset;
+	bounds2f camera_bounds;
+	zoom_state_t zoom;
+} tile_streamer_t;
+
 typedef struct app_state_t {
 	u8* temp_storage_memory;
 	arena_t temp_arena;
@@ -325,6 +335,7 @@ typedef struct app_state_t {
 
 //  prototypes
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
+tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 tile_index);
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset);
 void unload_all_images(app_state_t* app_state);
 bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay);
@@ -342,15 +353,25 @@ bool32 is_key_down(input_t* input, i32 keycode);
 void init_scene(app_state_t *app_state, scene_t *scene);
 void init_app_state(app_state_t* app_state);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
-void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 
 u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
 void init_opengl_stuff(app_state_t* app_state);
 void do_after_scene_render(app_state_t* app_state, input_t* input);
 
+// viewer_io_file.cpp
+void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
+void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
+
+// viewer_io_remote.cpp
+void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);
+
 // viewer_options.cpp
 void viewer_init_options(app_state_t* app_state);
+
+// tile_streamer.cpp
+void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
+
 
 // globals
 #if defined(VIEWER_IMPL)
@@ -372,6 +393,9 @@ extern v2f simple_view_pos; // used by simple images (remove?)
 extern bool window_start_maximized INIT(=true);
 extern i32 desired_window_width INIT(=1280);
 extern i32 desired_window_height INIT(=720);
+
+extern benaphore_t tile_streamer_benaphore;
+extern tile_streamer_t global_tile_streamer;
 
 #undef INIT
 #undef extern
