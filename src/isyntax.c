@@ -925,10 +925,17 @@ void debug_convert_wavelet_coefficients_to_image2(i32* coefficients, i32 width, 
 	}
 }
 
-static u32 wavelet_coefficient_to_color_value(i32 coefficient) {
+#if (DWT_COEFF_BITS==16)
+static u32 wavelet_coefficient_to_color_value(icoeff_t coefficient) {
+	u32 magnitude = ((u32)signed_magnitude_to_twos_complement_16(coefficient) & ~0x8000);
+	return magnitude;
+}
+#else
+static u32 wavelet_coefficient_to_color_value(icoeff_t coefficient) {
 	u32 magnitude = ((u32)twos_complement_to_signed_magnitude(coefficient) & ~0x80000000);
 	return magnitude;
 }
+#endif
 
 static rgba_t ycocg_to_rgb(i32 Y, i32 Co, i32 Cg) {
 	i32 tmp = Y - Cg/2;
@@ -946,14 +953,14 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 	return (rgba_t){ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255};
 }
 
-void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count) {
+void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count) {
 	for (i32 i = 0; i < pixel_count; ++i) {
 		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
 		dest[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
 	}
 }
 
-void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count) {
+void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count) {
 	for (i32 i = 0; i < pixel_count; ++i) {
 		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
 		dest[i] = ycocg_to_bgr(Y, Co_coefficients[i], Cg_coefficients[i]);
@@ -962,7 +969,7 @@ void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, i32* Y_coefficients,
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
 
-static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
+static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
 	i32 coefficients_per_block = block_width * block_height;
 
 	u16* hl_blocks[16];
@@ -990,7 +997,7 @@ static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 blo
 	i32 full_width_padded = quadrant_width_padded * 2;
 	i32 full_height_padded = quadrant_height_padded * 2;
 
-	i32* idwt = (i32*)calloc(1, full_width_padded * full_height_padded * sizeof(i32));
+	icoeff_t* idwt = (icoeff_t*)calloc(1, full_width_padded * full_height_padded * sizeof(icoeff_t));
 	i32 idwt_stride = full_width_padded;
 
 	// Recursive variant (non-top level):
@@ -998,9 +1005,9 @@ static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 blo
 	// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
 
 	// Copy the LL quadrant first
-	i32* ll = ll_block;
+	icoeff_t* ll = ll_block;
 	for (i32 y = 0; y < quadrant_height; ++y) {
-		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
 		for (i32 x = 0; x < quadrant_width; ++x) {
 			*pos++ = *ll++;
 		}
@@ -1010,7 +1017,7 @@ static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 blo
 	for (i32 block_y = 0; block_y < 4; ++block_y) {
 		u16** hl_row = hl_blocks + (block_y * 4);
 		for (i32 y = 0; y < block_height; ++y) {
-			i32* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
+			icoeff_t* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
 			for (i32 block_x = 0; block_x < 4; ++block_x) {
 				for (i32 x = 0; x < block_width; ++x) {
 					*pos++ = signed_magnitude_to_twos_complement_16(*(hl_row[block_x])++);
@@ -1023,7 +1030,7 @@ static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 blo
 		u16** lh_row = lh_blocks + (block_y * 4);
 		u16** hh_row = hh_blocks + (block_y * 4);
 		for (i32 y = 0; y < block_height; ++y) {
-			i32* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
+			icoeff_t* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
 			for (i32 block_x = 0; block_x < 4; ++block_x) {
 				for (i32 x = 0; x < block_width; ++x) {
 					*pos++ = signed_magnitude_to_twos_complement_16(*(lh_row[block_x])++);
@@ -1047,14 +1054,14 @@ static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 blo
 
 	// Horizontal pass
 	opj_dwt_t h = {};
-	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(i32);
-	h.mem = (i32*)_aligned_malloc(dwt_mem_size, 32);
+	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
+	h.mem = (icoeff_t*)_aligned_malloc(dwt_mem_size, 32);
 	h.sn = quadrant_width_padded; // number of elements in low pass band
 	h.dn = quadrant_width_padded; // number of elements in high pass band
 	h.cas = 1;
 
 	for (i32 y = pad_r; y < full_height_padded - pad_l; ++y) {
-		i32* input_row = idwt + y * idwt_stride;
+		icoeff_t* input_row = idwt + y * idwt_stride;
 		opj_idwt53_h(&h, input_row);
 	}
 
@@ -1089,7 +1096,7 @@ static i32* isyntax_idwt_second_recursion(i32* ll_block, u16** h_blocks, i32 blo
 }
 
 
-static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
+static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
 	i32 coefficients_per_block = block_width * block_height;
 	u16* hl_00 = h_blocks[0];
 	u16* lh_00 = h_blocks[0] + coefficients_per_block;
@@ -1116,7 +1123,7 @@ static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 bloc
 	i32 full_width_padded = quadrant_width_padded * 2;
 	i32 full_height_padded = quadrant_height_padded * 2;
 
-	i32* idwt = (i32*)calloc(1, full_width_padded * full_height_padded * sizeof(i32));
+	icoeff_t* idwt = (icoeff_t*)calloc(1, full_width_padded * full_height_padded * sizeof(icoeff_t));
 	i32 idwt_stride = full_width_padded;
 
 	// Recursive variant (non-top level):
@@ -1124,9 +1131,9 @@ static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 bloc
 	// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
 
 	// Copy the LL quadrant first
-	i32* ll = ll_block;
+	icoeff_t* ll = ll_block;
 	for (i32 y = 0; y < quadrant_height; ++y) {
-		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
 		for (i32 x = 0; x < quadrant_width; ++x) {
 			*pos++ = *ll++;
 		}
@@ -1134,18 +1141,18 @@ static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 bloc
 	// Fill in upper right (HL) quadrant
 	pad_r -= 1;
 	for (i32 y = 0; y < block_height; ++y) {
-		i32* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
+		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_00++); }
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_01++); }
 	}
 	for (i32 y = block_height; y < quadrant_height; ++y) {
-		i32* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
+		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_10++); }
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_11++); }
 	}
 	// Fill in lower quadrants (LH and HH)
 	for (i32 y = quadrant_height_padded; y < quadrant_height_padded + block_height; ++y) {
-		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_00++); }
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_01++); }
 		pos += pad_lr;
@@ -1153,7 +1160,7 @@ static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 bloc
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_01++); }
 	}
 	for (i32 y = quadrant_height_padded + block_height; y < quadrant_height_padded + quadrant_height; ++y) {
-		i32* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
+		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_10++); }
 		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_11++); }
 		pos += pad_lr;
@@ -1170,14 +1177,14 @@ static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 bloc
 
 	// Horizontal pass
 	opj_dwt_t h = {};
-	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(i32);
-	h.mem = (i32*)_aligned_malloc(dwt_mem_size, 32);
+	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
+	h.mem = (icoeff_t*)_aligned_malloc(dwt_mem_size, 32);
 	h.sn = quadrant_width_padded; // number of elements in low pass band
 	h.dn = quadrant_width_padded; // number of elements in high pass band
 	h.cas = 1;
 
 	for (i32 y = pad_r; y < full_height_padded - pad_l; ++y) {
-		i32* input_row = idwt + y * idwt_stride;
+		icoeff_t* input_row = idwt + y * idwt_stride;
 		opj_idwt53_h(&h, input_row);
 	}
 
@@ -1211,7 +1218,7 @@ static i32* isyntax_idwt_first_recursion(i32* ll_block, u16** h_blocks, i32 bloc
 
 }
 
-i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color) {
+icoeff_t* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color) {
 	u16* hl = h_block;
 	u16* lh = h_block + block_width * block_height;
 	u16* hh = h_block + 2 * block_width * block_height;
@@ -1219,8 +1226,8 @@ i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_
 	// Prepare the idwt buffer containing both LL and LH/Hl/HH coefficients.
 	// LL | HL
 	// LH | HH
-	size_t idwt_buffer_size = block_width * block_height * 4 * sizeof(i32);
-	i32* idwt = (i32*)_aligned_malloc(idwt_buffer_size, 32);
+	size_t idwt_buffer_size = block_width * block_height * 4 * sizeof(icoeff_t);
+	icoeff_t* idwt = (icoeff_t*)_aligned_malloc(idwt_buffer_size, 32);
 	i32 idwt_stride = block_width * 2;
 	i32 ll_stride = (is_top_level) ? block_width : block_width * 2;
 
@@ -1228,7 +1235,7 @@ i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_
 	if (is_top_level) {
 		// Top level: LL/HL/LH/HH are all read directly from a codeblock (16-bit signed magnitude)
 		for (i32 y = 0; y < block_height; ++y) {
-			i32* pos = idwt + y * idwt_stride;
+			icoeff_t* pos = idwt + y * idwt_stride;
 			u16* ll = ((u16*)ll_block) + y * ll_stride;
 			for (i32 x = 0; x < block_width; ++x) {
 				*pos++ = signed_magnitude_to_twos_complement_16(*ll++);
@@ -1242,8 +1249,8 @@ i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_
 		// LL is read from already transformed coefficients from the parent block (32-bit integers)
 		// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
 		for (i32 y = 0; y < block_height; ++y) {
-			i32* pos = idwt + y * idwt_stride;
-			i32* ll = ((i32*)ll_block) + y * ll_stride;
+			icoeff_t* pos = idwt + y * idwt_stride;
+			icoeff_t* ll = ((icoeff_t*)ll_block) + y * ll_stride;
 			for (i32 x = 0; x < block_width; ++x) {
 				*pos++ = *ll++;
 			}
@@ -1254,7 +1261,7 @@ i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_
 	}
 	// Now add the lower quadrants (LH and HH)
 	for (i32 y = 0; y < block_height; ++y) {
-		i32* pos = idwt + (y + block_height) * idwt_stride;
+		icoeff_t* pos = idwt + (y + block_height) * idwt_stride;
 		for (i32 x = 0; x < block_width; ++x) {
 			*pos++ = signed_magnitude_to_twos_complement_16(*lh++);
 		}
@@ -1271,14 +1278,14 @@ i32* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_
 
 	// Horizontal pass
 	opj_dwt_t h = {};
-	size_t dwt_mem_size = (MAX(block_width, block_height)*2) * PARALLEL_COLS_53 * sizeof(i32);
-	h.mem = (i32*)_aligned_malloc(dwt_mem_size, 32);
+	size_t dwt_mem_size = (MAX(block_width, block_height)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
+	h.mem = (icoeff_t*)_aligned_malloc(dwt_mem_size, 32);
 	h.sn = block_width; // number of elements in low pass band
 	h.dn = block_width; // number of elements in high pass band
 	h.cas = 1;
 
 	for (i32 y = 0; y < block_height*2; ++y) {
-		i32* input_row = idwt + y * idwt_stride;
+		icoeff_t* input_row = idwt + y * idwt_stride;
 		opj_idwt53_h(&h, input_row);
 	}
 
@@ -1416,9 +1423,9 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 			u32 tile_width = block_width * 2;
 			u32 tile_height = block_height * 2;
 			rgba_t* final = (rgba_t*)malloc(tile_width * tile_height * (sizeof(rgba_t)));
-			i32* Y_coefficients = h_blocks[0]->transformed;
-			i32* Co_coefficients = h_blocks[1]->transformed;
-			i32* Cg_coefficients = h_blocks[2]->transformed;
+			icoeff_t* Y_coefficients = h_blocks[0]->transformed;
+			icoeff_t* Co_coefficients = h_blocks[1]->transformed;
+			icoeff_t* Cg_coefficients = h_blocks[2]->transformed;
 			for (i32 i = 0; i < tile_width * tile_height; ++i) {
 				i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
 				final[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
@@ -1426,8 +1433,8 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 #if 1
 			stbi_write_png("debug_dwt_output_level2.png", tile_width, tile_height, 4, final, tile_width * 4);
 #endif
-			i32* color_buffers_level1[3] = {};
-			i32* color_buffers_level0[3] = {};
+			icoeff_t* color_buffers_level1[3] = {};
+			icoeff_t* color_buffers_level0[3] = {};
 			i32 remaining_levels_in_chunk = base_codeblock->scale % 3;
 			if (remaining_levels_in_chunk-- >= 1) {
 				isyntax_codeblock_t* parent_blocks[3];
@@ -2307,8 +2314,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							i32 codeblock_index = 11721;
 //						    i32 codeblock_index = 296166;
 							debug_decode_wavelet_transformed_chunk(isyntax, fp, wsi_image, codeblock_index, true);
-							void test_dwt_forward();
-							test_dwt_forward();
+//							void test_dwt_forward();
+//							test_dwt_forward();
 						}
 
 

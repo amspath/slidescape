@@ -178,9 +178,9 @@ void isyntax_do_first_load(thread_memory_t* thread_info, isyntax_t* isyntax, isy
 			}
 			u32 tile_width = isyntax->block_width * 2;
 			u32 tile_height = isyntax->block_height * 2;
-			i32* Y_coefficients = isyntax_tile->transformed_ll[0];
-			i32* Co_coefficients = isyntax_tile->transformed_ll[1];
-			i32* Cg_coefficients = isyntax_tile->transformed_ll[2];
+			icoeff_t* Y_coefficients = isyntax_tile->transformed_ll[0];
+			icoeff_t* Co_coefficients = isyntax_tile->transformed_ll[1];
+			icoeff_t* Cg_coefficients = isyntax_tile->transformed_ll[2];
 
 			void* tile_pixels = malloc(tile_width * tile_height * sizeof(u32));
 			isyntax_wavelet_coefficients_to_bgr_tile((rgba_t*)tile_pixels, Y_coefficients, Co_coefficients, Cg_coefficients, tile_width * tile_height);

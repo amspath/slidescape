@@ -302,9 +302,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				// TODO: recombine colors
 				u32 tile_width = isyntax->block_width * 2;
 				u32 tile_height = isyntax->block_height * 2;
-				i32* Y_coefficients = h_blocks[0]->transformed;
-				i32* Co_coefficients = h_blocks[1]->transformed;
-				i32* Cg_coefficients = h_blocks[2]->transformed;
+				icoeff_t* Y_coefficients = h_blocks[0]->transformed;
+				icoeff_t* Co_coefficients = h_blocks[1]->transformed;
+				icoeff_t* Cg_coefficients = h_blocks[2]->transformed;
 				isyntax_wavelet_coefficients_to_bgr_tile((rgba_t*)temp_memory, Y_coefficients, Co_coefficients, Cg_coefficients, tile_width * tile_height);
 			} else {
 				i32 codeblocks_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(level, false);

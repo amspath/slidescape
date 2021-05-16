@@ -27,6 +27,13 @@ extern "C" {
 
 #include "yxml.h"
 
+#define DWT_COEFF_BITS 16
+#if (DWT_COEFF_BITS==16)
+typedef i16 icoeff_t;
+#else
+typedef i32 icoeff_t;
+#endif
+
 enum isyntax_image_type_enum {
 	ISYNTAX_IMAGE_TYPE_NONE = 0,
 	ISYNTAX_IMAGE_TYPE_MACROIMAGE = 1,
@@ -146,7 +153,7 @@ typedef struct isyntax_codeblock_t {
 	i32 block_y;
 	u64 block_id;
 	u16* decoded;
-	i32* transformed;
+	icoeff_t* transformed;
 } isyntax_codeblock_t;
 
 // Quadrants (for codeblocks relating to their higher DWT level)
@@ -162,7 +169,7 @@ typedef struct isyntax_tile_t {
 	u32 codeblock_chunk_index;
 	u32 parent_codeblock_index;
 	u32 parent_quadrant;
-	i32* transformed_ll[3];
+	icoeff_t* transformed_ll[3];
 } isyntax_tile_t;
 
 typedef struct isyntax_level_t {
@@ -267,10 +274,9 @@ typedef struct isyntax_t {
 u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, i32 compressor_version);
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);
-i32*
-isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color);
-void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count);
-void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, i32* Y_coefficients, i32* Co_coefficients, i32* Cg_coefficients, i32 pixel_count);
+icoeff_t* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color);
+void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
+void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
 void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset);
 i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 

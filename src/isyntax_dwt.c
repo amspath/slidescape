@@ -19,6 +19,7 @@
  * Copyright (c) 2007, Jonathan Ballard <dzonatas@dzonux.net>
  * Copyright (c) 2007, Callum Lerwick <seg@haxxed.com>
  * Copyright (c) 2017, IntoPIX SA <support@intopix.com>
+ * Copyright (c) 2021, Pieter Valkema
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,6 +45,15 @@
  */
 // End of OpenJPEG copyright notice.
 
+#if (DWT_COEFF_BITS==16)
+#ifdef __AVX2__
+/** Number of int32 values in a AVX2 register */
+#define VREG_INT_COUNT       16
+#else
+/** Number of int32 values in a SSE2 register */
+#define VREG_INT_COUNT       8
+#endif
+#else
 #ifdef __AVX2__
 /** Number of int32 values in a AVX2 register */
 #define VREG_INT_COUNT       8
@@ -51,23 +61,24 @@
 /** Number of int32 values in a SSE2 register */
 #define VREG_INT_COUNT       4
 #endif
+#endif
 
 /** Number of columns that we can process in parallel in the vertical pass */
 #define PARALLEL_COLS_53     (2*VREG_INT_COUNT)
 
 typedef struct dwt_local {
-	i32* mem;
+	icoeff_t* mem;
 	i32 dn;   /* number of elements in high pass band */
 	i32 sn;   /* number of elements in low pass band */
 	i32 cas;  /* 0 = start on even coord, 1 = start on odd coord */
 } opj_dwt_t;
 
-static void  opj_idwt53_h_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiledp) {
+static void  opj_idwt53_h_cas0(icoeff_t* tmp, const i32 sn, const i32 len, icoeff_t* tiledp) {
 	i32 i, j;
-	const i32* in_even = &tiledp[0];
-	const i32* in_odd = &tiledp[sn];
+	const icoeff_t* in_even = &tiledp[0];
+	const icoeff_t* in_odd = &tiledp[sn];
 
-	i32 d1c, d1n, s1n, s0c, s0n;
+	icoeff_t d1c, d1n, s1n, s0c, s0n;
 
 	ASSERT(len > 1);
 
@@ -99,15 +110,15 @@ static void  opj_idwt53_h_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiled
 	} else {
 		tmp[len - 1] = d1n + s0n;
 	}
-	memcpy(tiledp, tmp, (u32)len * sizeof(i32));
+	memcpy(tiledp, tmp, (u32)len * sizeof(icoeff_t));
 }
 
-static void  opj_idwt53_h_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiledp) {
+static void  opj_idwt53_h_cas1(icoeff_t* tmp, const i32 sn, const i32 len, icoeff_t* tiledp) {
 	i32 i, j;
-	const i32* in_even = &tiledp[sn];
-	const i32* in_odd = &tiledp[0];
+	const icoeff_t* in_even = &tiledp[sn];
+	const icoeff_t* in_odd = &tiledp[0];
 
-	i32 s1, s2, dc, dn;
+	icoeff_t s1, s2, dc, dn;
 
 	ASSERT(len > 2);
 
@@ -140,14 +151,14 @@ static void  opj_idwt53_h_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiled
 	} else {
 		tmp[len - 1] = s1 + dc;
 	}
-	memcpy(tiledp, tmp, (u32)len * sizeof(i32));
+	memcpy(tiledp, tmp, (u32)len * sizeof(icoeff_t));
 }
 
 /* <summary>                            */
 /* Inverse 5-3 wavelet transform in 1-D for one row. */
 /* </summary>                           */
 /* Performs interleave, inverse wavelet transform and copy back to buffer */
-static void opj_idwt53_h(const opj_dwt_t *dwt, i32* tiledp) {
+static void opj_idwt53_h(const opj_dwt_t *dwt, icoeff_t* tiledp) {
 	const i32 sn = dwt->sn;
 	const i32 len = sn + dwt->dn;
 	if (dwt->cas == 0) { /* Left-most sample is on even coordinate */
@@ -160,12 +171,12 @@ static void opj_idwt53_h(const opj_dwt_t *dwt, i32* tiledp) {
 		if (len == 1) {
 			tiledp[0] /= 2;
 		} else if (len == 2) {
-			i32* out = dwt->mem;
-			const i32* in_even = &tiledp[sn];
-			const i32* in_odd = &tiledp[0];
+			icoeff_t* out = dwt->mem;
+			const icoeff_t* in_even = &tiledp[sn];
+			const icoeff_t* in_odd = &tiledp[0];
 			out[1] = in_odd[0] - ((in_even[0] + 1) >> 1);
 			out[0] = in_even[0] + out[1];
-			memcpy(tiledp, dwt->mem, (u32)len * sizeof(i32));
+			memcpy(tiledp, dwt->mem, (u32)len * sizeof(icoeff_t));
 		} else if (len > 2) {
 			opj_idwt53_h_cas1(dwt->mem, sn, len, tiledp);
 		}
@@ -177,28 +188,42 @@ static void opj_idwt53_h(const opj_dwt_t *dwt, i32* tiledp) {
 /* Conveniency macros to improve the readabilty of the formulas */
 #if __AVX2__
 #define VREG        __m256i
+#if (DWT_COEFF_BITS==16)
+#define LOAD_CST(x) _mm256_set1_epi16(x)
+#define ADD(x,y)    _mm256_add_epi16((x),(y))
+#define SUB(x,y)    _mm256_sub_epi16((x),(y))
+#define SAR(x,y)    _mm256_srai_epi16((x),(y))
+#else
 #define LOAD_CST(x) _mm256_set1_epi32(x)
+#define ADD(x,y)    _mm256_add_epi32((x),(y))
+#define SUB(x,y)    _mm256_sub_epi32((x),(y))
+#define SAR(x,y)    _mm256_srai_epi32((x),(y))
+#endif
 #define LOAD(x)     _mm256_load_si256((const VREG*)(x))
 #define LOADU(x)    _mm256_loadu_si256((const VREG*)(x))
 #define STORE(x,y)  _mm256_store_si256((VREG*)(x),(y))
 #define STOREU(x,y) _mm256_storeu_si256((VREG*)(x),(y))
-#define ADD(x,y)    _mm256_add_epi32((x),(y))
-#define SUB(x,y)    _mm256_sub_epi32((x),(y))
-#define SAR(x,y)    _mm256_srai_epi32((x),(y))
 #else
 #define VREG        __m128i
+#if (DWT_COEFF_BITS==16)
+#define LOAD_CST(x) _mm_set1_epi16(x)
+#define ADD(x,y)    _mm_add_epi16((x),(y))
+#define SUB(x,y)    _mm_sub_epi16((x),(y))
+#define SAR(x,y)    _mm_srai_epi16((x),(y))
+#else
 #define LOAD_CST(x) _mm_set1_epi32(x)
-#define LOAD(x)     _mm_load_si128((const VREG*)(x))
-#define LOADU(x)    _mm_loadu_si128((const VREG*)(x))
-#define STORE(x,y)  _mm_store_si128((VREG*)(x),(y))
-#define STOREU(x,y) _mm_storeu_si128((VREG*)(x),(y))
 #define ADD(x,y)    _mm_add_epi32((x),(y))
 #define SUB(x,y)    _mm_sub_epi32((x),(y))
 #define SAR(x,y)    _mm_srai_epi32((x),(y))
 #endif
+#define LOAD(x)     _mm_load_si128((const VREG*)(x))
+#define LOADU(x)    _mm_loadu_si128((const VREG*)(x))
+#define STORE(x,y)  _mm_store_si128((VREG*)(x),(y))
+#define STOREU(x,y) _mm_storeu_si128((VREG*)(x),(y))
+#endif
 #define ADD3(x,y,z) ADD(ADD(x,y),z)
 
-static void opj_idwt53_v_final_memcpy(i32* tiledp_col, const i32* tmp, i32 len, size_t stride) {
+static void opj_idwt53_v_final_memcpy(icoeff_t* tiledp_col, const icoeff_t* tmp, i32 len, size_t stride) {
 	for (i32 i = 0; i < len; ++i) {
 		/* A memcpy(&tiledp_col[i * stride + 0],
 					&tmp[PARALLEL_COLS_53 * i + 0],
@@ -214,9 +239,9 @@ static void opj_idwt53_v_final_memcpy(i32* tiledp_col, const i32* tmp, i32 len, 
 
 /** Vertical inverse 5x3 wavelet transform for 8 columns in SSE2, or
  * 16 in AVX2, when top-most pixel is on even coordinate */
-static void opj_idwt53_v_cas0_mcols_SSE2_OR_AVX2( i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
-	const i32* in_even = &tiledp_col[0];
-	const i32* in_odd = &tiledp_col[(size_t)sn * stride];
+static void opj_idwt53_v_cas0_mcols_SSE2_OR_AVX2(icoeff_t* tmp, const i32 sn, const i32 len, icoeff_t* tiledp_col, const size_t stride) {
+	const icoeff_t* in_even = &tiledp_col[0];
+	const icoeff_t* in_odd = &tiledp_col[(size_t)sn * stride];
 
 	i32 i;
 	size_t j;
@@ -225,18 +250,18 @@ static void opj_idwt53_v_cas0_mcols_SSE2_OR_AVX2( i32* tmp, const i32 sn, const 
 	const VREG two = LOAD_CST(2);
 
 	ASSERT(len > 1);
-#if __AVX2__
+/*#if __AVX2__
 	ASSERT(PARALLEL_COLS_53 == 16);
     ASSERT(VREG_INT_COUNT == 8);
 #else
 	ASSERT(PARALLEL_COLS_53 == 8);
 	ASSERT(VREG_INT_COUNT == 4);
-#endif
+#endif*/
 
 	/* Note: loads of input even/odd values must be done in a unaligned */
 	/* fashion. But stores in tmp can be done with aligned store, since */
 	/* the temporary buffer is properly aligned */
-	ASSERT((size_t)tmp % (sizeof(i32) * VREG_INT_COUNT) == 0);
+	ASSERT((size_t)tmp % (sizeof(icoeff_t) * VREG_INT_COUNT) == 0);
 
 	s1n_0 = LOADU(in_even + 0);
 	s1n_1 = LOADU(in_even + VREG_INT_COUNT);
@@ -308,7 +333,7 @@ static void opj_idwt53_v_cas0_mcols_SSE2_OR_AVX2( i32* tmp, const i32 sn, const 
 
 /** Vertical inverse 5x3 wavelet transform for 8 columns in SSE2, or
  * 16 in AVX2, when top-most pixel is on odd coordinate */
-static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(icoeff_t* tmp, const i32 sn, const i32 len, icoeff_t* tiledp_col, const size_t stride) {
 	i32 i;
 	size_t j;
 
@@ -316,22 +341,22 @@ static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(i32* tmp, const i32 sn, const i
 	VREG s1_1, s2_1, dc_1, dn_1;
 	const VREG two = LOAD_CST(2);
 
-	const i32* in_even = &tiledp_col[(size_t)sn * stride];
-	const i32* in_odd = &tiledp_col[0];
+	const icoeff_t* in_even = &tiledp_col[(size_t)sn * stride];
+	const icoeff_t* in_odd = &tiledp_col[0];
 
 	ASSERT(len > 2);
-#if __AVX2__
+/*#if __AVX2__
 	ASSERT(PARALLEL_COLS_53 == 16);
     ASSERT(VREG_INT_COUNT == 8);
 #else
 	ASSERT(PARALLEL_COLS_53 == 8);
 	ASSERT(VREG_INT_COUNT == 4);
-#endif
+#endif*/
 
 	/* Note: loads of input even/odd values must be done in a unaligned */
 	/* fashion. But stores in tmp can be done with aligned store, since */
 	/* the temporary buffer is properly aligned */
-	ASSERT((size_t)tmp % (sizeof(i32) * VREG_INT_COUNT) == 0);
+	ASSERT((size_t)tmp % (sizeof(icoeff_t) * VREG_INT_COUNT) == 0);
 
 	s1_0 = LOADU(in_even + stride);
 	/* in_odd[0] - ((in_even[0] + s1 + 2) >> 2); */
@@ -413,7 +438,7 @@ static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(i32* tmp, const i32 sn, const i
 
 /** Vertical inverse 5x3 wavelet transform for one column, when top-most
  * pixel is on even coordinate */
-static void opj_idwt3_v_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+static void opj_idwt3_v_cas0(icoeff_t* tmp, const i32 sn, const i32 len, icoeff_t* tiledp_col, const size_t stride) {
 	i32 i, j;
 	i32 d1c, d1n, s1n, s0c, s0n;
 
@@ -457,11 +482,11 @@ static void opj_idwt3_v_cas0(i32* tmp, const i32 sn, const i32 len, i32* tiledp_
 
 /** Vertical inverse 5x3 wavelet transform for one column, when top-most
  * pixel is on odd coordinate */
-static void opj_idwt3_v_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiledp_col, const size_t stride) {
+static void opj_idwt3_v_cas1(icoeff_t* tmp, const i32 sn, const i32 len, icoeff_t* tiledp_col, const size_t stride) {
 	i32 i, j;
 	i32 s1, s2, dc, dn;
-	const i32* in_even = &tiledp_col[(size_t)sn * stride];
-	const i32* in_odd = &tiledp_col[0];
+	const icoeff_t* in_even = &tiledp_col[(size_t)sn * stride];
+	const icoeff_t* in_odd = &tiledp_col[0];
 
 	ASSERT(len > 2);
 
@@ -500,7 +525,7 @@ static void opj_idwt3_v_cas1(i32* tmp, const i32 sn, const i32 len, i32* tiledp_
 /* Inverse vertical 5-3 wavelet transform in 1-D for several columns. */
 /* </summary>                           */
 /* Performs interleave, inverse wavelet transform and copy back to buffer */
-static void opj_idwt53_v(const opj_dwt_t *dwt, i32* tiledp_col, size_t stride, i32 nb_cols) {
+static void opj_idwt53_v(const opj_dwt_t *dwt, icoeff_t* tiledp_col, size_t stride, i32 nb_cols) {
 	const i32 sn = dwt->sn;
 	const i32 len = sn + dwt->dn;
 	if (dwt->cas == 0) {
@@ -532,11 +557,11 @@ static void opj_idwt53_v(const opj_dwt_t *dwt, i32* tiledp_col, size_t stride, i
 
 		if (len == 2) {
 			i32 c;
-			i32* out = dwt->mem;
+			icoeff_t* out = dwt->mem;
 			for (c = 0; c < nb_cols; c++, tiledp_col++) {
 				i32 i;
-				const i32* in_even = &tiledp_col[(size_t)sn * stride];
-				const i32* in_odd = &tiledp_col[0];
+				const icoeff_t* in_even = &tiledp_col[(size_t)sn * stride];
+				const icoeff_t* in_odd = &tiledp_col[0];
 
 				out[1] = in_odd[0] - ((in_even[0] + 1) >> 1);
 				out[0] = in_even[0] + out[1];
