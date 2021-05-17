@@ -878,13 +878,41 @@ static inline i32 twos_complement_to_signed_magnitude(u32 x) {
 	return result;
 }
 
+static void signed_magnitude_to_twos_complement_16_block(u16* data, size_t len) {
+#if defined(__SSE2__)
+	// Fast SIMD version
+	i32 i;
+	for (i = 0; i < len; i += 8) {
+		__m128i_u x = _mm_loadu_si128((__m128i_u*)(data + i));
+		__m128i sign_masks = _mm_srai_epi16(x, 15); // 0x0000 if positive, 0xFFFF if negative
+		__m128i maybe_positive = _mm_andnot_si128(sign_masks, x); // (~m & x)
+		__m128i value_if_negative = _mm_sub_epi16(_mm_and_si128(x, _mm_set1_epi16(0x8000)), x); // (x & 0x8000) - x
+		__m128i maybe_negative = _mm_and_si128(sign_masks, value_if_negative);
+		__m128i result = _mm_or_si128(maybe_positive, maybe_negative);
+		*(__m128i_u*)(data + i) = result;
+	}
+	if (i < len) {
+		for (; i < len; ++i) {
+			data[i] = signed_magnitude_to_twos_complement_16(data[i]);
+		}
+	}
+#else
+	// Slow version
+	for (i32 i = 0; i < len; ++i) {
+		data[i] = signed_magnitude_to_twos_complement_16(data[i]);
+	}
+#endif
+	ASSERT(i == len);
+}
+
+
 
 void debug_convert_wavelet_coefficients_to_image(isyntax_codeblock_t* codeblock) {
 	if (codeblock->decoded) {
 		i32 coeff_count = codeblock->coefficient ? 3 : 1;
 		for (i32 i = 0; i < coeff_count; ++i) {
 			u8* decoded_8bit = (u8*)malloc(128*128);
-			u16* decoded = codeblock->decoded + (i * (128*128));
+			i16* decoded = codeblock->decoded + (i * (128*128));
 			for (i32 j = 0; j < 128*128; ++j) {
 				u16 magnitude = decoded[j] & 0x7fff;
 				decoded_8bit[j] = ATMOST(255, magnitude);
@@ -969,18 +997,18 @@ void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coeffici
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
 
-static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
+static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, i16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
 	i32 coefficients_per_block = block_width * block_height;
 
-	u16* hl_blocks[16];
+	i16* hl_blocks[16];
 	for (i32 i = 0; i < 16; ++i) {
 		hl_blocks[i] = h_blocks[i];
 	}
-	u16* lh_blocks[16];
+	i16* lh_blocks[16];
 	for (i32 i = 0; i < 16; ++i) {
 		lh_blocks[i] = h_blocks[i] + coefficients_per_block;
 	}
-	u16* hh_blocks[16];
+	i16* hh_blocks[16];
 	for (i32 i = 0; i < 16; ++i) {
 		hh_blocks[i] = h_blocks[i] + 2 * coefficients_per_block;
 	}
@@ -1015,31 +1043,31 @@ static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, u16** h_block
 	// Fill in upper right (HL) quadrant
 	i32 y_dest = pad_r;
 	for (i32 block_y = 0; block_y < 4; ++block_y) {
-		u16** hl_row = hl_blocks + (block_y * 4);
+		i16** hl_row = hl_blocks + (block_y * 4);
 		for (i32 y = 0; y < block_height; ++y) {
 			icoeff_t* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
 			for (i32 block_x = 0; block_x < 4; ++block_x) {
 				for (i32 x = 0; x < block_width; ++x) {
-					*pos++ = signed_magnitude_to_twos_complement_16(*(hl_row[block_x])++);
+					*pos++ = *(hl_row[block_x])++;
 				}
 			}
 		}
 	}
 	y_dest = quadrant_height_padded + pad_r;
 	for (i32 block_y = 0; block_y < 4; ++block_y) {
-		u16** lh_row = lh_blocks + (block_y * 4);
-		u16** hh_row = hh_blocks + (block_y * 4);
+		i16** lh_row = lh_blocks + (block_y * 4);
+		i16** hh_row = hh_blocks + (block_y * 4);
 		for (i32 y = 0; y < block_height; ++y) {
 			icoeff_t* pos = idwt + (y_dest++) * idwt_stride + quadrant_width_padded + pad_r;
 			for (i32 block_x = 0; block_x < 4; ++block_x) {
 				for (i32 x = 0; x < block_width; ++x) {
-					*pos++ = signed_magnitude_to_twos_complement_16(*(lh_row[block_x])++);
+					*pos++ = *(lh_row[block_x])++;
 				}
 			}
 			pos += pad_lr;
 			for (i32 block_x = 0; block_x < 4; ++block_x) {
 				for (i32 x = 0; x < block_width; ++x) {
-					*pos++ = signed_magnitude_to_twos_complement_16(*(hh_row[block_x])++);
+					*pos++ = *(hh_row[block_x])++;
 				}
 			}
 		}
@@ -1096,20 +1124,20 @@ static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, u16** h_block
 }
 
 
-static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, u16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
+static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, i16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
 	i32 coefficients_per_block = block_width * block_height;
-	u16* hl_00 = h_blocks[0];
-	u16* lh_00 = h_blocks[0] + coefficients_per_block;
-	u16* hh_00 = h_blocks[0] + 2 * coefficients_per_block;
-	u16* hl_01 = h_blocks[1];
-	u16* lh_01 = h_blocks[1] + coefficients_per_block;
-	u16* hh_01 = h_blocks[1] + 2 * coefficients_per_block;
-	u16* hl_10 = h_blocks[2];
-	u16* lh_10 = h_blocks[2] + coefficients_per_block;
-	u16* hh_10 = h_blocks[2] + 2 * coefficients_per_block;
-	u16* hl_11 = h_blocks[3];
-	u16* lh_11 = h_blocks[3] + coefficients_per_block;
-	u16* hh_11 = h_blocks[3] + 2 * coefficients_per_block;
+	i16* hl_00 = h_blocks[0];
+	i16* lh_00 = h_blocks[0] + coefficients_per_block;
+	i16* hh_00 = h_blocks[0] + 2 * coefficients_per_block;
+	i16* hl_01 = h_blocks[1];
+	i16* lh_01 = h_blocks[1] + coefficients_per_block;
+	i16* hh_01 = h_blocks[1] + 2 * coefficients_per_block;
+	i16* hl_10 = h_blocks[2];
+	i16* lh_10 = h_blocks[2] + coefficients_per_block;
+	i16* hh_10 = h_blocks[2] + 2 * coefficients_per_block;
+	i16* hl_11 = h_blocks[3];
+	i16* lh_11 = h_blocks[3] + coefficients_per_block;
+	i16* hh_11 = h_blocks[3] + 2 * coefficients_per_block;
 
 	i32 pad_r = 3;
 	i32 pad_l = 3;
@@ -1142,30 +1170,30 @@ static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, u16** h_blocks
 	pad_r -= 1;
 	for (i32 y = 0; y < block_height; ++y) {
 		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_00++); }
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_01++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hl_00++; }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hl_01++; }
 	}
 	for (i32 y = block_height; y < quadrant_height; ++y) {
 		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + quadrant_width_padded + pad_r;
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_10++); }
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hl_11++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hl_10++; }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hl_11++; }
 	}
 	// Fill in lower quadrants (LH and HH)
 	for (i32 y = quadrant_height_padded; y < quadrant_height_padded + block_height; ++y) {
 		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_00++); }
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_01++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *lh_00++; }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *lh_01++; }
 		pos += pad_lr;
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_00++); }
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_01++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hh_00++; }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hh_01++; }
 	}
 	for (i32 y = quadrant_height_padded + block_height; y < quadrant_height_padded + quadrant_height; ++y) {
 		icoeff_t* pos = idwt + (y + pad_r) * idwt_stride + pad_r;
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_10++); }
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*lh_11++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *lh_10++; }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *lh_11++; }
 		pos += pad_lr;
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_10++); }
-		for (i32 x = 0; x < block_width; ++x) { *pos++ = signed_magnitude_to_twos_complement_16(*hh_11++); }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hh_10++; }
+		for (i32 x = 0; x < block_width; ++x) { *pos++ = *hh_11++; }
 	}
 	pad_r += 1;
 
@@ -1218,10 +1246,10 @@ static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, u16** h_blocks
 
 }
 
-icoeff_t* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color) {
-	u16* hl = h_block;
-	u16* lh = h_block + block_width * block_height;
-	u16* hh = h_block + 2 * block_width * block_height;
+icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color) {
+	i16* hl = h_block;
+	i16* lh = h_block + block_width * block_height;
+	i16* hh = h_block + 2 * block_width * block_height;
 
 	// Prepare the idwt buffer containing both LL and LH/Hl/HH coefficients.
 	// LL | HL
@@ -1238,10 +1266,10 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 b
 			icoeff_t* pos = idwt + y * idwt_stride;
 			u16* ll = ((u16*)ll_block) + y * ll_stride;
 			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = signed_magnitude_to_twos_complement_16(*ll++);
+				*pos++ = *ll++;
 			}
 			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = signed_magnitude_to_twos_complement_16(*hl++);
+				*pos++ = *hl++;
 			}
 		}
 	} else {
@@ -1255,7 +1283,7 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 b
 				*pos++ = *ll++;
 			}
 			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = signed_magnitude_to_twos_complement_16(*hl++);
+				*pos++ = *hl++;
 			}
 		}
 	}
@@ -1263,10 +1291,10 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, u16* h_block, i32 block_width, i32 b
 	for (i32 y = 0; y < block_height; ++y) {
 		icoeff_t* pos = idwt + (y + block_height) * idwt_stride;
 		for (i32 x = 0; x < block_width; ++x) {
-			*pos++ = signed_magnitude_to_twos_complement_16(*lh++);
+			*pos++ = *lh++;
 		}
 		for (i32 x = 0; x < block_width; ++x) {
-			*pos++ = signed_magnitude_to_twos_complement_16(*hh++);
+			*pos++ = *hh++;
 		}
 	}
 
@@ -1444,7 +1472,7 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 
 				// stitch blocks together
 				for (i32 color = 0; color < 3; ++color) {
-					u16* h_decoded_blocks[4] = {};
+					i16* h_decoded_blocks[4] = {};
 					for (i32 i = 0; i < 4; ++i) {
 						isyntax_codeblock_t* codeblock = wsi->codeblocks + base_codeblock_index + i + 1 + block_color_offsets[color];
 						h_decoded_blocks[i] = codeblock->decoded;
@@ -1475,7 +1503,7 @@ void debug_decode_wavelet_transformed_chunk(isyntax_t* isyntax, FILE* fp, isynta
 
 				// stitch blocks together
 				for (i32 color = 0; color < 3; ++color) {
-					u16* h_decoded_blocks[16] = {};
+					i16* h_decoded_blocks[16] = {};
 					isyntax_codeblock_t* base_codeblock_for_level = wsi->codeblocks + base_codeblock_index + block_color_offsets[color] + 5;
 					for (i32 i = 0; i < 16; ++i) {
 						isyntax_codeblock_t* codeblock = base_codeblock_for_level + i;
@@ -1537,9 +1565,9 @@ typedef struct huffman_t {
 	u16 code[256];
 	u8  size[256];
 	u16 nonfast_symbols[256];
-	u16 nonfast_code[256];
+	u16 nonfast_code[256+7]; // extra safety bytes for SIMD vector operations
 	u16 nonfast_size[256];
-	u16 nonfast_size_masks[256];
+	u16 nonfast_size_masks[256+7]; // extra safety bytes for SIMD vector operations
 } huffman_t;
 
 void save_code_in_huffman_fast_lookup_table(huffman_t* h, u32 code, u32 code_width, u8 symbol) {
@@ -1556,7 +1584,7 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, i32 compressor_version) {
+i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, i32 compressor_version) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
 	// Read the header information stored in the codeblock.
@@ -1581,8 +1609,8 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 
 	// Early out if dummy/empty block
 	if (codeblock->block_size <= 8) {
-		size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
-		u16* coeff_buffer = (u16*)calloc(1, coeff_buffer_size);
+		size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
+		i16* coeff_buffer = (i16*)calloc(1, coeff_buffer_size);
 		return coeff_buffer;
 	}
 
@@ -1707,11 +1735,6 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 		} while(code_size > 0);
 	}
 
-#if 0 // for running without decoding, for debugging and performance measurements
-	u8* decompressed_buffer = NULL;
-	i32 decompressed_length = 0;
-	return NULL;
-#else
 	// Decode the message
 	u8* decompressed_buffer = (u8*)malloc(serialized_length);
 
@@ -1740,7 +1763,7 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 			bool match = false;
 			u8 lowest_possible_symbol_index = c & 0xFF;
 
-#if 1//(defined(__SSE2__) && defined(__AVX__))
+#if  !((defined(__SSE2__) && defined(__AVX__)))
 			for (i32 i = lowest_possible_symbol_index; i < 256; ++i) {
 				u8 test_size = huffman.nonfast_size[i];
 				u16 test_code = huffman.nonfast_code[i];
@@ -1753,11 +1776,11 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 				}
 			}
 #else
-			// SIMD version using SSE2, about as fast as the version above
+			// SIMD version using SSE2, very slightly faster than the version above
 			// (Need to compile with AVX enabled, otherwise unaligned loads will make it slower)
-			// Can it be made faster?
+			// NOTE: Probably not a bottleneck, the loop below (nearly) always finishes after one iteration.
 			i32 the_symbol = 0;
-			for (i32 i = lowest_possible_symbol_index/8; i < 256; i += 8) {
+			for (i32 i = lowest_possible_symbol_index; i < 256; i += 8) {
 				__m128i_u size_mask = _mm_loadu_si128((__m128i_u*)(huffman.nonfast_size_masks + i));
 				__m128i_u code = _mm_loadu_si128((__m128i_u*)(huffman.nonfast_code + i));
 				__m128i_u test = _mm_set1_epi16((u16)blob);
@@ -1771,6 +1794,7 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 					symbol = huffman.nonfast_symbols[symbol_index];
 					code_size = huffman.nonfast_size[symbol_index];
 					match = true;
+//					if (symbol_index - i > 1) console_print_verbose("diff=%d, i=%d, symbol_index=%d\n", symbol_index - i, i, symbol_index);
 					break;
 				}
 			}
@@ -1841,7 +1865,6 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 		}
 
 	}
-#endif
 
 	if (serialized_length != decompressed_length) {
 		ASSERT(!"size mismatch");
@@ -1900,7 +1923,6 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 		u16 bitmask = bitmasks[coeff_index];
 		u16* current_coeff_buffer = coeff_buffer + (coeff_index * (block_width * block_height));
 		u16* current_final_coeff_buffer = final_coeff_buffer + (coeff_index * (block_width * block_height));
-#if 1
 
 		i32 bit = 0;
 		while (bitmask) {
@@ -1943,7 +1965,7 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 			++bit;
 
 		}
-#if 1
+
 		// Reshuffle snake-order
 		if (bit > 0) {
 			i32 area_stride_x = block_width / 4;
@@ -1963,12 +1985,8 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 				*(u64*)(current_final_coeff_buffer + (area_y+3) * block_width + area_x) = area_y3;
 			}
 
-			/*for (i32 i = 0; i < block_width * block_height; ++i) {
-				final_coeff_buffer[i] = signed_magnitude_to_twos_complement_16(final_coeff_buffer[i]);
-			}*/
+			signed_magnitude_to_twos_complement_16_block(current_final_coeff_buffer, block_width * block_height);
 		}
-#endif
-#endif
 
 	}
 
@@ -1978,7 +1996,7 @@ u16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 
 
 
-	return final_coeff_buffer;
+	return (i16*)final_coeff_buffer;
 
 }
 
@@ -2286,7 +2304,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 									if (i % 1000 == 0) {
 										console_print_verbose("reading codeblock %d\n", i);
 									}
-									u16* decompressed = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1);
+									i16* decompressed = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1);
 									if (decompressed) {
 #if 0
 										FILE* out = fopen("hulskendecompressed4.raw", "wb");
