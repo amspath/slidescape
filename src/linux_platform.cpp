@@ -57,7 +57,7 @@ void platform_sleep_ns(i64 ns) {
 	nanosleep(&tim, &tim2);
 }
 
-void message_box(const char* message) {
+void message_box(app_state_t *message, const char *string) {
 //	NSRunAlertPanel(@"Title", @"This is your message.", @"OK", nil, nil);
 	console_print("[message box] %s\n", message);
     console_print_error("unimplemented: message_box()\n");

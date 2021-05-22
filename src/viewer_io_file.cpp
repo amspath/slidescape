@@ -280,7 +280,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				// TODO: 64 bit read offsets?
 				win32_overlapped_read(thread_memory, isyntax->win32_file_handle, chunk, read_size, offset0);
 #else
-				size_t bytes_read = pread(isyntax->fd, data_chunks[tile_index], read_size, offset0);
+				size_t bytes_read = pread(isyntax->fd, chunk, read_size, offset0);
 #endif
 
 				isyntax_codeblock_t* h_blocks[3];

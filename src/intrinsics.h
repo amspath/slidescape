@@ -58,6 +58,12 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 	return (read_value == comparand);
 }
 
+static inline u32 bit_scan_forward(u32 x) {
+	unsigned long first_bit = 0;
+	_BitScanForward(&first_bit, hit_mask);
+	return (u32) first_bit;
+}
+
 #elif APPLE
 #define OSATOMIC_USE_INLINED 1
 #include <libkern/OSAtomic.h>
@@ -78,6 +84,10 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 	return result;
 }
 
+static inline u32 bit_scan_forward(u32 x) {
+	return _bit_scan_forward(x);
+}
+
 #else
 //TODO: implement
 #define write_barrier
@@ -96,7 +106,107 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
     return (read_value == comparand);
 }
 
+static inline u32 bit_scan_forward(u32 x) {
+	return _bit_scan_forward(x);
+}
+
 #endif
 
+// see:
+// https://stackoverflow.com/questions/41770887/cross-platform-definition-of-byteswap-uint64-and-byteswap-ulong
+// byte swap operations adapted from this code:
+// https://github.com/google/cityhash/blob/8af9b8c2b889d80c22d6bc26ba0df1afb79a30db/src/city.cc#L50
+// License information copied in below:
 
+// Copyright (c) 2011 Google, Inc.
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+//
+// CityHash, by Geoff Pike and Jyrki Alakuijala
+
+#ifdef __GNUC__
+
+#define bswap_16(x) __builtin_bswap16(x)
+#define bswap_32(x) __builtin_bswap32(x)
+#define bswap_64(x) __builtin_bswap64(x)
+
+#elif _MSC_VER
+
+#include <stdlib.h>
+#define bswap_16(x) _byteswap_ushort(x)
+#define bswap_32(x) _byteswap_ulong(x)
+#define bswap_64(x) _byteswap_uint64(x)
+
+#elif defined(__APPLE__)
+
+// Mac OS X / Darwin features
+#include <libkern/OSByteOrder.h>
+#define bswap_16(x) OSSwapInt16(x)
+#define bswap_32(x) OSSwapInt32(x)
+#define bswap_64(x) OSSwapInt64(x)
+
+#elif defined(__sun) || defined(sun)
+
+#include <sys/byteorder.h>
+#define bswap_16(x) BSWAP_16(x)
+#define bswap_32(x) BSWAP_32(x)
+#define bswap_64(x) BSWAP_64(x)
+
+#elif defined(__FreeBSD__)
+
+#include <sys/endian.h>
+#define bswap_16(x) bswap16(x)
+#define bswap_32(x) bswap32(x)
+#define bswap_64(x) bswap64(x)
+
+#elif defined(__OpenBSD__)
+
+#include <sys/types.h>
+#define bswap_32(x) swap16(x)
+#define bswap_32(x) swap32(x)
+#define bswap_64(x) swap64(x)
+
+#elif defined(__NetBSD__)
+
+#include <sys/types.h>
+#include <machine/bswap.h>
+#if defined(__BSWAP_RENAME) && !defined(__bswap_32)
+#define bswap_16(x) bswap16(x)
+#define bswap_32(x) bswap32(x)
+#define bswap_64(x) bswap64(x)
+#endif
+
+#else
+
+#include <byteswap.h>
+
+#endif
+
+static inline u16 maybe_swap_16(u16 x, bool32 is_big_endian) {
+	return is_big_endian ? bswap_16(x) : x;
+}
+
+static inline u32 maybe_swap_32(u32 x, bool32 is_big_endian) {
+	return is_big_endian ? bswap_32(x) : x;
+}
+
+static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
+	return is_big_endian ? bswap_64(x) : x;
+}
 

@@ -461,7 +461,7 @@ SlideviewerView* g_view;
 
 	[view registerForDraggedTypes:@[NSFilenamesPboardType]];
 
-	init_app_state(&global_app_state, view);
+	global_app_state.main_window = view;
 	init_opengl_stuff(&global_app_state);
 
     // Setup Dear ImGui context
@@ -542,7 +542,15 @@ void platform_sleep(u32 ms) {
 	nanosleep(&tim, &tim2);
 }
 
-void message_box(const char* message) {
+void set_window_title(window_handle_t window, const char* title) {
+	fprintf(stderr, "unimplemented: set_window_title()\n");
+}
+
+void reset_window_title(window_handle_t window) {
+	fprintf(stderr, "unimplemented: reset_window_title()\n");
+}
+
+void message_box(app_state_t *app_state, const char *message) {
 //	NSRunAlertPanel(@"Title", @"This is your message.", @"OK", nil, nil);
 	fprintf(stderr, "[message box] %s\n", message);
 	fprintf(stderr, "unimplemented: message_box()\n");
@@ -576,8 +584,11 @@ void mouse_hide() {
 	}
 }
 
-void open_file_dialog(app_state_t* app_state) {
+u32 open_file_filetype_hint;
+
+void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
 	want_open_file_dialog = true;
+	open_file_filetype_hint = filetype_hint;
 }
 
 bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
@@ -743,6 +754,7 @@ int main(int argc, const char* argv[])
 	console_printer_benaphore = benaphore_create();
 	fprintf(stderr, "Starting up...\n");
 	get_system_info();
+	init_app_state(&global_app_state);
 	macos_init_multithreading();
 	macos_init_input();
 	is_vsync_enabled = 1;

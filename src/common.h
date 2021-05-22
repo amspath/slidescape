@@ -48,6 +48,9 @@
 
 #if !WINDOWS
 #include <unistd.h> // for access(), F_OK
+#include <stdlib.h>
+//#define _aligned_malloc(size, alignment) aligned_alloc(alignment, size)
+//#define _aligned_free(ptr) free(ptr)
 #if __SIZEOF_POINTER__==8
 #define fseeko64 fseek
 #define fopen64 fopen
@@ -108,6 +111,10 @@
 
 // NOTE: need to define STB_SPRINTF_IMPLEMENTATION in one source file
 #include <stb_sprintf.h>
+#undef sprintf
+#undef snprintf
+#undef vsprintf
+#undef vnsprintf
 #define sprintf   stbsp_sprintf
 #define snprintf  stbsp_snprintf
 #define vsprintf  stbsp_vsprintf

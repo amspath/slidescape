@@ -34,6 +34,7 @@
 
 #include "common.h"
 #include "platform.h"
+#include "intrinsics.h"
 
 #include "isyntax.h"
 
@@ -44,6 +45,8 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+
+#include <ctype.h>
 
 // TODO: Implement recursive inverse wavelet transform
 // TODO: Improve performance and stability
@@ -883,13 +886,13 @@ static void signed_magnitude_to_twos_complement_16_block(u16* data, size_t len) 
 	// Fast SIMD version
 	i32 i;
 	for (i = 0; i < len; i += 8) {
-		__m128i_u x = _mm_loadu_si128((__m128i_u*)(data + i));
+		__m128i x = _mm_loadu_si128((__m128i*)(data + i));
 		__m128i sign_masks = _mm_srai_epi16(x, 15); // 0x0000 if positive, 0xFFFF if negative
 		__m128i maybe_positive = _mm_andnot_si128(sign_masks, x); // (~m & x)
 		__m128i value_if_negative = _mm_sub_epi16(_mm_and_si128(x, _mm_set1_epi16(0x8000)), x); // (x & 0x8000) - x
 		__m128i maybe_negative = _mm_and_si128(sign_masks, value_if_negative);
 		__m128i result = _mm_or_si128(maybe_positive, maybe_negative);
-		*(__m128i_u*)(data + i) = result;
+		*(__m128i*)(data + i) = result;
 	}
 	if (i < len) {
 		for (; i < len; ++i) {
@@ -1083,7 +1086,7 @@ static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, i16** h_block
 	// Horizontal pass
 	opj_dwt_t h = {};
 	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)_aligned_malloc(dwt_mem_size, 32);
+	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc?
 	h.sn = quadrant_width_padded; // number of elements in low pass band
 	h.dn = quadrant_width_padded; // number of elements in high pass band
 	h.cas = 1;
@@ -1118,7 +1121,7 @@ static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, i16** h_block
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
 	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
 #endif
-	_aligned_free(h.mem);
+	free(h.mem); // need _aligned_free?
 	return idwt;
 
 }
@@ -1206,7 +1209,7 @@ static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, i16** h_blocks
 	// Horizontal pass
 	opj_dwt_t h = {};
 	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)_aligned_malloc(dwt_mem_size, 32);
+	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc?
 	h.sn = quadrant_width_padded; // number of elements in low pass band
 	h.dn = quadrant_width_padded; // number of elements in high pass band
 	h.cas = 1;
@@ -1241,7 +1244,7 @@ static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, i16** h_blocks
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
 	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
 #endif
-	_aligned_free(h.mem);
+	free(h.mem); // need _aligned_free?
 	return idwt;
 
 }
@@ -1255,7 +1258,7 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 b
 	// LL | HL
 	// LH | HH
 	size_t idwt_buffer_size = block_width * block_height * 4 * sizeof(icoeff_t);
-	icoeff_t* idwt = (icoeff_t*)_aligned_malloc(idwt_buffer_size, 32);
+	icoeff_t* idwt = (icoeff_t*)malloc(idwt_buffer_size); // need _aligned_malloc?
 	i32 idwt_stride = block_width * 2;
 	i32 ll_stride = (is_top_level) ? block_width : block_width * 2;
 
@@ -1307,7 +1310,7 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 b
 	// Horizontal pass
 	opj_dwt_t h = {};
 	size_t dwt_mem_size = (MAX(block_width, block_height)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)_aligned_malloc(dwt_mem_size, 32);
+	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc?
 	h.sn = block_width; // number of elements in low pass band
 	h.dn = block_width; // number of elements in high pass band
 	h.cas = 1;
@@ -1342,7 +1345,7 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 b
 	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
 	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
 #endif
-	_aligned_free(h.mem);
+	free(h.mem); // need _aligned_free?
 	return idwt;
 }
 
@@ -1781,15 +1784,14 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 			// NOTE: Probably not a bottleneck, the loop below (nearly) always finishes after one iteration.
 			i32 the_symbol = 0;
 			for (i32 i = lowest_possible_symbol_index; i < 256; i += 8) {
-				__m128i_u size_mask = _mm_loadu_si128((__m128i_u*)(huffman.nonfast_size_masks + i));
-				__m128i_u code = _mm_loadu_si128((__m128i_u*)(huffman.nonfast_code + i));
-				__m128i_u test = _mm_set1_epi16((u16)blob);
+				__m128i size_mask = _mm_loadu_si128((__m128i*)(huffman.nonfast_size_masks + i));
+				__m128i code = _mm_loadu_si128((__m128i*)(huffman.nonfast_code + i));
+				__m128i test = _mm_set1_epi16((u16)blob);
 				test = _mm_and_si128(test, size_mask);
 				__m128i hit = _mm_cmpeq_epi16(test, code);
 				u32 hit_mask = _mm_movemask_epi8(hit);
 				if (hit_mask) {
-					unsigned long first_bit = 0;
-					_BitScanForward(&first_bit, hit_mask);
+					u32 first_bit = bit_scan_forward(hit_mask);
 					i32 symbol_index = i + first_bit / 2;
 					symbol = huffman.nonfast_symbols[symbol_index];
 					code_size = huffman.nonfast_size[symbol_index];
@@ -1914,8 +1916,8 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 	// unpack bitplanes
 	i32 compressed_bitplane_index = 0;
 	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
-	u16* coeff_buffer = (u16*)_aligned_malloc(coeff_buffer_size, 32);
-	u16* final_coeff_buffer = (u16*)_aligned_malloc(coeff_buffer_size, 32); // this copy will have the snake-order reshuffling undone
+	u16* coeff_buffer = (u16*)malloc(coeff_buffer_size); // need _aligned_malloc?
+	u16* final_coeff_buffer = (u16*)malloc(coeff_buffer_size); // this copy will have the snake-order reshuffling undone
 	memset(coeff_buffer, 0, coeff_buffer_size);
 	memset(final_coeff_buffer, 0, coeff_buffer_size);
 
@@ -1950,7 +1952,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 					// This SIMD implementation is ~20% faster compared to the simple version above.
 					// Can it be made faster?
 					__m128i* dst = (__m128i*) (current_coeff_buffer+i);
-					uint64_t t = _bswap64(((0x8040201008040201ULL*b) & 0x8080808080808080ULL) >> 7);
+					uint64_t t = bswap_64(((0x8040201008040201ULL*b) & 0x8080808080808080ULL) >> 7);
 					__m128i v_t = _mm_set_epi64x(0, t);
 					__m128i array_of_bools = _mm_unpacklo_epi8(v_t, _mm_setzero_si128());
 					__m128i masks = _mm_slli_epi16(array_of_bools, shift_amount);
@@ -1990,7 +1992,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 
 	}
 
-	_aligned_free(coeff_buffer);
+	free(coeff_buffer); // need _aligned_free?
 	free(decompressed_buffer);
 //	_aligned_free(final_coeff_buffer);
 
@@ -2434,9 +2436,9 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			                                         /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
 			                                         NULL);
 #else
-			tiff->fd = open(filename, O_RDONLY);
-				if (tiff->fd == -1) {
-					console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
+			isyntax->fd = open(filename, O_RDONLY);
+				if (isyntax->fd == -1) {
+					console_print_error("Error: Could not reopen file for asynchronous I/O\n");
 					return false;
 				} else {
 					// success
