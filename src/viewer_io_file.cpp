@@ -148,9 +148,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			free(read_buffer);
 		} else {
 #if WINDOWS
-			win32_overlapped_read(thread_memory, tiff->win32_file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
+			win32_overlapped_read(thread_memory, tiff->ile_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #else
-			size_t bytes_read = pread(tiff->fd, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
+			size_t bytes_read = pread(tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #endif
 
 			if (compression == TIFF_COMPRESSION_JPEG) {
@@ -278,9 +278,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 #if WINDOWS
 				// TODO: 64 bit read offsets?
-				win32_overlapped_read(thread_memory, isyntax->win32_file_handle, chunk, read_size, offset0);
+				win32_overlapped_read(thread_memory, isyntax->file_handle, chunk, read_size, offset0);
 #else
-				size_t bytes_read = pread(isyntax->fd, chunk, read_size, offset0);
+				size_t bytes_read = pread(isyntax->file_handle, chunk, read_size, offset0);
 #endif
 
 				isyntax_codeblock_t* h_blocks[3];
@@ -349,14 +349,14 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	void* mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 
 //write data into the mapped buffer, possibly in another thread.
-	memcpy(mapped_buffer, temp_memory, buffer_size);
+	memcpy(mapped_buffer, temp_memory, pixel_memory_size);
 	free(temp_memory);
 
 // after reading is complete back on the main thread
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, thread_memory->pbo);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 
-	Sleep(5);
+	//Sleep(5);
 
 	u32 texture = 0; //gl_gen_texture();
 //        glEnable(GL_TEXTURE_2D);

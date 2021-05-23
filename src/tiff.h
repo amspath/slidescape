@@ -271,12 +271,7 @@ struct tiff_t {
 	network_location_t location;
 	FILE* fp;
 #if !IS_SERVER
-	// TODO: platform independent file handle?
-#if WINDOWS
-	HANDLE win32_file_handle;
-#else
-	int fd;
-#endif
+	file_handle_t file_handle;
 #endif
 	i64 filesize;
 	u32 bytesize_of_offsets;

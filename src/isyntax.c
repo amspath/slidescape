@@ -2431,13 +2431,13 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			// TODO: make async I/O platform agnostic
 			// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 			// http://vec3.ca/using-win32-asynchronous-io/
-			isyntax->win32_file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+			isyntax->file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
 			                                         FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
 			                                         /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
 			                                         NULL);
 #else
-			isyntax->fd = open(filename, O_RDONLY);
-				if (isyntax->fd == -1) {
+			isyntax->file_handle = open(filename, O_RDONLY);
+				if (isyntax->file_handle == -1) {
 					console_print_error("Error: Could not reopen file for asynchronous I/O\n");
 					return false;
 				} else {
@@ -2468,12 +2468,12 @@ void isyntax_destroy(isyntax_t* isyntax) {
 		}
 	}
 #if WINDOWS
-	if (isyntax->win32_file_handle) {
-		CloseHandle(isyntax->win32_file_handle);
+	if (isyntax->file_handle) {
+		CloseHandle(isyntax->file_handle);
 	}
 #else
-	if (isyntax->fd) {
-		close(isyntax->fd);
+	if (isyntax->file_handle) {
+		close(isyntax->file_handle);
 	}
 #endif
 }

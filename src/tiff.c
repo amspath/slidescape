@@ -596,10 +596,10 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 				// TODO: make async I/O platform agnostic
 				// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 				// http://vec3.ca/using-win32-asynchronous-io/
-				tiff->win32_file_handle = win32_open_overlapped_file_handle(filename);
+				tiff->file_handle = win32_open_overlapped_file_handle(filename);
 #else
-				tiff->fd = open(filename, O_RDONLY);
-				if (tiff->fd == -1) {
+				tiff->file_handle = open(filename, O_RDONLY);
+				if (tiff->file_handle == -1) {
 					console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
 					return false;
 				} else {
@@ -850,11 +850,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	tiff->location = (network_location_t){}; // set later
 	tiff->fp = NULL;
 #if !IS_SERVER
-#if WINDOWS
-	tiff->win32_file_handle = NULL;
-#else
-	// TODO
-#endif
+	tiff->file_handle = 0;
 #endif
 	tiff->filesize = serial_header->filesize;
 	tiff->bytesize_of_offsets = serial_header->bytesize_of_offsets;
@@ -1012,12 +1008,12 @@ void tiff_destroy(tiff_t* tiff) {
 	}
 #if !IS_SERVER
 #if WINDOWS
-	if (tiff->win32_file_handle) {
-		CloseHandle(tiff->win32_file_handle);
+	if (tiff->file_handle) {
+		CloseHandle(tiff->file_handle);
 	}
 #else
-	if (tiff->fd) {
-		close(tiff->fd);
+	if (tiff->file_handle) {
+		close(tiff->file_handle);
 	}
 #endif
 #endif

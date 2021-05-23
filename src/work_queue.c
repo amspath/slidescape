@@ -42,11 +42,7 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 			write_barrier;
 			atomic_increment(&queue->completion_goal);
 //		    queue->next_entry_to_submit = new_next_entry_to_submit;
-#if WINDOWS
-			ReleaseSemaphore(queue->semaphore, 1, NULL);
-#else
-			sem_post(queue->semaphore);
-#endif
+			semaphore_post(queue->semaphore);
 			return true;
 		} else {
 			if (tries > 5) {

@@ -79,8 +79,10 @@ typedef struct work_queue_entry_t {
 
 #if WINDOWS
 typedef HANDLE semaphore_handle_t;
+typedef HANDLE file_handle_t;
 #else
 typedef sem_t* semaphore_handle_t;
+typedef int file_handle_t;
 #endif
 
 typedef struct work_queue_t {
@@ -93,7 +95,7 @@ typedef struct work_queue_t {
 } work_queue_t;
 
 typedef struct benaphore_t {
-	void* semaphore;
+	semaphore_handle_t semaphore;
 	volatile i32 counter;
 } benaphore_t;
 
@@ -192,6 +194,28 @@ typedef void* window_handle_t;
 typedef SDL_Window* window_handle_t;
 #endif
 
+// Inline procedures as wrappers for system routines
+#if WINDOWS
+
+static inline void semaphore_post(semaphore_handle_t semaphore) {
+	ReleaseSemaphore(semaphore, 1, NULL);
+}
+
+static inline void semaphore_wait(semaphore_handle_t semaphore) {
+	WaitForSingleObject(semaphore, INFINITE);
+}
+
+#else // Linux, macOS
+
+static inline void semaphore_post(semaphore_handle_t semaphore) {
+	sem_post(semaphore);
+}
+
+static inline void semaphore_wait(semaphore_handle_t semaphore) {
+	sem_wait(semaphore);
+}
+
+#endif
 
 // Platform specific function prototypes
 

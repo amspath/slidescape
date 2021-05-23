@@ -250,11 +250,7 @@ typedef struct isyntax_parser_t {
 
 typedef struct isyntax_t {
 	i64 filesize;
-#if WINDOWS
-	HANDLE win32_file_handle;
-#else
-	int fd;
-#endif
+	file_handle_t file_handle;
 	isyntax_image_t images[16];
 	i32 image_count;
 	isyntax_header_template_t header_templates[64];

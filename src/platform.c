@@ -30,6 +30,12 @@
 #include <sys/sysctl.h> // for sysctlbyname()
 #endif
 
+#if (APPLE || LINUX)
+// For async io
+#include "aio.h"
+#include "errno.h"
+#endif
+
 mem_t* platform_allocate_mem_buffer(size_t capacity) {
 	size_t allocation_size = sizeof(mem_t) + capacity + 1;
 	mem_t* result = (mem_t*) malloc(allocation_size);
@@ -184,7 +190,7 @@ void get_system_info() {
 	os_page_size = (u32) getpagesize();
 	page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
 	is_macos = true;
-#else
+#elif LINUX
     logical_cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
     physical_cpu_count = logical_cpu_count; // TODO: how to read this on Linux?
     os_page_size = (u32) getpagesize();
@@ -220,7 +226,7 @@ benaphore_t benaphore_create(void) {
 	benaphore_t result = {};
 #if WINDOWS
 	result.semaphore = CreateSemaphore(NULL, 0, 1, NULL);
-#else
+#elif (APPLE || LINUX)
 	static i32 counter = 1;
 	char semaphore_name[64];
 	i32 c = atomic_increment(&counter);
@@ -233,28 +239,71 @@ benaphore_t benaphore_create(void) {
 void benaphore_destroy(benaphore_t* benaphore) {
 #if WINDOWS
 	CloseHandle(benaphore->semaphore);
-#else
+#elif (APPLE || LINUX)
 	sem_close(benaphore->semaphore);
 #endif
 }
 
 void benaphore_lock(benaphore_t* benaphore) {
 	if (atomic_increment(&benaphore->counter) > 1) {
-#if WINDOWS
-		WaitForSingleObject(benaphore->semaphore, INFINITE);
-#else
-		sem_wait(benaphore->semaphore);
-#endif
+		semaphore_wait(benaphore->semaphore);
 	}
 }
 
 void benaphore_unlock(benaphore_t* benaphore) {
 	if (atomic_decrement(&benaphore->counter) > 0) {
-#if WINDOWS
-		ReleaseSemaphore(benaphore->semaphore, 1, NULL);
-#else
-		sem_post(benaphore->semaphore);
-#endif
+		semaphore_post(benaphore->semaphore);
 	}
 }
 
+#if 0
+// Performance considerations for async I/O on Linux:
+// https://github.com/littledan/linux-aio#performance-considerations
+
+typedef struct {
+	void* dest;
+	file_handle_t file;
+	i64 offset;
+	size_t size_to_read;
+#if WINDOWS
+	OVERLAPPED overlapped;
+#elif (APPLE || LINUX)
+	struct aiocb64 cb;
+#endif
+} io_operation_t;
+
+void async_read_submit(io_operation_t* op) {
+#if WINDOWS
+	// stub
+#elif (APPLE || LINUX)
+	memset(&op->cb, 0, sizeof(op->cb));
+	op->cb.aio_nbytes = op->size_to_read;
+	op->cb.aio_fildes = op->file;
+	op->cb.aio_offset = op->offset;
+	op->cb.aio_buf = op->dest;
+
+	if (aio_read64(&op->cb) == -1) {
+		console_print_error("submit_async_read(): unable to create I/O request\n");
+	}
+#endif
+}
+
+bool async_read_has_finished(io_operation_t* op) {
+#if WINDOWS
+	// stub
+#elif (APPLE || LINUX)
+	int status = aio_error64(&op->cb);
+	return (status != EINPROGRESS);
+#endif
+}
+
+i64 async_read_finalize(io_operation_t* op) {
+#if WINDOWS
+	// stub
+#elif (APPLE || LINUX)
+	i64 bytes_read = aio_return64(&op->cb);
+	return bytes_read;
+#endif
+}
+
+#endif

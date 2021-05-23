@@ -148,9 +148,9 @@ void isyntax_do_first_load(thread_memory_t* thread_info, isyntax_t* isyntax, isy
 
 #if WINDOWS
 			// TODO: 64 bit read offsets?
-			win32_overlapped_read(thread_info, isyntax->win32_file_handle, data_chunks[tile_index], read_size, offset0);
+			win32_overlapped_read(thread_info, isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
 #else
-			size_t bytes_read = pread(isyntax->fd, data_chunks[tile_index], read_size, offset0);
+			size_t bytes_read = pread(isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
 #endif
 		}
 	}
