@@ -225,7 +225,7 @@ benaphore_t benaphore_create(void) {
 	char semaphore_name[64];
 	i32 c = atomic_increment(&counter);
 	snprintf(semaphore_name, sizeof(semaphore_name)-1, "/benaphore%d", c);
-	sem_open(semaphore_name, O_CREAT, 0644, 0);
+	result.semaphore = sem_open(semaphore_name, O_CREAT, 0644, 0);
 #endif
 	return result;
 }
