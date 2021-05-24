@@ -13,7 +13,6 @@
 #include "imgui_impl_sdl.h"
 #include "imgui_impl_opengl3.h"
 #include <stdio.h>
-#include <SDL2/SDL.h>
 
 #include "stb_image.h"
 #include "stringified_icon.h"
@@ -279,9 +278,19 @@ int main(int argc, const char** argv)
     if (window_start_maximized) {
     	window_flags |= SDL_WINDOW_MAXIMIZED;
     }
+	window_flags |= SDL_WINDOW_ALLOW_HIGHDPI;
     SDL_Window* window = SDL_CreateWindow("Slideviewer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, desired_window_width, desired_window_height, window_flags);
     g_window = window;
 	app_state->main_window = window;
+
+	{
+		i32 gl_w, gl_h;
+		SDL_GL_GetDrawableSize(window, &gl_w, &gl_h);
+		i32 window_w, window_h;
+		SDL_GetWindowSize(window, &window_w, &window_h);
+		app_state->display_scale_factor = (float) gl_w / (float) window_w;
+		app_state->display_points_per_pixel = (float) window_w / (float) gl_w;
+	}
 
     // Load icon
 #if DO_DEBUG
@@ -305,7 +314,7 @@ int main(int argc, const char** argv)
     char* version_string = (char*)glGetString(GL_VERSION);
     console_print("OpenGL supported version: %s\n", version_string);
 
-    is_vsync_enabled = 0;
+    is_vsync_enabled = 1;
     SDL_GL_SetSwapInterval(is_vsync_enabled); // Enable vsync
 
     // Initialize OpenGL loader
@@ -359,6 +368,7 @@ int main(int argc, const char** argv)
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
+#if LINUX
 	global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoSans-Regular.ttf", 17.0f);
 	if (!global_main_font) {
 		global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16.0f);
@@ -370,10 +380,19 @@ int main(int argc, const char** argv)
 			global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15.0f);
 		}
 	}
+	io.Fonts->AddFontDefault();
+#elif APPLE
+	float font_size = 16.0f * app_state->display_scale_factor;
+	global_main_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/SFNSText.ttf", font_size, NULL, io.Fonts->GetGlyphRangesJapanese());
+//	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/Courier.dfont", 15.0f);
+	global_fixed_width_font = io.Fonts->AddFontDefault();
+	io.Fonts->Build();
+	global_main_font->Scale = app_state->display_points_per_pixel;
+#endif
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
     //IM_ASSERT(font != NULL);
 
-    io.Fonts->AddFontDefault();
+
 
 	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 

@@ -463,6 +463,12 @@ void init_app_state(app_state_t* app_state) {
 	ASSERT(app_state->temp_storage_memory == NULL);
 //	memset(app_state, 0, sizeof(app_state_t));
 
+	if (app_state->display_points_per_pixel == 0.0f) {
+		app_state->display_points_per_pixel = 1.0f;
+	}
+	if (app_state->display_scale_factor == 0.0f) {
+		app_state->display_scale_factor = 1.0f;
+	}
 	size_t temp_storage_size = MEGABYTES(16); // Note: what is a good size to use here?
 	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
 	init_arena(&app_state->temp_arena, temp_storage_size, app_state->temp_storage_memory);

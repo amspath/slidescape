@@ -113,6 +113,8 @@ void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
 extern "C"
 void gui_draw_open_file_dialog(app_state_t* app_state) {
 	ImVec2 max_size = ImVec2(app_state->client_viewport.w, (float)app_state->client_viewport.h);
+	max_size.x *= app_state->display_points_per_pixel * 0.9f;
+	max_size.y *= app_state->display_points_per_pixel * 0.9f;
 	ImVec2 min_size = max_size;
 	min_size.x *= 0.5f;
 	min_size.y *= 0.5f;

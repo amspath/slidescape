@@ -308,6 +308,8 @@ typedef struct app_state_t {
 	u8* temp_storage_memory;
 	arena_t temp_arena;
 	rect2i client_viewport;
+	float display_scale_factor;
+	float display_points_per_pixel;
 	scene_t scene;
 	v4f clear_color;
 	float black_level;

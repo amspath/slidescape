@@ -36,6 +36,11 @@
 #include <unistd.h>
 #if APPLE
 #include <stddef.h> // for offsetof()
+#if __has_include(<SDL2/SDL.h>)
+#include <SDL2/SDL.h>
+#else
+#include <SDL.h>
+#endif
 #endif
 
 #endif
@@ -189,7 +194,7 @@ typedef struct input_t {
 #if WINDOWS
 typedef HWND window_handle_t;
 #elif APPLE
-typedef void* window_handle_t;
+typedef SDL_Window* window_handle_t;
 #else
 typedef SDL_Window* window_handle_t;
 #endif

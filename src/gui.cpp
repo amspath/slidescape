@@ -757,7 +757,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		draw_console_window(app_state, "Console", &show_console_window);
 	}
 
-#if LINUX
+#if (LINUX || APPLE)
 	gui_draw_open_file_dialog(app_state);
 #endif
 
@@ -791,17 +791,23 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 	float desired_fraction_of_height = console_fill_screen ? 1.0f : 0.33f;
 
-	float desired_width = (float) app_state->client_viewport.w;
-	float desired_height = roundf((float)app_state->client_viewport.h * desired_fraction_of_height);
+	rect2i viewport = app_state->client_viewport;
+	viewport.x *= app_state->display_points_per_pixel;
+	viewport.y *= app_state->display_points_per_pixel;
+	viewport.w *= app_state->display_points_per_pixel;
+	viewport.h *= app_state->display_points_per_pixel;
+
+	float desired_width = (float) viewport.w;
+	float desired_height = roundf((float)viewport.h * desired_fraction_of_height);
 	if (show_menu_bar) {
-		float vertical_space_left = app_state->client_viewport.h - desired_height;
+		float vertical_space_left = viewport.h - desired_height;
 		float need_space = 23.0f;
 		if (vertical_space_left < need_space) {
-			desired_height = (float)app_state->client_viewport.h - need_space;
+			desired_height = (float)viewport.h - need_space;
 		}
 	}
 	ImGui::SetNextWindowSize(ImVec2(desired_width, desired_height), ImGuiCond_Always);
-	ImGui::SetNextWindowPos(ImVec2(0,app_state->client_viewport.h - desired_height), ImGuiCond_Always);
+	ImGui::SetNextWindowPos(ImVec2(0,viewport.h - desired_height), ImGuiCond_Always);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
 	if (!ImGui::Begin(window_title, p_open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse)) {

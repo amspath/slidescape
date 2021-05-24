@@ -53,14 +53,13 @@ elseif(CPU_TYPE STREQUAL "arm64" OR CPU_TYPE STREQUAL "arm")
 endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -Wno-class-memaccess")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
 
 if (NOT(APPLE))
     # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
     set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
     set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
 
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -no-pie")
 endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -193,10 +192,8 @@ set(VIEWER_SOURCE_FILES
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             win32_main.cpp  win32_gui.cpp   imgui/imgui_impl_win32.cpp     glad.c )
-elseif(APPLE)
-    set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            macos_main.mm   imgui/imgui_impl_osx.mm )
 else()
+    # Note: SDL2 is used for both Linux and macOS
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             linux_main.cpp   linux_platform.cpp imgui/imgui_impl_sdl.cpp imgui/ImGuiFileDialog.cpp)
 endif()
@@ -216,11 +213,27 @@ if (WIN32)
     # Hide the console window on release builds
     target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
 elseif(APPLE)
+    set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -headerpad_max_install_names")
+    find_package(SDL2 REQUIRED)
+    include_directories(${SDL2_INCLUDE_DIRS})
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
     target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
+    target_link_libraries(slideviewer ${SDL2_LIBRARIES})
+
+    # Copy the .dylib file for SDL2 into the slideviewer.app/Contents/MacOS folder.
+    # And modify the executable, so that the packaged .dylib files are loaded at runtime.
+    set(BUNDLE_BINARY_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slideviewer.app/Contents/MacOS")
+    execute_process(COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE)
+    execute_process(COMMAND sdl2-config --prefix COMMAND tr -d '\n' OUTPUT_VARIABLE SDL2_PREFIX)
+    set(FIND_LINKED_DYLIB_COMMAND otool -L ${BUNDLE_BINARY_DIR}/slideviewer | grep SDL2- | cut -d' ' -f1)
+    add_custom_command(TARGET slideviewer POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}"
+            COMMAND cp -f "${SDL2_PREFIX}/lib/libSDL2.dylib" "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}/libSDL2.dylib"
+            COMMAND install_name_tool -change `${FIND_LINKED_DYLIB_COMMAND}`
+            @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/slideviewer")
 else()
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     target_link_libraries(slideviewer pthread dl m GL GLEW SDL2)
