@@ -164,12 +164,21 @@ enum {
 	ISYNTAX_SE = 3,
 };
 
+typedef struct isyntax_tile_channel_t {
+	icoeff_t* transformed_ll;
+	icoeff_t* coeff_h;
+	icoeff_t* coeff_ll;
+	u32 neighbors_loaded;
+} isyntax_tile_channel_t;
+
 typedef struct isyntax_tile_t {
 	u32 codeblock_index;
 	u32 codeblock_chunk_index;
 	u32 parent_codeblock_index;
 	u32 parent_quadrant;
 	icoeff_t* transformed_ll[3];
+	icoeff_t* coeff_h[3];
+	isyntax_tile_channel_t color_channels[3];
 } isyntax_tile_t;
 
 typedef struct isyntax_level_t {
@@ -271,6 +280,8 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);
 icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color);
+void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);
+icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color);
 void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
 void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
 void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset);

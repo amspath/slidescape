@@ -943,11 +943,11 @@ void debug_convert_wavelet_coefficients_to_image(isyntax_codeblock_t* codeblock)
 	}
 }*/
 
-void debug_convert_wavelet_coefficients_to_image2(i32* coefficients, i32 width, i32 height, const char* filename) {
+void debug_convert_wavelet_coefficients_to_image2(icoeff_t* coefficients, i32 width, i32 height, const char* filename) {
 	if (coefficients) {
 		u8* decoded_8bit = (u8*)malloc(width*height);
 		for (i32 i = 0; i < width * height; ++i) {
-			u16 magnitude = (u16)twos_complement_to_signed_magnitude(coefficients[i]);
+			u16 magnitude = 0x7FFF & (u16)twos_complement_to_signed_magnitude(coefficients[i]);
 			decoded_8bit[i] = ATMOST(255, magnitude);
 		}
 
@@ -999,6 +999,347 @@ void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coeffici
 }
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
+
+void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name) {
+	i32 full_width = quadrant_width * 2;
+	i32 full_height= quadrant_height * 2;
+	i32 idwt_stride = full_width;
+
+	if (output_steps_as_png) {
+		char filename[512];
+		snprintf(filename, sizeof(filename), "%s_step0.png", png_name);
+		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
+	}
+
+	// Horizontal pass
+	opj_dwt_t h = {};
+	size_t dwt_mem_size = (MAX(quadrant_width, quadrant_height)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
+	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc? //TODO: use temporary memory
+	h.sn = quadrant_width; // number of elements in low pass band
+	h.dn = quadrant_width; // number of elements in high pass band
+	h.cas = 1;
+
+	for (i32 y = 0; y < full_height; ++y) {
+		icoeff_t* input_row = idwt + y * idwt_stride;
+		opj_idwt53_h(&h, input_row);
+	}
+
+	if (output_steps_as_png) {
+		char filename[512];
+		snprintf(filename, sizeof(filename), "%s_step1.png", png_name);
+		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
+	}
+
+	// Vertical pass
+	opj_dwt_t v = {};
+	v.mem = h.mem;
+	v.sn = quadrant_height; // number of elements in low pass band
+	v.dn = quadrant_height; // number of elements in high pass band
+	v.cas = 1;
+
+	i32 x;
+	i32 last_x = full_width;
+	for (x = 0; x + PARALLEL_COLS_53 <= last_x; x += PARALLEL_COLS_53) {
+		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
+	}
+	if (x < last_x) {
+		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
+	}
+
+	if (output_steps_as_png) {
+		char filename[512];
+		snprintf(filename, sizeof(filename), "%s_step2.png", png_name);
+		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
+	}
+
+	free(h.mem); // need _aligned_free?
+}
+
+static inline void get_offsetted_coeff_blocks(icoeff_t** ll_hl_lh_hh, i32 offset, isyntax_tile_channel_t* color_channel, i32 block_stride) {
+	ll_hl_lh_hh[0] = color_channel->coeff_ll + offset; //ll
+	ll_hl_lh_hh[1] = color_channel->coeff_h + offset; //hl
+	ll_hl_lh_hh[2] = color_channel->coeff_h + block_stride + offset; //lh
+	ll_hl_lh_hh[3] = color_channel->coeff_h + 2*block_stride + offset; //hh
+}
+
+#define ADJ_TILE_TOP_LEFT 0x100
+#define ADJ_TILE_TOP_CENTER 0x80
+#define ADJ_TILE_TOP_RIGHT 0x40
+#define ADJ_TILE_CENTER_LEFT 0x20
+#define ADJ_TILE_CENTER 0x10
+#define ADJ_TILE_CENTER_RIGHT 8
+#define ADJ_TILE_BOTTOM_LEFT 4
+#define ADJ_TILE_BOTTOM_CENTER 2
+#define ADJ_TILE_BOTTOM_RIGHT 1
+
+#define ISYNTAX_IDWT_PAD_L 3
+#define ISYNTAX_IDWT_PAD_R 5
+#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 7
+
+icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color) {
+	isyntax_level_t* level = wsi->levels + scale;
+	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
+	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
+	isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
+	isyntax_tile_channel_t* channel = tile->color_channels + color;
+
+	// 9 bits, corresponding to the surrounding tiles:
+	// 0x100 | 0x80 | 0x40
+	// 0x20  | 0x10 | 8
+	// 4     | 2    | 1
+	u32 adj_tiles = 0x1FF; // all bits set
+	if (tile_y == 0)                        adj_tiles &= ~(ADJ_TILE_TOP_LEFT | ADJ_TILE_TOP_CENTER | ADJ_TILE_TOP_RIGHT);
+	if (tile_y == level->height_in_tiles-1) adj_tiles &= ~(ADJ_TILE_BOTTOM_LEFT | ADJ_TILE_BOTTOM_CENTER | ADJ_TILE_BOTTOM_RIGHT);
+	if (tile_x == 0)                        adj_tiles &= ~(ADJ_TILE_TOP_LEFT | ADJ_TILE_CENTER_LEFT | ADJ_TILE_BOTTOM_LEFT);
+	if (tile_x == level->width_in_tiles-1)  adj_tiles &= ~(ADJ_TILE_TOP_RIGHT | ADJ_TILE_CENTER_RIGHT | ADJ_TILE_BOTTOM_RIGHT);
+
+
+	if (channel->neighbors_loaded == adj_tiles) {
+
+		// Prepare for stitching together the input image, with margins sampled from adjacent tiles for each quadrant
+		i32 pad_l = ISYNTAX_IDWT_PAD_L;
+		i32 pad_r = ISYNTAX_IDWT_PAD_R;
+		i32 pad_l_plus_r = pad_l + pad_r;
+//		ASSERT(sizeof(icoeff_t) * pad_amount == sizeof(u64)); // blit 64 bits == 4 pixels
+		i32 block_width = isyntax->block_width;
+		i32 block_height = isyntax->block_width;
+		i32 quadrant_width = block_width + pad_l_plus_r;
+		i32 quadrant_height = block_height + pad_l_plus_r;
+		i32 full_width = 2 * quadrant_width;
+		i32 full_height = 2 * quadrant_height;
+		size_t idwt_buffer_size = full_width * full_height * sizeof(icoeff_t);
+		icoeff_t* idwt = (icoeff_t*) calloc(1, idwt_buffer_size);
+
+		i32 dest_stride = full_width;
+
+		i32 source_stride = block_width;
+		i32 left_margin_source_x = block_width - pad_r;
+		i32 top_margin_source_y = block_height - pad_r;
+		size_t row_copy_size = block_width * sizeof(icoeff_t);
+		size_t pad_l_copy_size = pad_l * sizeof(icoeff_t);
+		size_t pad_r_copy_size = pad_r * sizeof(icoeff_t);
+
+		i32 block_stride = block_width * block_height;
+		i32 quadrant_offsets[4] = {0, quadrant_width, full_width * quadrant_height, full_width * quadrant_height + quadrant_width};
+		icoeff_t* quadrants[4] = {};
+		for (i32 i = 0; i < 4; ++i) {
+			quadrants[i] = idwt + quadrant_offsets[i];
+		}
+
+		icoeff_t* ll_hl_lh_hh[4] = {};
+
+		// Now do the stitching, with margins sampled from adjacent tiles for each quadrant
+		// LL | HL
+		// LH | HH
+
+		// top left corner
+		if (adj_tiles & ADJ_TILE_TOP_LEFT) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride) + left_margin_source_x,
+			                           source_tile->color_channels + color, block_stride);
+
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t* source = ll_hl_lh_hh[i];
+				icoeff_t* dest = quadrants[i];
+				for (i32 y = 0; y < pad_l; ++y) {
+					memcpy(dest, source, pad_l_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
+			}
+
+		}
+		// top center
+		if (adj_tiles & ADJ_TILE_TOP_CENTER) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + tile_x;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + pad_l;
+				for (i32 y = 0; y < pad_l; ++y) {
+					memcpy(dest, source, row_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
+			}
+
+		}
+		// top right corner
+		if (adj_tiles & ADJ_TILE_TOP_RIGHT) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + pad_l + block_width;
+				for (i32 y = 0; y < pad_l; ++y) {
+					memcpy(dest, source, pad_r_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
+			}
+
+		}
+		// center left
+		if (adj_tiles & ADJ_TILE_CENTER_LEFT) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + (pad_l * dest_stride);
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, pad_l_copy_size);
+					dest += dest_stride;
+					source += source_stride;
+				}
+			}
+
+		}
+		// center (main tile)
+		if (adj_tiles & ADJ_TILE_CENTER) {
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+			                           channel, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + (pad_l * dest_stride) + pad_l;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, row_copy_size);
+					dest += dest_stride;
+					source += source_stride;
+				}
+			}
+
+		}
+		// center right
+		if (adj_tiles & ADJ_TILE_CENTER_RIGHT) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + (pad_l * dest_stride) + pad_l + block_width;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, pad_r_copy_size);
+					dest += dest_stride;
+					source += source_stride;
+				}
+			}
+
+		}
+		// bottom left corner
+		if (adj_tiles & ADJ_TILE_BOTTOM_LEFT) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride);
+				for (i32 y = 0; y < pad_r; ++y) {
+					memcpy(dest, source, pad_l_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
+			}
+
+		}
+		// bottom center
+		if (adj_tiles & ADJ_TILE_BOTTOM_CENTER) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + tile_x;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride) + pad_l;
+				for (i32 y = 0; y < pad_r; ++y) {
+					memcpy(dest, source, row_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
+			}
+
+		}
+		// bottom right corner
+		if (adj_tiles & ADJ_TILE_BOTTOM_RIGHT) {
+			isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+			                           source_tile->color_channels + color, block_stride);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride) + pad_l + block_width;
+				for (i32 y = 0; y < pad_r; ++y) {
+					memcpy(dest, source, pad_r_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
+			}
+
+		}
+
+		isyntax_idwt(idwt, quadrant_width, quadrant_height, false, NULL);
+
+
+		return idwt;
+	}
+	return NULL;
+}
+
+void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+	isyntax_level_t* level = wsi->levels + scale;
+	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
+	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
+	isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
+	i32 block_width = isyntax->block_width;
+	i32 block_height = isyntax->block_height;
+	size_t block_size = block_width * block_height * sizeof(icoeff_t);
+
+	// TODO: check that all codeblocks are loaded
+
+	icoeff_t* Y = NULL;
+	icoeff_t* Co = NULL;
+	icoeff_t* Cg = NULL;
+
+	for (i32 color = 0; color < 3; ++color) {
+		icoeff_t* idwt = isyntax_idwt_tile_for_color_channel(isyntax, wsi, scale, tile_x, tile_y, color);
+		ASSERT(idwt);
+		switch(color) {
+			case 0: Y = idwt; break;
+			case 1: Co = idwt; break;
+			case 2: Cg = idwt; break;
+			default: break;
+		}
+
+		// TODO: distribute result to child tiles
+		if (scale > 0) {
+			isyntax_level_t* next_level = wsi->levels + (scale - 1);
+			isyntax_tile_t* child_top_left = next_level->tiles + (tile_y*2) * next_level->width_in_tiles + (tile_x*2);
+			isyntax_tile_t* child_top_right = child_top_left + 1;
+			isyntax_tile_t* child_bottom_left = child_top_left + next_level->width_in_tiles;
+			isyntax_tile_t* child_bottom_right = child_bottom_left + 1;
+
+			ASSERT(child_top_left->color_channels[color].coeff_ll == NULL);
+			ASSERT(child_top_right->color_channels[color].coeff_ll == NULL);
+			ASSERT(child_bottom_left->color_channels[color].coeff_ll == NULL);
+			ASSERT(child_bottom_right->color_channels[color].coeff_ll == NULL);
+			child_top_left->color_channels[color].coeff_ll = malloc(block_size);
+			child_top_right->color_channels[color].coeff_ll = malloc(block_size);
+			child_bottom_left->color_channels[color].coeff_ll = malloc(block_size);
+			child_bottom_right->color_channels[color].coeff_ll = malloc(block_size);
+
+			i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
+		}
+	}
+
+	// TODO: reconstruct RGB image from separate color channels while cutting off margins
+
+	// TODO: upload to GPU
+
+	free(Y);
+	free(Co);
+	free(Cg);
+}
+
 
 static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, i16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
 	i32 coefficients_per_block = block_width * block_height;
@@ -1076,52 +1417,14 @@ static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, i16** h_block
 		}
 	}
 
-
 #if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	char filename[512];
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d", which_color);
+	isyntax_idwt(idwt, quadrant_width_padded, quadrant_height_padded, true, filename);
+#else
+	isyntax_idwt(idwt, quadrant_width_padded, quadrant_height_padded, false, NULL);
 #endif
 
-	// Horizontal pass
-	opj_dwt_t h = {};
-	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc?
-	h.sn = quadrant_width_padded; // number of elements in low pass band
-	h.dn = quadrant_width_padded; // number of elements in high pass band
-	h.cas = 1;
-
-	for (i32 y = pad_r; y < full_height_padded - pad_l; ++y) {
-		icoeff_t* input_row = idwt + y * idwt_stride;
-		opj_idwt53_h(&h, input_row);
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
-#endif
-
-	// Vertical pass
-	opj_dwt_t v = {};
-	v.mem = h.mem;
-	v.sn = quadrant_height_padded; // number of elements in low pass band
-	v.dn = quadrant_height_padded; // number of elements in high pass band
-	v.cas = 1;
-
-	i32 x;
-	i32 last_x = full_width_padded - pad_l;
-	for (x = pad_r; x + PARALLEL_COLS_53 <= last_x; x += PARALLEL_COLS_53) {
-		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
-	}
-	if (x < last_x) {
-		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
-#endif
-	free(h.mem); // need _aligned_free?
 	return idwt;
 
 }
@@ -1200,51 +1503,15 @@ static icoeff_t* isyntax_idwt_first_recursion(icoeff_t* ll_block, i16** h_blocks
 	}
 	pad_r += 1;
 
+
 #if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	char filename[512];
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d", which_color);
+	isyntax_idwt(idwt, quadrant_width_padded, quadrant_height_padded, true, filename);
+#else
+	isyntax_idwt(idwt, quadrant_width_padded, quadrant_height_padded, false, NULL);
 #endif
 
-	// Horizontal pass
-	opj_dwt_t h = {};
-	size_t dwt_mem_size = (MAX(quadrant_width_padded, quadrant_height_padded)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc?
-	h.sn = quadrant_width_padded; // number of elements in low pass band
-	h.dn = quadrant_width_padded; // number of elements in high pass band
-	h.cas = 1;
-
-	for (i32 y = pad_r; y < full_height_padded - pad_l; ++y) {
-		icoeff_t* input_row = idwt + y * idwt_stride;
-		opj_idwt53_h(&h, input_row);
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
-#endif
-
-	// Vertical pass
-	opj_dwt_t v = {};
-	v.mem = h.mem;
-	v.sn = quadrant_height_padded; // number of elements in low pass band
-	v.dn = quadrant_height_padded; // number of elements in high pass band
-	v.cas = 1;
-
-	i32 x;
-	i32 last_x = full_width_padded - pad_l;
-	for (x = pad_r; x + PARALLEL_COLS_53 <= last_x; x += PARALLEL_COLS_53) {
-		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
-	}
-	if (x < last_x) {
-		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, full_width_padded, full_height_padded, filename);
-#endif
-	free(h.mem); // need _aligned_free?
 	return idwt;
 
 }
@@ -1303,49 +1570,12 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 b
 
 #if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
 	char filename[512];
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_1.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
+	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d", which_color);
+	isyntax_idwt(idwt, block_width, block_height, true, filename);
+#else
+	isyntax_idwt(idwt, block_width, block_height, false, NULL);
 #endif
 
-	// Horizontal pass
-	opj_dwt_t h = {};
-	size_t dwt_mem_size = (MAX(block_width, block_height)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc?
-	h.sn = block_width; // number of elements in low pass band
-	h.dn = block_width; // number of elements in high pass band
-	h.cas = 1;
-
-	for (i32 y = 0; y < block_height*2; ++y) {
-		icoeff_t* input_row = idwt + y * idwt_stride;
-		opj_idwt53_h(&h, input_row);
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_2.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
-#endif
-
-	// Vertical pass
-	opj_dwt_t v = {};
-	v.mem = h.mem;
-	v.sn = block_height; // number of elements in low pass band
-	v.dn = block_height; // number of elements in high pass band
-	v.cas = 1;
-
-	i32 x;
-	i32 tile_width = block_width * 2;
-	for (x = 0; x + PARALLEL_COLS_53 <= tile_width; x += PARALLEL_COLS_53) {
-		opj_idwt53_v(&v, idwt + x, idwt_stride, PARALLEL_COLS_53);
-	}
-	if (x < tile_width) {
-		opj_idwt53_v(&v, idwt + x, idwt_stride, (tile_width - x));
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d_3.png", which_color);
-	debug_convert_wavelet_coefficients_to_image2(idwt, block_width * 2, block_height * 2, filename);
-#endif
-	free(h.mem); // need _aligned_free?
 	return idwt;
 }
 
