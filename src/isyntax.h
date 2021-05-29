@@ -214,6 +214,7 @@ typedef struct isyntax_image_t {
 	isyntax_codeblock_t* codeblocks;
 	bool header_codeblocks_are_partial;
 	bool first_load_complete;
+	bool first_load_in_progress;
 } isyntax_image_t;
 
 typedef struct isyntax_parser_node_t {
@@ -281,11 +282,16 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);
 icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);
+u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y);
+u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color);
 void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
 void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
 void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset);
 i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
+
+// TODO: move this somewhere suitable
+void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image);
 
 #ifdef __cplusplus
 }

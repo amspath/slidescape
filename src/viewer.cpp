@@ -620,7 +620,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 					if (task->pixel_memory) {
 						bool need_free_pixel_memory = true;
-						if (tile->need_gpu_residency) {
+						if (task->want_gpu_residency) {
 							pixel_transfer_state_t* transfer_state =
 									submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
 									                              4, task->pixel_memory, finalize_textures_immediately);
@@ -686,7 +686,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			console_print("Warning: texture submission took %g ms\n", time_elapsed * 1000.0f);
 		}*/
 
-
 		// Determine the highest and lowest levels with image data that need to be loaded and rendered.
 		// The lowest needed level might be lower than the actual current downsampling level,
 		// because some levels may not have image data available (-> need to fall back to lower level).
@@ -700,76 +699,89 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			}
 		}
 
-		// Create a 'wishlist' of tiles to request
-		load_tile_task_t tile_wishlist[32];
-		i32 num_tasks_on_wishlist = 0;
-		float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
-
-		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
-			ASSERT(scale >= 0 && scale < COUNT(image->level_images));
-			level_image_t *drawn_level = image->level_images + scale;
-			if (!drawn_level->exists) {
-				continue; // no image data
+		if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+			isyntax_t* isyntax = &image->isyntax.isyntax;
+			isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
+			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
+				wsi->first_load_in_progress = true;
+				isyntax_begin_first_load(isyntax, wsi);
 			}
-
-			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
-
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
-			                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
-			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
-
-			if (scene->is_cropped) {
-				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
-				                                                        drawn_level->x_tile_side_in_um,
-				                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
-				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
-			}
-
-			i32 base_priority = (image->level_count - scale) * 100; // highest priority for the most zoomed in levels
+		} else {
 
 
-			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
-				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
+			// Create a 'wishlist' of tiles to request
+			load_tile_task_t tile_wishlist[32];
+			i32 num_tasks_on_wishlist = 0;
+			float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
 
-					tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
-					if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
-						continue; // nothing needs to be done with this tile
+			for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
+				ASSERT(scale >= 0 && scale < COUNT(image->level_images));
+				level_image_t *drawn_level = image->level_images + scale;
+				if (!drawn_level->exists) {
+					continue; // no image data
+				}
+
+				bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
+
+				bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
+				                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
+				visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
+
+				if (scene->is_cropped) {
+					bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
+					                                                        drawn_level->x_tile_side_in_um,
+					                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
+					visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
+				}
+
+				i32 base_priority = (image->level_count - scale) * 100; // highest priority for the most zoomed in levels
+
+
+				for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
+					for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
+
+						tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
+						if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
+							continue; // nothing needs to be done with this tile
+						}
+
+						float tile_distance_from_center_of_screen_x =
+								(scene->camera.x - ((tile_x + 0.5f) * drawn_level->x_tile_side_in_um)) / drawn_level->um_per_pixel_x;
+						float tile_distance_from_center_of_screen_y =
+								(scene->camera.y - ((tile_y + 0.5f) * drawn_level->y_tile_side_in_um)) / drawn_level->um_per_pixel_y;
+						float tile_distance_from_center_of_screen =
+								sqrtf(SQUARE(tile_distance_from_center_of_screen_x) + SQUARE(tile_distance_from_center_of_screen_y));
+						tile_distance_from_center_of_screen /= screen_radius;
+						// prioritize tiles close to the center of the screen
+						float priority_bonus = (1.0f - tile_distance_from_center_of_screen) * 300.0f; // can be tweaked.
+						i32 tile_priority = base_priority + (i32)priority_bonus;
+
+						if (num_tasks_on_wishlist >= COUNT(tile_wishlist)) {
+							break;
+						}
+						tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
+								.image = image, .tile = tile, .level = scale, .tile_x = tile_x, .tile_y = tile_y,
+								.priority = tile_priority,
+								.need_gpu_residency = true,
+								.need_keep_in_cache = tile->need_keep_in_cache,
+								.completion_callback = viewer_notify_load_tile_completed,
+						};
 					}
-
-					float tile_distance_from_center_of_screen_x =
-							(scene->camera.x - ((tile_x + 0.5f) * drawn_level->x_tile_side_in_um)) / drawn_level->um_per_pixel_x;
-					float tile_distance_from_center_of_screen_y =
-							(scene->camera.y - ((tile_y + 0.5f) * drawn_level->y_tile_side_in_um)) / drawn_level->um_per_pixel_y;
-					float tile_distance_from_center_of_screen =
-							sqrtf(SQUARE(tile_distance_from_center_of_screen_x) + SQUARE(tile_distance_from_center_of_screen_y));
-					tile_distance_from_center_of_screen /= screen_radius;
-					// prioritize tiles close to the center of the screen
-					float priority_bonus = (1.0f - tile_distance_from_center_of_screen) * 300.0f; // can be tweaked.
-					i32 tile_priority = base_priority + (i32)priority_bonus;
-
-					if (num_tasks_on_wishlist >= COUNT(tile_wishlist)) {
-						break;
-					}
-					tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
-							.image = image, .tile = tile, .level = scale, .tile_x = tile_x, .tile_y = tile_y,
-							.priority = tile_priority,
-							.need_gpu_residency = true,
-							.need_keep_in_cache = tile->need_keep_in_cache,
-							.completion_callback = viewer_notify_load_tile_completed,
-					};
 				}
 			}
-		}
 //		console_print("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
 
-		qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
+			qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
-		i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
-		i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
+			i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
+			i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
-		request_tiles(app_state, image, tile_wishlist, tiles_to_load);
+			request_tiles(app_state, image, tile_wishlist, tiles_to_load);
+		}
+
+
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 

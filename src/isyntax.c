@@ -869,6 +869,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 
 // Convert between signed magnitude and two's complement
 // https://stackoverflow.com/questions/21837008/how-to-convert-from-sign-magnitude-to-twos-complement
+// N.B. This function is its own inverse (conversion works the other way as well)
 static inline i16 signed_magnitude_to_twos_complement_16(u16 x) {
 	u16 m = -(x >> 15);
 	i16 result = (~m & x) | (((x & (u16)0x8000) - x) & m);
@@ -881,7 +882,7 @@ static inline i32 twos_complement_to_signed_magnitude(u32 x) {
 	return result;
 }
 
-static void signed_magnitude_to_twos_complement_16_block(u16* data, size_t len) {
+static void signed_magnitude_to_twos_complement_16_block(u16* data, u32 len) {
 #if defined(__SSE2__)
 	// Fast SIMD version
 	i32 i;
@@ -903,6 +904,36 @@ static void signed_magnitude_to_twos_complement_16_block(u16* data, size_t len) 
 	// Slow version
 	for (i32 i = 0; i < len; ++i) {
 		data[i] = signed_magnitude_to_twos_complement_16(data[i]);
+	}
+#endif
+	ASSERT(i == len);
+}
+
+// Convert a block of 16-bit signed integers to their absolute value
+// Almost the same as the signed magnitude <-> twos complement conversion, except the sign bit is cleared at the end
+static void convert_to_absolute_value_16_block(i16* data, u32 len) {
+#if defined(__SSE2__)
+	// Fast SIMD version
+	i32 i;
+	for (i = 0; i < len; i += 8) {
+		__m128i x = _mm_loadu_si128((__m128i*)(data + i));
+		__m128i sign_masks = _mm_srai_epi16(x, 15); // 0x0000 if positive, 0xFFFF if negative
+		__m128i maybe_positive = _mm_andnot_si128(sign_masks, x); // (~m & x)
+		__m128i value_if_negative = _mm_sub_epi16(_mm_and_si128(x, _mm_set1_epi16(0x8000)), x); // (x & 0x8000) - x
+		__m128i maybe_negative = _mm_and_si128(sign_masks, value_if_negative);
+		__m128i result = _mm_or_si128(maybe_positive, maybe_negative);
+		result = _mm_and_si128(result, _mm_set1_epi16(0x7FFF)); // x &= 0x7FFF (clear sign bit)
+		*(__m128i*)(data + i) = result;
+	}
+	if (i < len) {
+		for (; i < len; ++i) {
+			data[i] = signed_magnitude_to_twos_complement_16(data[i]) & 0x7FFF;
+		}
+	}
+#else
+		// Slow version
+	for (i32 i = 0; i < len; ++i) {
+		data[i] = signed_magnitude_to_twos_complement_16(data[i]) & 0x7FFF;
 	}
 #endif
 	ASSERT(i == len);
@@ -1074,15 +1105,9 @@ static inline void get_offsetted_coeff_blocks(icoeff_t** ll_hl_lh_hh, i32 offset
 
 #define ISYNTAX_IDWT_PAD_L 3
 #define ISYNTAX_IDWT_PAD_R 5
-#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 7
+#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 5
 
-icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color) {
-	isyntax_level_t* level = wsi->levels + scale;
-	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
-	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
-	isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
-	isyntax_tile_channel_t* channel = tile->color_channels + color;
-
+u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
 	// 9 bits, corresponding to the surrounding tiles:
 	// 0x100 | 0x80 | 0x40
 	// 0x20  | 0x10 | 8
@@ -1092,8 +1117,19 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 	if (tile_y == level->height_in_tiles-1) adj_tiles &= ~(ADJ_TILE_BOTTOM_LEFT | ADJ_TILE_BOTTOM_CENTER | ADJ_TILE_BOTTOM_RIGHT);
 	if (tile_x == 0)                        adj_tiles &= ~(ADJ_TILE_TOP_LEFT | ADJ_TILE_CENTER_LEFT | ADJ_TILE_BOTTOM_LEFT);
 	if (tile_x == level->width_in_tiles-1)  adj_tiles &= ~(ADJ_TILE_TOP_RIGHT | ADJ_TILE_CENTER_RIGHT | ADJ_TILE_BOTTOM_RIGHT);
+	return adj_tiles;
+}
 
+icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color) {
+	isyntax_level_t* level = wsi->levels + scale;
+	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
+	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
+	isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
+	isyntax_tile_channel_t* channel = tile->color_channels + color;
 
+	u32 adj_tiles = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
+
+	ASSERT(channel->neighbors_loaded == adj_tiles);
 	if (channel->neighbors_loaded == adj_tiles) {
 
 		// Prepare for stitching together the input image, with margins sampled from adjacent tiles for each quadrant
@@ -1127,6 +1163,8 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 		}
 
 		icoeff_t* ll_hl_lh_hh[4] = {};
+
+
 
 		// Now do the stitching, with margins sampled from adjacent tiles for each quadrant
 		// LL | HL
@@ -1277,15 +1315,20 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 
-		isyntax_idwt(idwt, quadrant_width, quadrant_height, false, NULL);
-
+		bool output_pngs = false;
+		const char* debug_png = "debug_idwt_";
+		/*
+		if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1 && color == 0) {
+			output_pngs = true;
+		}*/
+		isyntax_idwt(idwt, quadrant_width, quadrant_height, output_pngs, debug_png);
 
 		return idwt;
 	}
 	return NULL;
 }
 
-void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_level_t* level = wsi->levels + scale;
 	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
 	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
@@ -1293,6 +1336,11 @@ void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i32 block_width = isyntax->block_width;
 	i32 block_height = isyntax->block_height;
 	size_t block_size = block_width * block_height * sizeof(icoeff_t);
+	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
+	i32 idwt_width = 2 * (block_width + ISYNTAX_IDWT_PAD_L + ISYNTAX_IDWT_PAD_R);
+	i32 idwt_height = 2 * (block_height + ISYNTAX_IDWT_PAD_L + ISYNTAX_IDWT_PAD_R);
+	i32 idwt_stride = idwt_width;
+	size_t row_copy_size = block_width * sizeof(icoeff_t);
 
 	// TODO: check that all codeblocks are loaded
 
@@ -1310,7 +1358,7 @@ void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			default: break;
 		}
 
-		// TODO: distribute result to child tiles
+		// Distribute result to child tiles
 		if (scale > 0) {
 			isyntax_level_t* next_level = wsi->levels + (scale - 1);
 			isyntax_tile_t* child_top_left = next_level->tiles + (tile_y*2) * next_level->width_in_tiles + (tile_x*2);
@@ -1322,24 +1370,85 @@ void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			ASSERT(child_top_right->color_channels[color].coeff_ll == NULL);
 			ASSERT(child_bottom_left->color_channels[color].coeff_ll == NULL);
 			ASSERT(child_bottom_right->color_channels[color].coeff_ll == NULL);
-			child_top_left->color_channels[color].coeff_ll = malloc(block_size);
-			child_top_right->color_channels[color].coeff_ll = malloc(block_size);
-			child_bottom_left->color_channels[color].coeff_ll = malloc(block_size);
-			child_bottom_right->color_channels[color].coeff_ll = malloc(block_size);
+			child_top_left->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
+			child_top_right->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
+			child_bottom_left->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
+			child_bottom_right->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
 
-			i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
+			i32 dest_stride = block_width;
+			// Blit top left child LL block
+			{
+				icoeff_t* dest = child_top_left->color_channels[color].coeff_ll;
+				icoeff_t* source = idwt + (first_valid_pixel * idwt_stride) + first_valid_pixel;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, row_copy_size);
+					dest += dest_stride;
+					source += idwt_stride;
+				}
+			}
+			// Blit top right child LL block
+			{
+				icoeff_t* dest = child_top_right->color_channels[color].coeff_ll;
+				icoeff_t* source = idwt + (first_valid_pixel * idwt_stride) + first_valid_pixel + block_width;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, row_copy_size);
+					dest += dest_stride;
+					source += idwt_stride;
+				}
+			}
+			// Blit bottom left child LL block
+			{
+				icoeff_t* dest = child_bottom_left->color_channels[color].coeff_ll;
+				icoeff_t* source = idwt + ((first_valid_pixel + block_height) * idwt_stride) + first_valid_pixel;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, row_copy_size);
+					dest += dest_stride;
+					source += idwt_stride;
+				}
+			}
+			// Blit bottom right child LL block
+			{
+				icoeff_t* dest = child_bottom_right->color_channels[color].coeff_ll;
+				icoeff_t* source = idwt + ((first_valid_pixel + block_height) * idwt_stride) + first_valid_pixel + block_width;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, row_copy_size);
+					dest += dest_stride;
+					source += idwt_stride;
+				}
+			}
+
 		}
 	}
 
-	// TODO: reconstruct RGB image from separate color channels while cutting off margins
+	// For the Y (luminance) color channel, we actually need the absolute value of the Y-channel wavelet coefficient.
+	// (This doesn't hold for Co and Cg, those are are used directly as signed integers)
+	convert_to_absolute_value_16_block(Y, idwt_width * idwt_height);
 
-	// TODO: upload to GPU
+	// Reconstruct RGB image from separate color channels while cutting off margins
+	i32 tile_width = block_width * 2;
+	i32 tile_height = block_height * 2;
+	u32* bgra = (u32*)malloc(tile_width * tile_height * sizeof(u32));
+	for (i32 y = 0; y < tile_height; ++y) {
+		i32 row_offset = ((first_valid_pixel + y) * idwt_stride) + first_valid_pixel;
+		icoeff_t* row_Y = Y + row_offset;
+		icoeff_t* row_Co = Co + row_offset;
+		icoeff_t* row_Cg = Cg + row_offset;
+		u32* dest = bgra + (y * tile_width);
+		for (i32 x = 0; x < tile_width; ++x) {
+			((rgba_t*)dest)[x] = ycocg_to_bgr(row_Y[x], row_Co[x], row_Cg[x]);
+		}
+	}
+
+	/*if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1) {
+		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
+	}*/
 
 	free(Y);
 	free(Co);
 	free(Cg);
-}
 
+	return bgra;
+}
 
 static icoeff_t* isyntax_idwt_second_recursion(icoeff_t* ll_block, i16** h_blocks, i32 block_width, i32 block_height, i32 which_color) {
 	i32 coefficients_per_block = block_width * block_height;

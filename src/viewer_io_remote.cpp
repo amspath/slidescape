@@ -110,6 +110,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_task->tile_width = level_image->tile_width;
 						completion_task->scale = task->level;
 						completion_task->tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
+						completion_task->want_gpu_residency = true;
 
 						ASSERT(task->completion_callback);
 						add_work_queue_entry(&global_completion_queue, task->completion_callback, completion_task);

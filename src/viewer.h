@@ -110,7 +110,7 @@ typedef struct tile_t {
 	bool8 is_empty;
 	bool8 is_cached;
 	bool8 need_keep_in_cache;
-	bool8 need_gpu_residency;
+	bool8 need_gpu_residency; // TODO: revise: still needed?
 	i64 time_last_drawn;
 } tile_t;
 
@@ -192,6 +192,7 @@ typedef struct viewer_notify_tile_completed_task_t {
 	i32 tile_index;
 	i32 tile_width;
 	i32 tile_height;
+	bool want_gpu_residency;
 } viewer_notify_tile_completed_task_t;
 
 
