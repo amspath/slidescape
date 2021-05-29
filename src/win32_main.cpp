@@ -1256,6 +1256,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
+	// TODO: Can call init_thread_memory() here?
 	// Allocate a private memory buffer
 	u64 thread_memory_size = MEGABYTES(16);
 	thread_local_storage[thread_info->logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
@@ -1336,6 +1337,8 @@ void init_work_queue(work_queue_t* queue) {
 }
 
 void win32_init_multithreading() {
+	init_thread_memory(0);
+
 	i32 semaphore_initial_count = 0;
 	worker_thread_count = total_thread_count - 1;
 

@@ -404,7 +404,7 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 				tile->tile_y = tile_index / level_image->width_in_tiles;
 
 				isyntax_tile_t* isyntax_tile = isyntax_level->tiles + tile_index;
-				if (isyntax_tile->codeblock_index == 0) {
+				if (!isyntax_tile->exists) {
 					tile->is_empty = true;
 				}
 			}

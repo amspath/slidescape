@@ -88,23 +88,7 @@ void* worker_thread(void* parameter) {
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
 
-    // Allocate a private memory buffer
-    u64 thread_memory_size = MEGABYTES(16);
-    thread_local_storage[thread_info->logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
-    thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[thread_info->logical_thread_index];
-    memset(thread_memory, 0, sizeof(thread_memory_t));
-#if 0
-    // TODO: implement this
-	thread_memory->async_io_event = CreateEventA(NULL, TRUE, FALSE, NULL);
-	if (!thread_memory->async_io_event) {
-		win32_diagnostic("CreateEvent");
-	}
-#endif
-    thread_memory->thread_memory_raw_size = thread_memory_size;
-
-    thread_memory->aligned_rest_of_thread_memory = (void*)
-            ((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
-    thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
+    init_thread_memory(thread_info->logical_thread_index);
 
     for (;;) {
         if (!is_queue_work_in_progress(thread_info->queue)) {
@@ -120,6 +104,7 @@ void* worker_thread(void* parameter) {
 platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 
 void linux_init_multithreading() {
+	init_thread_memory(0);
     i32 semaphore_initial_count = 0;
     worker_thread_count = total_thread_count - 1;
     global_work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
@@ -314,7 +299,7 @@ int main(int argc, const char** argv)
     char* version_string = (char*)glGetString(GL_VERSION);
     console_print("OpenGL supported version: %s\n", version_string);
 
-    is_vsync_enabled = 1;
+    is_vsync_enabled = 0;
     SDL_GL_SetSwapInterval(is_vsync_enabled); // Enable vsync
 
     // Initialize OpenGL loader

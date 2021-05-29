@@ -156,14 +156,6 @@ typedef struct isyntax_codeblock_t {
 	icoeff_t* transformed;
 } isyntax_codeblock_t;
 
-// Quadrants (for codeblocks relating to their higher DWT level)
-enum {
-	ISYNTAX_NW = 0,
-	ISYNTAX_NE = 1,
-	ISYNTAX_SW = 2,
-	ISYNTAX_SE = 3,
-};
-
 typedef struct isyntax_tile_channel_t {
 	icoeff_t* transformed_ll;
 	icoeff_t* coeff_h;
@@ -174,11 +166,9 @@ typedef struct isyntax_tile_channel_t {
 typedef struct isyntax_tile_t {
 	u32 codeblock_index;
 	u32 codeblock_chunk_index;
-	u32 parent_codeblock_index;
-	u32 parent_quadrant;
-	icoeff_t* transformed_ll[3];
 	icoeff_t* coeff_h[3];
 	isyntax_tile_channel_t color_channels[3];
+	bool exists;
 } isyntax_tile_t;
 
 typedef struct isyntax_level_t {
@@ -274,6 +264,8 @@ typedef struct isyntax_t {
 	i32 block_height;
 	i32 tile_width;
 	i32 tile_height;
+	icoeff_t* black_dummy_coeff;
+	icoeff_t* white_dummy_coeff;
 } isyntax_t;
 
 // function prototypes
@@ -292,6 +284,7 @@ i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 
 // TODO: move this somewhere suitable
 void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image);
+void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y);
 
 #ifdef __cplusplus
 }

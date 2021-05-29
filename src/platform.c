@@ -307,3 +307,24 @@ i64 async_read_finalize(io_operation_t* op) {
 }
 
 #endif
+
+void init_thread_memory(i32 logical_thread_index) {
+	// Allocate a private memory buffer
+	u64 thread_memory_size = MEGABYTES(16);
+	thread_local_storage[logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
+	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
+	memset(thread_memory, 0, sizeof(thread_memory_t));
+#if WINDOWS
+	thread_memory->async_io_event = CreateEventA(NULL, TRUE, FALSE, NULL);
+	if (!thread_memory->async_io_event) {
+		win32_diagnostic("CreateEvent");
+	}
+#else
+	// TODO: implement this
+#endif
+	thread_memory->thread_memory_raw_size = thread_memory_size;
+
+	thread_memory->aligned_rest_of_thread_memory = (void*)
+			((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
+	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
+}

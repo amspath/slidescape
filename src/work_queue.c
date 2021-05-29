@@ -102,6 +102,13 @@ bool is_queue_work_in_progress(work_queue_t* queue) {
 	return result;
 }
 
+// NOTE: only use this on the main thread!
+void drain_work_queue(work_queue_t* queue) {
+	while (is_queue_work_in_progress(&global_work_queue)) {
+		do_worker_work(&global_work_queue, 0);
+	}
+}
+
 //#define TEST_THREAD_QUEUE
 #ifdef TEST_THREAD_QUEUE
 void echo_task_completed(int logical_thread_index, void* userdata) {

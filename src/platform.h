@@ -255,6 +255,7 @@ bool is_queue_work_in_progress(work_queue_t* queue);
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
 void mark_queue_entry_completed(work_queue_t* queue);
 bool do_worker_work(work_queue_t* queue, int logical_thread_index);
+void drain_work_queue(work_queue_t* queue); // NOTE: only use this on the main thread
 void test_multithreading_work_queue();
 
 bool file_exists(const char* filename);
@@ -275,6 +276,8 @@ benaphore_t benaphore_create(void);
 void benaphore_destroy(benaphore_t* benaphore);
 void benaphore_lock(benaphore_t* benaphore);
 void benaphore_unlock(benaphore_t* benaphore);
+
+void init_thread_memory(i32 logical_thread_index);
 
 #if IS_SERVER
 #define console_print printf
