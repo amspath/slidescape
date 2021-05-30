@@ -560,9 +560,10 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 				load_asap_xml_annotations(app_state, temp_filename, (v2f){image.mpp_x, image.mpp_y});
 			}
 
-
-
 			console_print("Loaded '%s'\n", filename);
+			if (image.backend == IMAGE_BACKEND_ISYNTAX) {
+				console_print("   iSyntax: loading took %g seconds\n", image.isyntax.isyntax.loading_time);
+			}
 			return true;
 
 		} else {

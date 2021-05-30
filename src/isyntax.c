@@ -1409,8 +1409,15 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 				}
 			}
 
+			if (color == 2) {
+				child_top_left->has_ll = true;
+				child_top_right->has_ll = true;
+				child_bottom_left->has_ll = true;
+				child_bottom_right->has_ll = true;
+			}
 		}
 	}
+	tile->is_loaded = true; // Meaning: it is now safe to start loading 'child' tiles of the next level
 
 	// For the Y (luminance) color channel, we actually need the absolute value of the Y-channel wavelet coefficient.
 	// (This doesn't hold for Co and Cg, those are are used directly as signed integers)
@@ -1431,6 +1438,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			((rgba_t*)dest)[x] = ycocg_to_bgr(row_Y[x], row_Co[x], row_Cg[x]);
 		}
 	}
+
 	float elapsed = get_seconds_elapsed(start, get_clock());
 	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed);
 
@@ -2334,20 +2342,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						test_output_block_header(wsi_image);
 #endif
 
-#if 0
-
-
-						// inverse wavelet transform test
-						{
-							i32 codeblock_index = 11721;
-//						    i32 codeblock_index = 296166;
-							debug_decode_wavelet_transformed_chunk(isyntax, fp, wsi_image, codeblock_index, true);
-//							void test_dwt_forward();
-//							test_dwt_forward();
-						}
-
-
-#endif
 						// Create tables for spatial lookup of codeblock from tile coordinates
 						for (i32 i = 0; i < wsi_image->level_count; ++i) {
 							isyntax_level_t* level = wsi_image->levels + i;
@@ -2390,7 +2384,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 //						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
 //						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 //						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
-						console_print("   iSyntax loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
+						isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());
 					} else {
 						// TODO: error
 					}

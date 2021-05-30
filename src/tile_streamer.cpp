@@ -120,6 +120,46 @@ static void isyntax_init_dummy_codeblocks(isyntax_t* isyntax) {
 
 //isyntax_data_chunk_t isyntax_read_data_chunk(isyntax_t* isyntax, isyntax_image_t* wsi_image, i32 base_codeblock_index);
 
+static i32 isyntax_load_all_tiles_in_level(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, bool use_worker_threads) {
+	i32 tiles_loaded = 0;
+	i32 tile_index = 0;
+	isyntax_level_t* level = wsi->levels + scale;
+	for (i32 tile_y = 0; tile_y < level->height_in_tiles; ++tile_y) {
+		for (i32 tile_x = 0; tile_x < level->width_in_tiles; ++tile_x, ++tile_index) {
+			isyntax_tile_t* tile = level->tiles + tile_index;
+			if (!tile->exists) continue;
+			if (use_worker_threads) {
+				isyntax_begin_load_tile(isyntax, wsi, scale, tile_x, tile_y);
+			} else {
+				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y);
+				submit_tile_completed(tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
+			}
+			++tiles_loaded;
+		}
+	}
+
+	// TODO: free top level coefficients
+
+	// TODO: more graceful multithreading
+	if (use_worker_threads) {
+		// Wait for all tiles to be finished loading
+		tile_index = 0;
+		for (i32 tile_y = 0; tile_y < level->height_in_tiles; ++tile_y) {
+			for (i32 tile_x = 0; tile_x < level->width_in_tiles; ++tile_x, ++tile_index) {
+				isyntax_tile_t* tile = level->tiles + tile_index;
+				if (!tile->exists) continue;
+				while (!tile->is_loaded) {
+					do_worker_work(&global_work_queue, 0);
+				}
+			}
+		}
+	}
+
+	level->is_fully_loaded = true;
+	return tiles_loaded;
+}
+
+
 // NOTE: The number of levels present in the highest data chunks depends on the highest scale:
 // Highest scale = 8  --> chunk contains levels 6, 7, 8 (most often this is the case)
 // Highest scale = 7  --> chunk contains levels 6, 7
@@ -129,37 +169,39 @@ static void isyntax_init_dummy_codeblocks(isyntax_t* isyntax) {
 
 
 
-static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isyntax_image_t* wsi_image) {
+static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isyntax_image_t* wsi) {
+
+	i64 start_first_load = get_clock();
+	i32 tiles_loaded = 0;
 
 	isyntax_init_dummy_codeblocks(isyntax);
 
-	i32 scale = wsi_image->max_scale;
-	isyntax_level_t* isyntax_level = wsi_image->levels + scale;
+	i32 scale = wsi->max_scale;
+	isyntax_level_t* current_level = wsi->levels + scale;
 	i32 codeblocks_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(scale, true); // most often 1 + 4 + 16 (for scale n, n-1, n-2) + 1 (LL block)
 	i32 chunk_codeblock_count = codeblocks_per_color * 3;
 	i32 block_color_offsets[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
 
-	isyntax_tile_t* first_tile = isyntax_level->tiles + 0;
-	i32 levels_in_chunk = ((wsi_image->codeblocks + isyntax_level->tiles[0].codeblock_chunk_index)->scale % 3) + 1;
+	i32 levels_in_chunk = ((wsi->codeblocks + current_level->tiles[0].codeblock_chunk_index)->scale % 3) + 1;
 
 	temp_memory_t temp_memory = begin_temp_memory(temp_arena);
 
-	u8** data_chunks = arena_push_array(temp_arena, isyntax_level->tile_count, u8*);
-	memset(data_chunks, 0, isyntax_level->tile_count * sizeof(u8*));
+	u8** data_chunks = arena_push_array(temp_arena, current_level->tile_count, u8*);
+	memset(data_chunks, 0, current_level->tile_count * sizeof(u8*));
 
 	// Read codeblock data from disk
 	{
 		i64 start = get_clock();
 
 		i32 tile_index = 0;
-		for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-			for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-				isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
+		for (i32 tile_y = 0; tile_y < current_level->height_in_tiles; ++tile_y) {
+			for (i32 tile_x = 0; tile_x < current_level->width_in_tiles; ++tile_x, ++tile_index) {
+				isyntax_tile_t* tile = current_level->tiles + tile_index;
 				if (!tile->exists) continue;
-				isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + tile->codeblock_chunk_index;
+				isyntax_codeblock_t* top_chunk_codeblock = wsi->codeblocks + tile->codeblock_chunk_index;
 				u64 offset0 = top_chunk_codeblock->block_data_offset;
 
-				isyntax_codeblock_t* last_codeblock = wsi_image->codeblocks + tile->codeblock_chunk_index + chunk_codeblock_count - 1;
+				isyntax_codeblock_t* last_codeblock = wsi->codeblocks + tile->codeblock_chunk_index + chunk_codeblock_count - 1;
 				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
 				u64 read_size = offset1 - offset0;
 				arena_align(temp_arena, 64);
@@ -179,11 +221,11 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 
 	// Decompress the top level tiles
 	i32 tile_index = 0;
-	for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-		for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-			isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
+	for (i32 tile_y = 0; tile_y < current_level->height_in_tiles; ++tile_y) {
+		for (i32 tile_x = 0; tile_x < current_level->width_in_tiles; ++tile_x, ++tile_index) {
+			isyntax_tile_t* tile = current_level->tiles + tile_index;
 			if (!tile->exists) continue;
-			isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + tile->codeblock_chunk_index;
+			isyntax_codeblock_t* top_chunk_codeblock = wsi->codeblocks + tile->codeblock_chunk_index;
 			u64 offset0 = top_chunk_codeblock->block_data_offset;
 
 			isyntax_codeblock_t* h_blocks[3];
@@ -204,55 +246,30 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 				color_channel->coeff_h = h_block->decoded;
 
 				// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
-				color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(isyntax_level, tile_x, tile_y);
+				color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x, tile_y);
 			}
 		}
 	}
 
 	// Transform and submit the top level tiles
-	u32 tile_width = isyntax->block_width * 2;
-	u32 tile_height = isyntax->block_height * 2;
-	tile_index = 0;
-	for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-		for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-			isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
-			if (!tile->exists) continue;
-			void* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
-			submit_tile_completed(tile_pixels, scale, tile_index, tile_width, tile_height);
-		}
-	}
-	// TODO: free top level coefficients
-
-	// TODO: more graceful multithreading
-/*	for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-		for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-			isyntax_level_t* level = wsi_image->levels + scale;
-			isyntax_tile_t* tile = level->tiles + tile_index;
-			for (i32 color = 0; color < 3; ++color) {
-				isyntax_tile_channel_t* color_channel = tile->color_channels + color;
-				while (color_channel->coeff_ll == NULL) {
-					do_worker_work(&global_work_queue, 0);
-				}
-			}
-		}
-	}*/
+	tiles_loaded += isyntax_load_all_tiles_in_level(isyntax, wsi, scale, true);
 
 	// Decompress and transform the remaining levels in the data chunks.
 	if (levels_in_chunk >= 2) {
-		scale = wsi_image->max_scale - 1;
-		isyntax_level = wsi_image->levels + scale;
+		scale = wsi->max_scale - 1;
+		current_level = wsi->levels + scale;
 		// First do the Hulsken decompression on all tiles for this level
 		i32 chunk_index = 0;
-		for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; tile_y += 2) {
-			for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; tile_x += 2, ++chunk_index) {
-				tile_index = tile_y * isyntax_level->width_in_tiles + tile_x;
-				isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
+		for (i32 tile_y = 0; tile_y < current_level->height_in_tiles; tile_y += 2) {
+			for (i32 tile_x = 0; tile_x < current_level->width_in_tiles; tile_x += 2, ++chunk_index) {
+				tile_index = tile_y * current_level->width_in_tiles + tile_x;
+				isyntax_tile_t* tile = current_level->tiles + tile_index;
 				if (!tile->exists) continue;
 				// LL blocks should already be available (these were 'donated' when we were loading the higher level)
 				ASSERT(tile->color_channels[0].coeff_ll != NULL);
 				ASSERT(tile->color_channels[1].coeff_ll != NULL);
 				ASSERT(tile->color_channels[2].coeff_ll != NULL);
-				isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + tile->codeblock_chunk_index;
+				isyntax_codeblock_t* top_chunk_codeblock = wsi->codeblocks + tile->codeblock_chunk_index;
 				u64 offset0 = top_chunk_codeblock->block_data_offset;
 
 				i32 chunk_codeblock_indices_for_color[4] = {1, 2, 3, 4};
@@ -270,13 +287,13 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 
 						i32 tile_x_in_chunk = tile_x + tile_delta_x[i];
 						i32 tile_y_in_chunk = tile_y + tile_delta_y[i];
-						tile_index = (tile_y_in_chunk * isyntax_level->width_in_tiles) + tile_x_in_chunk;
-						isyntax_tile_t* tile_in_chunk = isyntax_level->tiles + tile_index;
+						tile_index = (tile_y_in_chunk * current_level->width_in_tiles) + tile_x_in_chunk;
+						isyntax_tile_t* tile_in_chunk = current_level->tiles + tile_index;
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
 						color_channel->coeff_h = decompressed;
 
 						// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
-						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(isyntax_level, tile_x_in_chunk, tile_y_in_chunk);
+						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x_in_chunk, tile_y_in_chunk);
 					}
 
 					// Move to the next color channel in the chunk of codeblocks
@@ -287,49 +304,26 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 			}
 		}
 		// Now do the inverse wavelet transforms
-		tile_index = 0;
-		for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-			for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-				isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
-				if (!tile->exists) continue;
-				void* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
-				submit_tile_completed(tile_pixels, scale, tile_index, tile_width, tile_height);
-			}
-		}
-		// TODO: free next level coefficients
+		tiles_loaded += isyntax_load_all_tiles_in_level(isyntax, wsi, scale, true);
 	}
-
-	// TODO: more graceful multithreading
-/*	for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-		for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-			isyntax_level_t* level = wsi_image->levels + scale;
-			tile_t* tile = level->tiles + tile_index;
-			for (i32 color = 0; color < 3; ++color) {
-				tile_channel_t* color_channel = tile->color_channels + color;
-				while (color_channel->coeff_ll == NULL) {
-					do_worker_work(&global_work_queue, 0);
-				}
-			}
-		}
-	}*/
 
 	// Now for the next level down (if present in the chunk)
 	if (levels_in_chunk >= 3) {
-		scale = wsi_image->max_scale - 2;
+		scale = wsi->max_scale - 2;
 		ASSERT(scale >= 0);
-		isyntax_level = wsi_image->levels + scale;
+		current_level = wsi->levels + scale;
 		// First do the Hulsken decompression on all tiles for this level
 		i32 chunk_index = 0;
-		for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; tile_y += 4) {
-			for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; tile_x += 4, ++chunk_index) {
-				tile_index = tile_y * isyntax_level->width_in_tiles + tile_x;
-				isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
+		for (i32 tile_y = 0; tile_y < current_level->height_in_tiles; tile_y += 4) {
+			for (i32 tile_x = 0; tile_x < current_level->width_in_tiles; tile_x += 4, ++chunk_index) {
+				tile_index = tile_y * current_level->width_in_tiles + tile_x;
+				isyntax_tile_t* tile = current_level->tiles + tile_index;
 				if (!tile->exists) continue;
 				// LL blocks should already be available (these were 'donated' when we were loading the higher level)
 				ASSERT(tile->color_channels[0].coeff_ll != NULL);
 				ASSERT(tile->color_channels[1].coeff_ll != NULL);
 				ASSERT(tile->color_channels[2].coeff_ll != NULL);
-				isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + tile->codeblock_chunk_index;
+				isyntax_codeblock_t* top_chunk_codeblock = wsi->codeblocks + tile->codeblock_chunk_index;
 				u64 offset0 = top_chunk_codeblock->block_data_offset;
 
 				i32 chunk_codeblock_indices_for_color[16] = {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
@@ -347,13 +341,13 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 
 						i32 tile_x_in_chunk = tile_x + tile_delta_x[i];
 						i32 tile_y_in_chunk = tile_y + tile_delta_y[i];
-						tile_index = (tile_y_in_chunk * isyntax_level->width_in_tiles) + tile_x_in_chunk;
-						isyntax_tile_t* tile_in_chunk = isyntax_level->tiles + tile_index;
+						tile_index = (tile_y_in_chunk * current_level->width_in_tiles) + tile_x_in_chunk;
+						isyntax_tile_t* tile_in_chunk = current_level->tiles + tile_index;
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
 						color_channel->coeff_h = decompressed;
 
 						// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
-						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(isyntax_level, tile_x_in_chunk, tile_y_in_chunk);
+						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x_in_chunk, tile_y_in_chunk);
 					}
 
 					// Move to the next color channel in the chunk of codeblocks
@@ -364,35 +358,14 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 			}
 		}
 		// Now do the inverse wavelet transforms
-		tile_index = 0;
-		for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-			for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-				isyntax_tile_t* tile = isyntax_level->tiles + tile_index;
-				if (!tile->exists) continue;
-				void* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
-				submit_tile_completed(tile_pixels, scale, tile_index, tile_width, tile_height);
-			}
-		}
-		// TODO: free next level coefficients
+		tiles_loaded += isyntax_load_all_tiles_in_level(isyntax, wsi, scale, true);
 	}
 
-	// TODO: more graceful multithreading
-/*	for (i32 tile_y = 0; tile_y < isyntax_level->height_in_tiles; ++tile_y) {
-		for (i32 tile_x = 0; tile_x < isyntax_level->width_in_tiles; ++tile_x, ++tile_index) {
-			isyntax_level_t* level = wsi_image->levels + scale;
-			tile_t* tile = level->tiles + tile_index;
-			for (i32 color = 0; color < 3; ++color) {
-				tile_channel_t* color_channel = tile->color_channels + color;
-				while (color_channel->coeff_ll == NULL) {
-					do_worker_work(&global_work_queue, 0);
-				}
-			}
-		}
-	}*/
+	console_print("   iSyntax: loading the first %d tiles took %g seconds\n", tiles_loaded, get_seconds_elapsed(start_first_load, get_clock()));
 
 	end_temp_memory(&temp_memory);
 
-	wsi_image->first_load_complete = true;
+	wsi->first_load_complete = true;
 
 }
 
@@ -460,17 +433,24 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 		i32 lowest_visible_scale = ATLEAST(tile_streamer->zoom.level, 0);
 		lowest_visible_scale = ATMOST(highest_visible_scale, lowest_visible_scale);
 
-		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
-			isyntax_level_t* level = wsi_image->levels + scale;
+		// For iSyntax, look at the current visible scale and determine prerequisites from there
+		i32 scale = lowest_visible_scale;
+		isyntax_level_t* level = wsi_image->levels + scale;
 
 
-			bounds2i level_tiles_bounds = {{ 0, 0, (i32)level->width_in_tiles, (i32)level->height_in_tiles }};
+		bounds2i level_tiles_bounds = {{ 0, 0, (i32)level->width_in_tiles, (i32)level->height_in_tiles }};
 
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds, level->x_tile_side_in_um,
-			                                                     level->y_tile_side_in_um, tile_streamer->origin_offset);
-			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
+		bounds2i visible_tiles = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds, level->x_tile_side_in_um,
+		                                                     level->y_tile_side_in_um, tile_streamer->origin_offset);
+		visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
+		if (tile_streamer->is_cropped) {
+			bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds,
+			                                                        level->x_tile_side_in_um,
+			                                                        level->y_tile_side_in_um, tile_streamer->origin_offset);
+			visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
 		}
+
 	}
 
 

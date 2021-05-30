@@ -169,6 +169,8 @@ typedef struct isyntax_tile_t {
 	icoeff_t* coeff_h[3];
 	isyntax_tile_channel_t color_channels[3];
 	bool exists;
+	bool has_ll;
+	bool is_loaded;
 } isyntax_tile_t;
 
 typedef struct isyntax_level_t {
@@ -182,6 +184,7 @@ typedef struct isyntax_level_t {
 	float y_tile_side_in_um;
 	u64 tile_count;
 	isyntax_tile_t* tiles;
+	bool is_fully_loaded;
 } isyntax_level_t;
 
 typedef struct isyntax_image_t {
@@ -266,6 +269,7 @@ typedef struct isyntax_t {
 	i32 tile_height;
 	icoeff_t* black_dummy_coeff;
 	icoeff_t* white_dummy_coeff;
+	float loading_time;
 } isyntax_t;
 
 // function prototypes

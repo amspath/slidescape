@@ -302,6 +302,8 @@ typedef struct tile_streamer_t {
 	image_t* image;
 	v2f origin_offset;
 	bounds2f camera_bounds;
+	bounds2f crop_bounds;
+	bool is_cropped;
 	zoom_state_t zoom;
 } tile_streamer_t;
 
