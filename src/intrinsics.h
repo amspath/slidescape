@@ -60,7 +60,7 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 
 static inline u32 bit_scan_forward(u32 x) {
 	unsigned long first_bit = 0;
-	_BitScanForward(&first_bit, hit_mask);
+	_BitScanForward(&first_bit, x);
 	return (u32) first_bit;
 }
 

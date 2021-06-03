@@ -1256,12 +1256,8 @@ DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
-	// TODO: Can call init_thread_memory() here?
-	// Allocate a private memory buffer
-	u64 thread_memory_size = MEGABYTES(16);
-	thread_local_storage[thread_info->logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
-	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[thread_info->logical_thread_index];
-	memset(thread_memory, 0, sizeof(thread_memory_t));
+	init_thread_memory(thread_info->logical_thread_index);
+	thread_memory_t* thread_memory = global_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
 		thread_memory->async_io_events[i] = CreateEventA(NULL, TRUE, FALSE, NULL);
@@ -1269,12 +1265,6 @@ DWORD WINAPI thread_proc(void* parameter) {
 			win32_diagnostic("CreateEvent");
 		}
 	}
-
-	thread_memory->thread_memory_raw_size = thread_memory_size;
-
-	thread_memory->aligned_rest_of_thread_memory = (void*)
-			((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
-	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
 #if USE_MULTIPLE_OPENGL_CONTEXTS

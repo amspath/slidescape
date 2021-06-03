@@ -209,7 +209,7 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 
 #if WINDOWS
 				// TODO: 64 bit read offsets?
-				win32_overlapped_read(thread_info, isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
+				win32_overlapped_read(global_thread_memory, isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
 #else
 				size_t bytes_read = pread(isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
 #endif
@@ -379,7 +379,6 @@ typedef struct isyntax_load_tile_task_t {
 } isyntax_load_tile_task_t;
 
 void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
-	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
 	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) userdata;
 	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
 	submit_tile_completed(tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
@@ -405,7 +404,7 @@ typedef struct isyntax_first_load_task_t {
 } isyntax_first_load_task_t;
 
 void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
-	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
+	thread_memory_t* thread_memory = global_thread_memory;
 	init_arena(&thread_memory->temp_arena, thread_memory->thread_memory_usable_size, thread_memory->aligned_rest_of_thread_memory);
 
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) userdata;

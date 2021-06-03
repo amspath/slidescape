@@ -1984,8 +1984,8 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 
 		}
 
-		// Reshuffle snake-order
 		if (bit > 0) {
+			// Reshuffle snake-order
 			i32 area_stride_x = block_width / 4;
 			for (i32 area4x4_index = 0; area4x4_index < ((block_width * block_height) / 16); ++area4x4_index) {
 				i32 area_base_index = area4x4_index * 16;
@@ -2003,6 +2003,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 				*(u64*)(current_final_coeff_buffer + (area_y+3) * block_width + area_x) = area_y3;
 			}
 
+			// Convert signed magnitude to twos complement (ex. 0x8002 becomes -2)
 			signed_magnitude_to_twos_complement_16_block(current_final_coeff_buffer, block_width * block_height);
 		}
 

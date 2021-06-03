@@ -311,16 +311,11 @@ i64 async_read_finalize(io_operation_t* op) {
 void init_thread_memory(i32 logical_thread_index) {
 	// Allocate a private memory buffer
 	u64 thread_memory_size = MEGABYTES(16);
-	thread_local_storage[logical_thread_index] = platform_alloc(thread_memory_size); // how much actually needed?
-	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
+	global_thread_memory = (thread_memory_t*) platform_alloc(thread_memory_size); // how much actually needed?
+	thread_memory_t* thread_memory = global_thread_memory;
 	memset(thread_memory, 0, sizeof(thread_memory_t));
-#if WINDOWS
-	thread_memory->async_io_event = CreateEventA(NULL, TRUE, FALSE, NULL);
-	if (!thread_memory->async_io_event) {
-		win32_diagnostic("CreateEvent");
-	}
-#else
-	// TODO: implement this
+#if !WINDOWS
+	// TODO: implement creation of async I/O events
 #endif
 	thread_memory->thread_memory_raw_size = thread_memory_size;
 

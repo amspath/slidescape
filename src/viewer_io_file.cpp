@@ -87,7 +87,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
-	thread_memory_t* thread_memory = (thread_memory_t*) thread_local_storage[logical_thread_index];
+	thread_memory_t* thread_memory = global_thread_memory;
 	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 	u8* temp_memory = (u8*)malloc(pixel_memory_size);//(u8*) thread_memory->aligned_rest_of_thread_memory;
 	memset(temp_memory, 0xFF, pixel_memory_size);
@@ -148,7 +148,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			free(read_buffer);
 		} else {
 #if WINDOWS
-			win32_overlapped_read(thread_memory, tiff->ile_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
+			win32_overlapped_read(thread_memory, tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #else
 			size_t bytes_read = pread(tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #endif

@@ -100,6 +100,12 @@
 #include <stdlib.h>
 #include <math.h>
 
+#ifndef __cplusplus
+#ifndef thread_local
+#define thread_local _Thread_local
+#endif
+#endif
+
 #if LINUX
 #include <fcntl.h>
 #endif
