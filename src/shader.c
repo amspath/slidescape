@@ -63,7 +63,7 @@ void write_stringified_shaders() {
 		// Adapted from bin2c:
 		// https://github.com/gwilymk/bin2c
 
-		fprintf(f_output, "const char stringified_shader_source__%s[%i] = \n\t", name, source_len + 1);
+		fprintf(f_output, "const char stringified_shader_source__%s[] = \n\t", name);
 		bool is_line_start = true;
 		for (i32 i = 0; i < source_len + 1; ++i) {
 			if (is_line_start) {
