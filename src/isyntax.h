@@ -34,6 +34,21 @@ typedef i16 icoeff_t;
 typedef i32 icoeff_t;
 #endif
 
+#define ISYNTAX_IDWT_PAD_L 3
+#define ISYNTAX_IDWT_PAD_R 5
+#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 5
+
+#define ISYNTAX_ADJ_TILE_TOP_LEFT 0x100
+#define ISYNTAX_ADJ_TILE_TOP_CENTER 0x80
+#define ISYNTAX_ADJ_TILE_TOP_RIGHT 0x40
+#define ISYNTAX_ADJ_TILE_CENTER_LEFT 0x20
+#define ISYNTAX_ADJ_TILE_CENTER 0x10
+#define ISYNTAX_ADJ_TILE_CENTER_RIGHT 8
+#define ISYNTAX_ADJ_TILE_BOTTOM_LEFT 4
+#define ISYNTAX_ADJ_TILE_BOTTOM_CENTER 2
+#define ISYNTAX_ADJ_TILE_BOTTOM_RIGHT 1
+
+
 enum isyntax_image_type_enum {
 	ISYNTAX_IMAGE_TYPE_NONE = 0,
 	ISYNTAX_IMAGE_TYPE_MACROIMAGE = 1,
@@ -72,6 +87,7 @@ enum isyntax_data_object_flag_enum {
 	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor = 0x100,
 	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel = 0x200,
 };
+
 
 #pragma pack(push, 1)
 typedef struct dicom_tag_header_t {
@@ -156,8 +172,17 @@ typedef struct isyntax_codeblock_t {
 	icoeff_t* transformed;
 } isyntax_codeblock_t;
 
+typedef struct isyntax_data_chunk_t {
+//	size_t size;
+	i64 offset;
+	i32 top_codeblock_index;
+	i32 codeblock_count_per_color;
+	i32 scale;
+	i32 level_count;
+	u8* data;
+} isyntax_data_chunk_t;
+
 typedef struct isyntax_tile_channel_t {
-	icoeff_t* transformed_ll;
 	icoeff_t* coeff_h;
 	icoeff_t* coeff_ll;
 	u32 neighbors_loaded;
@@ -166,10 +191,11 @@ typedef struct isyntax_tile_channel_t {
 typedef struct isyntax_tile_t {
 	u32 codeblock_index;
 	u32 codeblock_chunk_index;
-	icoeff_t* coeff_h[3];
+	u32 data_chunk_index;
 	isyntax_tile_channel_t color_channels[3];
 	bool exists;
 	bool has_ll;
+	bool has_h;
 	bool is_loaded;
 } isyntax_tile_t;
 
@@ -205,6 +231,8 @@ typedef struct isyntax_image_t {
 	size_t block_header_size;
 	i32 codeblock_count;
 	isyntax_codeblock_t* codeblocks;
+	i32 data_chunk_count;
+	isyntax_data_chunk_t* data_chunks;
 	bool header_codeblocks_are_partial;
 	bool first_load_complete;
 	bool first_load_in_progress;

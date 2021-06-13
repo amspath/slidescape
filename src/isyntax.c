@@ -1070,31 +1070,63 @@ static inline void get_offsetted_coeff_blocks(icoeff_t** ll_hl_lh_hh, i32 offset
 
 }
 
-#define ADJ_TILE_TOP_LEFT 0x100
-#define ADJ_TILE_TOP_CENTER 0x80
-#define ADJ_TILE_TOP_RIGHT 0x40
-#define ADJ_TILE_CENTER_LEFT 0x20
-#define ADJ_TILE_CENTER 0x10
-#define ADJ_TILE_CENTER_RIGHT 8
-#define ADJ_TILE_BOTTOM_LEFT 4
-#define ADJ_TILE_BOTTOM_CENTER 2
-#define ADJ_TILE_BOTTOM_RIGHT 1
 
-#define ISYNTAX_IDWT_PAD_L 3
-#define ISYNTAX_IDWT_PAD_R 5
-#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 5
 
 u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
+	ASSERT(tile_x >= 0 && tile_y >= 0);
+	ASSERT(tile_x < level->width_in_tiles && tile_y < level->height_in_tiles);
 	// 9 bits, corresponding to the surrounding tiles:
 	// 0x100 | 0x80 | 0x40
 	// 0x20  | 0x10 | 8
 	// 4     | 2    | 1
 	u32 adj_tiles = 0x1FF; // all bits set
-	if (tile_y == 0)                        adj_tiles &= ~(ADJ_TILE_TOP_LEFT | ADJ_TILE_TOP_CENTER | ADJ_TILE_TOP_RIGHT);
-	if (tile_y == level->height_in_tiles-1) adj_tiles &= ~(ADJ_TILE_BOTTOM_LEFT | ADJ_TILE_BOTTOM_CENTER | ADJ_TILE_BOTTOM_RIGHT);
-	if (tile_x == 0)                        adj_tiles &= ~(ADJ_TILE_TOP_LEFT | ADJ_TILE_CENTER_LEFT | ADJ_TILE_BOTTOM_LEFT);
-	if (tile_x == level->width_in_tiles-1)  adj_tiles &= ~(ADJ_TILE_TOP_RIGHT | ADJ_TILE_CENTER_RIGHT | ADJ_TILE_BOTTOM_RIGHT);
+	if (tile_y == 0)                        adj_tiles &= ~(ISYNTAX_ADJ_TILE_TOP_LEFT | ISYNTAX_ADJ_TILE_TOP_CENTER | ISYNTAX_ADJ_TILE_TOP_RIGHT);
+	if (tile_y == level->height_in_tiles-1) adj_tiles &= ~(ISYNTAX_ADJ_TILE_BOTTOM_LEFT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER | ISYNTAX_ADJ_TILE_BOTTOM_RIGHT);
+	if (tile_x == 0)                        adj_tiles &= ~(ISYNTAX_ADJ_TILE_TOP_LEFT | ISYNTAX_ADJ_TILE_CENTER_LEFT | ISYNTAX_ADJ_TILE_BOTTOM_LEFT);
+	if (tile_x == level->width_in_tiles-1)  adj_tiles &= ~(ISYNTAX_ADJ_TILE_TOP_RIGHT | ISYNTAX_ADJ_TILE_CENTER_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_RIGHT);
 	return adj_tiles;
+}
+
+u32 isyntax_get_adjacent_tiles_mask_with_missing_ll_coeff(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
+	u32 adjacent = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
+	u32 mask = 0;
+	if (adjacent & ISYNTAX_ADJ_TILE_TOP_LEFT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_TOP_CENTER) {
+		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_CENTER) {
+		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_CENTER;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
+		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
+		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+	}
+	return mask;
 }
 
 icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color) {
@@ -1159,7 +1191,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 		// LH | HH
 
 		// top left corner
-		if (adj_tiles & ADJ_TILE_TOP_LEFT) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_LEFT) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride) + left_margin_source_x,
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1176,7 +1208,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// top center
-		if (adj_tiles & ADJ_TILE_TOP_CENTER) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_CENTER) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + tile_x;
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1192,7 +1224,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// top right corner
-		if (adj_tiles & ADJ_TILE_TOP_RIGHT) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1208,7 +1240,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// center left
-		if (adj_tiles & ADJ_TILE_CENTER_LEFT) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1224,7 +1256,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// center (main tile)
-		if (adj_tiles & ADJ_TILE_CENTER) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER) {
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 			                           channel, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1239,7 +1271,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// center right
-		if (adj_tiles & ADJ_TILE_CENTER_RIGHT) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1255,7 +1287,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// bottom left corner
-		if (adj_tiles & ADJ_TILE_BOTTOM_LEFT) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1271,7 +1303,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// bottom center
-		if (adj_tiles & ADJ_TILE_BOTTOM_CENTER) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + tile_x;
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -1287,7 +1319,7 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 
 		}
 		// bottom right corner
-		if (adj_tiles & ADJ_TILE_BOTTOM_RIGHT) {
+		if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
 			isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 			                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
@@ -2312,7 +2344,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 #if 0
 							// Debug test:
 							// Decompress codeblocks in the seektable.
-							if (1 || i == wsi_image->codeblock_count-1) {
+							if (1 || i == wsi_image->codeblock_count_per_color-1) {
 								// Only parse 'non-empty'/'background' codeblocks
 								if (codeblock->block_size > 8 /*&& codeblock->block_data_offset == 129572464*/) {
 									debug_read_codeblock_from_file(codeblock, fp);
@@ -2343,7 +2375,19 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						test_output_block_header(wsi_image);
 #endif
 
-						// Create tables for spatial lookup of codeblock from tile coordinates
+						// Allocate enough space for the maximum number of codeblock 'chunks' we can expect
+						// (the actual number of chunks may be lower, because some tiles might not exist)
+						i32 max_possible_chunk_count = 0;
+						for (i32 scale = 0; scale <= wsi_image->max_scale; ++scale) {
+							if ((scale + 1) % 3 == 0 || scale == wsi_image->max_scale) {
+								isyntax_level_t* level = wsi_image->levels + scale;
+								max_possible_chunk_count += level->tile_count;
+							}
+						}
+						wsi_image->data_chunks = (isyntax_data_chunk_t*) calloc(1, max_possible_chunk_count * sizeof(isyntax_data_chunk_t));
+
+
+						// Create tables for spatial lookup of codeblocks and codeblock chunks from tile coordinates
 						for (i32 i = 0; i < wsi_image->level_count; ++i) {
 							isyntax_level_t* level = wsi_image->levels + i;
 							// NOTE: Tile entry with codeblock_index == 0 will mean there is no codeblock for this tile (empty/background)
@@ -2351,6 +2395,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						}
 						i32 current_chunk_codeblock_index = 0;
 						i32 next_chunk_codeblock_index = 0;
+						i32 data_chunk_index = 0;
 						for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
 							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
 							if (codeblock->color_component != 0) {
@@ -2361,14 +2406,23 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							}
 							// Keep track of where we are in the 'chunk' of codeblocks
 							if (i == next_chunk_codeblock_index) {
-								i32 chunk_codeblock_count;
+								// This codeblock is the top of a new chunk
+								i32 chunk_codeblock_count_per_color;
 								if (codeblock->scale == wsi_image->max_scale) {
-									chunk_codeblock_count = isyntax_get_chunk_codeblocks_per_color_for_level(codeblock->scale, true) * 3;
+									chunk_codeblock_count_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(codeblock->scale, true);
 								} else {
-									chunk_codeblock_count = 21*3;
+									chunk_codeblock_count_per_color = 21;
 								}
 								current_chunk_codeblock_index = i;
-								next_chunk_codeblock_index = i + chunk_codeblock_count;
+								next_chunk_codeblock_index = i + (chunk_codeblock_count_per_color * 3);
+
+								isyntax_data_chunk_t* chunk = wsi_image->data_chunks + data_chunk_index;
+								chunk->offset = codeblock->block_data_offset;
+								chunk->top_codeblock_index = current_chunk_codeblock_index;
+								chunk->codeblock_count_per_color = chunk_codeblock_count_per_color;
+								chunk->scale = codeblock->scale;
+								++wsi_image->data_chunk_count;
+								++data_chunk_index;
 							}
 							isyntax_level_t* level = wsi_image->levels + codeblock->scale;
 							i32 tile_index = codeblock->block_y * level->width_in_tiles + codeblock->block_x;
@@ -2376,6 +2430,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							level->tiles[tile_index].exists = true;
 							level->tiles[tile_index].codeblock_index = i;
 							level->tiles[tile_index].codeblock_chunk_index = current_chunk_codeblock_index;
+							level->tiles[tile_index].data_chunk_index = data_chunk_index;
 
 						}
 
@@ -2434,6 +2489,10 @@ void isyntax_destroy(isyntax_t* isyntax) {
 			if (isyntax_image->codeblocks) {
 				free(isyntax_image->codeblocks);
 				isyntax_image->codeblocks = NULL;
+			}
+			if (isyntax_image->data_chunks) {
+				free(isyntax_image->data_chunks);
+				isyntax_image->data_chunks = NULL;
 			}
 			for (i32 i = 0; i < isyntax_image->level_count; ++i) {
 				isyntax_level_t* level = isyntax_image->levels + i;
