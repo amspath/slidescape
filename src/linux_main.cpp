@@ -299,7 +299,11 @@ int main(int argc, const char** argv)
     char* version_string = (char*)glGetString(GL_VERSION);
     console_print("OpenGL supported version: %s\n", version_string);
 
-    is_vsync_enabled = 0;
+    if (is_macos) {
+	    is_vsync_enabled = 1; // prevent stutter (?)
+    } else {
+    	is_vsync_enabled = 0;
+    }
     SDL_GL_SetSwapInterval(is_vsync_enabled); // Enable vsync
 
     // Initialize OpenGL loader
