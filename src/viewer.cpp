@@ -705,6 +705,15 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				wsi->first_load_in_progress = true;
 				isyntax_begin_first_load(isyntax, wsi);
+			} else if (wsi->first_load_complete) {
+				tile_streamer_t tile_streamer = {};
+				tile_streamer.image = image;
+				tile_streamer.origin_offset = image->origin_offset; // TODO: superfluous?
+				tile_streamer.camera_bounds = scene->camera_bounds;
+				tile_streamer.crop_bounds = scene->crop_bounds;
+				tile_streamer.is_cropped = scene->is_cropped;
+				tile_streamer.zoom = scene->zoom;
+				isyntax_stream_image_tiles(&tile_streamer, isyntax);
 			}
 		} else {
 

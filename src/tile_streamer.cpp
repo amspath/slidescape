@@ -431,8 +431,7 @@ typedef struct isyntax_load_region_t {
 	isyntax_tile_req_t* tile_req;
 } isyntax_load_region_t;
 
-
-void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
+void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
 
 	isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
 
@@ -455,7 +454,7 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 			}
 		}
 
-		i32 scales_to_load_count = highest_scale_to_load - lowest_visible_scale;
+		i32 scales_to_load_count = (highest_scale_to_load+1) - lowest_visible_scale;
 		if (scales_to_load_count <= 0) {
 			return;
 		}
@@ -498,7 +497,7 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 			i32 local_bounds_width = padded_bounds.max.x - padded_bounds.min.x;
 			i32 local_bounds_height = padded_bounds.max.y - padded_bounds.min.y;
 
-			size_t tiles_to_load_size = (local_bounds_width) * (local_bounds_height) * sizeof(u32);
+			size_t tiles_to_load_size = (local_bounds_width) * (local_bounds_height) * sizeof(isyntax_tile_req_t);
 			isyntax_tile_req_t* tile_req = (isyntax_tile_req_t*)alloca(tiles_to_load_size);
 			memset(tile_req, 0, tiles_to_load_size);
 
@@ -520,7 +519,7 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 
 						u32 adjacent = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
 
-						if (tile_x >= visible_tiles.min.x && tile_y >= visible_tiles.min.x &&
+						if (tile_x >= visible_tiles.min.x && tile_y >= visible_tiles.min.y &&
 						    tile_x < visible_tiles.max.x && tile_y < visible_tiles.max.y)
 						{
 							tile_req[local_tile_index].want_load = true;
@@ -746,6 +745,7 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 		}
 
 		// Now try to reconstruct the tiles
+		// Decompress tiles
 		scale_to_load_index = 0;
 		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
 			isyntax_level_t* level = wsi_image->levels + scale;
@@ -763,14 +763,14 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 						isyntax_data_chunk_t* chunk = wsi_image->data_chunks + tile->data_chunk_index;
 						if (chunk->data) {
 							i32 scale_in_chunk = chunk->scale - scale;
-							ASSERT(scale >= 0 && scale < 3);
-							i32 codeblock_index_in_chunk;
+							ASSERT(scale_in_chunk >= 0 && scale_in_chunk < 3);
+							i32 codeblock_index_in_chunk = 0;
 							if (scale_in_chunk == 0) {
 								codeblock_index_in_chunk = 0;
 							} else if (scale_in_chunk == 1) {
-								codeblock_index_in_chunk = (tile_y % 2) * 2 + (tile_x % 2);
+								codeblock_index_in_chunk = 1 + (tile_y % 2) * 2 + (tile_x % 2);
 							} else if (scale_in_chunk == 2) {
-								codeblock_index_in_chunk = (tile_y % 4) * 4 + (tile_x % 4);
+								codeblock_index_in_chunk = 5 + (tile_y % 4) * 4 + (tile_x % 4);
 							} else {
 								panic();
 							}
@@ -799,10 +799,93 @@ void isyntax_stream_image_tiles(arena_t* temp_arena, tile_streamer_t* tile_strea
 
 		}
 
+		scale_to_load_index = 0;
+		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
+			isyntax_level_t *level = wsi_image->levels + scale;
+			isyntax_load_region_t *region = regions + scale_to_load_index;
+
+			for (i32 tile_y = region->visible_bounds.min.y; tile_y < region->visible_bounds.max.y; ++tile_y) {
+				for (i32 tile_x = region->visible_bounds.min.x; tile_x < region->visible_bounds.max.x; ++tile_x) {
+					i32 tile_index = tile_y * level->width_in_tiles + tile_x;
+					isyntax_tile_t* tile = level->tiles + tile_index;
+					i32 local_tile_x = tile_x - region->padded_bounds.min.x;
+					i32 local_tile_y = tile_y - region->padded_bounds.min.y;
+					i32 local_tile_index = local_tile_y * region->width_in_tiles + local_tile_x;
+					isyntax_tile_req_t* req = region->tile_req + local_tile_index;
+
+					if (!req->want_load) {
+						continue; // This tile does not need to be loaded (probably because it has already been loaded)
+					}
+
+					// TODO: move this check to isyntax_load_tile()?
+					u32 adj_tiles = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
+					// Check if all prerequisites have been met, for the surrounding tiles as well
+					if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_LEFT) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_CENTER) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + tile_x;
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + tile_x;
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+					if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
+						isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
+						if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+							continue;
+						}
+					}
+
+					// All the prerequisites have been met, we should be able to load this tile
+					u32* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
+					if (tile_pixels) {
+//						console_print("loaded scale=%d tile x=%d y=%d\n", scale, tile_x, tile_y);
+						submit_tile_completed(tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
+					}
 
 
-
-
+				}
+			}
+		}
 	}
 
 
@@ -838,33 +921,10 @@ void stream_image_tiles(thread_memory_t* thread_memory) {
 				} break;
 
 				case IMAGE_BACKEND_ISYNTAX: {
-					isyntax_stream_image_tiles(&thread_memory->temp_arena, &tile_streamer, &image->isyntax.isyntax);
+					isyntax_stream_image_tiles(&tile_streamer, &image->isyntax.isyntax);
 				} break;
 
 			}
-		}
-	}
-}
-
-
-void isyntax_idwt_tile(isyntax_t* isyntax, i32 scale, i32 tile_x, i32 tile_y) {
-	isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
-	if (scale == wsi_image->max_scale) {
-		//
-	}
-	isyntax_level_t* level = wsi_image->levels + scale;
-}
-
-
-void isyntax_load_top_level_tiles(isyntax_t* isyntax) {
-	isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
-	ASSERT(wsi_image->image_type == ISYNTAX_IMAGE_TYPE_WSI);
-	isyntax_level_t* top_level = wsi_image->levels + wsi_image->max_scale;
-	i32 tile_index = 0;
-	for (i32 tile_y = 0; tile_y < top_level->height_in_tiles; ++tile_y) {
-		for (i32 tile_x = 0; tile_x < top_level->width_in_tiles; ++tile_x, ++tile_index) {
-			isyntax_tile_t* tile = top_level->tiles + tile_index;
-			
 		}
 	}
 }

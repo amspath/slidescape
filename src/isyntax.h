@@ -34,9 +34,9 @@ typedef i16 icoeff_t;
 typedef i32 icoeff_t;
 #endif
 
-#define ISYNTAX_IDWT_PAD_L 3
-#define ISYNTAX_IDWT_PAD_R 5
-#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 5
+#define ISYNTAX_IDWT_PAD_L 4
+#define ISYNTAX_IDWT_PAD_R 4
+#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 7
 
 #define ISYNTAX_ADJ_TILE_TOP_LEFT 0x100
 #define ISYNTAX_ADJ_TILE_TOP_CENTER 0x80
