@@ -253,71 +253,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
 	} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 //		console_print_error("thread %d: tile level %d, tile %d (%d, %d): TYRING\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-
-		isyntax_t* isyntax = &image->isyntax.isyntax;
-		isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
-		isyntax_level_t* isyntax_level = wsi_image->levels + level;
-		isyntax_tile_t isyntax_tile = isyntax_level->tiles[tile_index];
-
-		if (isyntax_tile.codeblock_index == 0) {
-			console_print_error("thread %d: tile level %d, tile %d (%d, %d): tile doesn't exist\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-			failed = true;
-		} else {
-			isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index;
-
-			if (level == wsi_image->max_scale) {
-				i32 codeblocks_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(level, true); // 1 + 4 + 16 (for scale n, n-1, n-2) + 1 (LL block)
-				i32 chunk_codeblock_count = codeblocks_per_color * 3;
-
-				u64 offset0 = wsi_image->codeblocks[isyntax_tile.codeblock_chunk_index].block_data_offset;
-				isyntax_codeblock_t* last_codeblock = wsi_image->codeblocks + isyntax_tile.codeblock_chunk_index + chunk_codeblock_count - 1;
-				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
-				u64 read_size = offset1 - offset0;
-				console_print_verbose("thread %d: tile level %d, tile %d (%d, %d): chunk read size is %d\n", logical_thread_index, level, tile_index, tile_x, tile_y, read_size);
-				u8* chunk = compressed_tile_data;
-
-#if WINDOWS
-				// TODO: 64 bit read offsets?
-				win32_overlapped_read(thread_memory, isyntax->file_handle, chunk, read_size, offset0);
-#else
-				size_t bytes_read = pread(isyntax->file_handle, chunk, read_size, offset0);
-#endif
-
-				isyntax_codeblock_t* h_blocks[3];
-				isyntax_codeblock_t* ll_blocks[3];
-				i32 h_block_indices[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
-				i32 ll_block_indices[3] = {codeblocks_per_color - 1, 2 * codeblocks_per_color - 1, 3 * codeblocks_per_color - 1};
-				for (i32 i = 0; i < 3; ++i) {
-					h_blocks[i] = top_chunk_codeblock + h_block_indices[i];
-					ll_blocks[i] = top_chunk_codeblock + ll_block_indices[i];
-				}
-				for (i32 i = 0; i < 3; ++i) {
-					isyntax_codeblock_t* h_block =  h_blocks[i];
-					isyntax_codeblock_t* ll_block = ll_blocks[i];
-					isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, chunk, offset0);
-					isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, chunk, offset0);
-					h_block->transformed = isyntax_idwt_tile(ll_block->decoded, h_block->decoded,
-					                                         isyntax->block_width, isyntax->block_height, true, i);
-				}
-				// TODO: recombine colors
-				u32 tile_width = isyntax->block_width * 2;
-				u32 tile_height = isyntax->block_height * 2;
-				icoeff_t* Y_coefficients = h_blocks[0]->transformed;
-				icoeff_t* Co_coefficients = h_blocks[1]->transformed;
-				icoeff_t* Cg_coefficients = h_blocks[2]->transformed;
-				isyntax_wavelet_coefficients_to_bgr_tile((rgba_t*)temp_memory, Y_coefficients, Co_coefficients, Cg_coefficients, tile_width * tile_height);
-			} else {
-				i32 codeblocks_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(level, false);
-				i32 chunk_codeblock_count = codeblocks_per_color * 3;
-
-				// We will need access to the central codeblock for this tile, but we will also need the surrounding codeblocks for padding/run-in.
-				// LL block: retrieve from higher DWT level
-
-
-				console_print_error("thread %d: tile level %d, tile %d (%d, %d): recursive inverse DWT not implemented\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-				failed = true;
-			}
-		}
+		ASSERT(!"invalid code path");
 
 
 

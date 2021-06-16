@@ -478,11 +478,11 @@ void isyntax_parser_init(isyntax_t* isyntax) {
 	parser->contentbuf_capacity = MEGABYTES(8);
 
 	parser->current_element_name = "";
-	parser->attrbuf = malloc(parser->attrbuf_capacity); // TODO: free
+	parser->attrbuf = malloc(parser->attrbuf_capacity);
 	parser->attrbuf_end = parser->attrbuf + parser->attrbuf_capacity;
 	parser->attrcur = NULL;
 	parser->attrlen = 0;
-	parser->contentbuf = malloc(parser->contentbuf_capacity); // TODO: free
+	parser->contentbuf = malloc(parser->contentbuf_capacity);
 	parser->contentcur = NULL;
 	parser->contentlen = 0;
 
@@ -540,8 +540,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 	x = parser->x;
 
 	if (0) { failed: cleanup:
-		if (x) {
-			free(x);
+		if (parser->x) {
+			free(parser->x);
 			parser->x = NULL;
 		}
 		if (parser->attrbuf) {
@@ -1576,11 +1576,11 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 b
 // The above pattern repeats for the other 2 color channels (1 and 2).
 // The LL codeblock is only present at the highest scales.
 
-void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset) {
+icoeff_t* isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
-	codeblock->data = chunk + offset_in_chunk;
-	codeblock->decoded = isyntax_hulsken_decompress(codeblock, block_width, block_height, 1);
+	return isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
+													block_width, block_height, codeblock->coefficient, 1);
 }
 
 
@@ -1632,7 +1632,9 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, i32 compressor_version) {
+i16 *
+isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient,
+                           i32 compressor_version) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
 	// Read the header information stored in the codeblock.
@@ -1652,22 +1654,22 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 	// After the header section, the rest of the codeblock contains a Huffman tree, followed by a Huffman-coded
 	// message of 8-bit Huffman symbols, interspersed with 'zero run' symbols (for run-length encoding of zeroes).
 
-	i32 coeff_count = (codeblock->coefficient == 1) ? 3 : 1;
+	i32 coeff_count = (coefficient == 1) ? 3 : 1;
 	i32 coeff_bit_depth = 16; // fixed value for iSyntax
 
 	// Early out if dummy/empty block
-	if (codeblock->block_size <= 8) {
+	if (compressed_size <= 8) {
 		size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
 		i16* coeff_buffer = (i16*)calloc(1, coeff_buffer_size);
 		return coeff_buffer;
 	}
 
 	i32 bits_read = 0;
-	i32 block_size_in_bits = codeblock->block_size * 8;
+	i32 block_size_in_bits = compressed_size * 8;
 	i64 serialized_length = 0; // In v1: stored in the first 4 bytes. In v2: derived calculation.
 	u32 bitmasks[3] = { 0x000FFFF, 0x000FFFF, 0x000FFFF }; // default in v1: all ones, can be overridden later
 	i32 total_mask_bits = coeff_bit_depth * coeff_count;
-	u8* byte_pos = codeblock->data;
+	u8* byte_pos = compressed;
 	if (compressor_version == 1) {
 		serialized_length = *(u32*)byte_pos;
 		byte_pos += 4;
@@ -1701,7 +1703,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 		u32* bitplane_offsets = alloca(stored_bit_plane_count * sizeof(u32));
 		i32 bitplane_ptr_bits = (i32)(log2f(serialized_length)) + 5;
 		for (i32 i = 0; i < stored_bit_plane_count; ++i) {
-			bitplane_offsets[i] = bitstream_lsb_read_advance(codeblock->data, &bits_read, bitplane_ptr_bits);
+			bitplane_offsets[i] = bitstream_lsb_read_advance(compressed, &bits_read, bitplane_ptr_bits);
 		}
 	}
 
@@ -1720,7 +1722,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 			// The bitstream is organized least significant bit first (treat as one giant little-endian integer).
 			// To read bits in the stream, look at the lowest bit positions. To advance the stream, shift right.
 			i32 bits_to_advance = 1;
-			u64 blob = bitstream_lsb_read(codeblock->data, bits_read); // gives back between 57 and 64 bits.
+			u64 blob = bitstream_lsb_read(compressed, bits_read); // gives back between 57 and 64 bits.
 
 			// 'Descend' into the tree until we hit a leaf node.
 			bool is_leaf = blob & 1;
@@ -1799,7 +1801,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 		}
 		i32 symbol = 0;
 		i32 code_size = 1;
-		u64 blob = bitstream_lsb_read(codeblock->data, bits_read);
+		u64 blob = bitstream_lsb_read(compressed, bits_read);
 		u32 fast_index = blob & fast_mask;
 		u16 c = huffman.fast[fast_index];
 		if (c <= 255) {
@@ -1880,7 +1882,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 				u32 total_zero_counter_size = zero_counter_size;
 				for(;;) {
 					// Peek ahead in the bitstream, grab any additional zero run symbols, and recalculate numzeroes.
-					blob = bitstream_lsb_read(codeblock->data, bits_read);
+					blob = bitstream_lsb_read(compressed, bits_read);
 					u8 next_code = (blob & zerorun_code_mask);
 					if (next_code == zerorun_code) {
 						// The zero run continues
@@ -1915,10 +1917,9 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 
 	if (serialized_length != decompressed_length) {
 		ASSERT(!"size mismatch");
-		console_print("iSyntax: size mismatch in block %d (size=%d): expected %d observed %d\n",
-				codeblock->block_data_offset, codeblock->block_size, serialized_length, decompressed_length);
+		console_print("iSyntax: decompressed size mismatch (size=%d): expected %d observed %d\n",
+				 compressed_size, serialized_length, decompressed_length);
 	}
-	codeblock->decompressed_size = decompressed_length;
 
 	i32 bytes_per_bitplane = (block_width * block_height) / 8;
 	if (compressor_version == 1) {
@@ -2048,6 +2049,7 @@ i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width,
 
 }
 
+#if 0
 void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 	if (fp && !codeblock->data) {
 		codeblock->data = calloc(1, codeblock->block_size + 8); // TODO: pool allocator
@@ -2065,6 +2067,7 @@ void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 #endif
 	}
 }
+#endif
 
 static inline i32 get_first_valid_coef_pixel(i32 scale) {
 	i32 result = (PER_LEVEL_PADDING << scale) - (PER_LEVEL_PADDING - 1);
@@ -2368,6 +2371,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 #endif
 
 						}
+						free(seektable);
+						seektable = NULL;
 #if 0
 						test_output_block_header(wsi_image);
 #endif
@@ -2496,6 +2501,14 @@ void isyntax_destroy(isyntax_t* isyntax) {
 			for (i32 i = 0; i < isyntax_image->level_count; ++i) {
 				isyntax_level_t* level = isyntax_image->levels + i;
 				if (level->tiles) {
+					for (i32 j = 0; j < level->tile_count; ++j) {
+						isyntax_tile_t* tile = level->tiles + j;
+						for (i32 color = 0; color < 3; ++color) {
+							isyntax_tile_channel_t* channel = tile->color_channels + color;
+							if (channel->coeff_ll) free(channel->coeff_ll);
+							if (channel->coeff_h) free(channel->coeff_h);
+						}
+					}
 					free(level->tiles);
 					level->tiles = NULL;
 				}

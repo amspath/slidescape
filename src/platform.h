@@ -34,6 +34,8 @@
 #else
 #include <semaphore.h>
 #include <unistd.h>
+#include <aio.h> // For async io
+#include <errno.h> // For async io
 #if APPLE
 #include <stddef.h> // for offsetof()
 #if __has_include(<SDL2/SDL.h>)
@@ -199,6 +201,18 @@ typedef SDL_Window* window_handle_t;
 typedef SDL_Window* window_handle_t;
 #endif
 
+typedef struct {
+	void* dest;
+	file_handle_t file;
+	i64 offset;
+	size_t size_to_read;
+#if WINDOWS
+	OVERLAPPED overlapped;
+#elif (APPLE || LINUX)
+	struct aiocb cb;
+#endif
+} io_operation_t;
+
 // Inline procedures as wrappers for system routines
 #if WINDOWS
 
@@ -277,6 +291,10 @@ void benaphore_destroy(benaphore_t* benaphore);
 void benaphore_lock(benaphore_t* benaphore);
 void benaphore_unlock(benaphore_t* benaphore);
 
+void async_read_submit(io_operation_t* op);
+bool async_read_has_finished(io_operation_t* op);
+i64 async_read_finalize(io_operation_t* op);
+
 void init_thread_memory(i32 logical_thread_index);
 
 #if IS_SERVER
@@ -317,6 +335,7 @@ extern bool is_nvidia_gpu;
 extern bool is_macos;
 extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
+extern i32 global_worker_thread_idle_count;
 extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
 

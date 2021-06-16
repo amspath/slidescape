@@ -159,17 +159,13 @@ typedef struct isyntax_codeblock_t {
 	u32 scale;
 	u32 coefficient;
 	u64 block_data_offset;
-	u8* data;
 	u64 block_size;
 	u32 block_header_template_id;
-	u64 decompressed_size;
 	i32 x_adjusted;
 	i32 y_adjusted;
 	i32 block_x;
 	i32 block_y;
 	u64 block_id;
-	i16* decoded;
-	icoeff_t* transformed;
 } isyntax_codeblock_t;
 
 typedef struct isyntax_data_chunk_t {
@@ -196,6 +192,7 @@ typedef struct isyntax_tile_t {
 	bool exists;
 	bool has_ll;
 	bool has_h;
+	bool is_submitted_for_loading;
 	bool is_loaded;
 } isyntax_tile_t;
 
@@ -301,7 +298,9 @@ typedef struct isyntax_t {
 } isyntax_t;
 
 // function prototypes
-i16* isyntax_hulsken_decompress(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, i32 compressor_version);
+i16 *
+isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient,
+                           i32 compressor_version);
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);
 icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color);
@@ -311,7 +310,7 @@ u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile
 icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color);
 void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
 void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count);
-void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset);
+icoeff_t* isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset);
 i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 
 // TODO: move this somewhere suitable

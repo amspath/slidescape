@@ -89,10 +89,11 @@ void* worker_thread(void* parameter) {
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
 
     init_thread_memory(thread_info->logical_thread_index);
+	atomic_increment(&global_worker_thread_idle_count);
 
-    for (;;) {
+	for (;;) {
         if (!is_queue_work_in_progress(thread_info->queue)) {
-            platform_sleep(1);
+            //platform_sleep(1);
             sem_wait(thread_info->queue->semaphore);
         }
         do_worker_work(thread_info->queue, thread_info->logical_thread_index);

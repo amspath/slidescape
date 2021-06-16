@@ -228,12 +228,9 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 			for (i32 i = 0; i < 3; ++i) {
 				isyntax_codeblock_t* h_block =  h_blocks[i];
 				isyntax_codeblock_t* ll_block = ll_blocks[i];
-				isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0);
-				isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0);
-//				isyntax_tile->transformed_ll[i] = isyntax_idwt_tile(ll_block->decoded, h_block->decoded, isyntax->block_width, isyntax->block_height, true, i);
 				isyntax_tile_channel_t* color_channel = tile->color_channels + i;
-				color_channel->coeff_ll = ll_block->decoded;
-				color_channel->coeff_h = h_block->decoded;
+				color_channel->coeff_h = isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0);
+				color_channel->coeff_ll = isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0);
 
 				// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 				color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x, tile_y);
@@ -272,8 +269,8 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 						ASSERT(codeblock->scale == scale);
 						i64 offset_in_chunk = codeblock->block_data_offset - offset0;
 						ASSERT(offset_in_chunk >= 0);
-						codeblock->data = data_chunks[chunk_index] + offset_in_chunk;
-						icoeff_t* decompressed = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1); // TODO: free using _aligned_free()
+						icoeff_t* decompressed = isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
+						                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
 
 						i32 tile_x_in_chunk = tile_x + tile_delta_x[i];
 						i32 tile_y_in_chunk = tile_y + tile_delta_y[i];
@@ -326,8 +323,8 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 						ASSERT(codeblock->scale == scale);
 						i64 offset_in_chunk = codeblock->block_data_offset - offset0;
 						ASSERT(offset_in_chunk >= 0);
-						codeblock->data = data_chunks[chunk_index] + offset_in_chunk;
-						icoeff_t* decompressed = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1); // TODO: free using _aligned_free()
+						icoeff_t* decompressed = isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
+						                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
 
 						i32 tile_x_in_chunk = tile_x + tile_delta_x[i];
 						i32 tile_y_in_chunk = tile_y + tile_delta_y[i];
@@ -378,14 +375,19 @@ void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_level_t* level = wsi->levels + scale;
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
-	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) calloc(1, sizeof(isyntax_load_tile_task_t));
-	task->isyntax = isyntax;
-	task->wsi = wsi;
-	task->scale = scale;
-	task->tile_x = tile_x;
-	task->tile_y = tile_y;
-	task->tile_index = tile_index;
-	add_work_queue_entry(&global_work_queue, isyntax_load_tile_task_func, task);
+	isyntax_tile_t* tile = level->tiles + tile_index;
+	if (!tile->is_submitted_for_loading) {
+		tile->is_submitted_for_loading = true;
+		isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) calloc(1, sizeof(isyntax_load_tile_task_t));
+		task->isyntax = isyntax;
+		task->wsi = wsi;
+		task->scale = scale;
+		task->tile_x = tile_x;
+		task->tile_y = tile_y;
+		task->tile_index = tile_index;
+		add_work_queue_entry(&global_work_queue, isyntax_load_tile_task_func, task);
+	}
+
 }
 
 typedef struct isyntax_first_load_task_t {
@@ -707,24 +709,11 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			}
 			break_out_of_loop:;
 
-
-
-
-			// TODO: recurse to a higher level
-
-
-			// TODO: make a list of tiles for which the H coefficients should be loaded
-			// TODO: translate a list of tiles into a list of data chunks
-
-			// TODO: add higher level I/O requests from prerequisite tiles
-			// TODO: deduplicate data chunks - group tile load jobs into chunks?
-			// TODO: give high level tiles the highest priority -> sort
-
-			// TODO: submit async read operations
-			// TODO: check I/O result status and check if any decoding prerequisites have been met
-
-			// TODO: spin off decoding jobs until finished
 		}
+
+//		io_operation_t ops[COUNT(chunks_to_load)];
+
+		i64 io_start = get_clock();
 
 		for (i32 i = 0; i < chunks_to_load_count; ++i) {
 			u32 chunk_index = chunks_to_load[i];
@@ -740,8 +729,30 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 				win32_overlapped_read(global_thread_memory, isyntax->file_handle, chunk->data, read_size, chunk->offset);
 #else
 				size_t bytes_read = pread(isyntax->file_handle, chunk->data, read_size, chunk->offset);
+
+				// TODO: async I/O??
+//				io_operation_t* op = ops + i;
+//				op->file = isyntax->file_handle;
+//				op->dest = chunk->data;
+//				op->size_to_read = read_size;
+//				op->offset = chunk->offset;
+//
+//				async_read_submit(op);
 #endif
 			}
+		}
+
+		/*for (i32 i = 0; i < chunks_to_load_count; ++i) {
+			io_operation_t* op = ops + i;
+			while (!async_read_has_finished(op)) {
+//				aio_fsync()
+//				aio_suspend((const aiocb *const *)(&ops[i].cb), 1, NULL);
+			}
+			async_read_finalize(op);
+		}*/
+
+		if (chunks_to_load_count > 0) {
+			//console_print("IO time for %d chunks: %g seconds\n", chunks_to_load_count, get_seconds_elapsed(io_start, get_clock()));
 		}
 
 		// Now try to reconstruct the tiles
@@ -785,8 +796,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 								ASSERT(codeblock->scale == scale);
 								i64 offset_in_chunk = codeblock->block_data_offset - chunk->offset;
 								ASSERT(offset_in_chunk >= 0);
-								codeblock->data = chunk->data + offset_in_chunk;
-								icoeff_t* decompressed = isyntax_hulsken_decompress(codeblock, isyntax->block_width, isyntax->block_height, 1); // TODO: free using _aligned_free()
+								icoeff_t* decompressed = isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
+								                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
 
 								isyntax_tile_channel_t* color_channel = tile->color_channels + color;
 								color_channel->coeff_h = decompressed;
@@ -799,6 +810,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 		}
 
+		i32 max_tiles_to_load = 5; // TODO: remove this restriction
+		i32 tiles_to_load = 0;
 		scale_to_load_index = 0;
 		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
 			isyntax_level_t *level = wsi_image->levels + scale;
@@ -808,6 +821,16 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 				for (i32 tile_x = region->visible_bounds.min.x; tile_x < region->visible_bounds.max.x; ++tile_x) {
 					i32 tile_index = tile_y * level->width_in_tiles + tile_x;
 					isyntax_tile_t* tile = level->tiles + tile_index;
+					if (tile->is_submitted_for_loading) {
+						continue; // a worker thread is already on it, don't resubmit
+					}
+					if (!tile->has_ll) {
+						continue; // higher level tile needs to load first
+					}
+					if (!tile->has_h) {
+						continue; // codeblocks not decompressed (this should never trigger)
+					}
+
 					i32 local_tile_x = tile_x - region->padded_bounds.min.x;
 					i32 local_tile_y = tile_y - region->padded_bounds.min.y;
 					i32 local_tile_index = local_tile_y * region->width_in_tiles + local_tile_x;
@@ -876,25 +899,62 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					}
 
 					// All the prerequisites have been met, we should be able to load this tile
-					u32* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
-					if (tile_pixels) {
-//						console_print("loaded scale=%d tile x=%d y=%d\n", scale, tile_x, tile_y);
+					if (global_worker_thread_idle_count > 0) {
+						isyntax_begin_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
+					} else {
+						// TODO: abort and restart from the beginning if instructions have changed
+						u32* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
 						submit_tile_completed(tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
 					}
 
+					++tiles_to_load;
+					if (tiles_to_load >= max_tiles_to_load) {
+						goto break_out_of_loop2;
+					}
 
 				}
 			}
+
+			// NOTE: the highest scales need to load before the lower scales!
+			while(is_queue_work_in_progress(&global_work_queue)) {
+				do_worker_work(&global_work_queue, 0);
+			}
 		}
+		break_out_of_loop2:;
 	}
 
 
 }
 
+/*typedef struct stream_image_tiles_task_t {
+	isyntax_t* isyntax;
+	isyntax_image_t* wsi;
+} stream_image_tiles_task_t;
+
+void isyntax_stream_image_tiles_task_func(i32 logical_thread_index, void* userdata) {
+
+	stream_image_tiles_task_t* task = (stream_image_tiles_task_t*) userdata;
+	if (task->)
+	isyntax_do_first_load(&thread_memory->temp_arena, task->isyntax, task->wsi);
+	free(userdata);
+}
+
+
+
+void stream_image_tiles(tile_streamer_t* tile_streamer) {
+
+	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) calloc(1, sizeof(isyntax_first_load_task_t));
+	task->isyntax = isyntax;
+	task->wsi = wsi_image;
+	add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, tile_streamer);
+	// TODO: retain isyntax (don't unload until initial load is complete!)
+
+}*/
+
 // TODO: decouple I/O operations from decompression, etc.
 
 // TODO: synchronize WSI unloading
-void stream_image_tiles(thread_memory_t* thread_memory) {
+void stream_image_tiles2(thread_memory_t* thread_memory) {
 
 	// TODO: move to platform code
 	init_arena(&thread_memory->temp_arena, thread_memory->thread_memory_usable_size, thread_memory->aligned_rest_of_thread_memory);

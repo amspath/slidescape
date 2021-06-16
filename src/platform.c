@@ -30,11 +30,6 @@
 #include <sys/sysctl.h> // for sysctlbyname()
 #endif
 
-#if (APPLE || LINUX)
-// For async io
-#include "aio.h"
-#include "errno.h"
-#endif
 
 mem_t* platform_allocate_mem_buffer(size_t capacity) {
 	size_t allocation_size = sizeof(mem_t) + capacity + 1;
@@ -256,21 +251,12 @@ void benaphore_unlock(benaphore_t* benaphore) {
 	}
 }
 
-#if 0
 // Performance considerations for async I/O on Linux:
 // https://github.com/littledan/linux-aio#performance-considerations
 
-typedef struct {
-	void* dest;
-	file_handle_t file;
-	i64 offset;
-	size_t size_to_read;
-#if WINDOWS
-	OVERLAPPED overlapped;
-#elif (APPLE || LINUX)
-	struct aiocb64 cb;
-#endif
-} io_operation_t;
+// TODO: aiocb64 doesn't exist on macOS? need #defines?
+
+
 
 void async_read_submit(io_operation_t* op) {
 #if WINDOWS
@@ -282,7 +268,7 @@ void async_read_submit(io_operation_t* op) {
 	op->cb.aio_offset = op->offset;
 	op->cb.aio_buf = op->dest;
 
-	if (aio_read64(&op->cb) == -1) {
+	if (aio_read(&op->cb) == -1) {
 		console_print_error("submit_async_read(): unable to create I/O request\n");
 	}
 #endif
@@ -292,7 +278,7 @@ bool async_read_has_finished(io_operation_t* op) {
 #if WINDOWS
 	// stub
 #elif (APPLE || LINUX)
-	int status = aio_error64(&op->cb);
+	int status = aio_error(&op->cb);
 	return (status != EINPROGRESS);
 #endif
 }
@@ -301,12 +287,10 @@ i64 async_read_finalize(io_operation_t* op) {
 #if WINDOWS
 	// stub
 #elif (APPLE || LINUX)
-	i64 bytes_read = aio_return64(&op->cb);
+	i64 bytes_read = aio_return(&op->cb);
 	return bytes_read;
 #endif
 }
-
-#endif
 
 void init_thread_memory(i32 logical_thread_index) {
 	// Allocate a private memory buffer

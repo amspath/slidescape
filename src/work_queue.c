@@ -89,9 +89,11 @@ void mark_queue_entry_completed(work_queue_t* queue) {
 bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 	work_queue_entry_t entry = get_next_work_queue_entry(queue);
 	if (entry.is_valid) {
+		atomic_decrement(&global_worker_thread_idle_count);
 		if (!entry.callback) panic();
 		entry.callback(logical_thread_index, entry.data);
 		mark_queue_entry_completed(queue);
+		atomic_increment(&global_worker_thread_idle_count);
 	}
 	return entry.is_valid;
 }
