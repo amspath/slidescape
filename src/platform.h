@@ -264,6 +264,7 @@ void reset_window_title(window_handle_t window);
 
 void message_box(app_state_t* app_state, const char* message);
 
+i32 get_work_queue_task_count(work_queue_t* queue);
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
 bool is_queue_work_in_progress(work_queue_t* queue);
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);

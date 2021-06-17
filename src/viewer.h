@@ -377,7 +377,7 @@ void viewer_init_options(app_state_t* app_state);
 // tile_streamer.cpp
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);
-
+void stream_image_tiles(tile_streamer_t* tile_streamer);
 
 // globals
 #if defined(VIEWER_IMPL)
@@ -402,6 +402,8 @@ extern i32 desired_window_height INIT(=720);
 
 extern benaphore_t tile_streamer_benaphore;
 extern tile_streamer_t global_tile_streamer;
+extern bool32 is_tile_stream_task_in_progress;
+extern bool32 is_tile_streamer_frame_boundary_passed;
 
 #undef INIT
 #undef extern

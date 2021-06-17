@@ -20,6 +20,13 @@
 #include <semaphore.h>
 #endif
 
+i32 get_work_queue_task_count(work_queue_t* queue) {
+	i32 count = queue->next_entry_to_submit - queue->next_entry_to_execute;
+	while (count < 0) {
+		count += COUNT(queue->entries);
+	}
+	return count;
+}
 
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata) {
 	for (i32 tries = 0; tries < 1000; ++tries) {

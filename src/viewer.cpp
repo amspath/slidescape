@@ -713,7 +713,8 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				tile_streamer.crop_bounds = scene->crop_bounds;
 				tile_streamer.is_cropped = scene->is_cropped;
 				tile_streamer.zoom = scene->zoom;
-				isyntax_stream_image_tiles(&tile_streamer, isyntax);
+				global_tile_streamer = tile_streamer;
+				stream_image_tiles(&global_tile_streamer);
 			}
 		} else {
 

@@ -2487,6 +2487,11 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 }
 
 void isyntax_destroy(isyntax_t* isyntax) {
+	while (isyntax->refcount > 0) {
+		console_print_error("refcount = %d\n", isyntax->refcount);
+		platform_sleep(1);
+		do_worker_work(&global_work_queue, 0);
+	}
 	for (i32 image_index = 0; image_index < isyntax->image_count; ++image_index) {
 		isyntax_image_t* isyntax_image = isyntax->images + image_index;
 		if (isyntax_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {

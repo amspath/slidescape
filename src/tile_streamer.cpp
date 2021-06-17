@@ -369,6 +369,7 @@ void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) userdata;
 	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
 	submit_tile_completed(tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
+	atomic_decrement(&task->isyntax->refcount); // release
 	free(userdata);
 }
 
@@ -377,6 +378,7 @@ void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
 	isyntax_tile_t* tile = level->tiles + tile_index;
 	if (!tile->is_submitted_for_loading) {
+		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 		tile->is_submitted_for_loading = true;
 		isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) calloc(1, sizeof(isyntax_load_tile_task_t));
 		task->isyntax = isyntax;
@@ -401,6 +403,7 @@ void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
 
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) userdata;
 	isyntax_do_first_load(&thread_memory->temp_arena, task->isyntax, task->wsi);
+	atomic_decrement(&task->isyntax->refcount); // release
 	free(userdata);
 }
 
@@ -408,6 +411,7 @@ void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) calloc(1, sizeof(isyntax_first_load_task_t));
 	task->isyntax = isyntax;
 	task->wsi = wsi_image;
+	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 	add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, task);
 	// TODO: retain isyntax (don't unload until initial load is complete!)
 }
@@ -476,6 +480,12 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds, level->x_tile_side_in_um,
 			                                                     level->y_tile_side_in_um, tile_streamer->origin_offset);
+			// TODO: Fix visible tiles not being calculated correctly for higher levels while zoomed in very far?
+			visible_tiles.min.x -= 1;
+			visible_tiles.min.y -= 1;
+			visible_tiles.max.x += 1;
+			visible_tiles.max.y += 1;
+
 			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
 
 			if (tile_streamer->is_cropped) {
@@ -499,9 +509,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			i32 local_bounds_width = padded_bounds.max.x - padded_bounds.min.x;
 			i32 local_bounds_height = padded_bounds.max.y - padded_bounds.min.y;
 
-			size_t tiles_to_load_size = (local_bounds_width) * (local_bounds_height) * sizeof(isyntax_tile_req_t);
-			isyntax_tile_req_t* tile_req = (isyntax_tile_req_t*)alloca(tiles_to_load_size);
-			memset(tile_req, 0, tiles_to_load_size);
+			size_t tile_req_size = (local_bounds_width) * (local_bounds_height) * sizeof(isyntax_tile_req_t);
+			isyntax_tile_req_t* tile_req = (isyntax_tile_req_t*)malloc(tile_req_size);
+			memset(tile_req, 0, tile_req_size);
 
 			isyntax_load_region_t* region = regions + scale_to_load_index;
 			region->width_in_tiles = local_bounds_width;
@@ -810,7 +820,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 		}
 
-		i32 max_tiles_to_load = 5; // TODO: remove this restriction
+//		i32 max_tiles_to_load = 5; // TODO: remove this restriction
 		i32 tiles_to_load = 0;
 		scale_to_load_index = 0;
 		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
@@ -898,58 +908,95 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 						}
 					}
 
+
+
+					++tiles_to_load;
+
 					// All the prerequisites have been met, we should be able to load this tile
-					if (global_worker_thread_idle_count > 0) {
+					isyntax_begin_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
+
+					if (is_tile_streamer_frame_boundary_passed) {
+						goto break_out_of_loop2; // camera bounds updated, recalculate
+					}
+					i32 tasks_waiting = get_work_queue_task_count(&global_work_queue);
+					if (tasks_waiting > logical_cpu_count * 2) {
+						goto break_out_of_loop2;
+					}
+
+
+
+				/*	if (global_worker_thread_idle_count > 0) {
 						isyntax_begin_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
 					} else {
 						// TODO: abort and restart from the beginning if instructions have changed
+						ASSERT(!tile->is_submitted_for_loading);
+						tile->is_submitted_for_loading = true;
 						u32* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
 						submit_tile_completed(tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
-					}
+					}*/
 
-					++tiles_to_load;
-					if (tiles_to_load >= max_tiles_to_load) {
-						goto break_out_of_loop2;
-					}
+
 
 				}
 			}
 
 			// NOTE: the highest scales need to load before the lower scales!
-			while(is_queue_work_in_progress(&global_work_queue)) {
-				do_worker_work(&global_work_queue, 0);
-			}
+//			while(is_queue_work_in_progress(&global_work_queue)) {
+//				do_worker_work(&global_work_queue, 0);
+//			}
 		}
 		break_out_of_loop2:;
-	}
 
+//		if (tiles_to_load > 0) {
+//			console_print("Requested %d tiles, tasks waiting = %d, idle = %d\n", tiles_to_load, get_work_queue_task_count(&global_work_queue), global_worker_thread_idle_count);
+//		}
+		// Cleanup
+		for (i32 i = 0; i < scales_to_load_count; ++i) {
+			isyntax_load_region_t* region = regions + i;
+			if (region->tile_req) free(region->tile_req);
+		}
+	}
 
 }
 
-/*typedef struct stream_image_tiles_task_t {
+typedef struct stream_image_tiles_task_t {
 	isyntax_t* isyntax;
 	isyntax_image_t* wsi;
 } stream_image_tiles_task_t;
 
-void isyntax_stream_image_tiles_task_func(i32 logical_thread_index, void* userdata) {
+void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
 
-	stream_image_tiles_task_t* task = (stream_image_tiles_task_t*) userdata;
-	if (task->)
-	isyntax_do_first_load(&thread_memory->temp_arena, task->isyntax, task->wsi);
-	free(userdata);
+	tile_streamer_t* tile_streamer;
+	bool need_repeat = false;
+	do {
+		tile_streamer = (tile_streamer_t*) userdata;
+		if (tile_streamer) {
+			tile_streamer_t tile_streamer_copy = *tile_streamer; // original may be updated next frame
+			isyntax_stream_image_tiles(&tile_streamer_copy, &tile_streamer->image->isyntax.isyntax);
+		}
+		need_repeat = is_tile_streamer_frame_boundary_passed;
+		if (need_repeat) {
+			is_tile_streamer_frame_boundary_passed = false;
+		}
+	} while (need_repeat);
+	is_tile_stream_task_in_progress = false;
+	atomic_decrement(&tile_streamer->image->isyntax.isyntax.refcount); // release
+
 }
 
 
 
 void stream_image_tiles(tile_streamer_t* tile_streamer) {
 
-	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) calloc(1, sizeof(isyntax_first_load_task_t));
-	task->isyntax = isyntax;
-	task->wsi = wsi_image;
-	add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, tile_streamer);
-	// TODO: retain isyntax (don't unload until initial load is complete!)
-
-}*/
+	if (!is_tile_stream_task_in_progress) {
+		atomic_increment(&tile_streamer->image->isyntax.isyntax.refcount); // retain; don't destroy isyntax while busy
+		is_tile_stream_task_in_progress = true;
+		add_work_queue_entry(&global_work_queue, isyntax_stream_image_tiles_func, tile_streamer);
+	} else {
+		// TODO: abort/restart stream task when frame boundary passed
+		is_tile_streamer_frame_boundary_passed = true;
+	}
+}
 
 // TODO: decouple I/O operations from decompression, etc.
 

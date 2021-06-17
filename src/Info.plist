@@ -45,6 +45,7 @@
 				<string>tiff</string>
 				<string>ptif</string>
 				<string>tif</string>
+				<string>isyntax</string>
 			</array>
 			<key>CFBundleTypeIconFile</key>
 			<string></string>

@@ -295,6 +295,7 @@ typedef struct isyntax_t {
 	icoeff_t* black_dummy_coeff;
 	icoeff_t* white_dummy_coeff;
 	float loading_time;
+	i32 refcount;
 } isyntax_t;
 
 // function prototypes
