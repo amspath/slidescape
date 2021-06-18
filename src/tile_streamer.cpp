@@ -444,6 +444,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 	if (!wsi_image->first_load_complete) {
 		isyntax_begin_first_load(isyntax, wsi_image);
 	} else {
+		i64 perf_clock_begin = get_clock();
+
 		ASSERT(wsi_image->level_count >= 0);
 		i32 highest_visible_scale = ATLEAST(wsi_image->max_scale, 0);
 		i32 lowest_visible_scale = ATLEAST(tile_streamer->zoom.level, 0);
@@ -503,8 +505,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			bounds2i padded_bounds = visible_tiles;
 			if (padded_bounds.min.x > 0) padded_bounds.min.x -= 1;
 			if (padded_bounds.min.y > 0) padded_bounds.min.y -= 1;
-			if (padded_bounds.max.x < level->width_in_tiles-1) padded_bounds.max.x += 1;
-			if (padded_bounds.max.y < level->height_in_tiles-1) padded_bounds.max.y += 1;
+			if (padded_bounds.max.x < level->width_in_tiles) padded_bounds.max.x += 1;
+			if (padded_bounds.max.y < level->height_in_tiles) padded_bounds.max.y += 1;
 
 			i32 local_bounds_width = padded_bounds.max.x - padded_bounds.min.x;
 			i32 local_bounds_height = padded_bounds.max.y - padded_bounds.min.y;
@@ -665,6 +667,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 							if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
 								isyntax_tile_t* adj_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
 								if (adj_tile->exists) {
+									// TODO: fix edges
 									i32 adj_local_tile_index = (local_tile_y + 1) * local_bounds_width + (local_tile_x + 1);
 									isyntax_tile_req_t* adj_tile_req = tile_req + adj_local_tile_index;
 									if (!adj_tile->has_ll) {
@@ -723,7 +726,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 //		io_operation_t ops[COUNT(chunks_to_load)];
 
-		i64 io_start = get_clock();
+		i64 perf_clock_check = get_clock();
+		float perf_time_check = get_seconds_elapsed(perf_clock_check, perf_clock_begin);
+
 
 		for (i32 i = 0; i < chunks_to_load_count; ++i) {
 			u32 chunk_index = chunks_to_load[i];
@@ -761,6 +766,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			async_read_finalize(op);
 		}*/
 
+		i64 perf_clock_io = get_clock();
+		float perf_time_io = get_seconds_elapsed(perf_clock_check, perf_clock_io);
 		if (chunks_to_load_count > 0) {
 			//console_print("IO time for %d chunks: %g seconds\n", chunks_to_load_count, get_seconds_elapsed(io_start, get_clock()));
 		}
@@ -819,6 +826,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			}
 
 		}
+
+		i64 perf_clock_decompress = get_clock();
+		float perf_time_decompress = get_seconds_elapsed(perf_clock_io, perf_clock_decompress);
 
 //		i32 max_tiles_to_load = 5; // TODO: remove this restriction
 		i32 tiles_to_load = 0;
@@ -947,9 +957,13 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		}
 		break_out_of_loop2:;
 
-//		if (tiles_to_load > 0) {
-//			console_print("Requested %d tiles, tasks waiting = %d, idle = %d\n", tiles_to_load, get_work_queue_task_count(&global_work_queue), global_worker_thread_idle_count);
-//		}
+		i64 perf_clock_load = get_clock();
+		float perf_time_load = get_seconds_elapsed(perf_clock_decompress, perf_clock_load);
+
+		if (tiles_to_load > 0) {
+			console_print("Requested %d tiles, tasks waiting=%d, idle=%d; time: check=%.4f io=%.4f decompress=%.4f load=%.4f\n",
+						  tiles_to_load, get_work_queue_task_count(&global_work_queue), global_worker_thread_idle_count, perf_time_check, perf_time_io, perf_time_decompress, perf_time_load);
+		}
 		// Cleanup
 		for (i32 i = 0; i < scales_to_load_count; ++i) {
 			isyntax_load_region_t* region = regions + i;

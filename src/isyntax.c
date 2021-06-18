@@ -2438,7 +2438,21 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 						}
 
-
+						// When recursively decoding the tiles, at each iteration the image is slightly offset
+						// to the top left.
+						// (Effectively the image seems to shift ~1.5 pixels, I am not sure why? Is this related to
+						// the per level padding of (3 >> level) pixels used in the wavelet transform?)
+						// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
+						// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
+						float offset_in_pixels = 1.5f;
+						for (i32 scale = 0; scale < wsi_image->max_scale; ++scale) {
+							isyntax_level_t* level = wsi_image->levels + scale;
+							level->origin_offset_in_pixels = offset_in_pixels;
+							float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
+							float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
+							level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
+							offset_in_pixels *= 2;
+						}
 
 						parse_ticks_elapsed += (get_clock() - parse_begin);
 //						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);

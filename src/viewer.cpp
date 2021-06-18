@@ -390,7 +390,8 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * isyntax->tile_width;
 			level_image->y_tile_side_in_um = level_image->um_per_pixel_x * isyntax->tile_height;
 			ASSERT(level_image->x_tile_side_in_um > 0);
-			ASSERT(level_image->y_tile_side_in_um > 0);
+			ASSERT(level_image->y_tile_side_in_um > 0)
+			level_image->origin_offset = isyntax_level->origin_offset;
 			level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
 			for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
 				tile_t* tile = level_image->tiles + tile_index;
@@ -814,7 +815,10 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		// define view matrix
 		mat4x4 view_matrix;
-		mat4x4_translate(view_matrix, -scene->camera.x + image->origin_offset.x, -scene->camera.y + image->origin_offset.y, 0.0f);
+		mat4x4_translate(view_matrix,
+						 -scene->camera.x + image->origin_offset.x,
+						 -scene->camera.y + image->origin_offset.y,
+						 0.0f);
 
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
@@ -905,8 +909,8 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 						tile->time_last_drawn = app_state->frame_counter;
 						u32 texture = get_texture_for_tile(image, level, tile_x, tile_y);
 
-						float tile_pos_x = drawn_level->x_tile_side_in_um * tile_x;
-						float tile_pos_y = drawn_level->y_tile_side_in_um * tile_y;
+						float tile_pos_x = drawn_level->origin_offset.x + drawn_level->x_tile_side_in_um * tile_x;
+						float tile_pos_y = drawn_level->origin_offset.y + drawn_level->y_tile_side_in_um * tile_y;
 
 						// define model matrix
 						mat4x4 model_matrix;
@@ -1492,11 +1496,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glBindVertexArray(0);
 	}
-
-
-
-
-
 
 
 	do_after_scene_render(app_state, input);

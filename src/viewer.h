@@ -131,6 +131,7 @@ typedef struct {
 	float um_per_pixel_x;
 	float um_per_pixel_y;
 	float downsample_factor;
+	v2f origin_offset;
 	i32 pyramid_image_index;
 	bool exists;
 } level_image_t;
