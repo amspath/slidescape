@@ -378,8 +378,6 @@ void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
 	isyntax_tile_t* tile = level->tiles + tile_index;
 	if (!tile->is_submitted_for_loading) {
-		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-		tile->is_submitted_for_loading = true;
 		isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) calloc(1, sizeof(isyntax_load_tile_task_t));
 		task->isyntax = isyntax;
 		task->wsi = wsi;
@@ -387,7 +385,13 @@ void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale
 		task->tile_x = tile_x;
 		task->tile_y = tile_y;
 		task->tile_index = tile_index;
-		add_work_queue_entry(&global_work_queue, isyntax_load_tile_task_func, task);
+
+		tile->is_submitted_for_loading = true;
+		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
+		if (!add_work_queue_entry(&global_work_queue, isyntax_load_tile_task_func, task)) {
+			tile->is_submitted_for_loading = false; // chicken out
+			atomic_decrement(&isyntax->refcount);
+		};
 	}
 
 }
@@ -411,7 +415,9 @@ void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
 	task->isyntax = isyntax;
 	task->wsi = wsi_image;
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-	add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, task);
+	if (!add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, task)) {
+		atomic_decrement(&isyntax->refcount); // chicken out
+	}
 }
 
 
@@ -471,7 +477,7 @@ void isyntax_decompress_h_coeff_for_tile_task_func(i32 logical_thread_index, voi
 	free(userdata);
 }
 
-void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, isyntax_tile_t* tile, i32 tile_x, i32 tile_y) {
 	isyntax_decompress_h_coeff_for_tile_task_t* task = (isyntax_decompress_h_coeff_for_tile_task_t*)
 			calloc(1, sizeof(isyntax_decompress_h_coeff_for_tile_task_t));
 	task->isyntax = isyntax;
@@ -479,8 +485,13 @@ void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image
 	task->scale = scale;
 	task->tile_x = tile_x;
 	task->tile_y = tile_y;
+
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-	add_work_queue_entry(&global_work_queue, isyntax_decompress_h_coeff_for_tile_task_func, task);
+	tile->is_submitted_for_h_coeff_decompression = true;
+	if (!add_work_queue_entry(&global_work_queue, isyntax_decompress_h_coeff_for_tile_task_func, task)) {
+		atomic_decrement(&isyntax->refcount); // chicken out
+		tile->is_submitted_for_h_coeff_decompression = false;
+	}
 }
 
 
@@ -861,9 +872,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					if (req->need_h_coeff && !tile->is_submitted_for_h_coeff_decompression) {
 						isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 						if (chunk->data) {
-							if (global_worker_thread_idle_count > 0) {
-								tile->is_submitted_for_h_coeff_decompression = true;
-								isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile_x, tile_y);
+							i32 tasks_waiting = get_work_queue_task_count(&global_work_queue);
+							if (global_worker_thread_idle_count > 0 && tasks_waiting < logical_cpu_count * 10) {
+								isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile, tile_x, tile_y);
 							} else if (!is_tile_streamer_frame_boundary_passed) {
 								tile->is_submitted_for_h_coeff_decompression = true;
 								isyntax_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile_x, tile_y);
@@ -978,7 +989,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 						goto break_out_of_loop2; // camera bounds updated, recalculate
 					}
 					i32 tasks_waiting = get_work_queue_task_count(&global_work_queue);
-					if (tasks_waiting > logical_cpu_count * 2) {
+					if (tasks_waiting > logical_cpu_count * 4) {
 						goto break_out_of_loop2;
 					}
 
