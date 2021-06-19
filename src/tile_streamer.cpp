@@ -199,7 +199,7 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 
 #if WINDOWS
 				// TODO: 64 bit read offsets?
-				win32_overlapped_read(global_thread_memory, isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
+				win32_overlapped_read(local_thread_memory, isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
 #else
 				size_t bytes_read = pread(isyntax->file_handle, data_chunks[tile_index], read_size, offset0);
 #endif
@@ -229,8 +229,8 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 				isyntax_codeblock_t* h_block =  h_blocks[i];
 				isyntax_codeblock_t* ll_block = ll_blocks[i];
 				isyntax_tile_channel_t* color_channel = tile->color_channels + i;
-				color_channel->coeff_h = isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0);
-				color_channel->coeff_ll = isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0);
+				color_channel->coeff_h = isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, temp_arena);
+				color_channel->coeff_ll = isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, temp_arena);
 
 				// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 				color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x, tile_y);
@@ -398,8 +398,7 @@ typedef struct isyntax_first_load_task_t {
 } isyntax_first_load_task_t;
 
 void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
-	thread_memory_t* thread_memory = global_thread_memory;
-	init_arena(&thread_memory->temp_arena, thread_memory->thread_memory_usable_size, thread_memory->aligned_rest_of_thread_memory);
+	thread_memory_t* thread_memory = local_thread_memory;
 
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) userdata;
 	isyntax_do_first_load(&thread_memory->temp_arena, task->isyntax, task->wsi);
@@ -413,8 +412,78 @@ void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
 	task->wsi = wsi_image;
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 	add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, task);
-	// TODO: retain isyntax (don't unload until initial load is complete!)
 }
+
+
+// TODO: don't double submit; use interlocked_compare_exchange?
+// TODO: avoid malloc(), use temp memory where possible
+void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+	isyntax_level_t* level = wsi->levels + scale;
+	isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
+	isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
+
+	if (chunk->data) {
+		i32 scale_in_chunk = chunk->scale - scale;
+		ASSERT(scale_in_chunk >= 0 && scale_in_chunk < 3);
+		i32 codeblock_index_in_chunk = 0;
+		if (scale_in_chunk == 0) {
+			codeblock_index_in_chunk = 0;
+		} else if (scale_in_chunk == 1) {
+			codeblock_index_in_chunk = 1 + (tile_y % 2) * 2 + (tile_x % 2);
+		} else if (scale_in_chunk == 2) {
+			codeblock_index_in_chunk = 5 + (tile_y % 4) * 4 + (tile_x % 4);
+		} else {
+			panic();
+		}
+		i32 chunk_codeblock_indices_for_color[3] = {codeblock_index_in_chunk,
+		                                            chunk->codeblock_count_per_color + codeblock_index_in_chunk,
+		                                            2 * chunk->codeblock_count_per_color + codeblock_index_in_chunk};
+
+		isyntax_codeblock_t* top_chunk_codeblock = wsi->codeblocks + tile->codeblock_chunk_index;
+
+		for (i32 color = 0; color < 3; ++color) {
+			isyntax_codeblock_t* codeblock = top_chunk_codeblock + chunk_codeblock_indices_for_color[color];
+			ASSERT(codeblock->scale == scale);
+			i64 offset_in_chunk = codeblock->block_data_offset - chunk->offset;
+			ASSERT(offset_in_chunk >= 0);
+			icoeff_t* decompressed = isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
+			                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
+
+			isyntax_tile_channel_t* color_channel = tile->color_channels + color;
+			color_channel->coeff_h = decompressed;
+		}
+		tile->has_h = true;
+	}
+}
+
+typedef struct isyntax_decompress_h_coeff_for_tile_task_t {
+	isyntax_t* isyntax;
+	isyntax_image_t* wsi;
+	i32 scale;
+	i32 tile_x;
+	i32 tile_y;
+} isyntax_decompress_h_coeff_for_tile_task_t;
+
+void isyntax_decompress_h_coeff_for_tile_task_func(i32 logical_thread_index, void* userdata) {
+	isyntax_decompress_h_coeff_for_tile_task_t* task = (isyntax_decompress_h_coeff_for_tile_task_t*) userdata;
+	isyntax_decompress_h_coeff_for_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
+	atomic_decrement(&task->isyntax->refcount); // release
+	free(userdata);
+}
+
+void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+	isyntax_decompress_h_coeff_for_tile_task_t* task = (isyntax_decompress_h_coeff_for_tile_task_t*)
+			calloc(1, sizeof(isyntax_decompress_h_coeff_for_tile_task_t));
+	task->isyntax = isyntax;
+	task->wsi = wsi;
+	task->scale = scale;
+	task->tile_x = tile_x;
+	task->tile_y = tile_y;
+	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
+	add_work_queue_entry(&global_work_queue, isyntax_decompress_h_coeff_for_tile_task_func, task);
+}
+
+
 
 typedef struct isyntax_tile_req_t {
 	i32 tile_x;
@@ -439,22 +508,25 @@ typedef struct isyntax_load_region_t {
 
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
 
-	isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+	isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
 
-	if (!wsi_image->first_load_complete) {
-		isyntax_begin_first_load(isyntax, wsi_image);
+	if (!wsi->first_load_complete) {
+		isyntax_begin_first_load(isyntax, wsi);
 	} else {
 		i64 perf_clock_begin = get_clock();
 
-		ASSERT(wsi_image->level_count >= 0);
-		i32 highest_visible_scale = ATLEAST(wsi_image->max_scale, 0);
+		arena_t* arena = &local_thread_memory->temp_arena;
+		temp_memory_t temp_memory = begin_temp_memory(arena);
+
+		ASSERT(wsi->level_count >= 0);
+		i32 highest_visible_scale = ATLEAST(wsi->max_scale, 0);
 		i32 lowest_visible_scale = ATLEAST(tile_streamer->zoom.level, 0);
 		lowest_visible_scale = ATMOST(highest_visible_scale, lowest_visible_scale);
 
 		// Never look at highest scales, which have already been loaded at first load
 		i32 highest_scale_to_load = highest_visible_scale;
 		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
-			isyntax_level_t* level = wsi_image->levels + scale;
+			isyntax_level_t* level = wsi->levels + scale;
 			if (level->is_fully_loaded) {
 				--highest_scale_to_load;
 			} else {
@@ -466,7 +538,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		if (scales_to_load_count <= 0) {
 			return;
 		}
-		isyntax_load_region_t* regions = (isyntax_load_region_t*) alloca(scales_to_load_count * sizeof(isyntax_load_region_t));
+		isyntax_load_region_t* regions = (isyntax_load_region_t*) arena_push_size(arena, scales_to_load_count * sizeof(isyntax_load_region_t));
 		memset(regions, 0, scales_to_load_count * sizeof(isyntax_load_region_t));
 
 		u32 chunks_to_load_count = 0;
@@ -477,7 +549,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 		i32 scale_to_load_index = 0;
 		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
-			isyntax_level_t* level = wsi_image->levels + scale;
+			isyntax_level_t* level = wsi->levels + scale;
 			bounds2i level_tiles_bounds = {{ 0, 0, (i32)level->width_in_tiles, (i32)level->height_in_tiles }};
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds, level->x_tile_side_in_um,
@@ -512,7 +584,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			i32 local_bounds_height = padded_bounds.max.y - padded_bounds.min.y;
 
 			size_t tile_req_size = (local_bounds_width) * (local_bounds_height) * sizeof(isyntax_tile_req_t);
-			isyntax_tile_req_t* tile_req = (isyntax_tile_req_t*)malloc(tile_req_size);
+			isyntax_tile_req_t* tile_req = (isyntax_tile_req_t*)arena_push_size(arena, tile_req_size);
 			memset(tile_req, 0, tile_req_size);
 
 			isyntax_load_region_t* region = regions + scale_to_load_index;
@@ -732,16 +804,16 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 		for (i32 i = 0; i < chunks_to_load_count; ++i) {
 			u32 chunk_index = chunks_to_load[i];
-			isyntax_data_chunk_t * chunk = wsi_image->data_chunks + chunk_index;
+			isyntax_data_chunk_t * chunk = wsi->data_chunks + chunk_index;
 			if (!chunk->data) {
-				isyntax_codeblock_t* last_codeblock = wsi_image->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
+				isyntax_codeblock_t* last_codeblock = wsi->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
 				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
 				u64 read_size = offset1 - chunk->offset;
 				chunk->data = (u8*)malloc(read_size);
 				// TODO: async I/O
 #if WINDOWS
 				// TODO: 64 bit read offsets?
-				win32_overlapped_read(global_thread_memory, isyntax->file_handle, chunk->data, read_size, chunk->offset);
+				win32_overlapped_read(local_thread_memory, isyntax->file_handle, chunk->data, read_size, chunk->offset);
 #else
 				size_t bytes_read = pread(isyntax->file_handle, chunk->data, read_size, chunk->offset);
 
@@ -776,7 +848,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		// Decompress tiles
 		scale_to_load_index = 0;
 		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
-			isyntax_level_t* level = wsi_image->levels + scale;
+			isyntax_level_t* level = wsi->levels + scale;
 			isyntax_load_region_t* region = regions + scale_to_load_index;
 
 			i32 local_tile_index = 0;
@@ -786,40 +858,17 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
 					isyntax_tile_req_t* req = region->tile_req + local_tile_index;
 
-
-					if (req->need_h_coeff) {
-						isyntax_data_chunk_t* chunk = wsi_image->data_chunks + tile->data_chunk_index;
+					if (req->need_h_coeff && !tile->is_submitted_for_h_coeff_decompression) {
+						isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 						if (chunk->data) {
-							i32 scale_in_chunk = chunk->scale - scale;
-							ASSERT(scale_in_chunk >= 0 && scale_in_chunk < 3);
-							i32 codeblock_index_in_chunk = 0;
-							if (scale_in_chunk == 0) {
-								codeblock_index_in_chunk = 0;
-							} else if (scale_in_chunk == 1) {
-								codeblock_index_in_chunk = 1 + (tile_y % 2) * 2 + (tile_x % 2);
-							} else if (scale_in_chunk == 2) {
-								codeblock_index_in_chunk = 5 + (tile_y % 4) * 4 + (tile_x % 4);
-							} else {
-								panic();
+							if (global_worker_thread_idle_count > 0) {
+								tile->is_submitted_for_h_coeff_decompression = true;
+								isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile_x, tile_y);
+							} else if (!is_tile_streamer_frame_boundary_passed) {
+								tile->is_submitted_for_h_coeff_decompression = true;
+								isyntax_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile_x, tile_y);
 							}
-							i32 chunk_codeblock_indices_for_color[3] = {codeblock_index_in_chunk,
-														  chunk->codeblock_count_per_color + codeblock_index_in_chunk,
-														  2 * chunk->codeblock_count_per_color + codeblock_index_in_chunk};
 
-							isyntax_codeblock_t* top_chunk_codeblock = wsi_image->codeblocks + tile->codeblock_chunk_index;
-
-							for (i32 color = 0; color < 3; ++color) {
-								isyntax_codeblock_t* codeblock = top_chunk_codeblock + chunk_codeblock_indices_for_color[color];
-								ASSERT(codeblock->scale == scale);
-								i64 offset_in_chunk = codeblock->block_data_offset - chunk->offset;
-								ASSERT(offset_in_chunk >= 0);
-								icoeff_t* decompressed = isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
-								                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
-
-								isyntax_tile_channel_t* color_channel = tile->color_channels + color;
-								color_channel->coeff_h = decompressed;
-							}
-							tile->has_h = true;
 						}
 					}
 				}
@@ -834,7 +883,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		i32 tiles_to_load = 0;
 		scale_to_load_index = 0;
 		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
-			isyntax_level_t *level = wsi_image->levels + scale;
+			isyntax_level_t *level = wsi->levels + scale;
 			isyntax_load_region_t *region = regions + scale_to_load_index;
 
 			for (i32 tile_y = region->visible_bounds.min.y; tile_y < region->visible_bounds.max.y; ++tile_y) {
@@ -923,7 +972,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					++tiles_to_load;
 
 					// All the prerequisites have been met, we should be able to load this tile
-					isyntax_begin_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
+					isyntax_begin_load_tile(isyntax, wsi, scale, tile_x, tile_y);
 
 					if (is_tile_streamer_frame_boundary_passed) {
 						goto break_out_of_loop2; // camera bounds updated, recalculate
@@ -936,12 +985,12 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 
 				/*	if (global_worker_thread_idle_count > 0) {
-						isyntax_begin_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
+						isyntax_begin_load_tile(isyntax, wsi, scale, tile_x, tile_y);
 					} else {
 						// TODO: abort and restart from the beginning if instructions have changed
 						ASSERT(!tile->is_submitted_for_loading);
 						tile->is_submitted_for_loading = true;
-						u32* tile_pixels = isyntax_load_tile(isyntax, wsi_image, scale, tile_x, tile_y);
+						u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y);
 						submit_tile_completed(tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
 					}*/
 
@@ -961,14 +1010,11 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		float perf_time_load = get_seconds_elapsed(perf_clock_decompress, perf_clock_load);
 
 		if (tiles_to_load > 0) {
-			console_print("Requested %d tiles, tasks waiting=%d, idle=%d; time: check=%.4f io=%.4f decompress=%.4f load=%.4f\n",
-						  tiles_to_load, get_work_queue_task_count(&global_work_queue), global_worker_thread_idle_count, perf_time_check, perf_time_io, perf_time_decompress, perf_time_load);
+//			console_print("Requested %d tiles, tasks waiting=%d, idle=%d; time: check=%.4f io=%.4f decompress=%.4f load=%.4f\n",
+//						  tiles_to_load, get_work_queue_task_count(&global_work_queue), global_worker_thread_idle_count, perf_time_check, perf_time_io, perf_time_decompress, perf_time_load);
 		}
 		// Cleanup
-		for (i32 i = 0; i < scales_to_load_count; ++i) {
-			isyntax_load_region_t* region = regions + i;
-			if (region->tile_req) free(region->tile_req);
-		}
+		end_temp_memory(&temp_memory);
 	}
 
 }
@@ -1018,7 +1064,6 @@ void stream_image_tiles(tile_streamer_t* tile_streamer) {
 void stream_image_tiles2(thread_memory_t* thread_memory) {
 
 	// TODO: move to platform code
-	init_arena(&thread_memory->temp_arena, thread_memory->thread_memory_usable_size, thread_memory->aligned_rest_of_thread_memory);
 
 
 	for (;;) {

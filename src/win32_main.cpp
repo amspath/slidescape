@@ -1256,8 +1256,10 @@ DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
+	atomic_increment(&global_worker_thread_idle_count);
+
 	init_thread_memory(thread_info->logical_thread_index);
-	thread_memory_t* thread_memory = global_thread_memory;
+	thread_memory_t* thread_memory = local_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
 		thread_memory->async_io_events[i] = CreateEventA(NULL, TRUE, FALSE, NULL);

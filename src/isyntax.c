@@ -893,7 +893,7 @@ static void signed_magnitude_to_twos_complement_16_block(u16* data, u32 len) {
 		__m128i value_if_negative = _mm_sub_epi16(_mm_and_si128(x, _mm_set1_epi16(0x8000)), x); // (x & 0x8000) - x
 		__m128i maybe_negative = _mm_and_si128(sign_masks, value_if_negative);
 		__m128i result = _mm_or_si128(maybe_positive, maybe_negative);
-		*(__m128i*)(data + i) = result;
+		_mm_storeu_si128((__m128i*)(data + i), result);
 	}
 	if (i < len) {
 		for (; i < len; ++i) {
@@ -923,7 +923,7 @@ static void convert_to_absolute_value_16_block(i16* data, u32 len) {
 		__m128i maybe_negative = _mm_and_si128(sign_masks, value_if_negative);
 		__m128i result = _mm_or_si128(maybe_positive, maybe_negative);
 		result = _mm_and_si128(result, _mm_set1_epi16(0x7FFF)); // x &= 0x7FFF (clear sign bit)
-		*(__m128i*)(data + i) = result;
+		_mm_storeu_si128((__m128i*)(data + i), result);
 	}
 	if (i < len) {
 		for (; i < len; ++i) {
@@ -1011,7 +1011,8 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 	// Horizontal pass
 	opj_dwt_t h = {};
 	size_t dwt_mem_size = (MAX(quadrant_width, quadrant_height)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
-	h.mem = (icoeff_t*)malloc(dwt_mem_size); // need _aligned_malloc? //TODO: use temporary memory
+
+	h.mem = (icoeff_t*)alloca(dwt_mem_size); // TODO: need aligned memory?
 	h.sn = quadrant_width; // number of elements in low pass band
 	h.dn = quadrant_width; // number of elements in high pass band
 	h.cas = 1;
@@ -1049,7 +1050,6 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
 	}
 
-	free(h.mem); // need _aligned_free?
 }
 
 static inline void get_offsetted_coeff_blocks(icoeff_t** ll_hl_lh_hh, i32 offset, isyntax_tile_channel_t* color_channel, i32 block_stride, icoeff_t* black_dummy_coeff, icoeff_t* white_dummy_coeff) {
@@ -1129,7 +1129,19 @@ u32 isyntax_get_adjacent_tiles_mask_with_missing_ll_coeff(isyntax_level_t* level
 	return mask;
 }
 
-icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color) {
+static size_t get_idwt_buffer_size(i32 block_width, i32 block_height) {
+	i32 pad_l = ISYNTAX_IDWT_PAD_L;
+	i32 pad_r = ISYNTAX_IDWT_PAD_R;
+	i32 pad_l_plus_r = pad_l + pad_r;
+	i32 quadrant_width = block_width + pad_l_plus_r;
+	i32 quadrant_height = block_height + pad_l_plus_r;
+	i32 full_width = 2 * quadrant_width;
+	i32 full_height = 2 * quadrant_height;
+	size_t idwt_buffer_size = full_width * full_height * sizeof(icoeff_t);
+	return idwt_buffer_size;
+}
+
+void isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer) {
 	isyntax_level_t* level = wsi->levels + scale;
 	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
 	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
@@ -1146,13 +1158,13 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 	i32 pad_l_plus_r = pad_l + pad_r;
 //		ASSERT(sizeof(icoeff_t) * pad_amount == sizeof(u64)); // blit 64 bits == 4 pixels
 	i32 block_width = isyntax->block_width;
-	i32 block_height = isyntax->block_width;
+	i32 block_height = isyntax->block_height;
 	i32 quadrant_width = block_width + pad_l_plus_r;
 	i32 quadrant_height = block_height + pad_l_plus_r;
 	i32 full_width = 2 * quadrant_width;
 	i32 full_height = 2 * quadrant_height;
 	size_t idwt_buffer_size = full_width * full_height * sizeof(icoeff_t);
-	icoeff_t* idwt = (icoeff_t*) calloc(1, idwt_buffer_size);
+	icoeff_t* idwt = dest_buffer; // allocated/given by the caller ahead of time
 
 	i32 dest_stride = full_width;
 
@@ -1341,8 +1353,6 @@ icoeff_t* isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_
 		output_pngs = true;
 	}*/
 	isyntax_idwt(idwt, quadrant_width, quadrant_height, output_pngs, debug_png);
-
-	return idwt;
 }
 
 u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
@@ -1359,24 +1369,32 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i32 idwt_stride = idwt_width;
 	size_t row_copy_size = block_width * sizeof(icoeff_t);
 
-	// TODO: check that all codeblocks are loaded
+	arena_t* arena = &local_thread_memory->temp_arena;
+	temp_memory_t temp_memory = begin_temp_memory(arena);
 
 	icoeff_t* Y = NULL;
 	icoeff_t* Co = NULL;
 	icoeff_t* Cg = NULL;
 
 	float elapsed_idwt = 0.0f;
+	float elapsed_malloc = 0.0f;
 
 	for (i32 color = 0; color < 3; ++color) {
 		i64 start_idwt = get_clock();
-		icoeff_t* idwt = isyntax_idwt_tile_for_color_channel(isyntax, wsi, scale, tile_x, tile_y, color);
+		// idwt will be allocated in temporary memory (only needed for the duration of this function)
+		size_t idwt_buffer_size = idwt_width * idwt_height * sizeof(icoeff_t);
+		icoeff_t* idwt = arena_push_size(arena, idwt_buffer_size);
+		memset(idwt, 0, idwt_buffer_size);
+		isyntax_idwt_tile_for_color_channel(isyntax, wsi, scale, tile_x, tile_y, color, idwt);
 		elapsed_idwt += get_seconds_elapsed(start_idwt, get_clock());
 		ASSERT(idwt);
 		switch(color) {
 			case 0: Y = idwt; break;
 			case 1: Co = idwt; break;
 			case 2: Cg = idwt; break;
-			default: break;
+			default: {
+				ASSERT(!"invalid code path");
+			} break;
 		}
 
 		// Distribute result to child tiles
@@ -1391,10 +1409,15 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			ASSERT(child_top_right->color_channels[color].coeff_ll == NULL);
 			ASSERT(child_bottom_left->color_channels[color].coeff_ll == NULL);
 			ASSERT(child_bottom_right->color_channels[color].coeff_ll == NULL);
+
+			// NOTE: malloc() and free() can become a bottleneck, they don't scale well especially across many threads
+			// TODO: make a block allocator
+			i64 start_malloc = get_clock();
 			child_top_left->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
 			child_top_right->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
 			child_bottom_left->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
 			child_bottom_right->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
+			elapsed_malloc += get_seconds_elapsed(start_malloc, get_clock());
 
 			i32 dest_stride = block_width;
 			// Blit top left child LL block
@@ -1469,82 +1492,18 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	}
 
 	float elapsed = get_seconds_elapsed(start, get_clock());
-	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed);
+//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed, elapsed_malloc);
 
 	/*if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1) {
 		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
 	}*/
 
-	free(Y);
-	free(Co);
-	free(Cg);
+	end_temp_memory(&temp_memory); // free Y, Co and Cg
+//	free(Y);
+//	free(Co);
+//	free(Cg);
 
 	return bgra;
-}
-
-
-
-icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 block_height, bool is_top_level, i32 which_color) {
-	i16* hl = h_block;
-	i16* lh = h_block + block_width * block_height;
-	i16* hh = h_block + 2 * block_width * block_height;
-
-	// Prepare the idwt buffer containing both LL and LH/Hl/HH coefficients.
-	// LL | HL
-	// LH | HH
-	size_t idwt_buffer_size = block_width * block_height * 4 * sizeof(icoeff_t);
-	icoeff_t* idwt = (icoeff_t*)malloc(idwt_buffer_size); // need _aligned_malloc?
-	i32 idwt_stride = block_width * 2;
-	i32 ll_stride = (is_top_level) ? block_width : block_width * 2;
-
-	// Stitch the top quadrants (LL and HL) together
-	if (is_top_level) {
-		// Top level: LL/HL/LH/HH are all read directly from a codeblock (16-bit signed magnitude)
-		for (i32 y = 0; y < block_height; ++y) {
-			icoeff_t* pos = idwt + y * idwt_stride;
-			u16* ll = ((u16*)ll_block) + y * ll_stride;
-			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = *ll++;
-			}
-			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = *hl++;
-			}
-		}
-	} else {
-		// Recursive variant (non-top level):
-		// LL is read from already transformed coefficients from the parent block (32-bit integers)
-		// HL/LH/HH are read from codeblocks (16-bit signed magnitude)
-		for (i32 y = 0; y < block_height; ++y) {
-			icoeff_t* pos = idwt + y * idwt_stride;
-			icoeff_t* ll = ((icoeff_t*)ll_block) + y * ll_stride;
-			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = *ll++;
-			}
-			for (i32 x = 0; x < block_width; ++x) {
-				*pos++ = *hl++;
-			}
-		}
-	}
-	// Now add the lower quadrants (LH and HH)
-	for (i32 y = 0; y < block_height; ++y) {
-		icoeff_t* pos = idwt + (y + block_height) * idwt_stride;
-		for (i32 x = 0; x < block_width; ++x) {
-			*pos++ = *lh++;
-		}
-		for (i32 x = 0; x < block_width; ++x) {
-			*pos++ = *hh++;
-		}
-	}
-
-#if DEBUG_OUTPUT_IDWT_STEPS_AS_PNG
-	char filename[512];
-	snprintf(filename, sizeof(filename), "debug_dwt_input_c%d", which_color);
-	isyntax_idwt(idwt, block_width, block_height, true, filename);
-#else
-	isyntax_idwt(idwt, block_width, block_height, false, NULL);
-#endif
-
-	return idwt;
 }
 
 
@@ -1576,15 +1535,12 @@ icoeff_t* isyntax_idwt_tile(void* ll_block, i16* h_block, i32 block_width, i32 b
 // The above pattern repeats for the other 2 color channels (1 and 2).
 // The LL codeblock is only present at the highest scales.
 
-icoeff_t* isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset) {
+i16* isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, arena_t* allocator) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
 	return isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
-													block_width, block_height, codeblock->coefficient, 1);
+									  block_width, block_height, codeblock->coefficient, 1);
 }
-
-
-
 
 // Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant bit first).
 // Requires that at least 7 safety bytes are present at the end of the stream (don't trigger a segmentation fault)!
@@ -1632,9 +1588,8 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-i16 *
-isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient,
-                           i32 compressor_version) {
+i16* isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
+								i32 coefficient, i32 compressor_version) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
 	// Read the header information stored in the codeblock.
@@ -1663,6 +1618,9 @@ isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_wid
 		i16* coeff_buffer = (i16*)calloc(1, coeff_buffer_size);
 		return coeff_buffer;
 	}
+
+	arena_t* temp_arena = &local_thread_memory->temp_arena;
+	temp_memory_t temp_memory = begin_temp_memory(temp_arena);
 
 	i32 bits_read = 0;
 	i32 block_size_in_bits = compressed_size * 8;
@@ -1786,7 +1744,7 @@ isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_wid
 	}
 
 	// Decode the message
-	u8* decompressed_buffer = (u8*)malloc(serialized_length);
+	u8* decompressed_buffer = (u8*)arena_push_size(temp_arena, serialized_length);
 
 	u32 zerorun_code = huffman.code[zerorun_symbol];
 	u32 zerorun_code_size = huffman.size[zerorun_symbol];
@@ -1962,8 +1920,10 @@ isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_wid
 	// unpack bitplanes
 	i32 compressed_bitplane_index = 0;
 	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
-	u16* coeff_buffer = (u16*)malloc(coeff_buffer_size); // need _aligned_malloc?
-	u16* final_coeff_buffer = (u16*)malloc(coeff_buffer_size); // this copy will have the snake-order reshuffling undone
+	arena_align(temp_arena, 32);
+	u16* coeff_buffer = (u16*)arena_push_size(temp_arena, coeff_buffer_size);
+	// this copy will have the snake-order reshuffling undone, and be converted from signed magnitude to twos complement
+	u16* final_coeff_buffer = (u16*)malloc(coeff_buffer_size);
 	memset(coeff_buffer, 0, coeff_buffer_size);
 	memset(final_coeff_buffer, 0, coeff_buffer_size);
 
@@ -2039,11 +1999,7 @@ isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_wid
 
 	}
 
-	free(coeff_buffer); // need _aligned_free?
-	free(decompressed_buffer);
-//	_aligned_free(final_coeff_buffer);
-
-
+	end_temp_memory(&temp_memory); // frees coeff_buffer and decompressed_buffer
 
 	return (i16*)final_coeff_buffer;
 
@@ -2505,6 +2461,14 @@ void isyntax_destroy(isyntax_t* isyntax) {
 		console_print_error("refcount = %d\n", isyntax->refcount);
 		platform_sleep(1);
 		do_worker_work(&global_work_queue, 0);
+	}
+	if (isyntax->black_dummy_coeff) {
+		free(isyntax->black_dummy_coeff);
+		isyntax->black_dummy_coeff = NULL;
+	}
+	if (isyntax->white_dummy_coeff) {
+		free(isyntax->white_dummy_coeff);
+		isyntax->white_dummy_coeff = NULL;
 	}
 	for (i32 image_index = 0; image_index < isyntax->image_count; ++image_index) {
 		isyntax_image_t* isyntax_image = isyntax->images + image_index;

@@ -390,7 +390,7 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * isyntax->tile_width;
 			level_image->y_tile_side_in_um = level_image->um_per_pixel_x * isyntax->tile_height;
 			ASSERT(level_image->x_tile_side_in_um > 0);
-			ASSERT(level_image->y_tile_side_in_um > 0)
+			ASSERT(level_image->y_tile_side_in_um > 0);
 			level_image->origin_offset = isyntax_level->origin_offset;
 			level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
 			for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
