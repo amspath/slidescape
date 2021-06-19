@@ -171,6 +171,7 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 
 	i64 start_first_load = get_clock();
 	i32 tiles_loaded = 0;
+	total_rgb_transform_time = 0.0f;
 
 	isyntax_init_dummy_codeblocks(isyntax);
 
@@ -358,6 +359,7 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 	}
 
 	console_print("   iSyntax: loading the first %d tiles took %g seconds\n", tiles_loaded, get_seconds_elapsed(start_first_load, get_clock()));
+//	console_print("   total RGB transform time: %g seconds\n", total_rgb_transform_time);
 
 	end_temp_memory(&temp_memory); // deallocate data chunk
 

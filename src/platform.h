@@ -340,6 +340,8 @@ extern i32 global_worker_thread_idle_count;
 extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
 
+extern float total_rgb_transform_time;
+
 #undef INIT
 #undef extern
 

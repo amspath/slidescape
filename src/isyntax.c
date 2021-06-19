@@ -981,6 +981,59 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 	return (rgba_t){ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255};
 }
 
+
+static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
+	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
+	u32* bgra = (u32*)malloc(width * height * sizeof(u32));
+	for (i32 y = 0; y < height; ++y) {
+//		i32 row_offset = ((first_valid_pixel + y) * stride) + first_valid_pixel;
+		u32* dest = bgra + (y * width);
+#if 1 && defined(__SSE2__) && defined(__SSSE3__)
+		for (i32 i = 0; i < width; i += 8) {
+			// Do the color space conversion
+			__m128i Y_ = _mm_loadu_si128((__m128i*)(Y + i));
+			__m128i Co_ = _mm_loadu_si128((__m128i*)(Co + i));
+			__m128i Cg_ = _mm_loadu_si128((__m128i*)(Cg + i));
+			__m128i tmp = _mm_sub_epi16(Y_, _mm_srai_epi16(Cg_, 1)); // tmp = Y - Cg/2
+			__m128i G = _mm_add_epi16(tmp, Cg_);                     // G = tmp + Cg
+			__m128i B = _mm_sub_epi16(tmp, _mm_srai_epi16(Co_, 1));  // B = tmp - Co/2
+			__m128i R = _mm_add_epi16(B, Co_);                       // R = B + Co
+
+			// Clamp range to 0..255
+			__m128i zero = _mm_set1_epi16(0);
+			R = _mm_packus_epi16(R, zero); // -R-R-R-R -> RRRR----
+			G = _mm_packus_epi16(zero, G); // -G-G-G-G -> ----GGGG
+			B = _mm_packus_epi16(B, zero); // -B-B-B-B -> BBBB----
+
+			__m128i A = _mm_setr_epi32(0, 0, 0xffffffff, 0xffffffff); // ----AAAA
+
+			// Shuffle into the right order -> BGRA
+			__m128i BG = _mm_or_si128(B, G);
+			__m128i RA = _mm_or_si128(R, A);
+
+			__m128i v_perm = _mm_setr_epi8(0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
+			BG = _mm_shuffle_epi8(BG, v_perm); // BGBGBGBG
+			RA = _mm_shuffle_epi8(RA, v_perm); // RARARARA
+			__m128i lo = _mm_unpacklo_epi16(BG, RA); // BGRA
+			__m128i hi = _mm_unpackhi_epi16(BG, RA);
+
+			_mm_storeu_si128((__m128i*)(dest + i), lo);
+			_mm_storeu_si128((__m128i*)(dest + i + 4), hi);
+		}
+
+#else
+		for (i32 x = 0; x < width; ++x) {
+			((rgba_t*)dest)[x] = ycocg_to_bgr(Y[x], Co[x], Cg[x]);
+		}
+#endif
+		Y += stride;
+		Co += stride;
+		Cg += stride;
+	}
+	return bgra;
+}
+
+
 void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count) {
 	for (i32 i = 0; i < pixel_count; ++i) {
 		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
@@ -1479,20 +1532,14 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i64 start = get_clock();
 	i32 tile_width = block_width * 2;
 	i32 tile_height = block_height * 2;
-	u32* bgra = (u32*)malloc(tile_width * tile_height * sizeof(u32));
-	for (i32 y = 0; y < tile_height; ++y) {
-		i32 row_offset = ((first_valid_pixel + y) * idwt_stride) + first_valid_pixel;
-		icoeff_t* row_Y = Y + row_offset;
-		icoeff_t* row_Co = Co + row_offset;
-		icoeff_t* row_Cg = Cg + row_offset;
-		u32* dest = bgra + (y * tile_width);
-		for (i32 x = 0; x < tile_width; ++x) {
-			((rgba_t*)dest)[x] = ycocg_to_bgr(row_Y[x], row_Co[x], row_Cg[x]);
-		}
-	}
 
-	float elapsed = get_seconds_elapsed(start, get_clock());
-//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed, elapsed_malloc);
+	i32 valid_offset = (first_valid_pixel * idwt_stride) + first_valid_pixel;
+	u32* bgra = convert_ycocg_to_bgra_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset,
+											tile_width, tile_height, idwt_stride);
+
+	float elapsed_rgb = get_seconds_elapsed(start, get_clock());
+//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed_rgb, elapsed_malloc);
+	total_rgb_transform_time += elapsed_rgb;
 
 	/*if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1) {
 		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
