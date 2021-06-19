@@ -1270,10 +1270,10 @@ DWORD WINAPI thread_proc(void* parameter) {
 
 	// Create a dedicated OpenGL context for this thread, to be used for on-the-fly texture loading
 #if USE_MULTIPLE_OPENGL_CONTEXTS
-	ASSERT(global_main_window);
+	ASSERT(global_app_state.main_window);
 	HDC dc = 0;
 	for (;;) {
-		dc = GetDC(global_main_window);
+		dc = GetDC(global_app_state.main_window);
 		if (dc) break; else {
 			Sleep(1);
 		}
@@ -1290,7 +1290,7 @@ DWORD WINAPI thread_proc(void* parameter) {
 			panic();
 		}
 	}
-	ReleaseDC(global_main_window, dc);
+	ReleaseDC(global_app_state.main_window, dc);
 
 	// Hack: make sure the OpenGL driver doesn't spawn any more threads
 	glEnable(GL_DEBUG_OUTPUT);

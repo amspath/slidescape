@@ -360,10 +360,12 @@ void init_scene(app_state_t *app_state, scene_t *scene);
 void init_app_state(app_state_t* app_state);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
+void do_after_scene_render(app_state_t* app_state, input_t* input);
 
+// viewer_opengl.cpp
 u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
 void init_opengl_stuff(app_state_t* app_state);
-void do_after_scene_render(app_state_t* app_state, input_t* input);
+void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height);
 
 // viewer_io_file.cpp
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);

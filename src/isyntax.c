@@ -2471,18 +2471,22 @@ void isyntax_destroy(isyntax_t* isyntax) {
 		isyntax->white_dummy_coeff = NULL;
 	}
 	for (i32 image_index = 0; image_index < isyntax->image_count; ++image_index) {
-		isyntax_image_t* isyntax_image = isyntax->images + image_index;
-		if (isyntax_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
-			if (isyntax_image->codeblocks) {
-				free(isyntax_image->codeblocks);
-				isyntax_image->codeblocks = NULL;
+		isyntax_image_t* image = isyntax->images + image_index;
+		if (image->pixels) {
+			free(image->pixels);
+			image->pixels = NULL;
+		}
+		if (image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
+			if (image->codeblocks) {
+				free(image->codeblocks);
+				image->codeblocks = NULL;
 			}
-			if (isyntax_image->data_chunks) {
-				free(isyntax_image->data_chunks);
-				isyntax_image->data_chunks = NULL;
+			if (image->data_chunks) {
+				free(image->data_chunks);
+				image->data_chunks = NULL;
 			}
-			for (i32 i = 0; i < isyntax_image->level_count; ++i) {
-				isyntax_level_t* level = isyntax_image->levels + i;
+			for (i32 i = 0; i < image->level_count; ++i) {
+				isyntax_level_t* level = image->levels + i;
 				if (level->tiles) {
 					for (i32 j = 0; j < level->tile_count; ++j) {
 						isyntax_tile_t* tile = level->tiles + j;

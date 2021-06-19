@@ -80,8 +80,14 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 	}
 }
 
-
 void submit_tile_completed(void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
+
+#if USE_MULTIPLE_OPENGL_CONTEXTS
+	image_t* image = &global_app_state.loaded_images[global_app_state.displayed_image]; // TODO: refactor: do something less ugly and dangerous than this
+	if (image) {
+		upload_tile_on_worker_thread(image, tile_pixels, scale, tile_index, tile_width, tile_height);
+	}
+#else
 	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
 	completion_task->pixel_memory = (u8*)tile_pixels;
 	completion_task->tile_width = tile_width;
@@ -89,9 +95,11 @@ void submit_tile_completed(void* tile_pixels, i32 scale, i32 tile_index, i32 til
 	completion_task->scale = scale;
 	completion_task->tile_index = tile_index;
 	completion_task->want_gpu_residency = true;
-
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, completion_task);
+	if (!add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, completion_task)) {
+		ASSERT(!"tile cannot be submitted and will leak");
+	}
+#endif
 
 }
 
@@ -159,7 +167,7 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_t* isyntax, isyntax_image_t* 
 
 
 
-static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isyntax_image_t* wsi) {
+static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 
 	i64 start_first_load = get_clock();
 	i32 tiles_loaded = 0;
@@ -174,6 +182,7 @@ static void isyntax_do_first_load(arena_t* temp_arena, isyntax_t* isyntax, isynt
 
 	i32 levels_in_chunk = ((wsi->codeblocks + current_level->tiles[0].codeblock_chunk_index)->scale % 3) + 1;
 
+	arena_t* temp_arena = &local_thread_memory->temp_arena;
 	temp_memory_t temp_memory = begin_temp_memory(temp_arena);
 
 	u8** data_chunks = arena_push_array(temp_arena, current_level->tile_count, u8*);
@@ -402,10 +411,8 @@ typedef struct isyntax_first_load_task_t {
 } isyntax_first_load_task_t;
 
 void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
-	thread_memory_t* thread_memory = local_thread_memory;
-
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) userdata;
-	isyntax_do_first_load(&thread_memory->temp_arena, task->isyntax, task->wsi);
+	isyntax_do_first_load(task->isyntax, task->wsi);
 	atomic_decrement(&task->isyntax->refcount); // release
 	free(userdata);
 }
@@ -421,8 +428,6 @@ void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
 }
 
 
-// TODO: don't double submit; use interlocked_compare_exchange?
-// TODO: avoid malloc(), use temp memory where possible
 void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_level_t* level = wsi->levels + scale;
 	isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;

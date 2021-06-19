@@ -238,6 +238,65 @@ u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format) {
 	return texture;
 }
 
+void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
+
+
+#if USE_MULTIPLE_OPENGL_CONTEXTS
+
+	glEnable(GL_TEXTURE_2D);
+	if (!local_thread_memory->pbo) {
+		glGenBuffers(1, &local_thread_memory->pbo);
+	}
+	size_t pixel_memory_size = tile_width * tile_height * BYTES_PER_PIXEL;
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, local_thread_memory->pbo);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, pixel_memory_size, NULL, GL_STREAM_DRAW);
+
+	void* mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+
+//write data into the mapped buffer, possibly in another thread.
+	memcpy(mapped_buffer, tile_pixels, pixel_memory_size);
+	free(tile_pixels);
+
+// after reading is complete back on the main thread
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, local_thread_memory->pbo);
+	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+
+	//Sleep(5);
+
+	u32 texture = 0; //gl_gen_texture();
+//        glEnable(GL_TEXTURE_2D);
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tile_width, tile_height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+	glFinish();
+
+	ASSERT(image);
+	level_image_t* level = image->level_images + scale;
+	tile_t* tile = level->tiles + tile_index;
+	tile->texture = texture;
+#else
+	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
+	completion_task->pixel_memory = (u8*)tile_pixels;
+	completion_task->tile_width = tile_width;
+	completion_task->tile_height = tile_height;
+	completion_task->scale = scale;
+	completion_task->tile_index = tile_index;
+	completion_task->want_gpu_residency = true;
+	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
+	add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, completion_task);
+#endif
+
+}
+
 void unload_texture(u32 texture) {
 	glDeleteTextures(1, &texture);
 }

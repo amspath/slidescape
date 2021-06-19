@@ -272,50 +272,15 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 #if 1
-	i32 width = level_image->tile_width;
-	i32 height = level_image->tile_height;
-
-	glEnable(GL_TEXTURE_2D);
-	if (!thread_memory->pbo) {
-		glGenBuffers(1, &thread_memory->pbo);
-	}
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, thread_memory->pbo);
-	glBufferData(GL_PIXEL_UNPACK_BUFFER, width * height * 4, NULL, GL_STREAM_DRAW);
-
-	void* mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
-
-//write data into the mapped buffer, possibly in another thread.
-	memcpy(mapped_buffer, temp_memory, pixel_memory_size);
-	free(temp_memory);
-
-// after reading is complete back on the main thread
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, thread_memory->pbo);
-	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-
-	//Sleep(5);
-
-	u32 texture = 0; //gl_gen_texture();
-//        glEnable(GL_TEXTURE_2D);
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
-	glFinish(); // Block thread execution until all OpenGL operations have finished.
+	upload_tile_on_worker_thread(image, temp_memory, level, tile_index, level_image->tile_width, level_image->tile_height);
 #else
 	glEnable(GL_TEXTURE_2D);
-	u32 texture = load_texture(temp_memory, TILE_DIM, TILE_DIM, GL_BGRA);
+	u32 texture = load_texture(temp_memory, level_image->tile_width, level_image->tile_height, GL_BGRA);
 	glFinish(); // Block thread execution until all OpenGL operations have finished.
-#endif
 	write_barrier;
 	task->tile->texture = texture;
+#endif
+
 
 #else//USE_MULTIPLE_OPENGL_CONTEXTS
 
