@@ -48,8 +48,6 @@
 
 #include <ctype.h>
 
-// TODO: Implement recursive inverse wavelet transform
-// TODO: Improve performance and stability
 // TODO: Add ICC profiles support
 
 #define PER_LEVEL_PADDING 3
@@ -555,10 +553,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 		return success;
 	}
 
-
-
 	// parse XML byte for byte
-
 	char* doc = xml_header;
 	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length, ++doc) {
 		int c = *doc;
@@ -1534,10 +1529,6 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	}*/
 
 	end_temp_memory(&temp_memory); // free Y, Co and Cg
-//	free(Y);
-//	free(Co);
-//	free(Cg);
-
 	return bgra;
 }
 
@@ -1802,7 +1793,6 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			symbol = c;
 			code_size = huffman.size[symbol];
 		} else {
-			// TODO: super naive and slow implementation, accelerate this!
 			bool match = false;
 			u8 lowest_possible_symbol_index = c & 0xFF;
 
@@ -1822,7 +1812,6 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			// SIMD version using SSE2, very slightly faster than the version above
 			// (Need to compile with AVX enabled, otherwise unaligned loads will make it slower)
 			// NOTE: Probably not a bottleneck, the loop below (nearly) always finishes after one iteration.
-			i32 the_symbol = 0;
 			for (i32 i = lowest_possible_symbol_index; i < 256; i += 8) {
 				__m128i size_mask = _mm_loadu_si128((__m128i*)(huffman.nonfast_size_masks + i));
 				__m128i code = _mm_loadu_si128((__m128i*)(huffman.nonfast_code + i));
@@ -1841,9 +1830,6 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				}
 			}
 			DUMMY_STATEMENT;
-			if (the_symbol != symbol) {
-				DUMMY_STATEMENT;
-			}
 #endif
 			if (!match) {
 				DUMMY_STATEMENT;
@@ -1920,8 +1906,8 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		i32 bytes_per_sample = 2; // ((coeff_bit_depth+7)/8);
 		i32 expected_bitmask_bits = (decompressed_length*8) / (block_width * block_height);
 
-		// try to deduce the number of coefficients without knowing the header information
-		// TODO: this should not be necessary! Remove this code once we reliably know coeff_count from the header information
+		// Try to deduce the number of coefficients without knowing the header information
+		// NOTE: This is actually not necessary, because we do know coeff_count from the header.
 		i32 extra_bits = (decompressed_length*8) % (block_width * block_height);
 		if (extra_bits > 0) {
 			if (coeff_count != 1 && extra_bits == 1*16) {
@@ -1945,7 +1931,7 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				bitmasks[2] = *(u16*)(byte_pos+4);
 				total_mask_bits = _popcnt32(bitmasks[0]) + _popcnt32(bitmasks[1]) + _popcnt32(bitmasks[2]);
 			} else {
-				panic(); // TODO: fail condition
+				panic(); // TODO: handle error gracefully?
 			}
 			expected_length = (total_mask_bits * block_width * block_height) / 8 + (coeff_count * 2);
 			ASSERT(decompressed_length == expected_length);
@@ -1957,8 +1943,6 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
 	arena_align(temp_arena, 32);
 	u16* coeff_buffer = (u16*)arena_push_size(temp_arena, coeff_buffer_size);
-	// this copy will have the snake-order reshuffling undone, and be converted from signed magnitude to twos complement
-//	u16* final_coeff_buffer = (u16*)malloc(coeff_buffer_size);
 	memset(coeff_buffer, 0, coeff_buffer_size);
 	memset(out_buffer, 0, coeff_buffer_size);
 
@@ -1980,7 +1964,7 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 					u8 b = bitplane[j];
 					if (b == 0) continue;
 #if !defined(__SSE2__)
-					// TODO: SIMD stuff; this step is SLOW
+					// Non-SIMD version
 					current_coeff_buffer[i+0] |= ((b >> 0) & 1) << shift_amount;
 					current_coeff_buffer[i+1] |= ((b >> 1) & 1) << shift_amount;
 					current_coeff_buffer[i+2] |= ((b >> 2) & 1) << shift_amount;
@@ -2082,7 +2066,7 @@ i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll) {
 	return codeblock_count;
 }
 
-
+#if 0
 static void test_output_block_header(isyntax_image_t* wsi_image) {
 	FILE* test_block_header_fp = fopen("test_block_header.csv", "wb");
 	if (test_block_header_fp) {
@@ -2110,6 +2094,7 @@ static void test_output_block_header(isyntax_image_t* wsi_image) {
 		fclose(test_block_header_fp);
 	}
 }
+#endif
 
 bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
@@ -2227,7 +2212,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 				i64 num_levels = wsi_image->level_count;
 				ASSERT(num_levels >= 1);
-//				i64 padding = (PER_LEVEL_PADDING << level_count) - PER_LEVEL_PADDING;
 				i64 grid_width = ((wsi_image->width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
 				i64 grid_height = ((wsi_image->height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
 
@@ -2528,6 +2512,10 @@ void isyntax_destroy(isyntax_t* isyntax) {
 				image->codeblocks = NULL;
 			}
 			if (image->data_chunks) {
+				for (i32 i = 0; i < image->data_chunk_count; ++i) {
+					isyntax_data_chunk_t* chunk = image->data_chunks + i;
+					if (chunk->data) free(chunk->data);
+				}
 				free(image->data_chunks);
 				image->data_chunks = NULL;
 			}
