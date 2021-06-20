@@ -31,12 +31,6 @@ enum export_region_format_enum {
 	EXPORT_REGION_FORMAT_PNG = 2,
 };
 
-typedef struct export_region_task_t {
-	image_t* image;
-	bounds2f bounds;
-	u32 export_region_format;
-} export_region_task_t;
-
 typedef struct encode_tile_task_t {
 	image_t* image;
 	tiff_t* tiff;
@@ -881,4 +875,44 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 
 	return success;
+}
+
+//TODO: This currently doesn't work properly. What is
+typedef struct export_region_task_t {
+	app_state_t* app_state;
+	image_t* image;
+	tiff_t* tiff;
+	bounds2i level0_bounds;
+	const char* filename;
+	u32 export_tile_width;
+	u16 desired_photometric_interpretation;
+	i32 quality;
+} export_region_task_t;
+
+void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
+	export_region_task_t* task = (export_region_task_t*) userdata;
+	bool success = export_cropped_bigtiff(task->app_state, task->image, task->tiff, task->level0_bounds,
+	                                      task->filename, task->export_tile_width,
+	                                      task->desired_photometric_interpretation, task->quality);
+//	atomic_decrement(&task->isyntax->refcount); // TODO: release
+	free(userdata);
+}
+
+void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
+                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
+	export_region_task_t* task = (export_region_task_t*) calloc(1, sizeof(export_region_task_t));
+	task->app_state = app_state;
+	task->image = image;
+	task->tiff = tiff;
+	task->level0_bounds = level0_bounds;
+	task->filename = filename;
+	task->export_tile_width = export_tile_width;
+	task->desired_photometric_interpretation = desired_photometric_interpretation;
+	task->quality = quality;
+
+//	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
+	if (!add_work_queue_entry(&global_work_queue, export_cropped_bigtiff_func, task)) {
+//		tile->is_submitted_for_loading = false; // chicken out
+//		atomic_decrement(&isyntax->refcount);
+	};
 }

@@ -48,6 +48,7 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 			queue->entries[entry_to_submit].is_valid = true;
 			write_barrier;
 			atomic_increment(&queue->completion_goal);
+			atomic_increment(&queue->start_goal);
 //		    queue->next_entry_to_submit = new_next_entry_to_submit;
 			semaphore_post(queue->semaphore);
 			return true;
@@ -97,7 +98,10 @@ bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 	work_queue_entry_t entry = get_next_work_queue_entry(queue);
 	if (entry.is_valid) {
 		atomic_decrement(&global_worker_thread_idle_count);
+		atomic_increment(&queue->start_count);
+		++work_queue_call_depth;
 		if (!entry.callback) panic();
+		--work_queue_call_depth;
 		entry.callback(logical_thread_index, entry.data);
 		mark_queue_entry_completed(queue);
 		atomic_increment(&global_worker_thread_idle_count);
@@ -107,7 +111,12 @@ bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 
 
 bool is_queue_work_in_progress(work_queue_t* queue) {
-	bool result = (queue->completion_goal > queue->completion_count);
+	bool result = (queue->completion_goal - work_queue_call_depth > queue->completion_count);
+	return result;
+}
+
+bool is_queue_work_waiting_to_start(work_queue_t* queue) {
+	bool result = (queue->start_goal > queue->start_count);
 	return result;
 }
 

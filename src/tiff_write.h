@@ -28,7 +28,8 @@ extern "C" {
 
 bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
                               u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality);
-
+void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
+                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality);
 
 #ifdef __cplusplus
 }

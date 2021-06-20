@@ -98,6 +98,8 @@ typedef struct work_queue_t {
 	i32 volatile next_entry_to_execute;
 	i32 volatile completion_count;
 	i32 volatile completion_goal;
+	i32 volatile start_count;
+	i32 volatile start_goal;
 	work_queue_entry_t entries[256];
 } work_queue_t;
 
@@ -311,6 +313,7 @@ void message_box(app_state_t* app_state, const char* message);
 i32 get_work_queue_task_count(work_queue_t* queue);
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
 bool is_queue_work_in_progress(work_queue_t* queue);
+bool is_queue_work_waiting_to_start(work_queue_t* queue);
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
 void mark_queue_entry_completed(work_queue_t* queue);
 bool do_worker_work(work_queue_t* queue, int logical_thread_index);
@@ -386,6 +389,7 @@ extern bool is_macos;
 extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
 extern i32 global_worker_thread_idle_count;
+extern THREAD_LOCAL i32 work_queue_call_depth;
 extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
 

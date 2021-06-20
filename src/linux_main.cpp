@@ -92,7 +92,7 @@ void* worker_thread(void* parameter) {
 	atomic_increment(&global_worker_thread_idle_count);
 
 	for (;;) {
-        if (!is_queue_work_in_progress(thread_info->queue)) {
+        if (!is_queue_work_waiting_to_start(thread_info->queue)) {
             //platform_sleep(1);
             sem_wait(thread_info->queue->semaphore);
         }
@@ -227,7 +227,7 @@ int main(int argc, const char** argv)
 	viewer_init_options(app_state);
 
     linux_init_multithreading();
-	add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL);
+//	add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL);
     linux_init_input();
 
     // Setup SDL
