@@ -239,8 +239,12 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 				isyntax_codeblock_t* h_block =  h_blocks[i];
 				isyntax_codeblock_t* ll_block = ll_blocks[i];
 				isyntax_tile_channel_t* color_channel = tile->color_channels + i;
-				color_channel->coeff_h = isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, temp_arena);
-				color_channel->coeff_ll = isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, temp_arena);
+				ASSERT(color_channel->coeff_h == NULL);
+				ASSERT(color_channel->coeff_ll == NULL);
+				color_channel->coeff_h = (icoeff_t*)block_alloc(&isyntax->h_coeff_block_allocator);
+				isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, color_channel->coeff_h);
+				color_channel->coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
+				isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, color_channel->coeff_ll);
 
 				// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 				color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x, tile_y);
@@ -279,15 +283,15 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 						ASSERT(codeblock->scale == scale);
 						i64 offset_in_chunk = codeblock->block_data_offset - offset0;
 						ASSERT(offset_in_chunk >= 0);
-						icoeff_t* decompressed = isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
-						                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
-
 						i32 tile_x_in_chunk = tile_x + tile_delta_x[i];
 						i32 tile_y_in_chunk = tile_y + tile_delta_y[i];
 						tile_index = (tile_y_in_chunk * current_level->width_in_tiles) + tile_x_in_chunk;
 						isyntax_tile_t* tile_in_chunk = current_level->tiles + tile_index;
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
-						color_channel->coeff_h = decompressed;
+						color_channel->coeff_h = (icoeff_t*)block_alloc(&isyntax->h_coeff_block_allocator);
+						isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size,
+												   isyntax->block_width, isyntax->block_height,
+												   codeblock->coefficient, 1, color_channel->coeff_h);
 
 						// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x_in_chunk, tile_y_in_chunk);
@@ -333,15 +337,14 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 						ASSERT(codeblock->scale == scale);
 						i64 offset_in_chunk = codeblock->block_data_offset - offset0;
 						ASSERT(offset_in_chunk >= 0);
-						icoeff_t* decompressed = isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
-						                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
-
 						i32 tile_x_in_chunk = tile_x + tile_delta_x[i];
 						i32 tile_y_in_chunk = tile_y + tile_delta_y[i];
 						tile_index = (tile_y_in_chunk * current_level->width_in_tiles) + tile_x_in_chunk;
 						isyntax_tile_t* tile_in_chunk = current_level->tiles + tile_index;
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
-						color_channel->coeff_h = decompressed;
+						color_channel->coeff_h = (icoeff_t*) block_alloc(&isyntax->h_coeff_block_allocator);
+						isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
+						                                                    isyntax->block_height, codeblock->coefficient, 1, color_channel->coeff_h); // TODO: free using _aligned_free()
 
 						// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x_in_chunk, tile_y_in_chunk);
@@ -360,6 +363,26 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 
 	console_print("   iSyntax: loading the first %d tiles took %g seconds\n", tiles_loaded, get_seconds_elapsed(start_first_load, get_clock()));
 //	console_print("   total RGB transform time: %g seconds\n", total_rgb_transform_time);
+
+	i32 blocks_freed = 0;
+	for (i32 i = 0; i < levels_in_chunk; ++i) {
+		scale = wsi->max_scale - i;
+		isyntax_level_t* level = wsi->levels + scale;
+		for (i32 j = 0; j < level->tile_count; ++j) {
+			isyntax_tile_t* tile = level->tiles + j;
+			for (i32 color = 0; color < 3; ++color) {
+				isyntax_tile_channel_t* channel = tile->color_channels + color;
+				if (channel->coeff_ll) block_free(&isyntax->ll_coeff_block_allocator, channel->coeff_ll);
+				if (channel->coeff_h) block_free(&isyntax->h_coeff_block_allocator, channel->coeff_h);
+				channel->coeff_ll = NULL;
+				channel->coeff_h = NULL;
+				++blocks_freed;
+			}
+		}
+	}
+//	console_print("   blocks allocated and freed: %d\n", blocks_freed);
+
+
 
 	end_temp_memory(&temp_memory); // deallocate data chunk
 
@@ -459,11 +482,12 @@ void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* ws
 			ASSERT(codeblock->scale == scale);
 			i64 offset_in_chunk = codeblock->block_data_offset - chunk->offset;
 			ASSERT(offset_in_chunk >= 0);
-			icoeff_t* decompressed = isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
-			                                                    isyntax->block_height, codeblock->coefficient, 1); // TODO: free using _aligned_free()
-
 			isyntax_tile_channel_t* color_channel = tile->color_channels + color;
-			color_channel->coeff_h = decompressed;
+			color_channel->coeff_h = (icoeff_t*) block_alloc(&isyntax->h_coeff_block_allocator);
+			isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
+									   isyntax->block_height, codeblock->coefficient, 1, color_channel->coeff_h);
+
+
 		}
 		tile->has_h = true;
 	}
@@ -1071,17 +1095,14 @@ void stream_image_tiles(tile_streamer_t* tile_streamer) {
 		is_tile_stream_task_in_progress = true;
 		add_work_queue_entry(&global_work_queue, isyntax_stream_image_tiles_func, tile_streamer);
 	} else {
-		// TODO: abort/restart stream task when frame boundary passed
 		is_tile_streamer_frame_boundary_passed = true;
 	}
 }
 
-// TODO: decouple I/O operations from decompression, etc.
 
-// TODO: synchronize WSI unloading
+#if 0
 void stream_image_tiles2(thread_memory_t* thread_memory) {
 
-	// TODO: move to platform code
 
 
 	for (;;) {
@@ -1112,6 +1133,6 @@ void stream_image_tiles2(thread_memory_t* thread_memory) {
 		}
 	}
 }
-
+#endif
 
 

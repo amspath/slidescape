@@ -159,6 +159,9 @@ typedef int8_t bool8;
 
 #define CLAMP(x,xmin,xmax)  ((x) < (xmin) ? (xmin) : (x) > (xmax) ? (xmax) : (x))
 
+#define MACRO_VAR(name) concat(name, __LINE__)
+#define defer(start, end) for (int MACRO_VAR(_i_) = (start, 0); !MACRO_VAR(_i_); (MACRO_VAR(_i_)+=1,end))
+
 
 #define SQUARE(x) ((x)*(x))
 

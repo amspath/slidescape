@@ -984,11 +984,13 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 
 static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
 	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
-	u32* bgra = (u32*)malloc(width * height * sizeof(u32));
+	u32* bgra = (u32*)malloc(width * height * sizeof(u32)); // TODO: performance: block allocator
+
+	i64 start = get_clock();
 	for (i32 y = 0; y < height; ++y) {
-//		i32 row_offset = ((first_valid_pixel + y) * stride) + first_valid_pixel;
 		u32* dest = bgra + (y * width);
 #if 1 && defined(__SSE2__) && defined(__SSSE3__)
+		// Fast SIMD version (~2x faster on my system)
 		for (i32 i = 0; i < width; i += 8) {
 			// Do the color space conversion
 			__m128i Y_ = _mm_loadu_si128((__m128i*)(Y + i));
@@ -1022,6 +1024,7 @@ static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 		}
 
 #else
+		// Slow non-SIMD version
 		for (i32 x = 0; x < width; ++x) {
 			((rgba_t*)dest)[x] = ycocg_to_bgr(Y[x], Co[x], Cg[x]);
 		}
@@ -1030,22 +1033,8 @@ static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 		Co += stride;
 		Cg += stride;
 	}
+	total_rgb_transform_time += get_seconds_elapsed(start, get_clock());
 	return bgra;
-}
-
-
-void isyntax_wavelet_coefficients_to_rgb_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count) {
-	for (i32 i = 0; i < pixel_count; ++i) {
-		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
-		dest[i] = ycocg_to_rgb(Y, Co_coefficients[i], Cg_coefficients[i]);
-	}
-}
-
-void isyntax_wavelet_coefficients_to_bgr_tile(rgba_t* dest, icoeff_t* Y_coefficients, icoeff_t* Co_coefficients, icoeff_t* Cg_coefficients, i32 pixel_count) {
-	for (i32 i = 0; i < pixel_count; ++i) {
-		i32 Y = wavelet_coefficient_to_color_value(Y_coefficients[i]);
-		dest[i] = ycocg_to_bgr(Y, Co_coefficients[i], Cg_coefficients[i]);
-	}
 }
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
@@ -1466,10 +1455,10 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			// NOTE: malloc() and free() can become a bottleneck, they don't scale well especially across many threads
 			// TODO: make a block allocator
 			i64 start_malloc = get_clock();
-			child_top_left->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
-			child_top_right->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
-			child_bottom_left->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
-			child_bottom_right->color_channels[color].coeff_ll = (icoeff_t*)malloc(block_size);
+			child_top_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
+			child_top_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
+			child_bottom_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
+			child_bottom_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
 			elapsed_malloc += get_seconds_elapsed(start_malloc, get_clock());
 
 			i32 dest_stride = block_width;
@@ -1539,7 +1528,6 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 
 	float elapsed_rgb = get_seconds_elapsed(start, get_clock());
 //	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed_rgb, elapsed_malloc);
-	total_rgb_transform_time += elapsed_rgb;
 
 	/*if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1) {
 		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
@@ -1582,11 +1570,11 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 // The above pattern repeats for the other 2 color channels (1 and 2).
 // The LL codeblock is only present at the highest scales.
 
-i16* isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, arena_t* allocator) {
+void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i16* out_buffer) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
-	return isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
-									  block_width, block_height, codeblock->coefficient, 1);
+	isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
+							   block_width, block_height, codeblock->coefficient, 1, out_buffer);
 }
 
 // Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant bit first).
@@ -1635,8 +1623,8 @@ u32 symbol_counts[256];
 u64 fast_count;
 u64 nonfast_count;
 
-i16* isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
-								i32 coefficient, i32 compressor_version) {
+void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
+								i32 coefficient, i32 compressor_version, i16* out_buffer) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
 	// Read the header information stored in the codeblock.
@@ -1661,9 +1649,9 @@ i16* isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	// Early out if dummy/empty block
 	if (compressed_size <= 8) {
-		size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
-		i16* coeff_buffer = (i16*)calloc(1, coeff_buffer_size);
-		return coeff_buffer;
+		size_t out_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
+		memset(out_buffer, 0, out_buffer_size);
+		return;
 	}
 
 	arena_t* temp_arena = &local_thread_memory->temp_arena;
@@ -1970,14 +1958,14 @@ i16* isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	arena_align(temp_arena, 32);
 	u16* coeff_buffer = (u16*)arena_push_size(temp_arena, coeff_buffer_size);
 	// this copy will have the snake-order reshuffling undone, and be converted from signed magnitude to twos complement
-	u16* final_coeff_buffer = (u16*)malloc(coeff_buffer_size);
+//	u16* final_coeff_buffer = (u16*)malloc(coeff_buffer_size);
 	memset(coeff_buffer, 0, coeff_buffer_size);
-	memset(final_coeff_buffer, 0, coeff_buffer_size);
+	memset(out_buffer, 0, coeff_buffer_size);
 
 	for (i32 coeff_index = 0; coeff_index < coeff_count; ++coeff_index) {
 		u16 bitmask = bitmasks[coeff_index];
 		u16* current_coeff_buffer = coeff_buffer + (coeff_index * (block_width * block_height));
-		u16* current_final_coeff_buffer = final_coeff_buffer + (coeff_index * (block_width * block_height));
+		u16* current_out_buffer = (u16*)out_buffer + (coeff_index * (block_width * block_height));
 
 		i32 bit = 0;
 		while (bitmask) {
@@ -2034,21 +2022,19 @@ i16* isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				u64 area_y2 = *(u64*)&current_coeff_buffer[area_base_index+8];
 				u64 area_y3 = *(u64*)&current_coeff_buffer[area_base_index+12];
 
-				*(u64*)(current_final_coeff_buffer + (area_y+0) * block_width + area_x) = area_y0;
-				*(u64*)(current_final_coeff_buffer + (area_y+1) * block_width + area_x) = area_y1;
-				*(u64*)(current_final_coeff_buffer + (area_y+2) * block_width + area_x) = area_y2;
-				*(u64*)(current_final_coeff_buffer + (area_y+3) * block_width + area_x) = area_y3;
+				*(u64*)(current_out_buffer + (area_y + 0) * block_width + area_x) = area_y0;
+				*(u64*)(current_out_buffer + (area_y + 1) * block_width + area_x) = area_y1;
+				*(u64*)(current_out_buffer + (area_y + 2) * block_width + area_x) = area_y2;
+				*(u64*)(current_out_buffer + (area_y + 3) * block_width + area_x) = area_y3;
 			}
 
 			// Convert signed magnitude to twos complement (ex. 0x8002 becomes -2)
-			signed_magnitude_to_twos_complement_16_block(current_final_coeff_buffer, block_width * block_height);
+			signed_magnitude_to_twos_complement_16_block(current_out_buffer, block_width * block_height);
 		}
 
 	}
 
 	end_temp_memory(&temp_memory); // frees coeff_buffer and decompressed_buffer
-
-	return (i16*)final_coeff_buffer;
 
 }
 
@@ -2470,6 +2456,13 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				// TODO: error
 			}
 
+			size_t ll_coeff_block_size = isyntax->block_width * isyntax->block_height * sizeof(icoeff_t);
+			size_t block_allocator_maximum_capacity_in_blocks = GIGABYTES(32) / ll_coeff_block_size;
+			size_t ll_coeff_block_allocator_capacity_in_blocks = block_allocator_maximum_capacity_in_blocks / 4;
+			size_t h_coeff_block_size = ll_coeff_block_size * 3;
+			size_t h_coeff_block_allocator_capacity_in_blocks = ll_coeff_block_allocator_capacity_in_blocks * 3;
+			isyntax->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+			isyntax->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
 
 			// TODO: further implement iSyntax support
 			success = true;
@@ -2509,6 +2502,12 @@ void isyntax_destroy(isyntax_t* isyntax) {
 		platform_sleep(1);
 		do_worker_work(&global_work_queue, 0);
 	}
+	if (isyntax->ll_coeff_block_allocator.is_valid) {
+		block_allocator_destroy(&isyntax->ll_coeff_block_allocator);
+	}
+	if (isyntax->h_coeff_block_allocator.is_valid) {
+		block_allocator_destroy(&isyntax->h_coeff_block_allocator);
+	}
 	if (isyntax->black_dummy_coeff) {
 		free(isyntax->black_dummy_coeff);
 		isyntax->black_dummy_coeff = NULL;
@@ -2535,6 +2534,7 @@ void isyntax_destroy(isyntax_t* isyntax) {
 			for (i32 i = 0; i < image->level_count; ++i) {
 				isyntax_level_t* level = image->levels + i;
 				if (level->tiles) {
+#if 0
 					for (i32 j = 0; j < level->tile_count; ++j) {
 						isyntax_tile_t* tile = level->tiles + j;
 						for (i32 color = 0; color < 3; ++color) {
@@ -2543,6 +2543,7 @@ void isyntax_destroy(isyntax_t* isyntax) {
 							if (channel->coeff_h) free(channel->coeff_h);
 						}
 					}
+#endif
 					free(level->tiles);
 					level->tiles = NULL;
 				}

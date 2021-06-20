@@ -213,6 +213,50 @@ typedef struct {
 #endif
 } io_operation_t;
 
+// See:
+// https://github.com/SasLuca/rayfork/blob/rayfork-0.9/source/core/rayfork-core.c
+
+enum allocator_mode {
+	ALLOCATOR_MODE_UNKNOWN = 0,
+	ALLOCATOR_MODE_ALLOC,
+	ALLOCATOR_MODE_REALLOC,
+	ALLOCATOR_MODE_FREE,
+};
+
+typedef struct allocator_t allocator_t;
+struct allocator_t {
+	void* userdata;
+	void* (*proc)(allocator_t* this_allocator, size_t size_to_allocate, u32 mode, void* ptr_to_free_or_realloc);
+};
+
+
+typedef struct block_allocator_item_t block_allocator_item_t;
+struct block_allocator_item_t {
+	i32 chunk_index;
+	i32 block_index;
+	block_allocator_item_t* next;
+};
+
+typedef struct block_allocator_chunk_t {
+	size_t used_blocks;
+	u8* memory;
+} block_allocator_chunk_t;
+
+typedef struct block_allocator_t {
+	size_t block_size;
+	i32 chunk_capacity_in_blocks;
+	size_t chunk_size;
+	i32 chunk_count;
+	i32 used_chunks;
+	block_allocator_chunk_t* chunks;
+	block_allocator_item_t* free_list_storage;
+	block_allocator_item_t* free_list;
+	i32 free_list_length;
+	benaphore_t lock;
+	bool is_valid;
+} block_allocator_t;
+
+
 // Inline procedures as wrappers for system routines
 #if WINDOWS
 
@@ -295,6 +339,11 @@ void benaphore_unlock(benaphore_t* benaphore);
 void async_read_submit(io_operation_t* op);
 bool async_read_has_finished(io_operation_t* op);
 i64 async_read_finalize(io_operation_t* op);
+
+block_allocator_t block_allocator_create(size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size);
+void block_allocator_destroy(block_allocator_t* allocator);
+void* block_alloc(block_allocator_t* allocator);
+void block_free(block_allocator_t* allocator, void* ptr_to_free);
 
 void init_thread_memory(i32 logical_thread_index);
 
