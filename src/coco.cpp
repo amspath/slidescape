@@ -25,8 +25,9 @@
 #include "stringutils.h"
 
 #include "coco.h"
+#include "viewer.h"
 
-
+#include <time.h>
 
 
 extern app_state_t global_app_state;
@@ -332,6 +333,10 @@ bool load_coco_from_file(coco_t* coco, const char* json_filename) {
 
 	if (coco_file) {
 		success = open_coco(coco, (char*) coco_file->data, coco_file->len);
+		if (success) {
+
+		}
+
 		free(coco_file);
 	}
 	return success;
@@ -495,10 +500,76 @@ static void coco_output_categories(coco_t* coco, memrw_t* out) {
 	memrw_write("]", out, 1);
 }
 
-void save_coco(coco_t* coco) {
+void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_t* annotation_set) {
+	// reset/reallocate space for groups (categories)
+	if (coco->categories) {
+		stb__sbn(coco->categories) = 0;
+	}
+	sb_add(coco->categories, annotation_set->group_count);
+	memset(coco->categories, 0, annotation_set->group_count * sizeof(coco_category_t));
+	coco->category_count = annotation_set->group_count;
+	for (i32 i = 0; i < annotation_set->group_count; ++i) {
+		annotation_group_t* group = annotation_set->groups + i;
+		coco_category_t* category = coco->categories + i;
+		category->id = i;
+		snprintf(category->name, COCO_MAX_FIELD, group->name);
+	}
+
+	// TODO: be less stupid about memory allocation
+	// save dynamic arrays for coordinates, so we can reallocate them later
+	/*v2f** saved_coordinate_arrays = (v2f**)alloca(annotation_set->active_annotation_count * sizeof(v2f*));
+	i32 saved_count = sb_count()
+	memset(saved_coordinate_arrays, 0, annotation_set->active_annotation_count * sizeof(v2f*));
+	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+		saved_coordinate_arrays[i] = coco->annotations[i].segmentation.coordinates;
+	}*/
+	// reset/reallocate space for annotations
+	if (coco->annotations) {
+		stb__sbn(coco->annotations) = 0;
+	}
+	sb_add(coco->annotations, annotation_set->active_annotation_count);
+	memset(coco->annotations, 0, annotation_set->active_annotation_count * sizeof(coco_annotation_t));
+	coco->annotation_count = annotation_set->active_annotation_count;
+	// TODO: fix LEAK!
+
+	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->stored_annotations + annotation_set->active_annotation_indices[i];
+		coco_annotation_t* coco_annotation = coco->annotations + i;
+		v2f* saved_coordinates_storage = coco_annotation->segmentation.coordinates;
+		memset(coco_annotation, 0, sizeof(coco_annotation_t));
+		coco_annotation->id = i;
+		coco_annotation->category_id = annotation->group_id;
+		coco_annotation->segmentation.coordinates = saved_coordinates_storage;
+		// reset/reallocate space for coordinates
+		if (coco_annotation->segmentation.coordinates) {
+			stb__sbn(coco_annotation->segmentation.coordinates) = 0;
+		}
+		if (annotation->coordinate_count > 0) {
+			sb_add(coco_annotation->segmentation.coordinates, annotation->coordinate_count);
+			ASSERT(coco_annotation->segmentation.coordinates != NULL);
+			coordinate_t* coordinates = annotation_set->coordinates + annotation->first_coordinate;
+			coco_annotation->segmentation.coordinate_count = annotation->coordinate_count;
+
+			for (i32 j = 0; j < annotation->coordinate_count; ++j) {
+				coordinate_t* coordinate = coordinates + j;
+				v2f* coco_coordinate = coco_annotation->segmentation.coordinates + j;
+				*coco_coordinate = (v2f) {(float)coordinate->x, (float)coordinate->y};
+			}
+		}
+
+
+	}
+
+}
+
+memrw_t save_coco(coco_t* coco) {
 	i64 timer_begin = get_clock();
 
-	memrw_t out = memrw_create(MAX(MEGABYTES(1), next_pow2(coco->original_filesize)));
+	size_t out_size = MEGABYTES(1);
+	if (coco->original_filesize > out_size) {
+		out_size = next_pow2(coco->original_filesize);
+	}
+	memrw_t out = memrw_create(out_size);
 
 	memrw_write("{\n", &out, 2);
 	coco_output_info(coco, &out);
@@ -512,12 +583,107 @@ void save_coco(coco_t* coco) {
 	coco_output_categories(coco, &out);
 	memrw_write("}\n", &out, 2);
 
-	FILE* fp = fopen("coco_test_out.json", "wb");
+	return out;
+
+	/*FILE* fp = fopen("coco_test_out.json", "wb");
 	if (fp) {
 		fwrite(out.data, out.used_size, 1, fp);
 		fclose(fp);
 	}
 
-	console_print("JSON saved to file in %g seconds\n", get_seconds_elapsed(timer_begin, get_clock()));
+	console_print("JSON saved to file in %g seconds\n", get_seconds_elapsed(timer_begin, get_clock()));*/
+}
+
+i32 coco_add_new_license(coco_t* coco) {
+	coco_license_t new_license = {};
+	i32 highest_id = -1;
+	for (i32 i = 0; i < coco->license_count; ++i) {
+		coco_license_t* license = coco->licenses + i;
+		if (license->id > highest_id) {
+			highest_id = license->id;
+		}
+	}
+	new_license.id = highest_id + 1;
+	sb_push(coco->licenses, new_license);
+	++coco->license_count;
+	return new_license.id;
+}
+
+i32 coco_add_new_category(coco_t* coco) {
+	coco_category_t new_category = {};
+	i32 highest_id = -1;
+	for (i32 i = 0; i < coco->category_count; ++i) {
+		coco_category_t* category = coco->categories + i;
+		if (category->id > highest_id) {
+			highest_id = category->id;
+		}
+	}
+	new_category.id = highest_id + 1;
+	sb_push(coco->categories, new_category);
+	++coco->category_count;
+	return new_category.id;
+}
+
+i32 coco_add_new_image(coco_t* coco) {
+	coco_image_t new_image = {};
+	i32 highest_id = -1;
+	for (i32 i = 0; i < coco->image_count; ++i) {
+		coco_image_t* image = coco->images + i;
+		if (image->id > highest_id) {
+			highest_id = image->id;
+		}
+	}
+	new_image.id = highest_id + 1;
+	sb_push(coco->images, new_image);
+	++coco->image_count;
+	return new_image.id;
+}
+
+coco_t coco_create_empty() {
+	coco_t coco = {};
+	snprintf(coco.info.description, COCO_MAX_FIELD, "New dataset");
+
+	time_t t = time(NULL);
+	struct tm *tm = localtime(&t);
+	snprintf(coco.info.date_created, COCO_MAX_FIELD, "%d/%02d/%02d",
+			 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+	coco.info.year = tm->tm_year + 1900;
+
+//	coco.main_license_id = coco_add_new_license(&coco);
+//	coco.main_category_id = coco_add_new_category(&coco);
+//	coco.main_image_id = coco_add_new_image(&coco);
+
+	coco.is_valid = true;
+
+	return coco;
+}
+
+void coco_init_main_image(coco_t* coco, image_t* image) {
+	if (coco->license_count == 0) {
+		coco->main_license_id = coco_add_new_license(coco);
+	}
+	if (coco->image_count == 0) {
+		coco->main_image_id = coco_add_new_image(coco);
+	}
+	coco_image_t* coco_image = coco->images + 0;
+	snprintf(coco_image->file_name, COCO_MAX_FIELD, image->name);
+	coco_image->width = image->width_in_pixels;
+	coco_image->height = image->height_in_pixels;
+}
+
+
+void coco_destroy(coco_t* coco) {
+	ASSERT(coco->is_valid);
+	if (coco->is_valid) {
+		coco->is_valid = false;
+		sb_free(coco->licenses);
+		sb_free(coco->images);
+		sb_free(coco->categories);
+		for (i32 i = 0; i < coco->annotation_count; ++i) {
+			coco_annotation_t* annotation = coco->annotations + i;
+			sb_free(annotation->segmentation.coordinates);
+		}
+		sb_free(coco->annotations);
+	}
 }
 

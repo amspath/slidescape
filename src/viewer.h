@@ -24,6 +24,8 @@
 extern "C" {
 #endif
 
+typedef struct image_t image_t;
+
 #include "common.h"
 #include "platform.h"
 #include "mathutils.h"
@@ -136,7 +138,7 @@ typedef struct {
 	bool exists;
 } level_image_t;
 
-typedef struct {
+typedef struct image_t {
 	char name[512];
 	image_type_enum type;
 	image_backend_enum backend;

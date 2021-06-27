@@ -93,6 +93,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool close;
 			bool open_remote;
 			bool exit_program;
+			bool new_dataset_asap_xml;
+			bool new_dataset_coco;
+			bool new_dataset_geojson;
 			bool save_annotations;
 			bool select_region;
 			bool deselect;
@@ -129,6 +132,12 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Annotation")) {
+			if (ImGui::BeginMenu("New dataset")) {
+				if (ImGui::MenuItem("ASAP XML", NULL, &menu_items_clicked.new_dataset_asap_xml, false)) {}
+				if (ImGui::MenuItem("MS COCO", NULL, &menu_items_clicked.new_dataset_coco, true)) {}
+				if (ImGui::MenuItem("GeoJSON", NULL, &menu_items_clicked.new_dataset_geojson, false)) {}
+				ImGui::EndMenu();
+			}
 			if (ImGui::MenuItem("Load...", NULL, &menu_items_clicked.open_file)) {} // TODO: only accept annotation files here?
 			ImGui::Separator();
 			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}

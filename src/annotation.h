@@ -23,6 +23,7 @@
 #include "common.h"
 #include "mathutils.h"
 #include "viewer.h"
+#include "coco.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -107,7 +108,9 @@ typedef struct annotation_set_t {
 	annotation_group_t* groups; // sb
 	i32 group_count;
 	bool enabled;
-	char* filename;
+	char* asap_xml_filename;
+	char* coco_filename;
+	char base_filename[512];
 	bool modified;
 	i64 last_modification_time;
 	i32 hovered_coordinate;
@@ -125,6 +128,9 @@ typedef struct annotation_set_t {
 	i32 last_assigned_annotation_group;
 	bool last_assigned_group_is_valid;
 	v2f mpp; // microns per pixel
+	coco_t coco;
+	bool export_as_asap_xml;
+	bool export_as_coco;
 } annotation_set_t;
 
 
@@ -149,7 +155,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename, v2f mpp);
+bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
 void refresh_annotation_pointers(app_state_t* app_state, annotation_set_t* annotation_set);

@@ -23,6 +23,8 @@
 #include "gui.h"
 #include "yxml.h"
 
+#include "coco.h"
+
 void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 		annotation_set->active_annotations[i]->selected = false;
@@ -871,10 +873,19 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
 
-		ImGui::Text("Annotation filename: %s\n", annotation_set->filename);
+		ImGui::Text("Annotation filename: %s\n", annotation_set->asap_xml_filename);
 		ImGui::Text("Number of annotations active: %d\n", annotation_set->active_annotation_count);
 		ImGui::Spacing();
 
+		if (ImGui::CollapsingHeader("Properties")) {
+			ImGuiInputTextFlags input_text_flags = 0;
+			ImGui::InputText("Description", annotation_set->coco.info.description, COCO_MAX_FIELD, input_text_flags);
+			ImGui::InputText("URL", annotation_set->coco.info.url, COCO_MAX_FIELD, input_text_flags);
+			ImGui::InputText("Version", annotation_set->coco.info.version, COCO_MAX_FIELD, input_text_flags);
+			ImGui::InputInt("Year", &annotation_set->coco.info.year, 1, 100, input_text_flags);
+			ImGui::InputText("Contributor", annotation_set->coco.info.contributor, COCO_MAX_FIELD, input_text_flags);
+			ImGui::InputText("Date created", annotation_set->coco.info.date_created, COCO_MAX_FIELD, input_text_flags);
+		}
 
 		if (ImGui::CollapsingHeader("Options"))
 		{
@@ -1216,25 +1227,34 @@ void group_set_attribute(annotation_group_t* group, const char* attr, const char
 }
 
 void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
+	// destroy old state
 	if (annotation_set->stored_annotations) sb_free(annotation_set->stored_annotations);
 	if (annotation_set->coordinates) sb_free(annotation_set->coordinates);
 	if (annotation_set->active_annotation_indices) sb_free(annotation_set->active_annotation_indices);
 	if (annotation_set->groups) sb_free(annotation_set->groups);
-	if (annotation_set->filename) free(annotation_set->filename);
+	if (annotation_set->asap_xml_filename) free(annotation_set->asap_xml_filename);
+	if (annotation_set->coco.is_valid) coco_destroy(&annotation_set->coco);
 	memset(annotation_set, 0, sizeof(*annotation_set));
+
+	// initialize new state
 	annotation_set->mpp = (v2f){1.0f, 1.0f}; // default value shouldn't be zero (has danger of divide-by-zero errors)
 
 	// TODO: check is this still needed?
 	// reserve annotation group 0 for the "None" category
 	add_annotation_group(annotation_set, "None");
+
+	annotation_set->coco = coco_create_empty();
+
+	// TODO: control export setting
+	annotation_set->export_as_asap_xml = true;
+	annotation_set->export_as_coco = true;
+
 }
 
 
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename, v2f mpp) {
-	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-	unload_and_reinit_annotations(annotation_set);
-	annotation_set->mpp = mpp;
+bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 
+	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 	annotation_group_t current_group = {};
 	asap_xml_element_enum current_element_type = ASAP_XML_ELEMENT_NONE;
 
@@ -1404,7 +1424,8 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename, v
 		annotation_set->active_annotation_indices[i] = i;
 	}
 
-	annotation_set->filename = strdup(filename);
+	annotation_set->asap_xml_filename = strdup(filename);
+	annotation_set->export_as_asap_xml = true;
 	success = true;
 	annotation_set->enabled = true;
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
@@ -1548,7 +1569,7 @@ void save_geojson_annotations(annotation_set_t* annotation_set, const char* file
 
 void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay) {
 	if (!annotation_set->modified) return; // no changes, nothing to do
-	if (!annotation_set->filename) return; // don't know where to save to / file doesn't already exist (?)
+	if (!annotation_set->asap_xml_filename) return; // don't know where to save to / file doesn't already exist (?)
 
 	bool proceed = force_ignore_delay;
 	if (!force_ignore_delay) {
@@ -1559,13 +1580,33 @@ void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_s
 		}
 	}
 	if (proceed) {
-		char backup_filename[4096];
-		snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->filename);
-		if (!file_exists(backup_filename)) {
-			rename(annotation_set->filename, backup_filename);
+		if (annotation_set->export_as_asap_xml) {
+			char backup_filename[4096];
+			snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->asap_xml_filename);
+			if (!file_exists(backup_filename)) {
+				rename(annotation_set->asap_xml_filename, backup_filename);
+			}
+			save_asap_xml_annotations(annotation_set, annotation_set->asap_xml_filename);
 		}
-		save_asap_xml_annotations(annotation_set, annotation_set->filename);
+		if (annotation_set->export_as_coco && annotation_set->coco_filename) {
+			char backup_filename[4096];
+			snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->coco_filename);
+			if (!file_exists(backup_filename)) {
+				rename(annotation_set->coco_filename, backup_filename);
+			}
+			coco_transfer_annotations_from_annotation_set(&annotation_set->coco, annotation_set);
+			memrw_t out = save_coco(&annotation_set->coco);
+			// TODO: save in the background
+			FILE* fp = fopen(annotation_set->coco_filename, "wb");
+			if (fp) {
+				fwrite(out.data, out.used_size, 1, fp);
+				fclose(fp);
+			}
+			memrw_destroy(&out);
+		}
 		annotation_set->modified = false;
+
+
 	}
 }
 

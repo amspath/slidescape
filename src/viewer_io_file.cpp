@@ -435,7 +435,10 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 	} else if (strcasecmp(ext, "xml") == 0) {
 		// TODO: how to get the correct scale factor for the annotations?
 		// Maybe a placeholder value, which gets updated based on the scale of the scene image?
-		return load_asap_xml_annotations(app_state, filename, (v2f){0.25f, 0.25f});
+		annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+		unload_and_reinit_annotations(annotation_set);
+		annotation_set->mpp = (v2f){0.25f, 0.25f};
+		return load_asap_xml_annotations(app_state, filename);
 	} else {
 		// assume it is an image file?
 		reset_global_caselist(app_state);
@@ -450,15 +453,32 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 		if (image.is_valid) {
 			add_image(app_state, image, is_base_image);
 
+			annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+			unload_and_reinit_annotations(annotation_set);
+			annotation_set->mpp = (v2f){image.mpp_x, image.mpp_y};
+
 			// Check if there is an associated ASAP XML annotations file
 			size_t filename_len = strlen(filename);
-			size_t temp_size = filename_len + 5; // add 5 so that we can always append ".xml\0"
+			size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
 			char* temp_filename = (char*) alloca(temp_size);
 			strncpy(temp_filename, filename, temp_size);
 			replace_file_extension(temp_filename, temp_size, "xml");
 			if (file_exists(temp_filename)) {
 				console_print("Found XML annotations: %s\n", temp_filename);
-				load_asap_xml_annotations(app_state, temp_filename, (v2f){image.mpp_x, image.mpp_y});
+				load_asap_xml_annotations(app_state, temp_filename);
+			}
+
+			replace_file_extension(temp_filename, temp_size, "json");
+			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
+			if (file_exists(temp_filename)) {
+				console_print("Found JSON annotations: %s\n", temp_filename);
+				load_coco_from_file(&annotation_set->coco, temp_filename);
+			} else {
+				coco_init_main_image(&annotation_set->coco, &image);
+			}
+			// TODO: only save/convert COCO, not the XML as well!
+			if (annotation_set->export_as_asap_xml) {
+				annotation_set->modified = true; // to force export in COCO as well
 			}
 
 			console_print("Loaded '%s'\n", filename);

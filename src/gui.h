@@ -91,6 +91,9 @@ extern float annotation_insert_hover_distance INIT(= 25.0f);
 extern bool show_delete_annotation_prompt;
 extern bool dont_ask_to_delete_annotations;
 
+// gui_coco.cpp
+extern bool show_coco_editor_window;
+
 extern i32 desired_region_export_format;
 extern u16 tiff_export_desired_color_space INIT(= TIFF_PHOTOMETRIC_YCBCR);//TIFF_PHOTOMETRIC_RGB;
 extern i32 tiff_export_jpeg_quality INIT(= 80);

@@ -171,6 +171,7 @@ set(VIEWER_SOURCE_FILES
         isyntax.c
         caselist.cpp
         coco.cpp
+        coco_gui.cpp
         annotation.cpp
         tile_streamer.cpp
         openslide_api.c

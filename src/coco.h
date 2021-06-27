@@ -16,6 +16,18 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#pragma once
+
+// forward declarations
+typedef struct image_t image_t;
+typedef struct annotation_set_t annotation_set_t;
+
+#include "common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define COCO_MAX_FIELD 512
 
 typedef struct coco_info_t {
@@ -75,10 +87,21 @@ typedef struct coco_t {
 	i32 annotation_count;
 	coco_category_t* categories;
 	i32 category_count;
+	i32 main_license_id;
+	i32 main_category_id;
+	i32 main_image_id;
+	bool is_valid;
 } coco_t;
 
 
 bool open_coco(coco_t* coco, const char* json_source, size_t json_length);
 bool load_coco_from_file(coco_t* coco, const char* json_filename);
-void save_coco(coco_t* coco);
+void coco_init_main_image(coco_t* coco, image_t* image);
+void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_t* annotation_set);
+memrw_t save_coco(coco_t* coco);
+void coco_destroy(coco_t* coco);
+coco_t coco_create_empty();
 
+#ifdef __cplusplus
+}
+#endif

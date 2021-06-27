@@ -482,6 +482,8 @@ void init_app_state(app_state_t* app_state) {
 
 	init_scene(app_state, &app_state->scene);
 
+	unload_and_reinit_annotations(&app_state->scene.annotation_set);
+
 	app_state->initialized = true;
 }
 
