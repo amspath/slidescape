@@ -20,64 +20,6 @@
 #include "viewer.h"
 
 
-void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
-	if (tiles_to_load > 0){
-		app_state->allow_idling_next_frame = false;
-
-
-
-		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) {
-			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
-			// (to reduce load on the server)
-			static u32 intermittent = 0;
-			++intermittent;
-			u32 intermittent_interval = 1;
-			intermittent_interval = 5; // reduce load on remote server; can be tweaked
-			if (intermittent % intermittent_interval == 0) {
-				load_tile_task_batch_t batch = {};
-				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
-				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
-				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
-					// success
-					for (i32 i = 0; i < batch.task_count; ++i) {
-						load_tile_task_t* task = batch.tile_tasks + i;
-						tile_t* tile = task->tile;
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
-					}
-				}
-			}
-		} else {
-			// regular file loading
-			for (i32 i = 0; i < tiles_to_load; ++i) {
-				load_tile_task_t task = wishlist[i];
-				tile_t* tile = task.tile;
-				if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
-					// only GPU upload needed
-					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, &task, sizeof(task))) {
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
-					}
-				} else {
-					if (add_work_queue_entry(&global_work_queue, load_tile_func, &task, sizeof(task))) {
-						// TODO: should we even allow this to fail?
-						// success
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
-					}
-				}
-
-
-			}
-		}
-
-
-	}
-}
-
 void submit_tile_completed(void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
@@ -596,13 +538,13 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			visible_tiles.max.x += 1;
 			visible_tiles.max.y += 1;
 
-			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
+			visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
 
 			if (tile_streamer->is_cropped) {
 				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds,
 				                                                        level->x_tile_side_in_um,
 				                                                        level->y_tile_side_in_um, tile_streamer->origin_offset);
-				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
+				visible_tiles = clip_bounds2i(visible_tiles, crop_tile_bounds);
 			}
 
 

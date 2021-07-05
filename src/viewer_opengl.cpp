@@ -48,6 +48,9 @@ typedef struct basic_shader_t {
 	i32 u_black_level;
 	i32 u_white_level;
 	i32 u_background_color;
+	i32 u_transparent_color;
+	i32 u_transparent_tolerance;
+	i32 u_use_transparent_filter;
 	i32 attrib_location_pos;
 	i32 attrib_location_tex_coord;
 } basic_shader_t;
@@ -379,6 +382,9 @@ void init_opengl_stuff(app_state_t* app_state) {
 	basic_shader.u_black_level = get_uniform(basic_shader.program, "black_level");
 	basic_shader.u_white_level = get_uniform(basic_shader.program, "white_level");
 	basic_shader.u_background_color = get_uniform(basic_shader.program, "bg_color");
+	basic_shader.u_transparent_color = get_uniform(basic_shader.program, "transparent_color");
+	basic_shader.u_transparent_tolerance = get_uniform(basic_shader.program, "transparent_tolerance");
+	basic_shader.u_use_transparent_filter = get_uniform(basic_shader.program, "use_transparent_filter");
 	basic_shader.attrib_location_pos = get_attrib(basic_shader.program, "pos");
 	basic_shader.attrib_location_tex_coord = get_attrib(basic_shader.program, "tex_coord");
 

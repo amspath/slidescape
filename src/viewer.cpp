@@ -453,6 +453,9 @@ int priority_cmp_func (const void* a, const void* b) {
 void init_scene(app_state_t *app_state, scene_t *scene) {
 	memset(scene, 0, sizeof(scene_t));
 	scene->clear_color = app_state->clear_color;
+	scene->transparent_color = (v3f){1.0f, 1.0f, 1.0f};
+	scene->transparent_tolerance = 0.01f;
+	scene->use_transparent_filter = false;
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
 	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
 	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
@@ -474,7 +477,7 @@ void init_app_state(app_state_t* app_state) {
 	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
 	init_arena(&app_state->temp_arena, temp_storage_size, app_state->temp_storage_memory);
 
-	app_state->clear_color = (v4f){0.95f, 0.95f, 0.95f, 1.00f};
+	app_state->clear_color = (v4f){1.0f, 1.0f, 1.0f, 1.00f};
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
@@ -491,6 +494,63 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 	autosave_annotations(app_state, annotation_set, force_ignore_delay);
 }
+
+void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
+	if (tiles_to_load > 0){
+		app_state->allow_idling_next_frame = false;
+
+		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) {
+			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
+			// (to reduce load on the server)
+			static u32 intermittent = 0;
+			++intermittent;
+			u32 intermittent_interval = 1;
+			intermittent_interval = 5; // reduce load on remote server; can be tweaked
+			if (intermittent % intermittent_interval == 0) {
+				load_tile_task_batch_t batch = {};
+				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
+				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
+				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
+					// success
+					for (i32 i = 0; i < batch.task_count; ++i) {
+						load_tile_task_t* task = batch.tile_tasks + i;
+						tile_t* tile = task->tile;
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task->need_gpu_residency;
+						tile->need_keep_in_cache = task->need_keep_in_cache;
+					}
+				}
+			}
+		} else {
+			// regular file loading
+			for (i32 i = 0; i < tiles_to_load; ++i) {
+				load_tile_task_t task = wishlist[i];
+				tile_t* tile = task.tile;
+				if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
+					// only GPU upload needed
+					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, &task, sizeof(task))) {
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task.need_gpu_residency;
+						tile->need_keep_in_cache = task.need_keep_in_cache;
+					}
+				} else {
+					if (add_work_queue_entry(&global_work_queue, load_tile_func, &task, sizeof(task))) {
+						// TODO: should we even allow this to fail?
+						// success
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task.need_gpu_residency;
+						tile->need_keep_in_cache = task.need_keep_in_cache;
+					}
+				}
+
+
+			}
+		}
+
+
+	}
+}
+
 
 void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
 	scene_t* scene = &app_state->scene;
@@ -737,13 +797,13 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 				bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
 				                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
-				visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
+				visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
 
 				if (scene->is_cropped) {
 					bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
 					                                                        drawn_level->x_tile_side_in_um,
 					                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
-					visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
+					visible_tiles = clip_bounds2i(visible_tiles, crop_tile_bounds);
 				}
 
 				i32 base_priority = (image->level_count - scale) * 100; // highest priority for the most zoomed in levels
@@ -838,12 +898,21 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			glUniform1f(basic_shader.u_black_level, 0.0f);
 			glUniform1f(basic_shader.u_white_level, 1.0f);
 		}
+		glUniform1i(basic_shader.u_use_transparent_filter, scene->use_transparent_filter);
+		if (scene->use_transparent_filter) {
+			glUniform3fv(basic_shader.u_transparent_color, 1, (GLfloat *) &app_state->scene.transparent_color);
+			glUniform1f(basic_shader.u_transparent_tolerance, app_state->scene.transparent_tolerance);
+		}
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
-		if (scene->is_cropped) {
+		{
 			// Set up the stencil buffer to prevent rendering outside the image area
-			///*
+			bounds2f stencil_bounds = {0, 0, image->width_in_um, image->height_in_um};
+			if (scene->is_cropped) {
+				stencil_bounds = clip_bounds2f(stencil_bounds, scene->crop_bounds);
+			}
+
 			glEnable(GL_STENCIL_TEST);
 			glStencilFunc(GL_ALWAYS, 1, 0xFF);
 			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
@@ -853,10 +922,10 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 //*/
 			{
 				mat4x4 model_matrix;
-				mat4x4_translate(model_matrix, scene->crop_bounds.left, scene->crop_bounds.top, 0.0f);
+				mat4x4_translate(model_matrix, stencil_bounds.left, stencil_bounds.top, 0.0f);
 				mat4x4_scale_aniso(model_matrix, model_matrix,
-				                   scene->crop_bounds.right - scene->crop_bounds.left,
-				                   scene->crop_bounds.bottom - scene->crop_bounds.top,
+				                   stencil_bounds.right - stencil_bounds.left,
+				                   stencil_bounds.bottom - stencil_bounds.top,
 				                   1.0f);
 				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 				draw_rect(dummy_texture);
@@ -875,11 +944,10 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			glDepthMask(GL_TRUE);
 			glStencilMask(0x00);
 			glStencilFunc(GL_EQUAL, 1, 0xFF);
-		} else {
-			// TODO: do not draw beyond the borders of the image (instead of cropping the tiles themselves)
 			glDisable(GL_STENCIL_TEST);
-		}
 
+			// TODO: how to restore state properly for drawing simple images?
+		}
 
 		// Draw all levels within the viewport, up to the current zoom factor
 		for (i32 level = lowest_visible_scale; level <= highest_visible_scale; ++level) {
@@ -892,13 +960,13 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
 			                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
-			visible_tiles = clip_bounds2i(&visible_tiles, &level_tiles_bounds);
+			visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
 
 			if (scene->is_cropped) {
 				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
 				                                                        drawn_level->x_tile_side_in_um,
 				                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
-				visible_tiles = clip_bounds2i(&visible_tiles, &crop_tile_bounds);
+				visible_tiles = clip_bounds2i(visible_tiles, crop_tile_bounds);
 			}
 
 			i32 missing_tiles_on_this_level = 0;

@@ -531,7 +531,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		static int counter = 0;
 
 		ImGui::SetNextWindowPos(ImVec2(25, 50), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(386,291), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(388,409), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Image options", &show_image_options_window);
 
@@ -561,10 +561,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
 		}
 
-		ImGui::SliderFloat("Black level", &app_state->black_level, 0.0f,
-		                   1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-		ImGui::SliderFloat("White level", &app_state->white_level, 0.0f,
-		                   1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+		ImGui::SliderFloat("Black level", &app_state->black_level, 0.0f, 1.0f);
+		ImGui::SliderFloat("White level", &app_state->white_level, 0.0f, 1.0f);
 
 		if (disable_gui) {
 			ImGui::PopItemFlag();
@@ -572,7 +570,23 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		}
 
 		ImGui::NewLine();
+		ImGui::Checkbox("Filter transparent color", &app_state->scene.use_transparent_filter);
+		disable_gui = !app_state->scene.use_transparent_filter;
+		if (disable_gui) {
+			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		}
+		ImGui::ColorEdit3("Transparent color", (float*) &app_state->scene.transparent_color); // Edit 3 floats representing a color
+		ImGui::SliderFloat("Tolerance", &app_state->scene.transparent_tolerance, 0.0f, 0.2f);
+		if (disable_gui) {
+			ImGui::PopItemFlag();
+			ImGui::PopStyleVar();
+		}
+
+
+		ImGui::NewLine();
 		ImGui::ColorEdit3("Background color", (float*) &app_state->clear_color); // Edit 3 floats representing a color
+
 
 		ImGui::End();
 	}

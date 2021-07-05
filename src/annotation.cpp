@@ -1232,7 +1232,10 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	if (annotation_set->coordinates) arrfree(annotation_set->coordinates);
 	if (annotation_set->active_annotation_indices) arrfree(annotation_set->active_annotation_indices);
 	if (annotation_set->groups) arrfree(annotation_set->groups);
-	if (annotation_set->asap_xml_filename) free(annotation_set->asap_xml_filename);
+	if (annotation_set->asap_xml_filename) {
+		// TODO: Fix leak! how to free strdup'd strings with ltalloc?
+//		free(annotation_set->asap_xml_filename);
+	}
 	if (annotation_set->coco.is_valid) coco_destroy(&annotation_set->coco);
 	memset(annotation_set, 0, sizeof(*annotation_set));
 

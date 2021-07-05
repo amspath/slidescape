@@ -98,7 +98,8 @@ static inline v2f v2f_lerp(v2f a, v2f b_minus_a, float t)   { return v2f_add(a, 
 
 // prototypes
 rect2i clip_rect(rect2i* first, rect2i* second);
-bounds2i clip_bounds2i(bounds2i* a, bounds2i* b);
+bounds2i clip_bounds2i(bounds2i a, bounds2i b);
+bounds2f clip_bounds2f(bounds2f a, bounds2f b);
 bool is_point_inside_rect2i(rect2i rect, v2i point);
 v2i rect2i_center_point(rect2i* rect);
 rect2f rect2f_recanonicalize(rect2f* rect);

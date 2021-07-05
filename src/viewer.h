@@ -287,6 +287,9 @@ typedef struct scene_t {
 	bounds2i selection_pixel_bounds;
 	bool8 can_export_region;
 	bool8 is_cropped;
+	v3f transparent_color;
+	float transparent_tolerance;
+	bool use_transparent_filter;
 	bool8 initialized;
 } scene_t;
 
@@ -361,6 +364,7 @@ bool32 is_key_down(input_t* input, i32 keycode);
 void init_scene(app_state_t *app_state, scene_t *scene);
 void init_app_state(app_state_t* app_state);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
+void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 void do_after_scene_render(app_state_t* app_state, input_t* input);
 
@@ -383,7 +387,6 @@ void viewer_init_options(app_state_t* app_state);
 void zoom_update_pos(zoom_state_t* zoom, float pos);
 
 // tile_streamer.cpp
-void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);
 void stream_image_tiles(tile_streamer_t* tile_streamer);
 
