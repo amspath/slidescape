@@ -198,13 +198,13 @@ int mbedtls_pk_write_pubkey( unsigned char **p, unsigned char *start,
     if( mbedtls_pk_get_type( key ) == MBEDTLS_PK_OPAQUE )
     {
         size_t buffer_size;
-        psa_key_handle_t* key_slot = (psa_key_handle_t*) key->pk_ctx;
+        psa_key_id_t* key_id = (psa_key_id_t*) key->pk_ctx;
 
         if ( *p < start )
             return( MBEDTLS_ERR_PK_BAD_INPUT_DATA );
 
         buffer_size = (size_t)( *p - start );
-        if ( psa_export_public_key( *key_slot, start, buffer_size, &len )
+        if ( psa_export_public_key( *key_id, start, buffer_size, &len )
              != PSA_SUCCESS )
         {
             return( MBEDTLS_ERR_PK_BAD_INPUT_DATA );
@@ -265,12 +265,12 @@ int mbedtls_pk_write_pubkey_der( mbedtls_pk_context *key, unsigned char *buf, si
     {
         psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
         psa_key_type_t key_type;
-        psa_key_handle_t handle;
+        psa_key_id_t key_id;
         psa_ecc_family_t curve;
         size_t bits;
 
-        handle = *((psa_key_handle_t*) key->pk_ctx );
-        if( PSA_SUCCESS != psa_get_key_attributes( handle, &attributes ) )
+        key_id = *((psa_key_id_t*) key->pk_ctx );
+        if( PSA_SUCCESS != psa_get_key_attributes( key_id, &attributes ) )
             return( MBEDTLS_ERR_PK_HW_ACCEL_FAILED );
         key_type = psa_get_key_type( &attributes );
         bits = psa_get_key_bits( &attributes );
@@ -487,7 +487,7 @@ int mbedtls_pk_write_key_der( mbedtls_pk_context *key, unsigned char *buf, size_
  *      publicExponent    INTEGER   -- e            1 + 3 + MPI_MAX + 1
  *  }
  */
-#define RSA_PUB_DER_MAX_BYTES   38 + 2 * MBEDTLS_MPI_MAX_SIZE
+#define RSA_PUB_DER_MAX_BYTES   ( 38 + 2 * MBEDTLS_MPI_MAX_SIZE )
 
 /*
  * RSA private keys:
@@ -504,10 +504,10 @@ int mbedtls_pk_write_key_der( mbedtls_pk_context *key, unsigned char *buf, size_
  *      otherPrimeInfos   OtherPrimeInfos OPTIONAL  0 (not supported)
  *  }
  */
-#define MPI_MAX_SIZE_2          MBEDTLS_MPI_MAX_SIZE / 2 + \
-                                MBEDTLS_MPI_MAX_SIZE % 2
-#define RSA_PRV_DER_MAX_BYTES   47 + 3 * MBEDTLS_MPI_MAX_SIZE \
-                                   + 5 * MPI_MAX_SIZE_2
+#define MPI_MAX_SIZE_2          ( MBEDTLS_MPI_MAX_SIZE / 2 + \
+                                  MBEDTLS_MPI_MAX_SIZE % 2 )
+#define RSA_PRV_DER_MAX_BYTES   ( 47 + 3 * MBEDTLS_MPI_MAX_SIZE \
+                                   + 5 * MPI_MAX_SIZE_2 )
 
 #else /* MBEDTLS_RSA_C */
 
@@ -528,7 +528,7 @@ int mbedtls_pk_write_key_der( mbedtls_pk_context *key, unsigned char *buf, size_
  *                                            + 2 * ECP_MAX (coords)    [1]
  *  }
  */
-#define ECP_PUB_DER_MAX_BYTES   30 + 2 * MBEDTLS_ECP_MAX_BYTES
+#define ECP_PUB_DER_MAX_BYTES   ( 30 + 2 * MBEDTLS_ECP_MAX_BYTES )
 
 /*
  * EC private keys:
@@ -539,7 +539,7 @@ int mbedtls_pk_write_key_der( mbedtls_pk_context *key, unsigned char *buf, size_
  *      publicKey  [1] BIT STRING OPTIONAL      1 + 2 + [1] above
  *    }
  */
-#define ECP_PRV_DER_MAX_BYTES   29 + 3 * MBEDTLS_ECP_MAX_BYTES
+#define ECP_PRV_DER_MAX_BYTES   ( 29 + 3 * MBEDTLS_ECP_MAX_BYTES )
 
 #else /* MBEDTLS_ECP_C */
 
@@ -548,10 +548,10 @@ int mbedtls_pk_write_key_der( mbedtls_pk_context *key, unsigned char *buf, size_
 
 #endif /* MBEDTLS_ECP_C */
 
-#define PUB_DER_MAX_BYTES   RSA_PUB_DER_MAX_BYTES > ECP_PUB_DER_MAX_BYTES ? \
-                            RSA_PUB_DER_MAX_BYTES : ECP_PUB_DER_MAX_BYTES
-#define PRV_DER_MAX_BYTES   RSA_PRV_DER_MAX_BYTES > ECP_PRV_DER_MAX_BYTES ? \
-                            RSA_PRV_DER_MAX_BYTES : ECP_PRV_DER_MAX_BYTES
+#define PUB_DER_MAX_BYTES   ( RSA_PUB_DER_MAX_BYTES > ECP_PUB_DER_MAX_BYTES ? \
+                              RSA_PUB_DER_MAX_BYTES : ECP_PUB_DER_MAX_BYTES )
+#define PRV_DER_MAX_BYTES   ( RSA_PRV_DER_MAX_BYTES > ECP_PRV_DER_MAX_BYTES ? \
+                              RSA_PRV_DER_MAX_BYTES : ECP_PRV_DER_MAX_BYTES )
 
 int mbedtls_pk_write_pubkey_pem( mbedtls_pk_context *key, unsigned char *buf, size_t size )
 {

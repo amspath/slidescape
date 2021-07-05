@@ -55,27 +55,27 @@
 /* Key storage */
 /****************************************************************/
 
-/* Determine a file name (ITS file identifier) for the given key file
- * identifier. The file name must be distinct from any file that is used
- * for a purpose other than storing a key. Currently, the only such file
- * is the random seed file whose name is PSA_CRYPTO_ITS_RANDOM_SEED_UID
- * and whose value is 0xFFFFFF52. */
-static psa_storage_uid_t psa_its_identifier_of_slot( psa_key_file_id_t file_id )
+/* Determine a file name (ITS file identifier) for the given key identifier.
+ * The file name must be distinct from any file that is used for a purpose
+ * other than storing a key. Currently, the only such file is the random seed
+ * file whose name is PSA_CRYPTO_ITS_RANDOM_SEED_UID and whose value is
+ * 0xFFFFFF52. */
+static psa_storage_uid_t psa_its_identifier_of_slot( mbedtls_svc_key_id_t key )
 {
-#if defined(MBEDTLS_PSA_CRYPTO_KEY_FILE_ID_ENCODES_OWNER) && \
-    defined(PSA_CRYPTO_SECURE)
+#if defined(MBEDTLS_PSA_CRYPTO_KEY_ID_ENCODES_OWNER)
     /* Encode the owner in the upper 32 bits. This means that if
      * owner values are nonzero (as they are on a PSA platform),
      * no key file will ever have a value less than 0x100000000, so
      * the whole range 0..0xffffffff is available for non-key files. */
-    uint32_t unsigned_owner = (uint32_t) file_id.owner;
-    return( (uint64_t) unsigned_owner << 32 | file_id.key_id );
+    uint32_t unsigned_owner_id = MBEDTLS_SVC_KEY_ID_GET_OWNER_ID( key );
+    return(  ( (uint64_t) unsigned_owner_id << 32 ) |
+             MBEDTLS_SVC_KEY_ID_GET_KEY_ID( key ) );
 #else
     /* Use the key id directly as a file name.
-     * psa_is_key_file_id_valid() in psa_crypto_slot_management.c
+     * psa_is_key_id_valid() in psa_crypto_slot_management.c
      * is responsible for ensuring that key identifiers do not have a
      * value that is reserved for non-key files. */
-    return( file_id );
+    return( key );
 #endif
 }
 
@@ -90,13 +90,14 @@ static psa_storage_uid_t psa_its_identifier_of_slot( psa_key_file_id_t file_id )
  * \param[out] data         Buffer where the data is to be written.
  * \param data_size         Size of the \c data buffer in bytes.
  *
- * \retval PSA_SUCCESS
- * \retval PSA_ERROR_STORAGE_FAILURE
- * \retval PSA_ERROR_DOES_NOT_EXIST
+ * \retval #PSA_SUCCESS
+ * \retval #PSA_ERROR_DATA_INVALID
+ * \retval #PSA_ERROR_DATA_CORRUPT
+ * \retval #PSA_ERROR_STORAGE_FAILURE
+ * \retval #PSA_ERROR_DOES_NOT_EXIST
  */
-static psa_status_t psa_crypto_storage_load( const psa_key_file_id_t key,
-                                             uint8_t *data,
-                                             size_t data_size )
+static psa_status_t psa_crypto_storage_load(
+    const mbedtls_svc_key_id_t key, uint8_t *data, size_t data_size )
 {
     psa_status_t status;
     psa_storage_uid_t data_identifier = psa_its_identifier_of_slot( key );
@@ -109,12 +110,12 @@ static psa_status_t psa_crypto_storage_load( const psa_key_file_id_t key,
 
     status = psa_its_get( data_identifier, 0, (uint32_t) data_size, data, &data_length );
     if( data_size  != data_length )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
 
     return( status );
 }
 
-int psa_is_key_present_in_storage( const psa_key_file_id_t key )
+int psa_is_key_present_in_storage( const mbedtls_svc_key_id_t key )
 {
     psa_status_t ret;
     psa_storage_uid_t data_identifier = psa_its_identifier_of_slot( key );
@@ -138,12 +139,13 @@ int psa_is_key_present_in_storage( const psa_key_file_id_t key )
  * \param data_length   The number of bytes
  *                      that make up the data.
  *
- * \retval PSA_SUCCESS
- * \retval PSA_ERROR_INSUFFICIENT_STORAGE
- * \retval PSA_ERROR_STORAGE_FAILURE
- * \retval PSA_ERROR_ALREADY_EXISTS
+ * \retval #PSA_SUCCESS
+ * \retval #PSA_ERROR_INSUFFICIENT_STORAGE
+ * \retval #PSA_ERROR_ALREADY_EXISTS
+ * \retval #PSA_ERROR_STORAGE_FAILURE
+ * \retval #PSA_ERROR_DATA_INVALID
  */
-static psa_status_t psa_crypto_storage_store( const psa_key_file_id_t key,
+static psa_status_t psa_crypto_storage_store( const mbedtls_svc_key_id_t key,
                                               const uint8_t *data,
                                               size_t data_length )
 {
@@ -157,7 +159,7 @@ static psa_status_t psa_crypto_storage_store( const psa_key_file_id_t key,
     status = psa_its_set( data_identifier, (uint32_t) data_length, data, 0 );
     if( status != PSA_SUCCESS )
     {
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
     }
 
     status = psa_its_get_info( data_identifier, &data_identifier_info );
@@ -168,7 +170,7 @@ static psa_status_t psa_crypto_storage_store( const psa_key_file_id_t key,
 
     if( data_identifier_info.size != data_length )
     {
-        status = PSA_ERROR_STORAGE_FAILURE;
+        status = PSA_ERROR_DATA_INVALID;
         goto exit;
     }
 
@@ -184,7 +186,7 @@ exit:
     return( status );
 }
 
-psa_status_t psa_destroy_persistent_key( const psa_key_file_id_t key )
+psa_status_t psa_destroy_persistent_key( const mbedtls_svc_key_id_t key )
 {
     psa_status_t ret;
     psa_storage_uid_t data_identifier = psa_its_identifier_of_slot( key );
@@ -195,11 +197,11 @@ psa_status_t psa_destroy_persistent_key( const psa_key_file_id_t key )
         return( PSA_SUCCESS );
 
     if( psa_its_remove( data_identifier ) != PSA_SUCCESS )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
 
     ret = psa_its_get_info( data_identifier, &data_identifier_info );
     if( ret != PSA_ERROR_DOES_NOT_EXIST )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
 
     return( PSA_SUCCESS );
 }
@@ -211,11 +213,13 @@ psa_status_t psa_destroy_persistent_key( const psa_key_file_id_t key )
  *                          is to be obtained.
  * \param[out] data_length  The number of bytes that make up the data.
  *
- * \retval PSA_SUCCESS
- * \retval PSA_ERROR_STORAGE_FAILURE
+ * \retval #PSA_SUCCESS
+ * \retval #PSA_ERROR_STORAGE_FAILURE
+ * \retval #PSA_ERROR_DOES_NOT_EXIST
+ * \retval #PSA_ERROR_DATA_CORRUPT
  */
 static psa_status_t psa_crypto_storage_get_data_length(
-    const psa_key_file_id_t key,
+    const mbedtls_svc_key_id_t key,
     size_t *data_length )
 {
     psa_status_t status;
@@ -254,6 +258,25 @@ static psa_status_t psa_crypto_storage_get_data_length(
 }
 #endif
 
+/*
+ * 16-bit integer manipulation macros (little endian)
+ */
+#ifndef GET_UINT16_LE
+#define GET_UINT16_LE( n, b, i )                        \
+{                                                       \
+    (n) = ( (uint16_t) (b)[(i)    ]       )             \
+        | ( (uint16_t) (b)[(i) + 1] <<  8 );            \
+}
+#endif
+
+#ifndef PUT_UINT16_LE
+#define PUT_UINT16_LE( n, b, i )                                \
+{                                                               \
+    (b)[(i)    ] = (unsigned char) ( ( (n)       ) & 0xFF );    \
+    (b)[(i) + 1] = (unsigned char) ( ( (n) >>  8 ) & 0xFF );    \
+}
+#endif
+
 /**
  * Persistent key storage magic header.
  */
@@ -264,9 +287,8 @@ typedef struct {
     uint8_t magic[PSA_KEY_STORAGE_MAGIC_HEADER_LENGTH];
     uint8_t version[4];
     uint8_t lifetime[sizeof( psa_key_lifetime_t )];
-    uint8_t type[4]; /* Size=4 for a 2-byte type to keep the structure more
-                      * regular and aligned and to make potential future
-                      * extensibility easier. */
+    uint8_t type[2];
+    uint8_t bits[2];
     uint8_t policy[sizeof( psa_key_policy_t )];
     uint8_t data_len[4];
     uint8_t key_data[];
@@ -283,7 +305,8 @@ void psa_format_key_data_for_storage( const uint8_t *data,
     memcpy( storage_format->magic, PSA_KEY_STORAGE_MAGIC_HEADER, PSA_KEY_STORAGE_MAGIC_HEADER_LENGTH );
     PUT_UINT32_LE( 0, storage_format->version, 0 );
     PUT_UINT32_LE( attr->lifetime, storage_format->lifetime, 0 );
-    PUT_UINT32_LE( (uint32_t) attr->type, storage_format->type, 0 );
+    PUT_UINT16_LE( (uint16_t) attr->type, storage_format->type, 0 );
+    PUT_UINT16_LE( (uint16_t) attr->bits, storage_format->bits, 0 );
     PUT_UINT32_LE( attr->policy.usage, storage_format->policy, 0 );
     PUT_UINT32_LE( attr->policy.alg, storage_format->policy, sizeof( uint32_t ) );
     PUT_UINT32_LE( attr->policy.alg2, storage_format->policy, 2 * sizeof( uint32_t ) );
@@ -295,7 +318,7 @@ static psa_status_t check_magic_header( const uint8_t *data )
 {
     if( memcmp( data, PSA_KEY_STORAGE_MAGIC_HEADER,
                 PSA_KEY_STORAGE_MAGIC_HEADER_LENGTH ) != 0 )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
     return( PSA_SUCCESS );
 }
 
@@ -309,10 +332,9 @@ psa_status_t psa_parse_key_data_from_storage( const uint8_t *storage_data,
     const psa_persistent_key_storage_format *storage_format =
         (const psa_persistent_key_storage_format *)storage_data;
     uint32_t version;
-    uint32_t type;
 
     if( storage_data_length < sizeof(*storage_format) )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
 
     status = check_magic_header( storage_data );
     if( status != PSA_SUCCESS )
@@ -320,12 +342,12 @@ psa_status_t psa_parse_key_data_from_storage( const uint8_t *storage_data,
 
     GET_UINT32_LE( version, storage_format->version, 0 );
     if( version != 0 )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
 
     GET_UINT32_LE( *key_data_length, storage_format->data_len, 0 );
     if( *key_data_length > ( storage_data_length - sizeof(*storage_format) ) ||
         *key_data_length > PSA_CRYPTO_MAX_STORAGE_SIZE )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
 
     if( *key_data_length == 0 )
     {
@@ -340,11 +362,8 @@ psa_status_t psa_parse_key_data_from_storage( const uint8_t *storage_data,
     }
 
     GET_UINT32_LE( attr->lifetime, storage_format->lifetime, 0 );
-    GET_UINT32_LE( type, storage_format->type, 0 );
-    if( type <= (psa_key_type_t) -1 )
-        attr->type = (psa_key_type_t) type;
-    else
-        return( PSA_ERROR_STORAGE_FAILURE );
+    GET_UINT16_LE( attr->type, storage_format->type, 0 );
+    GET_UINT16_LE( attr->bits, storage_format->bits, 0 );
     GET_UINT32_LE( attr->policy.usage, storage_format->policy, 0 );
     GET_UINT32_LE( attr->policy.alg, storage_format->policy, sizeof( uint32_t ) );
     GET_UINT32_LE( attr->policy.alg2, storage_format->policy, 2 * sizeof( uint32_t ) );
@@ -360,8 +379,12 @@ psa_status_t psa_save_persistent_key( const psa_core_key_attributes_t *attr,
     uint8_t *storage_data;
     psa_status_t status;
 
+    /* All keys saved to persistent storage always have a key context */
+    if( data == NULL || data_length == 0 )
+        return( PSA_ERROR_INVALID_ARGUMENT );
+
     if( data_length > PSA_CRYPTO_MAX_STORAGE_SIZE )
-        return PSA_ERROR_INSUFFICIENT_STORAGE;
+        return( PSA_ERROR_INSUFFICIENT_STORAGE );
     storage_data_length = data_length + sizeof( psa_persistent_key_storage_format );
 
     storage_data = mbedtls_calloc( 1, storage_data_length );
@@ -394,7 +417,7 @@ psa_status_t psa_load_persistent_key( psa_core_key_attributes_t *attr,
     psa_status_t status = PSA_SUCCESS;
     uint8_t *loaded_data;
     size_t storage_data_length = 0;
-    psa_key_id_t key = attr->id;
+    mbedtls_svc_key_id_t key = attr->id;
 
     status = psa_crypto_storage_get_data_length( key, &storage_data_length );
     if( status != PSA_SUCCESS )
@@ -411,6 +434,11 @@ psa_status_t psa_load_persistent_key( psa_core_key_attributes_t *attr,
 
     status = psa_parse_key_data_from_storage( loaded_data, storage_data_length,
                                               data, data_length, attr );
+
+    /* All keys saved to persistent storage always have a key context */
+    if( status == PSA_SUCCESS &&
+        ( *data == NULL || *data_length == 0 ) )
+        status = PSA_ERROR_STORAGE_FAILURE;
 
 exit:
     mbedtls_free( loaded_data );
@@ -456,7 +484,7 @@ psa_status_t psa_crypto_load_transaction( void )
     if( status != PSA_SUCCESS )
         return( status );
     if( length != sizeof( psa_crypto_transaction ) )
-        return( PSA_ERROR_STORAGE_FAILURE );
+        return( PSA_ERROR_DATA_INVALID );
     return( PSA_SUCCESS );
 }
 

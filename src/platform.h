@@ -291,9 +291,11 @@ void platform_sleep(u32 ms);
 void platform_sleep_ns(i64 ns);
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
 void set_swap_interval(int interval);
+u8* platform_alloc(size_t size); // required to be zeroed by the platform
+#else
+static inline u8* platform_alloc(size_t size) { return (u8*)malloc(size);}
 #endif
 
-u8* platform_alloc(size_t size); // required to be zeroed by the platform
 mem_t* platform_allocate_mem_buffer(size_t capacity);
 mem_t* platform_read_entire_file(const char* filename);
 u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
@@ -353,6 +355,7 @@ void init_thread_memory(i32 logical_thread_index);
 #if IS_SERVER
 #define console_print printf
 #define console_print_error(...) fprintf(stderr, __VA_ARGS__)
+#define console_print_verbose(...) do { if (is_verbose_mode) fprintf(stderr, __VA_ARGS__); } while(0)
 #else
 void console_print(const char* fmt, ...); // defined in gui.cpp
 void console_print_verbose(const char* fmt, ...); // defined in gui.cpp

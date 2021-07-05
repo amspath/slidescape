@@ -139,6 +139,7 @@ set(MBEDTLS_CRYPTO_SOURCE_FILES
         psa_crypto_se.c         psa_crypto_slot_management.c    psa_crypto_storage.c    psa_its_file.c      ripemd160.c
         rsa.c                   rsa_internal.c                  sha1.c                  sha256.c            sha512.c
         threading.c             timing.c                        version.c               version_features.c  xtea.c
+        psa_crypto_client.c     psa_crypto_driver_wrappers.c    psa_crypto_ecp.c        psa_crypto_rsa.c
 )
 set(MBEDTLS_X509_SOURCE_FILES
         certs.c                 pkcs11.c                        x509.c                  x509_create.c       x509_crl.c
@@ -210,7 +211,7 @@ set(LIBRARY_SOURCE_FILES
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
-    target_link_libraries(slideviewer user32 gdi32 winmm imm32 dwmapi ws2_32)
+    target_link_libraries(slideviewer user32 gdi32 winmm imm32 dwmapi ws2_32 pthread)
     # Hide the console window on release builds
     target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
 elseif(APPLE)
@@ -250,7 +251,7 @@ set(SERVER_SOURCE_FILES
         stringutils.c
 )
 prepend_path(SERVER_SOURCE_FILES src)
-add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
+add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} deps/ltalloc.cc)
 target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
 if (WIN32)

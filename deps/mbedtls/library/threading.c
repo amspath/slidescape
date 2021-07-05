@@ -42,7 +42,7 @@
 
 #if !( ( defined(_POSIX_VERSION) && _POSIX_VERSION >= 200809L ) ||     \
        ( defined(_POSIX_THREAD_SAFE_FUNCTIONS ) &&                     \
-         _POSIX_THREAD_SAFE_FUNCTIONS >= 20112L ) )
+         _POSIX_THREAD_SAFE_FUNCTIONS >= 200112L ) )
 /*
  * This is a convenience shorthand macro to avoid checking the long
  * preprocessor conditions above. Ideally, we could expose this macro in
@@ -57,7 +57,7 @@
 
 #endif /* !( ( defined(_POSIX_VERSION) && _POSIX_VERSION >= 200809L ) ||     \
              ( defined(_POSIX_THREAD_SAFE_FUNCTIONS ) &&                     \
-                _POSIX_THREAD_SAFE_FUNCTIONS >= 20112L ) ) */
+                _POSIX_THREAD_SAFE_FUNCTIONS >= 200112L ) ) */
 
 #endif /* MBEDTLS_HAVE_TIME_DATE && !MBEDTLS_PLATFORM_GMTIME_R_ALT */
 
@@ -67,6 +67,12 @@ static void threading_mutex_init_pthread( mbedtls_threading_mutex_t *mutex )
     if( mutex == NULL )
         return;
 
+    /* A nonzero value of is_valid indicates a successfully initialized
+     * mutex. This is a workaround for not being able to return an error
+     * code for this function. The lock/unlock functions return an error
+     * if is_valid is nonzero. The Mbed TLS unit test code uses this field
+     * to distinguish more states of the mutex; see
+     * tests/src/threading_helpers for details. */
     mutex->is_valid = pthread_mutex_init( &mutex->mutex, NULL ) == 0;
 }
 

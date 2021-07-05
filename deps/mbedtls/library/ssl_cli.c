@@ -63,7 +63,7 @@ static int ssl_conf_has_static_psk( mbedtls_ssl_config const *conf )
         return( 1 );
 
 #if defined(MBEDTLS_USE_PSA_CRYPTO)
-    if( conf->psk_opaque != 0 )
+    if( ! mbedtls_svc_key_id_is_null( conf->psk_opaque ) )
         return( 1 );
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
 
@@ -685,7 +685,7 @@ static int ssl_write_session_ticket_ext( mbedtls_ssl_context *ssl,
         return( 0 );
 
     MBEDTLS_SSL_DEBUG_MSG( 3,
-        ( "sending session ticket of length %d", tlen ) );
+        ( "sending session ticket of length %" MBEDTLS_PRINTF_SIZET, tlen ) );
 
     memcpy( p, ssl->session_negotiate->ticket, tlen );
 
@@ -756,6 +756,126 @@ static int ssl_write_alpn_ext( mbedtls_ssl_context *ssl,
 }
 #endif /* MBEDTLS_SSL_ALPN */
 
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+static int ssl_write_use_srtp_ext( mbedtls_ssl_context *ssl,
+                                   unsigned char *buf,
+                                   const unsigned char *end,
+                                   size_t *olen )
+{
+    unsigned char *p = buf;
+    size_t protection_profiles_index = 0, ext_len = 0;
+    uint16_t mki_len = 0, profile_value = 0;
+
+    *olen = 0;
+
+    if( ( ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ) ||
+        ( ssl->conf->dtls_srtp_profile_list == NULL ) ||
+        ( ssl->conf->dtls_srtp_profile_list_len == 0 ) )
+    {
+        return( 0 );
+    }
+
+    /* RFC 5764 section 4.1.1
+     * uint8 SRTPProtectionProfile[2];
+     *
+     * struct {
+     *   SRTPProtectionProfiles SRTPProtectionProfiles;
+     *   opaque srtp_mki<0..255>;
+     * } UseSRTPData;
+     * SRTPProtectionProfile SRTPProtectionProfiles<2..2^16-1>;
+     */
+    if( ssl->conf->dtls_srtp_mki_support == MBEDTLS_SSL_DTLS_SRTP_MKI_SUPPORTED )
+    {
+        mki_len = ssl->dtls_srtp_info.mki_len;
+    }
+    /* Extension length = 2 bytes for profiles length,
+     *                    ssl->conf->dtls_srtp_profile_list_len * 2 (each profile is 2 bytes length ),
+     *                    1 byte for srtp_mki vector length and the mki_len value
+     */
+    ext_len = 2 + 2 * ( ssl->conf->dtls_srtp_profile_list_len ) + 1 + mki_len;
+
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, adding use_srtp extension" ) );
+
+    /* Check there is room in the buffer for the extension + 4 bytes
+     * - the extension tag (2 bytes)
+     * - the extension length (2 bytes)
+     */
+    MBEDTLS_SSL_CHK_BUF_PTR( p, end, ext_len + 4 );
+
+    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_USE_SRTP >> 8 ) & 0xFF );
+    *p++ = (unsigned char)( ( MBEDTLS_TLS_EXT_USE_SRTP      ) & 0xFF );
+
+
+    *p++ = (unsigned char)( ( ( ext_len & 0xFF00 ) >> 8 ) & 0xFF );
+    *p++ = (unsigned char)( ext_len & 0xFF );
+
+    /* protection profile length: 2*(ssl->conf->dtls_srtp_profile_list_len) */
+    /* micro-optimization:
+     * the list size is limited to MBEDTLS_TLS_SRTP_MAX_PROFILE_LIST_LENGTH
+     * which is lower than 127, so the upper byte of the length is always 0
+     * For the documentation, the more generic code is left in comments
+     * *p++ = (unsigned char)( ( ( 2 * ssl->conf->dtls_srtp_profile_list_len )
+     *                        >> 8 ) & 0xFF );
+     */
+    *p++ = 0;
+    *p++ = (unsigned char)( ( 2 * ssl->conf->dtls_srtp_profile_list_len )
+                            & 0xFF );
+
+    for( protection_profiles_index=0;
+         protection_profiles_index < ssl->conf->dtls_srtp_profile_list_len;
+         protection_profiles_index++ )
+    {
+        profile_value = mbedtls_ssl_check_srtp_profile_value
+                ( ssl->conf->dtls_srtp_profile_list[protection_profiles_index] );
+        if( profile_value != MBEDTLS_TLS_SRTP_UNSET )
+        {
+            MBEDTLS_SSL_DEBUG_MSG( 3, ( "ssl_write_use_srtp_ext, add profile: %04x",
+                                        profile_value ) );
+            *p++ = ( ( profile_value >> 8 ) & 0xFF );
+            *p++ = ( profile_value & 0xFF );
+        }
+        else
+        {
+            /*
+             * Note: we shall never arrive here as protection profiles
+             * is checked by mbedtls_ssl_conf_dtls_srtp_protection_profiles function
+             */
+            MBEDTLS_SSL_DEBUG_MSG( 3,
+                    ( "client hello, "
+                      "illegal DTLS-SRTP protection profile %d",
+                      ssl->conf->dtls_srtp_profile_list[protection_profiles_index]
+                    ) );
+            return( MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED );
+        }
+    }
+
+    *p++ = mki_len & 0xFF;
+
+    if( mki_len != 0 )
+    {
+        memcpy( p, ssl->dtls_srtp_info.mki_value, mki_len );
+        /*
+         * Increment p to point to the current position.
+         */
+        p += mki_len;
+        MBEDTLS_SSL_DEBUG_BUF( 3, "sending mki",  ssl->dtls_srtp_info.mki_value,
+                               ssl->dtls_srtp_info.mki_len );
+    }
+
+    /*
+     * total extension length: extension type (2 bytes)
+     *                         + extension length (2 bytes)
+     *                         + protection profile length (2 bytes)
+     *                         + 2 * number of protection profiles
+     *                         + srtp_mki vector length(1 byte)
+     *                         + mki value
+     */
+    *olen = p - buf;
+
+    return( 0 );
+}
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
+
 /*
  * Generate random bytes for ClientHello
  */
@@ -785,7 +905,8 @@ static int ssl_generate_random( mbedtls_ssl_context *ssl )
     *p++ = (unsigned char)( t >>  8 );
     *p++ = (unsigned char)( t       );
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, current time: %lu", t ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, current time: %" MBEDTLS_PRINTF_LONGLONG,
+                                (long long) t ) );
 #else
     if( ( ret = ssl->conf->f_rng( ssl->conf->p_rng, p, 4 ) ) != 0 )
         return( ret );
@@ -994,7 +1115,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     for( i = 0; i < n; i++ )
         *p++ = ssl->session_negotiate->id[i];
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, session id len.: %d", n ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, session id len.: %" MBEDTLS_PRINTF_SIZET, n ) );
     MBEDTLS_SSL_DEBUG_BUF( 3,   "client hello, session id", buf + 39, n );
 
     /*
@@ -1062,7 +1183,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
             continue;
 
         MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, add ciphersuite: %#04x (%s)",
-                                    ciphersuites[i], ciphersuite_info->name ) );
+                                    (unsigned int)ciphersuites[i], ciphersuite_info->name ) );
 
 #if defined(MBEDTLS_ECDH_C) || defined(MBEDTLS_ECDSA_C) || \
     defined(MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED)
@@ -1077,7 +1198,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     }
 
     MBEDTLS_SSL_DEBUG_MSG( 3,
-        ( "client hello, got %d ciphersuites (excluding SCSVs)", n ) );
+        ( "client hello, got %" MBEDTLS_PRINTF_SIZET " ciphersuites (excluding SCSVs)", n ) );
 
     /*
      * Add TLS_EMPTY_RENEGOTIATION_INFO_SCSV
@@ -1277,6 +1398,16 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     ext_len += olen;
 #endif
 
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+    if( ( ret = ssl_write_use_srtp_ext( ssl, p + 2 + ext_len,
+                                        end, &olen ) ) != 0 )
+    {
+        MBEDTLS_SSL_DEBUG_RET( 1, "ssl_write_use_srtp_ext", ret );
+        return( ret );
+    }
+    ext_len += olen;
+#endif
+
 #if defined(MBEDTLS_SSL_SESSION_TICKETS)
     if( ( ret = ssl_write_session_ticket_ext( ssl, p + 2 + ext_len,
                                               end, &olen ) ) != 0 )
@@ -1290,7 +1421,7 @@ static int ssl_write_client_hello( mbedtls_ssl_context *ssl )
     /* olen unused if all extensions are disabled */
     ((void) olen);
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, total extension length: %d",
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "client hello, total extension length: %" MBEDTLS_PRINTF_SIZET,
                                 ext_len ) );
 
     if( ext_len > 0 )
@@ -1710,6 +1841,123 @@ static int ssl_parse_alpn_ext( mbedtls_ssl_context *ssl,
 }
 #endif /* MBEDTLS_SSL_ALPN */
 
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+static int ssl_parse_use_srtp_ext( mbedtls_ssl_context *ssl,
+                                   const unsigned char *buf,
+                                   size_t len )
+{
+    mbedtls_ssl_srtp_profile server_protection = MBEDTLS_TLS_SRTP_UNSET;
+    size_t i, mki_len = 0;
+    uint16_t server_protection_profile_value = 0;
+
+    /* If use_srtp is not configured, just ignore the extension */
+    if( ( ssl->conf->transport != MBEDTLS_SSL_TRANSPORT_DATAGRAM ) ||
+        ( ssl->conf->dtls_srtp_profile_list == NULL ) ||
+        ( ssl->conf->dtls_srtp_profile_list_len == 0 ) )
+        return( 0 );
+
+    /* RFC 5764 section 4.1.1
+     * uint8 SRTPProtectionProfile[2];
+     *
+     * struct {
+     *   SRTPProtectionProfiles SRTPProtectionProfiles;
+     *   opaque srtp_mki<0..255>;
+     * } UseSRTPData;
+
+     * SRTPProtectionProfile SRTPProtectionProfiles<2..2^16-1>;
+     *
+     */
+    if( ssl->conf->dtls_srtp_mki_support == MBEDTLS_SSL_DTLS_SRTP_MKI_SUPPORTED )
+    {
+        mki_len = ssl->dtls_srtp_info.mki_len;
+    }
+
+    /*
+     * Length is 5 + optional mki_value : one protection profile length (2 bytes)
+     *                                      + protection profile (2 bytes)
+     *                                      + mki_len(1 byte)
+     *                                      and optional srtp_mki
+     */
+    if( ( len < 5 ) || ( len != ( buf[4] + 5u ) ) )
+        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+
+    /*
+     * get the server protection profile
+     */
+
+    /*
+     * protection profile length must be 0x0002 as we must have only
+     * one protection profile in server Hello
+     */
+    if( (  buf[0] != 0 ) || ( buf[1] != 2 ) )
+        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+
+    server_protection_profile_value = ( buf[2] << 8 ) | buf[3];
+    server_protection = mbedtls_ssl_check_srtp_profile_value(
+                    server_protection_profile_value );
+    if( server_protection != MBEDTLS_TLS_SRTP_UNSET )
+    {
+        MBEDTLS_SSL_DEBUG_MSG( 3, ( "found srtp profile: %s",
+                                      mbedtls_ssl_get_srtp_profile_as_string(
+                                              server_protection ) ) );
+    }
+
+    ssl->dtls_srtp_info.chosen_dtls_srtp_profile = MBEDTLS_TLS_SRTP_UNSET;
+
+    /*
+     * Check we have the server profile in our list
+     */
+    for( i=0; i < ssl->conf->dtls_srtp_profile_list_len; i++)
+    {
+        if( server_protection == ssl->conf->dtls_srtp_profile_list[i] )
+        {
+            ssl->dtls_srtp_info.chosen_dtls_srtp_profile = ssl->conf->dtls_srtp_profile_list[i];
+            MBEDTLS_SSL_DEBUG_MSG( 3, ( "selected srtp profile: %s",
+                                      mbedtls_ssl_get_srtp_profile_as_string(
+                                              server_protection ) ) );
+            break;
+        }
+    }
+
+    /* If no match was found : server problem, it shall never answer with incompatible profile */
+    if( ssl->dtls_srtp_info.chosen_dtls_srtp_profile == MBEDTLS_TLS_SRTP_UNSET )
+    {
+        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
+                                        MBEDTLS_SSL_ALERT_MSG_HANDSHAKE_FAILURE );
+        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+    }
+
+    /* If server does not use mki in its reply, make sure the client won't keep
+     * one as negotiated */
+    if( len == 5 )
+    {
+        ssl->dtls_srtp_info.mki_len = 0;
+    }
+
+    /*
+     * RFC5764:
+     *  If the client detects a nonzero-length MKI in the server's response
+     *  that is different than the one the client offered, then the client
+     *  MUST abort the handshake and SHOULD send an invalid_parameter alert.
+     */
+    if( len > 5  && ( buf[4] != mki_len ||
+        ( memcmp( ssl->dtls_srtp_info.mki_value, &buf[5], mki_len ) ) ) )
+    {
+        mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
+                                        MBEDTLS_SSL_ALERT_MSG_ILLEGAL_PARAMETER );
+        return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_HELLO );
+    }
+#if defined (MBEDTLS_DEBUG_C)
+    if( len > 5 )
+    {
+        MBEDTLS_SSL_DEBUG_BUF( 3, "received mki", ssl->dtls_srtp_info.mki_value,
+                                                  ssl->dtls_srtp_info.mki_len );
+    }
+#endif
+    return( 0 );
+}
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
+
 /*
  * Parse HelloVerifyRequest.  Only called after verifying the HS type.
  */
@@ -1920,10 +2168,10 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     }
 
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, current time: %lu",
-                           ( (uint32_t) buf[2] << 24 ) |
-                           ( (uint32_t) buf[3] << 16 ) |
-                           ( (uint32_t) buf[4] <<  8 ) |
-                           ( (uint32_t) buf[5]       ) ) );
+                                     ( (unsigned long) buf[2] << 24 ) |
+                                     ( (unsigned long) buf[3] << 16 ) |
+                                     ( (unsigned long) buf[4] <<  8 ) |
+                                     ( (unsigned long) buf[5]       ) ) );
 
     memcpy( ssl->handshake->randbytes + 32, buf + 2, 32 );
 
@@ -2006,7 +2254,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     if( ssl->handshake->ciphersuite_info == NULL )
     {
         MBEDTLS_SSL_DEBUG_MSG( 1,
-            ( "ciphersuite info for %04x not found", i ) );
+            ( "ciphersuite info for %04x not found", (unsigned int)i ) );
         mbedtls_ssl_send_alert_message( ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL,
                                         MBEDTLS_SSL_ALERT_MSG_INTERNAL_ERROR );
         return( MBEDTLS_ERR_SSL_BAD_INPUT_DATA );
@@ -2014,7 +2262,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
 
     mbedtls_ssl_optimize_checksum( ssl, ssl->handshake->ciphersuite_info );
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, session id len.: %d", n ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, session id len.: %" MBEDTLS_PRINTF_SIZET, n ) );
     MBEDTLS_SSL_DEBUG_BUF( 3,   "server hello, session id", buf + 35, n );
 
     /*
@@ -2057,7 +2305,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "%s session has been resumed",
                    ssl->handshake->resume ? "a" : "no" ) );
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, chosen ciphersuite: %04x", i ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, chosen ciphersuite: %04x", (unsigned) i ) );
     MBEDTLS_SSL_DEBUG_MSG( 3, ( "server hello, compress alg.: %d",
                                 buf[37 + n] ) );
 
@@ -2126,7 +2374,7 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
     ext = buf + 40 + n;
 
     MBEDTLS_SSL_DEBUG_MSG( 2,
-        ( "server hello, total extension length: %d", ext_len ) );
+        ( "server hello, total extension length: %" MBEDTLS_PRINTF_SIZET, ext_len ) );
 
     while( ext_len )
     {
@@ -2278,9 +2526,19 @@ static int ssl_parse_server_hello( mbedtls_ssl_context *ssl )
             break;
 #endif /* MBEDTLS_SSL_ALPN */
 
+#if defined(MBEDTLS_SSL_DTLS_SRTP)
+        case MBEDTLS_TLS_EXT_USE_SRTP:
+            MBEDTLS_SSL_DEBUG_MSG( 3, ( "found use_srtp extension" ) );
+
+            if( ( ret = ssl_parse_use_srtp_ext( ssl, ext + 4, ext_size ) ) != 0 )
+                return( ret );
+
+            break;
+#endif /* MBEDTLS_SSL_DTLS_SRTP */
+
         default:
             MBEDTLS_SSL_DEBUG_MSG( 3,
-                ( "unknown extension found: %d (ignoring)", ext_id ) );
+                ( "unknown extension found: %u (ignoring)", ext_id ) );
         }
 
         ext_len -= 4 + ext_size;
@@ -2371,7 +2629,7 @@ static int ssl_parse_server_dh_params( mbedtls_ssl_context *ssl,
 
     if( ssl->handshake->dhm_ctx.len * 8 < ssl->conf->dhm_min_bitlen )
     {
-        MBEDTLS_SSL_DEBUG_MSG( 1, ( "DHM prime too short: %d < %d",
+        MBEDTLS_SSL_DEBUG_MSG( 1, ( "DHM prime too short: %" MBEDTLS_PRINTF_SIZET " < %u",
                                     ssl->handshake->dhm_ctx.len * 8,
                                     ssl->conf->dhm_min_bitlen ) );
         return( MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE );
@@ -3545,7 +3803,7 @@ static int ssl_write_client_key_exchange( mbedtls_ssl_context *ssl )
         status = psa_destroy_key( handshake->ecdh_psa_privkey );
         if( status != PSA_SUCCESS )
             return( MBEDTLS_ERR_SSL_HW_ACCEL_FAILED );
-        handshake->ecdh_psa_privkey = 0;
+        handshake->ecdh_psa_privkey = MBEDTLS_SVC_KEY_ID_INIT;
     }
     else
 #endif /* MBEDTLS_USE_PSA_CRYPTO &&
@@ -4090,7 +4348,7 @@ static int ssl_parse_new_session_ticket( mbedtls_ssl_context *ssl )
         return( MBEDTLS_ERR_SSL_BAD_HS_NEW_SESSION_TICKET );
     }
 
-    MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket length: %d", ticket_len ) );
+    MBEDTLS_SSL_DEBUG_MSG( 3, ( "ticket length: %" MBEDTLS_PRINTF_SIZET, ticket_len ) );
 
     /* We're not waiting for a NewSessionTicket message any more */
     ssl->handshake->new_session_ticket = 0;

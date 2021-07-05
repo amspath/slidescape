@@ -318,7 +318,7 @@ int mbedtls_net_accept( mbedtls_net_context *bind_ctx,
 
 #if defined(__socklen_t_defined) || defined(_SOCKLEN_T) ||  \
     defined(_SOCKLEN_T_DECLARED) || defined(__DEFINED_socklen_t) || \
-    defined(socklen_t)
+    defined(socklen_t) || (defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L)
     socklen_t n = (socklen_t) sizeof( client_addr );
     socklen_t type_len = (socklen_t) sizeof( type );
 #else
@@ -465,6 +465,13 @@ int mbedtls_net_poll( mbedtls_net_context *ctx, uint32_t rw, uint32_t timeout )
     if( fd < 0 )
         return( MBEDTLS_ERR_NET_INVALID_CONTEXT );
 
+    /* A limitation of select() is that it only works with file descriptors
+     * that are strictly less than FD_SETSIZE. This is a limitation of the
+     * fd_set type. Error out early, because attempting to call FD_SET on a
+     * large file descriptor is a buffer overflow on typical platforms. */
+    if( fd >= FD_SETSIZE )
+        return( MBEDTLS_ERR_NET_POLL_FAILED );
+
 #if defined(__has_feature)
 #if __has_feature(memory_sanitizer)
     /* Ensure that memory sanitizers consider read_fds and write_fds as
@@ -583,6 +590,13 @@ int mbedtls_net_recv_timeout( void *ctx, unsigned char *buf,
 
     if( fd < 0 )
         return( MBEDTLS_ERR_NET_INVALID_CONTEXT );
+
+    /* A limitation of select() is that it only works with file descriptors
+     * that are strictly less than FD_SETSIZE. This is a limitation of the
+     * fd_set type. Error out early, because attempting to call FD_SET on a
+     * large file descriptor is a buffer overflow on typical platforms. */
+    if( fd >= FD_SETSIZE )
+        return( MBEDTLS_ERR_NET_POLL_FAILED );
 
     FD_ZERO( &read_fds );
     FD_SET( fd, &read_fds );

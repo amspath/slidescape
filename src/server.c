@@ -62,6 +62,7 @@
 #include "mbedtls/memory_buffer_alloc.h"
 #endif
 
+#define STB_SPRINTF_IMPLEMENTATION // normally implemented by ImGui, but the server doesn't have that
 #include "common.h"
 #include "platform.h"
 
@@ -216,7 +217,7 @@ http_request_t* parse_http_headers(const char* http_headers, u64 size) {
 	char* headers_copy = (void*)result + sizeof(http_request_t);
 	memcpy(headers_copy, http_headers, size);
 	headers_copy[size] = '\0';
-	i64 num_lines = 0;
+	size_t num_lines = 0;
 	char** lines = split_into_lines(headers_copy, &num_lines);
 	if (!lines) goto fail;
 //	for (i32 i = 0; i < num_lines; ++i) {
@@ -963,10 +964,10 @@ int main( void )
 	/*
 	 * 2. Setup the listening TCP socket
 	 */
-	mbedtls_printf( "  . Bind on https://localhost:4433/ ..." );
+	mbedtls_printf( "  . Bind on https://localhost:2000/ ..." );
 	fflush( stdout );
 
-	if( ( ret = mbedtls_net_bind( &listen_fd, NULL, "4433", MBEDTLS_NET_PROTO_TCP ) ) != 0 )
+	if( ( ret = mbedtls_net_bind( &listen_fd, NULL, "2000", MBEDTLS_NET_PROTO_TCP ) ) != 0 )
 	{
 		mbedtls_printf( " failed\n  ! mbedtls_net_bind returned %d\n\n", ret );
 		goto exit;

@@ -17,7 +17,7 @@
  *  limitations under the License.
  */
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(_GNU_SOURCE)
 /* Ensure that syscall() is available even when compiling with -std=c99 */
 #define _GNU_SOURCE
 #endif
@@ -108,6 +108,21 @@ static int getrandom_wrapper( void *buf, size_t buflen, unsigned int flags )
 }
 #endif /* SYS_getrandom */
 #endif /* __linux__ || __midipix__ */
+
+#if defined(__FreeBSD__) || defined(__DragonFly__)
+#include <sys/param.h>
+#if (defined(__FreeBSD__) && __FreeBSD_version >= 1200000) || \
+    (defined(__DragonFly__) && __DragonFly_version >= 500700)
+#include <errno.h>
+#include <sys/random.h>
+#define HAVE_GETRANDOM
+static int getrandom_wrapper( void *buf, size_t buflen, unsigned int flags )
+{
+    return getrandom( buf, buflen, flags );
+}
+#endif /* (__FreeBSD__ && __FreeBSD_version >= 1200000) ||
+          (__DragonFly__ && __DragonFly_version >= 500700) */
+#endif /* __FreeBSD__ || __DragonFly__ */
 
 /*
  * Some BSD systems provide KERN_ARND.
@@ -205,13 +220,13 @@ int mbedtls_null_entropy_poll( void *data,
 {
     ((void) data);
     ((void) output);
-    *olen = 0;
 
+    *olen = 0;
     if( len < sizeof(unsigned char) )
         return( 0 );
 
+    output[0] = 0;
     *olen = sizeof(unsigned char);
-
     return( 0 );
 }
 #endif

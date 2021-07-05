@@ -45,21 +45,9 @@
 #include "mbedtls/cmac.h"
 #include "mbedtls/platform_util.h"
 #include "mbedtls/error.h"
+#include "mbedtls/platform.h"
 
 #include <string.h>
-
-
-#if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
-#else
-#include <stdlib.h>
-#define mbedtls_calloc     calloc
-#define mbedtls_free       free
-#if defined(MBEDTLS_SELF_TEST)
-#include <stdio.h>
-#define mbedtls_printf     printf
-#endif /* MBEDTLS_SELF_TEST */
-#endif /* MBEDTLS_PLATFORM_C */
 
 #if !defined(MBEDTLS_CMAC_ALT) || defined(MBEDTLS_SELF_TEST)
 
@@ -420,7 +408,7 @@ exit:
  */
 int mbedtls_aes_cmac_prf_128( const unsigned char *key, size_t key_length,
                               const unsigned char *input, size_t in_len,
-                              unsigned char *output )
+                              unsigned char output[16] )
 {
     int ret = MBEDTLS_ERR_ERROR_CORRUPTION_DETECTED;
     const mbedtls_cipher_info_t *cipher_info;
@@ -793,6 +781,18 @@ static int cmac_test_subkeys( int verbose,
         if( ( ret = mbedtls_cipher_setkey( &ctx, key, keybits,
                                        MBEDTLS_ENCRYPT ) ) != 0 )
         {
+            /* When CMAC is implemented by an alternative implementation, or
+             * the underlying primitive itself is implemented alternatively,
+             * AES-192 may be unavailable. This should not cause the selftest
+             * function to fail. */
+            if( ( ret == MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED ||
+                  ret == MBEDTLS_ERR_CIPHER_FEATURE_UNAVAILABLE ) &&
+                  cipher_type == MBEDTLS_CIPHER_AES_192_ECB ) {
+                if( verbose != 0 )
+                    mbedtls_printf( "skipped\n" );
+                goto next_test;
+            }
+
             if( verbose != 0 )
                 mbedtls_printf( "test execution failed\n" );
 
@@ -820,6 +820,7 @@ static int cmac_test_subkeys( int verbose,
         if( verbose != 0 )
             mbedtls_printf( "passed\n" );
 
+next_test:
         mbedtls_cipher_free( &ctx );
     }
 
@@ -864,6 +865,18 @@ static int cmac_test_wth_cipher( int verbose,
         if( ( ret = mbedtls_cipher_cmac( cipher_info, key, keybits, messages,
                                          message_lengths[i], output ) ) != 0 )
         {
+            /* When CMAC is implemented by an alternative implementation, or
+             * the underlying primitive itself is implemented alternatively,
+             * AES-192 may be unavailable. This should not cause the selftest
+             * function to fail. */
+            if( ( ret == MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED ||
+                  ret == MBEDTLS_ERR_CIPHER_FEATURE_UNAVAILABLE ) &&
+                  cipher_type == MBEDTLS_CIPHER_AES_192_ECB ) {
+                if( verbose != 0 )
+                    mbedtls_printf( "skipped\n" );
+                continue;
+            }
+
             if( verbose != 0 )
                 mbedtls_printf( "failed\n" );
             goto exit;
