@@ -2392,6 +2392,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 								current_chunk_codeblock_index = i;
 								next_chunk_codeblock_index = i + (chunk_codeblock_count_per_color * 3);
 								current_data_chunk_index = next_data_chunk_index;
+								if (current_data_chunk_index >= max_possible_chunk_count) {
+									console_print_error("iSyntax: encountered too many data chunks\n");
+									panic();
+								}
 
 								isyntax_data_chunk_t* chunk = wsi_image->data_chunks + current_data_chunk_index;
 								chunk->offset = codeblock->block_data_offset;
@@ -2514,7 +2518,9 @@ void isyntax_destroy(isyntax_t* isyntax) {
 			if (image->data_chunks) {
 				for (i32 i = 0; i < image->data_chunk_count; ++i) {
 					isyntax_data_chunk_t* chunk = image->data_chunks + i;
-					if (chunk->data) free(chunk->data);
+					if (chunk->data) {
+						free(chunk->data);
+					}
 				}
 				free(image->data_chunks);
 				image->data_chunks = NULL;

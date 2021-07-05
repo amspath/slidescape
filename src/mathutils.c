@@ -36,10 +36,10 @@ rect2i clip_rect(rect2i* first, rect2i* second) {
 
 bounds2i clip_bounds2i(bounds2i* a, bounds2i* b) {
 	bounds2i result = {};
-	result.left = MAX(a->left, b->left);
-	result.top = MAX(a->top, b->top);
-	result.right = MIN(a->right, b->right);
-	result.bottom = MIN(a->bottom, b->bottom);
+	result.left = MIN(b->right, MAX(a->left, b->left));
+	result.top = MIN(b->bottom, MAX(a->top, b->top));
+	result.right = MAX(b->left, MIN(a->right, b->right));
+	result.bottom = MAX(b->top, MIN(a->bottom, b->bottom));
 	return result;
 }
 

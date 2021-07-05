@@ -189,8 +189,10 @@ typedef int8_t bool8;
 #define __FILENAME__ __FILE__
 #endif
 
-static inline void panic() {
-	printf("A fatal error occurred (aborting).\n");
+#define panic() _panic(__FILE__, __LINE__, __func__)
+static inline void _panic(const char* source_filename, i32 line, const char* func) {
+	fprintf(stderr, "%s(): %s:%d\n", func, source_filename, line);
+	fprintf(stderr, "A fatal error occurred (aborting).\n");
 #if DO_DEBUG
 #if COMPILER_GCC
 	__builtin_trap();

@@ -618,6 +618,11 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 			i32 local_bounds_width = padded_bounds.max.x - padded_bounds.min.x;
 			i32 local_bounds_height = padded_bounds.max.y - padded_bounds.min.y;
+			ASSERT(local_bounds_width >= 0);
+			ASSERT(local_bounds_height >= 0);
+			if (local_bounds_width <= 0 || local_bounds_height <= 0) {
+				return; // nothing to do, everything is out of bounds
+			}
 
 			size_t tile_req_size = (local_bounds_width) * (local_bounds_height) * sizeof(isyntax_tile_req_t);
 			isyntax_tile_req_t* tile_req = (isyntax_tile_req_t*)arena_push_size(arena, tile_req_size);
