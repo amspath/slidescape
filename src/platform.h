@@ -79,9 +79,9 @@ typedef struct memrw_t {
 typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
 
 typedef struct work_queue_entry_t {
-	void* data;
+	bool32 is_valid;
 	work_queue_callback_t* callback;
-	bool is_valid;
+	u8 userdata[128];
 } work_queue_entry_t;
 
 #if WINDOWS
@@ -313,7 +313,7 @@ void reset_window_title(window_handle_t window);
 void message_box(app_state_t* app_state, const char* message);
 
 i32 get_work_queue_task_count(work_queue_t* queue);
-bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata);
+bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool is_queue_work_in_progress(work_queue_t* queue);
 bool is_queue_work_waiting_to_start(work_queue_t* queue);
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);

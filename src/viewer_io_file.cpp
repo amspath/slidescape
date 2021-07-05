@@ -284,21 +284,20 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 #else//USE_MULTIPLE_OPENGL_CONTEXTS
 
-	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
-	completion_task->pixel_memory = temp_memory;
-	completion_task->tile_width = level_image->tile_width;
-	completion_task->tile_height = level_image->tile_height;
-	completion_task->scale = level;
-	completion_task->tile_index = tile_index;
-	completion_task->want_gpu_residency = true;
+	viewer_notify_tile_completed_task_t completion_task = {};
+	completion_task.pixel_memory = temp_memory;
+	completion_task.tile_width = level_image->tile_width;
+	completion_task.tile_height = level_image->tile_height;
+	completion_task.scale = level;
+	completion_task.tile_index = tile_index;
+	completion_task.want_gpu_residency = true;
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	ASSERT(task->completion_callback);
-	add_work_queue_entry(&global_completion_queue, task->completion_callback, completion_task);
+	add_work_queue_entry(&global_completion_queue, task->completion_callback, &completion_task, sizeof(completion_task));
 
 #endif
 
-	free(userdata);
 }
 
 void load_wsi(wsi_t* wsi, const char* filename) {

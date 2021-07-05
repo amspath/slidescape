@@ -1487,7 +1487,7 @@ int main(int argc, const char** argv) {
 	win32_init_multithreading();
 	// Load OpenSlide in the background, we might not need it immediately.
 #if 1
-	add_work_queue_entry(&global_work_queue, load_openslide_task, NULL);
+	add_work_queue_entry(&global_work_queue, load_openslide_task, NULL, 0);
 #else
     load_openslide_task(0, NULL);
 #endif

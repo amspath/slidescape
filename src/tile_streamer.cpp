@@ -34,13 +34,13 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 			u32 intermittent_interval = 1;
 			intermittent_interval = 5; // reduce load on remote server; can be tweaked
 			if (intermittent % intermittent_interval == 0) {
-				load_tile_task_batch_t* batch = (load_tile_task_batch_t*) calloc(1, sizeof(load_tile_task_batch_t));
-				batch->task_count = ATMOST(COUNT(batch->tile_tasks), tiles_to_load);
-				memcpy(batch->tile_tasks, wishlist, batch->task_count * sizeof(load_tile_task_t));
-				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, batch)) {
+				load_tile_task_batch_t batch = {};
+				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
+				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
+				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
 					// success
-					for (i32 i = 0; i < batch->task_count; ++i) {
-						load_tile_task_t* task = batch->tile_tasks + i;
+					for (i32 i = 0; i < batch.task_count; ++i) {
+						load_tile_task_t* task = batch.tile_tasks + i;
 						tile_t* tile = task->tile;
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task->need_gpu_residency;
@@ -51,24 +51,22 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 		} else {
 			// regular file loading
 			for (i32 i = 0; i < tiles_to_load; ++i) {
-				load_tile_task_t* task = (load_tile_task_t*) malloc(sizeof(load_tile_task_t)); // should be freed after uploading the tile to the gpu
-				*task = wishlist[i];
-
-				tile_t* tile = task->tile;
-				if (tile->is_cached && tile->texture == 0 && task->need_gpu_residency) {
+				load_tile_task_t task = wishlist[i];
+				tile_t* tile = task.tile;
+				if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
 					// only GPU upload needed
-					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, task)) {
+					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, &task, sizeof(task))) {
 						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
+						tile->need_gpu_residency = task.need_gpu_residency;
+						tile->need_keep_in_cache = task.need_keep_in_cache;
 					}
 				} else {
-					if (add_work_queue_entry(&global_work_queue, load_tile_func, task)) {
+					if (add_work_queue_entry(&global_work_queue, load_tile_func, &task, sizeof(task))) {
 						// TODO: should we even allow this to fail?
 						// success
 						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
+						tile->need_gpu_residency = task.need_gpu_residency;
+						tile->need_keep_in_cache = task.need_keep_in_cache;
 					}
 				}
 
@@ -88,15 +86,15 @@ void submit_tile_completed(void* tile_pixels, i32 scale, i32 tile_index, i32 til
 		upload_tile_on_worker_thread(image, tile_pixels, scale, tile_index, tile_width, tile_height);
 	}
 #else
-	viewer_notify_tile_completed_task_t* completion_task = (viewer_notify_tile_completed_task_t*) calloc(1, sizeof(viewer_notify_tile_completed_task_t));
-	completion_task->pixel_memory = (u8*)tile_pixels;
-	completion_task->tile_width = tile_width;
-	completion_task->tile_height = tile_height;
-	completion_task->scale = scale;
-	completion_task->tile_index = tile_index;
-	completion_task->want_gpu_residency = true;
+	viewer_notify_tile_completed_task_t completion_task = {};
+	completion_task.pixel_memory = (u8*)tile_pixels;
+	completion_task.tile_width = tile_width;
+	completion_task.tile_height = tile_height;
+	completion_task.scale = scale;
+	completion_task.tile_index = tile_index;
+	completion_task.want_gpu_residency = true;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	if (!add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, completion_task)) {
+	if (!add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, &completion_task, sizeof(completion_task))) {
 		ASSERT(!"tile cannot be submitted and will leak");
 	}
 #endif
@@ -404,7 +402,6 @@ void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
 	submit_tile_completed(tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
 	atomic_decrement(&task->isyntax->refcount); // release
-	free(userdata);
 }
 
 void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
@@ -412,17 +409,17 @@ void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
 	isyntax_tile_t* tile = level->tiles + tile_index;
 	if (!tile->is_submitted_for_loading) {
-		isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) calloc(1, sizeof(isyntax_load_tile_task_t));
-		task->isyntax = isyntax;
-		task->wsi = wsi;
-		task->scale = scale;
-		task->tile_x = tile_x;
-		task->tile_y = tile_y;
-		task->tile_index = tile_index;
+		isyntax_load_tile_task_t task = {};
+		task.isyntax = isyntax;
+		task.wsi = wsi;
+		task.scale = scale;
+		task.tile_x = tile_x;
+		task.tile_y = tile_y;
+		task.tile_index = tile_index;
 
 		tile->is_submitted_for_loading = true;
 		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-		if (!add_work_queue_entry(&global_work_queue, isyntax_load_tile_task_func, task)) {
+		if (!add_work_queue_entry(&global_work_queue, isyntax_load_tile_task_func, &task, sizeof(task))) {
 			tile->is_submitted_for_loading = false; // chicken out
 			atomic_decrement(&isyntax->refcount);
 		};
@@ -439,15 +436,14 @@ void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) userdata;
 	isyntax_do_first_load(task->isyntax, task->wsi);
 	atomic_decrement(&task->isyntax->refcount); // release
-	free(userdata);
 }
 
 void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
-	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) calloc(1, sizeof(isyntax_first_load_task_t));
-	task->isyntax = isyntax;
-	task->wsi = wsi_image;
+	isyntax_first_load_task_t task = {};
+	task.isyntax = isyntax;
+	task.wsi = wsi_image;
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-	if (!add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, task)) {
+	if (!add_work_queue_entry(&global_work_queue, isyntax_first_load_task_func, &task, sizeof(task))) {
 		atomic_decrement(&isyntax->refcount); // chicken out
 	}
 }
@@ -505,21 +501,19 @@ void isyntax_decompress_h_coeff_for_tile_task_func(i32 logical_thread_index, voi
 	isyntax_decompress_h_coeff_for_tile_task_t* task = (isyntax_decompress_h_coeff_for_tile_task_t*) userdata;
 	isyntax_decompress_h_coeff_for_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
 	atomic_decrement(&task->isyntax->refcount); // release
-	free(userdata);
 }
 
 void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, isyntax_tile_t* tile, i32 tile_x, i32 tile_y) {
-	isyntax_decompress_h_coeff_for_tile_task_t* task = (isyntax_decompress_h_coeff_for_tile_task_t*)
-			calloc(1, sizeof(isyntax_decompress_h_coeff_for_tile_task_t));
-	task->isyntax = isyntax;
-	task->wsi = wsi;
-	task->scale = scale;
-	task->tile_x = tile_x;
-	task->tile_y = tile_y;
+	isyntax_decompress_h_coeff_for_tile_task_t task = {};
+	task.isyntax = isyntax;
+	task.wsi = wsi;
+	task.scale = scale;
+	task.tile_x = tile_x;
+	task.tile_y = tile_y;
 
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 	tile->is_submitted_for_h_coeff_decompression = true;
-	if (!add_work_queue_entry(&global_work_queue, isyntax_decompress_h_coeff_for_tile_task_func, task)) {
+	if (!add_work_queue_entry(&global_work_queue, isyntax_decompress_h_coeff_for_tile_task_func, &task, sizeof(task))) {
 		atomic_decrement(&isyntax->refcount); // chicken out
 		tile->is_submitted_for_h_coeff_decompression = false;
 	}
@@ -1061,11 +1055,6 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 }
 
-typedef struct stream_image_tiles_task_t {
-	isyntax_t* isyntax;
-	isyntax_image_t* wsi;
-} stream_image_tiles_task_t;
-
 void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
 
 	tile_streamer_t* tile_streamer;
@@ -1093,7 +1082,7 @@ void stream_image_tiles(tile_streamer_t* tile_streamer) {
 	if (!is_tile_stream_task_in_progress) {
 		atomic_increment(&tile_streamer->image->isyntax.isyntax.refcount); // retain; don't destroy isyntax while busy
 		is_tile_stream_task_in_progress = true;
-		add_work_queue_entry(&global_work_queue, isyntax_stream_image_tiles_func, tile_streamer);
+		add_work_queue_entry(&global_work_queue, isyntax_stream_image_tiles_func, tile_streamer, sizeof(*tile_streamer));
 	} else {
 		is_tile_streamer_frame_boundary_passed = true;
 	}

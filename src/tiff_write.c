@@ -396,7 +396,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 				mark_queue_entry_completed(&global_completion_queue);
 
 				if (entry.callback == export_notify_load_tile_completed) {
-					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
+					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 					if (task->pixel_memory) {
 						bool need_free_pixel_memory = true;
 						tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
@@ -424,7 +424,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 						}
 					}
 
-					free(entry.data);
+//					free(entry.data);
 				} /*else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
 							load_tile_task_t* task = (load_tile_task_t*) entry.data;
 							tile_t* tile = task->tile;
@@ -895,23 +895,22 @@ void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 	                                      task->filename, task->export_tile_width,
 	                                      task->desired_photometric_interpretation, task->quality);
 //	atomic_decrement(&task->isyntax->refcount); // TODO: release
-	free(userdata);
 }
 
 void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
                                   u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
-	export_region_task_t* task = (export_region_task_t*) calloc(1, sizeof(export_region_task_t));
-	task->app_state = app_state;
-	task->image = image;
-	task->tiff = tiff;
-	task->level0_bounds = level0_bounds;
-	task->filename = filename;
-	task->export_tile_width = export_tile_width;
-	task->desired_photometric_interpretation = desired_photometric_interpretation;
-	task->quality = quality;
+	export_region_task_t task = {};
+	task.app_state = app_state;
+	task.image = image;
+	task.tiff = tiff;
+	task.level0_bounds = level0_bounds;
+	task.filename = filename;
+	task.export_tile_width = export_tile_width;
+	task.desired_photometric_interpretation = desired_photometric_interpretation;
+	task.quality = quality;
 
 //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
-	if (!add_work_queue_entry(&global_work_queue, export_cropped_bigtiff_func, task)) {
+	if (!add_work_queue_entry(&global_work_queue, export_cropped_bigtiff_func, &task, sizeof(task))) {
 //		tile->is_submitted_for_loading = false; // chicken out
 //		atomic_decrement(&isyntax->refcount);
 	};

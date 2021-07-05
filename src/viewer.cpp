@@ -616,7 +616,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				mark_queue_entry_completed(&global_completion_queue);
 
 				if (entry.callback == viewer_notify_load_tile_completed) {
-					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.data;
+					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 					tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 					ASSERT(tile);
 					tile->is_submitted_for_loading = false;
@@ -647,9 +647,8 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 						tile->is_empty = true; // failed; don't resubmit!
 					}
 
-					free(entry.data);
 				} else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
-					load_tile_task_t* task = (load_tile_task_t*) entry.data;
+					load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
 					tile_t* tile = task->tile;
 					ASSERT(tile);
 					tile->is_submitted_for_loading = false;

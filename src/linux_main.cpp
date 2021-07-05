@@ -227,7 +227,9 @@ int main(int argc, const char** argv)
 	viewer_init_options(app_state);
 
     linux_init_multithreading();
-//	add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL);
+    if (!is_macos) {
+	    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL, 0);
+    }
     linux_init_input();
 
     // Setup SDL
