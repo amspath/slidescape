@@ -112,9 +112,18 @@
 #include <fcntl.h>
 #endif
 
+// Faster malloc(), realloc(), free()
+#include <ltalloc.h>
+#define malloc ltmalloc
+#define calloc ltcalloc
+#define free ltfree
+#define realloc ltrealloc
+
 // Typesafe dynamic array and hash tables for C
 // https://github.com/nothings/stb/blob/master/stb_ds.h
 // NOTE: need to define STB_DS_IMPLEMENTATION in one source file
+#define STBDS_REALLOC(context,ptr,size) ltrealloc((ptr),(size))
+#define STBDS_FREE(context,ptr) ltfree((ptr))
 #include <stb_ds.h>
 #define arrlastptr(a) ((a)+(stbds_header(a)->length-1))
 
