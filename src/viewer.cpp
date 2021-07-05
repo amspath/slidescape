@@ -130,8 +130,8 @@ void unload_image(image_t* image) {
 }
 
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset) {
-	sb_push(app_state->loaded_images, image);
-	app_state->scene.active_layer = sb_count(app_state->loaded_images)-1;
+	arrput(app_state->loaded_images, image);
+	app_state->scene.active_layer = arrlen(app_state->loaded_images)-1;
 	if (need_zoom_reset) {
 		app_state->scene.need_zoom_reset = true;
 	}
@@ -141,14 +141,14 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset) {
 void unload_all_images(app_state_t *app_state) {
 	autosave(app_state, true); // save recent changes to annotations, if necessary
 
-	i32 current_image_count = sb_count(app_state->loaded_images);
+	i32 current_image_count = arrlen(app_state->loaded_images);
 	if (current_image_count > 0) {
 		ASSERT(app_state->loaded_images);
 		for (i32 i = 0; i < current_image_count; ++i) {
 			image_t* old_image = app_state->loaded_images + i;
 			unload_image(old_image);
 		}
-		sb_free(app_state->loaded_images);
+		arrfree(app_state->loaded_images);
 		app_state->loaded_images = NULL;
 	}
 	mouse_show();
@@ -334,7 +334,7 @@ bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, b
 	// is identical to the parent (although this is sometimes not strictly true, e.g. the TIFF resolution tags in the
 	// Kaggle challenge prostate biopsies are *slightly* different in the base and mask images. But if we take those
 	// resolution tags at face value, the images will not be correctly aligned!)
-	if (is_overlay && sb_count(app_state->loaded_images)) {
+	if (is_overlay && arrlen(app_state->loaded_images)) {
 		image_t* parent_image = app_state->loaded_images + 0;
 		ASSERT(parent_image->mpp_x > 0.0f && parent_image->mpp_y > 0.0f);
 		image_change_resolution(image, parent_image->mpp_x, parent_image->mpp_y);
@@ -1054,7 +1054,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	app_state->allow_idling_next_frame = true; // but we might set it to false later
 
-	i32 image_count = sb_count(app_state->loaded_images);
+	i32 image_count = arrlen(app_state->loaded_images);
 	ASSERT(image_count >= 0);
 
 	if (image_count == 0) {
@@ -1520,7 +1520,7 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	}
 	if (was_key_pressed(input, KEY_F6)) {
 		// Load the next image dragged on top of the window as a new layer/overlay instead of a base image.
-		if (sb_count(app_state->loaded_images) >= 1) {
+		if (arrlen(app_state->loaded_images) >= 1) {
 			load_next_image_as_overlay = true;
 		}
 	}

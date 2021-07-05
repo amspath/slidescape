@@ -34,7 +34,7 @@ void select_annotation(annotation_set_t* annotation_set, annotation_t* annotatio
 
 void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	coordinate_t coordinate = {pos.x, pos.y};
-			sb_push(annotation_set->coordinates, coordinate);
+	arrput(annotation_set->coordinates, coordinate);
 	i32 coordinate_index = annotation_set->coordinate_count++;
 
 	annotation_t new_annotation = (annotation_t){};
@@ -52,10 +52,10 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	}
 	new_annotation.selected = true;
 
-	sb_push(annotation_set->stored_annotations, new_annotation);
+	arrput(annotation_set->stored_annotations, new_annotation);
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
 
-	sb_push(annotation_set->active_annotation_indices, annotation_stored_index);
+	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
 	annotation_set->active_annotation_count++;
 
 	annotations_modified(annotation_set);
@@ -475,7 +475,7 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 			i32 new_capacity = annotation->coordinate_capacity * 2;
 			i32 old_first_coordinate = annotation->first_coordinate;
 			annotation->first_coordinate = annotation_set->coordinate_count;
-			coordinate_t* new_coordinates = sb_add(annotation_set->coordinates, new_capacity);
+			coordinate_t* new_coordinates = arraddnptr(annotation_set->coordinates, new_capacity);
 			annotation_set->coordinate_count += new_capacity;
 			annotation->coordinate_capacity = new_capacity;
 			coordinate_t* old_coordinates = annotation_set->coordinates + old_first_coordinate;
@@ -562,7 +562,7 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 		i32* temp_copy = (i32*) alloca(copy_size);
 		memcpy(temp_copy, annotation_set->active_annotation_indices, copy_size);
 
-		sb_raw_count(annotation_set->active_annotation_indices) = 0;
+		arrsetlen(annotation_set->active_annotation_indices, 0);
 		for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 			i32 stored_index = temp_copy[i];
 			annotation_t* annotation = annotation_set->stored_annotations + stored_index;
@@ -570,10 +570,10 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 				// TODO: allow undo?
 				continue; // skip (delete)
 			} else {
-				sb_push(annotation_set->active_annotation_indices, stored_index);
+				arrput(annotation_set->active_annotation_indices, stored_index);
 			}
 		}
-		annotation_set->active_annotation_count = sb_count(annotation_set->active_annotation_indices);
+		annotation_set->active_annotation_count = arrlen(annotation_set->active_annotation_indices);
 		refresh_annotation_pointers(app_state, annotation_set);
 		annotations_modified(annotation_set);
 	}
@@ -608,7 +608,7 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		i32 new_coordinate_count_lower_part = lower_coordinate_index + 1;
 		i32 new_coordinate_count_upper_part = annotation->coordinate_count - upper_coordinate_index;
 		i32 new_coordinate_count = new_coordinate_count_lower_part + new_coordinate_count_upper_part;
-		coordinate_t* new_coordinates = sb_add(annotation_set->coordinates, new_coordinate_count);
+		coordinate_t* new_coordinates = arraddnptr(annotation_set->coordinates, new_coordinate_count);
 		annotation_set->coordinate_count += new_coordinate_count;
 		coordinate_t* original_coordinates = annotation_set->coordinates + annotation->first_coordinate;
 		memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(coordinate_t));
@@ -621,9 +621,9 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		new_annotation.has_valid_bounds = false;
 
 		i32 new_stored_annotation_index = annotation_set->stored_annotation_count;
-		sb_push(annotation_set->stored_annotations, new_annotation);
+		arrput(annotation_set->stored_annotations, new_annotation);
 		annotation_set->stored_annotation_count++;
-		sb_push(annotation_set->active_annotation_indices, new_stored_annotation_index);
+		arrput(annotation_set->active_annotation_indices, new_stored_annotation_index);
 		annotation_set->active_annotation_count++;
 	}
 
@@ -1142,7 +1142,7 @@ enum {
 u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 	annotation_group_t new_group = {};
 	strncpy(new_group.name, name, sizeof(new_group.name));
-	sb_push(annotation_set->groups, new_group);
+	arrput(annotation_set->groups, new_group);
 	u32 new_group_index = annotation_set->group_count;
 	++annotation_set->group_count;
 	return new_group_index;
@@ -1228,10 +1228,10 @@ void group_set_attribute(annotation_group_t* group, const char* attr, const char
 
 void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	// destroy old state
-	if (annotation_set->stored_annotations) sb_free(annotation_set->stored_annotations);
-	if (annotation_set->coordinates) sb_free(annotation_set->coordinates);
-	if (annotation_set->active_annotation_indices) sb_free(annotation_set->active_annotation_indices);
-	if (annotation_set->groups) sb_free(annotation_set->groups);
+	if (annotation_set->stored_annotations) arrfree(annotation_set->stored_annotations);
+	if (annotation_set->coordinates) arrfree(annotation_set->coordinates);
+	if (annotation_set->active_annotation_indices) arrfree(annotation_set->active_annotation_indices);
+	if (annotation_set->groups) arrfree(annotation_set->groups);
 	if (annotation_set->asap_xml_filename) free(annotation_set->asap_xml_filename);
 	if (annotation_set->coco.is_valid) coco_destroy(&annotation_set->coco);
 	memset(annotation_set, 0, sizeof(*annotation_set));
@@ -1308,22 +1308,26 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							current_element_type = ASAP_XML_ELEMENT_NONE;
 							if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Annotation") == 0) {
 								annotation_t new_annotation = (annotation_t){};
-								sb_push(annotation_set->stored_annotations, new_annotation);
+								arrput(annotation_set->stored_annotations, new_annotation);
 								++annotation_set->stored_annotation_count;
 								current_element_type = ASAP_XML_ELEMENT_ANNOTATION;
 							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Coordinate") == 0) {
-								coordinate_t new_coordinate = (coordinate_t){};
-								sb_push(annotation_set->coordinates, new_coordinate);
-								current_element_type = ASAP_XML_ELEMENT_COORDINATE;
+								ASSERT(annotation_set->stored_annotation_count == arrlen(annotation_set->stored_annotations));
+								ASSERT(annotation_set->stored_annotation_count > 0);
+								if (annotation_set->stored_annotations != NULL && annotation_set->stored_annotation_count > 0) {
+									coordinate_t new_coordinate = (coordinate_t){};
+									arrput(annotation_set->coordinates, new_coordinate);
+									current_element_type = ASAP_XML_ELEMENT_COORDINATE;
 
-								annotation_t* current_annotation = &sb_last(annotation_set->stored_annotations);
-								if (!current_annotation->has_coordinates) {
-									current_annotation->first_coordinate = annotation_set->coordinate_count;
-									current_annotation->has_coordinates = true;
+									annotation_t* current_annotation = arrlastptr(annotation_set->stored_annotations);
+									if (!current_annotation->has_coordinates) {
+										current_annotation->first_coordinate = annotation_set->coordinate_count;
+										current_annotation->has_coordinates = true;
+									}
+									current_annotation->coordinate_count++;
+									current_annotation->coordinate_capacity++; // used for delete/insert operations
+									++annotation_set->coordinate_count;
 								}
-								current_annotation->coordinate_count++;
-								current_annotation->coordinate_capacity++; // used for delete/insert operations
-								++annotation_set->coordinate_count;
 							} else if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
 								current_element_type = ASAP_XML_ELEMENT_GROUP;
 								// reset the state (start parsing a new group)
@@ -1392,9 +1396,9 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							if (attrcur) {
 //							    console_print("attr %s = %s\n", x->attr, attrbuf);
 								if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
-									annotation_set_attribute(annotation_set, &sb_last(annotation_set->stored_annotations), x->attr, attrbuf);
+									annotation_set_attribute(annotation_set, arrlastptr(annotation_set->stored_annotations), x->attr, attrbuf);
 								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_COORDINATE) {
-									coordinate_set_attribute(annotation_set, &sb_last(annotation_set->coordinates), x->attr, attrbuf);
+									coordinate_set_attribute(annotation_set, arrlastptr(annotation_set->coordinates), x->attr, attrbuf);
 								} else if (pass == ASAP_XML_PARSE_GROUPS && current_element_type == ASAP_XML_ELEMENT_GROUP) {
 									group_set_attribute(&current_group, x->attr, attrbuf);
 								}
@@ -1418,7 +1422,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 	// So we simply set the indices in ascending order, as a reference to look up the actual annotation_t struct.
 	// (later on, the indices might get reordered by the user, annotations might get deleted, inserted, etc.)
 	ASSERT(annotation_set->active_annotation_indices == NULL);
-	annotation_set->active_annotation_indices = sb_add(annotation_set->active_annotation_indices, annotation_set->stored_annotation_count);
+	annotation_set->active_annotation_indices = arraddnptr(annotation_set->active_annotation_indices, annotation_set->stored_annotation_count);
 	annotation_set->active_annotation_count = annotation_set->stored_annotation_count;
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 		annotation_set->active_annotation_indices[i] = i;

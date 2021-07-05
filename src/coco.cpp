@@ -76,7 +76,7 @@ static void coco_parse_licenses(coco_t* coco, json_array_s* info) {
 		if (array_element->value->type == json_type_object) {
 			json_object_s* license_object = (json_object_s*)array_element->value->payload;
 			json_object_element_s* element = license_object->start;
-			coco_license_t* license = sb_add(coco->licenses, 1);
+			coco_license_t* license = arraddnptr(coco->licenses, 1);
 			memset(license, 0, sizeof(*license));
 			++coco->license_count;
 			while (element) {
@@ -110,7 +110,7 @@ static void coco_parse_images(coco_t* coco, json_array_s* info) {
 		if (array_element->value->type == json_type_object) {
 			json_object_s* image_object = (json_object_s*)array_element->value->payload;
 			json_object_element_s* element = image_object->start;
-			coco_image_t* image = sb_add(coco->images, 1);
+			coco_image_t* image = arraddnptr(coco->images, 1);
 			memset(image, 0, sizeof(*image));
 			++coco->image_count;
 			while (element) {
@@ -155,7 +155,7 @@ static void coco_parse_annotations(coco_t* coco, json_array_s* info) {
 
 			json_object_s* annotation_object = (json_object_s*)array_element->value->payload;
 			json_object_element_s* element = annotation_object->start;
-			coco_annotation_t* annotation = sb_add(coco->annotations, 1);
+			coco_annotation_t* annotation = arraddnptr(coco->annotations, 1);
 			memset(annotation, 0, sizeof(*annotation));
 			++coco->annotation_count;
 			while (element) {
@@ -189,7 +189,7 @@ static void coco_parse_annotations(coco_t* coco, json_array_s* info) {
 										new_coord.x = number;
 									} else {
 										new_coord.y = number;
-										sb_push(coordinates, new_coord);
+										arrput(coordinates, new_coord);
 										++coordinate_count;
 										new_coord = (v2f){}; // reset for next iteration
 									}
@@ -242,7 +242,7 @@ static void coco_parse_categories(coco_t* coco, json_array_s* info) {
 		if (array_element->value->type == json_type_object) {
 			json_object_s* category_object = (json_object_s*)array_element->value->payload;
 			json_object_element_s* element = category_object->start;
-			coco_category_t* category = sb_add(coco->categories, 1);
+			coco_category_t* category = arraddnptr(coco->categories, 1);
 			memset(category, 0, sizeof(*category));
 			++coco->category_count;
 			while (element) {
@@ -502,10 +502,7 @@ static void coco_output_categories(coco_t* coco, memrw_t* out) {
 
 void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_t* annotation_set) {
 	// reset/reallocate space for groups (categories)
-	if (coco->categories) {
-		stb__sbn(coco->categories) = 0;
-	}
-	sb_add(coco->categories, annotation_set->group_count);
+	arrsetlen(coco->categories, annotation_set->group_count);
 	memset(coco->categories, 0, annotation_set->group_count * sizeof(coco_category_t));
 	coco->category_count = annotation_set->group_count;
 	for (i32 i = 0; i < annotation_set->group_count; ++i) {
@@ -524,13 +521,13 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		saved_coordinate_arrays[i] = coco->annotations[i].segmentation.coordinates;
 	}*/
 	// reset/reallocate space for annotations
-	if (coco->annotations) {
-		stb__sbn(coco->annotations) = 0;
+	for (i32 i = 0; i < arrlen(coco->annotations); ++i) {
+		coco_annotation_t* coco_annotation = coco->annotations + i;
+		arrfree(coco_annotation->segmentation.coordinates);
 	}
-	sb_add(coco->annotations, annotation_set->active_annotation_count);
+	arrsetlen(coco->annotations, annotation_set->active_annotation_count);
 	memset(coco->annotations, 0, annotation_set->active_annotation_count * sizeof(coco_annotation_t));
 	coco->annotation_count = annotation_set->active_annotation_count;
-	// TODO: fix LEAK!
 
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 		annotation_t* annotation = annotation_set->stored_annotations + annotation_set->active_annotation_indices[i];
@@ -541,11 +538,8 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		coco_annotation->category_id = annotation->group_id;
 		coco_annotation->segmentation.coordinates = saved_coordinates_storage;
 		// reset/reallocate space for coordinates
-		if (coco_annotation->segmentation.coordinates) {
-			stb__sbn(coco_annotation->segmentation.coordinates) = 0;
-		}
+		arrsetlen(coco_annotation->segmentation.coordinates, annotation->coordinate_count);
 		if (annotation->coordinate_count > 0) {
-			sb_add(coco_annotation->segmentation.coordinates, annotation->coordinate_count);
 			ASSERT(coco_annotation->segmentation.coordinates != NULL);
 			coordinate_t* coordinates = annotation_set->coordinates + annotation->first_coordinate;
 			coco_annotation->segmentation.coordinate_count = annotation->coordinate_count;
@@ -604,7 +598,7 @@ i32 coco_add_new_license(coco_t* coco) {
 		}
 	}
 	new_license.id = highest_id + 1;
-	sb_push(coco->licenses, new_license);
+	arrput(coco->licenses, new_license);
 	++coco->license_count;
 	return new_license.id;
 }
@@ -619,7 +613,7 @@ i32 coco_add_new_category(coco_t* coco) {
 		}
 	}
 	new_category.id = highest_id + 1;
-	sb_push(coco->categories, new_category);
+	arrput(coco->categories, new_category);
 	++coco->category_count;
 	return new_category.id;
 }
@@ -634,7 +628,7 @@ i32 coco_add_new_image(coco_t* coco) {
 		}
 	}
 	new_image.id = highest_id + 1;
-	sb_push(coco->images, new_image);
+	arrput(coco->images, new_image);
 	++coco->image_count;
 	return new_image.id;
 }
@@ -676,14 +670,14 @@ void coco_destroy(coco_t* coco) {
 	ASSERT(coco->is_valid);
 	if (coco->is_valid) {
 		coco->is_valid = false;
-		sb_free(coco->licenses);
-		sb_free(coco->images);
-		sb_free(coco->categories);
+		arrfree(coco->licenses);
+		arrfree(coco->images);
+		arrfree(coco->categories);
 		for (i32 i = 0; i < coco->annotation_count; ++i) {
 			coco_annotation_t* annotation = coco->annotations + i;
-			sb_free(annotation->segmentation.coordinates);
+			arrfree(annotation->segmentation.coordinates);
 		}
-		sb_free(coco->annotations);
+		arrfree(coco->annotations);
 	}
 }
 

@@ -265,7 +265,7 @@ void draw_layers_window(app_state_t* app_state) {
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
 	static i32 selected_image_index = 0;
-	i32 image_count = sb_count(app_state->loaded_images);
+	i32 image_count = arrlen(app_state->loaded_images);
 	if (selected_image_index >= image_count) selected_image_index = 0;
 
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
@@ -790,13 +790,13 @@ console_log_item_t* console_log_items; //sb
 
 void console_clear_log() {
 	benaphore_lock(&console_printer_benaphore);
-	for (int i = 0; i < sb_count(console_log_items); i++) {
+	for (int i = 0; i < arrlen(console_log_items); i++) {
 		console_log_item_t* item = console_log_items + i;
 		if (item->text) {
 			free(item->text);
 		}
 	}
-	sb_free(console_log_items);
+	arrfree(console_log_items);
 	console_log_items = NULL;
 	benaphore_unlock(&console_printer_benaphore);
 }
@@ -853,12 +853,12 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 		ImGui::EndPopup();
 	}
 	benaphore_lock(&console_printer_benaphore);
-	i32 item_count = sb_count(console_log_items);
+	i32 item_count = arrlen(console_log_items);
 	if (item_count > 0) {
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
 		ImGui::PushFont(global_fixed_width_font);
 		ImGuiListClipper clipper;
-		clipper.Begin(sb_count(console_log_items));
+		clipper.Begin(arrlen(console_log_items));
 		while (clipper.Step()) {
 			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 				console_log_item_t item = console_log_items[i];
@@ -924,7 +924,7 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 				new_item.item_type = item_type;
 				// TODO: critical section, make multi-threading proof!
 				benaphore_lock(&console_printer_benaphore);
-				sb_push(console_log_items, new_item);
+				arrput(console_log_items, new_item);
 				benaphore_unlock(&console_printer_benaphore);
 			}
 		}

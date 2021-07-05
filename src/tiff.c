@@ -578,7 +578,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 					console_print_verbose("Reading IFD #%llu\n", tiff->ifd_count);
 					tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
 					if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
-					sb_push(tiff->ifds, ifd);
+					arrput(tiff->ifds, ifd);
 					tiff->ifd_count += 1;
 				}
 
@@ -1030,7 +1030,7 @@ void tiff_destroy(tiff_t* tiff) {
 	if (tiff->is_remote) {
 		free(tiff->ifds);
 	} else {
-		sb_free(tiff->ifds);
+		arrfree(tiff->ifds);
 	}
 	memset(tiff, 0, sizeof(*tiff));
 }

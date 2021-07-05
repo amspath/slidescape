@@ -216,7 +216,7 @@ ini_t* ini_load(char* ini_string, size_t len) {
 	for (i32 line_index = 0; line_index < line_count; ++line_index) {
 		ini_entry_t entry = ini_parse_line(lines[line_index]);
 		entry.sparse_index = (line_index+1) * 10000; // ordering of entries with 'spaced out' indices, to allow for easy insertion later
-		sb_push(ini->entries, entry);
+		arrput(ini->entries, entry);
 		++ini->entry_count;
 	}
 	free(lines);

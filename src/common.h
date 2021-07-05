@@ -112,10 +112,11 @@
 #include <fcntl.h>
 #endif
 
-#include <stretchy_buffer.h> // https://github.com/nothings/stb/blob/master/stretchy_buffer.h
-#define sb_raw_count(a)    stb__sbn(a)
-#define sb_raw_capacity(a) stb__sbm(a)
-#define sb_maybegrow       stb__sbmaybegrow
+// Typesafe dynamic array and hash tables for C
+// https://github.com/nothings/stb/blob/master/stb_ds.h
+// NOTE: need to define STB_DS_IMPLEMENTATION in one source file
+#include <stb_ds.h>
+#define arrlastptr(a) ((a)+(stbds_header(a)->length-1))
 
 // NOTE: need to define STB_SPRINTF_IMPLEMENTATION in one source file
 #include <stb_sprintf.h>
