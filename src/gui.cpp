@@ -113,6 +113,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool export_region;
 			bool load_coco_test_file;
 			bool load_isyntax_test_file;
+			bool reset_zoom;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -156,6 +157,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		}
 		if (ImGui::BeginMenu("View")) {
 			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
+			if (ImGui::MenuItem("Reset zoom", NULL, &menu_items_clicked.reset_zoom)) {}
+			ImGui::Separator();
 			if (ImGui::MenuItem("Fullscreen", "F11", &is_fullscreen)) {}
 			if (ImGui::MenuItem("Image options...", NULL, &show_image_options_window)) {}
 			if (ImGui::MenuItem("Layers...", "L", &show_layers_window)) {}
@@ -241,6 +244,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			isyntax_t isyntax = {};
 			if (isyntax_open(&isyntax, isyntax_test_filename)) {
 			}
+		} else if (menu_items_clicked.reset_zoom) {
+			scene->need_zoom_reset = true;
 		}
 	}
 
@@ -530,9 +535,17 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		ImGui::Begin("Image options", &show_image_options_window);
 
-        float zoom_objective_factor = 40.0f * exp2f(-app_state->scene.zoom.level);
-        ImGui::Text("Current zoom level: %d (%gx)", app_state->scene.zoom.level, zoom_objective_factor);
-		if (ImGui::SliderInt("Min zoom (near)", &viewer_min_level, -5, 15)) {
+		if (ImGui::Button("Reset zoom")) {
+			app_state->scene.need_zoom_reset = true;
+		}
+		ImGui::SameLine();
+		float zoom_objective_factor = 40.0f * exp2f(-app_state->scene.zoom.level);
+		ImGui::Text("Current zoom level: %d (%gx)", app_state->scene.zoom.level, zoom_objective_factor);
+
+		if (ImGui::SliderFloat("Zoom level", &app_state->scene.zoom.pos, -5.0f, 15.0f, "%.1f")) {
+			zoom_update_pos(&app_state->scene.zoom, app_state->scene.zoom.pos);
+		}
+        if (ImGui::SliderInt("Min zoom (near)", &viewer_min_level, -5, 15)) {
 			viewer_max_level = ATLEAST(viewer_min_level, viewer_max_level);
 		}
 		if (ImGui::SliderInt("Max zoom (far)", &viewer_max_level, -5, 15)) {

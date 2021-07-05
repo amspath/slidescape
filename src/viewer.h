@@ -379,6 +379,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 // viewer_options.cpp
 void viewer_init_options(app_state_t* app_state);
 
+// viewer_zoom.cpp
+void zoom_update_pos(zoom_state_t* zoom, float pos);
+
 // tile_streamer.cpp
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);

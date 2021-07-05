@@ -1157,7 +1157,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			float times_larger_x = (float)displayed_image->width_in_pixels / (float)client_width;
 			float times_larger_y = (float)displayed_image->height_in_pixels / (float)client_height;
 			float times_larger = MAX(times_larger_x, times_larger_y);
-			float desired_zoom_pos = ceilf(log2f(times_larger * 1.5f));
+			float desired_zoom_pos = ceilf(log2f(times_larger * 1.1f));
 
 			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, displayed_image->mpp_x, displayed_image->mpp_y);
 			scene->camera.x = displayed_image->width_in_um / 2.0f;
