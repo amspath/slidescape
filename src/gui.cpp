@@ -39,6 +39,16 @@
 #include "annotation.h"
 #include "stringutils.h"
 
+static void*   imgui_malloc_wrapper(size_t size, void* user_data)    { IM_UNUSED(user_data); return ltmalloc(size); }
+static void    imgui_free_wrapper(void* ptr, void* user_data)        { IM_UNUSED(user_data); ltfree(ptr); }
+
+void imgui_create_context() {
+	// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::SetAllocatorFunctions(imgui_malloc_wrapper, imgui_free_wrapper);
+	ImGui::CreateContext();
+}
+
 void menu_close_file(app_state_t* app_state) {
 	unload_all_images(app_state);
 	reset_global_caselist(app_state);

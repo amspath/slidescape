@@ -464,9 +464,7 @@ SlideviewerView* g_view;
 	global_app_state.main_window = view;
 	init_opengl_stuff(&global_app_state);
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
+    imgui_create_context();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 

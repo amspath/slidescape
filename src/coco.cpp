@@ -16,7 +16,6 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#define STB_SPRINTF_IMPLEMENTATION
 #include "common.h"
 
 #include "platform.h"

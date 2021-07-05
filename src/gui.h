@@ -33,6 +33,7 @@ void win32_init_gui(app_state_t* app_state);
 LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #endif
 
+void imgui_create_context();
 void gui_draw_open_file_dialog(app_state_t* app_state);
 void menu_close_file(app_state_t* app_state);
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness);

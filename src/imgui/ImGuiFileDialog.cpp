@@ -576,10 +576,10 @@ namespace IGFD
 		bool item_add;
 		if (flags & ImGuiSelectableFlags_Disabled)
 		{
-			ImGuiItemFlags backup_item_flags = window->DC.ItemFlags;
-			window->DC.ItemFlags |= ImGuiItemFlags_Disabled | ImGuiItemFlags_NoNavDefaultFocus;
+			ImGuiItemFlags backup_item_flags = g.CurrentItemFlags;
+			g.CurrentItemFlags |= ImGuiItemFlags_Disabled | ImGuiItemFlags_NoNavDefaultFocus;
 			item_add = ItemAdd(bb, id);
-			window->DC.ItemFlags = backup_item_flags;
+			g.CurrentItemFlags = backup_item_flags;
 		}
 		else
 		{
@@ -623,7 +623,7 @@ namespace IGFD
 		{
 			if (!g.NavDisableMouseHover && g.NavWindow == window && g.NavLayer == window->DC.NavLayerCurrent)
 			{
-				//SetNavID(id, window->DC.NavLayerCurrent, window->DC.NavFocusScopeIdCurrent, ImRect(bb.Min - window->Pos, bb.Max - window->Pos));
+				SetNavID(id, window->DC.NavLayerCurrent, window->DC.NavFocusScopeIdCurrent, ImRect(bb.Min - window->Pos, bb.Max - window->Pos));
 				g.NavDisableHighlight = true;
 			}
 		}
@@ -657,7 +657,7 @@ namespace IGFD
 		if (flags & ImGuiSelectableFlags_Disabled) PopStyleColor();
 
 		// Automatically close popups
-		if (pressed && (window->Flags & ImGuiWindowFlags_Popup) && !(flags & ImGuiSelectableFlags_DontClosePopups) && !(window->DC.ItemFlags & ImGuiItemFlags_SelectableDontClosePopup))
+		if (pressed && (window->Flags & ImGuiWindowFlags_Popup) && !(flags & ImGuiSelectableFlags_DontClosePopups) && !(g.CurrentItemFlags & ImGuiItemFlags_SelectableDontClosePopup))
 			CloseCurrentPopup();
 
 		IMGUI_TEST_ENGINE_ITEM_INFO(id, label, window->DC.ItemFlags);
@@ -962,7 +962,8 @@ namespace IGFD
 				m_CurrentPath_Decomposition.clear();
 			}
 
-			m_IsOk = false;	 // reset dialog result
+			m_IsOk = false;			// reset dialog result
+			m_WantToQuit = false;	// reset var used for start the dialog quit process from anywhere
 
 			ResetEvents();
 
@@ -1160,6 +1161,11 @@ namespace IGFD
 
 		m_FooterHeight = ImGui::GetCursorPosY() - posY;
 
+		if (m_WantToQuit && m_IsOk)
+		{
+			res = true;
+		}
+
 		return res;
 	}
 #ifdef USE_BOOKMARK
@@ -1174,6 +1180,9 @@ namespace IGFD
 
 	void IGFD::FileDialog::DrawDirectoryCreation()
 	{
+		if (dlg_flags & ImGuiFileDialogFlags_DisableCreateDirectoryButton)
+			return;
+
 		if (IMGUI_BUTTON(createDirButtonString))
 		{
 			if (!m_CreateDirectoryMode)
@@ -1370,6 +1379,7 @@ namespace IGFD
 				}
 			}
 #endif // USE_CUSTOM_SORTING_ICON
+			
 			if (!m_FilteredFileList.empty())
 			{
 				m_FileListClipper.Begin((int)m_FilteredFileList.size(), ImGui::GetTextLineHeightWithSpacing());
@@ -1405,7 +1415,7 @@ namespace IGFD
 
 						if (ImGui::TableNextColumn()) // file name
 						{
-							needToBreakTheloop = SelectableItem(i, infos, selected, str.c_str());
+							needToBreakTheloop = SelectableItem(i, infos, selected, "%s", str.c_str());
 						}
 						if (ImGui::TableNextColumn()) // file type
 						{
@@ -1500,17 +1510,22 @@ namespace IGFD
 				if (ImGui::IsMouseDoubleClicked(0)) // 0 -> left mouse button double click
 				{
 					m_PathClicked = SelectDirectory(vInfos); 
+					return true; // needToBreakTheloop
 				}
 				else if (dlg_filters.empty()) // directory chooser
 				{
 					SelectFileName(vInfos);
 				}
-
-				return true; // needToBreakTheloop
 			}
 			else
 			{
 				SelectFileName(vInfos);
+
+				if (ImGui::IsMouseDoubleClicked(0))
+				{
+					m_WantToQuit = true;
+					m_IsOk = true;
+				}
 			}
 		}
 
@@ -1599,10 +1614,12 @@ namespace IGFD
 		{
 			std::string selectedDirectory = FileNameBuffer;
 			if (!selectedDirectory.empty() && selectedDirectory != ".")
+			{
 				if (path.empty())
 					path = selectedDirectory;
 				else
 					path += PATH_SEP + selectedDirectory;
+			}
 		}
 
 		return path;
