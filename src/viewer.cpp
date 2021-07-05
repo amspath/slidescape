@@ -1017,6 +1017,15 @@ v2f get_2d_control_from_input(input_t* input) {
 	return control;
 }
 
+static inline void scene_update_camera_bounds(scene_t* scene) {
+	scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
+}
+
+static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f client_mouse_xy) {
+	scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.pixel_width * app_state->display_scale_factor;
+	scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.pixel_height * app_state->display_scale_factor;
+}
+
 // TODO: refactor delta_t
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
@@ -1162,14 +1171,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
 		scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
 
-		scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
-
+		scene_update_camera_bounds(scene);
 		scene->mouse = scene->camera;
 
 		if (input) {
 
-			scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-			scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
 			if (scene->right_clicked) {
 				scene->right_clicked_pos = scene->mouse;
@@ -1293,8 +1300,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				scene->camera.y = (scene->camera_bounds.top + scene->camera_bounds.bottom) / 2.0f;
 
 				// camera updated, need to updated mouse position
-				scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-				scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+				scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
 			}
 
@@ -1319,9 +1325,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			// camera has been updated (now we need to recalculate some things)
 			scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
 			scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
-			scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
-			scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-			scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+			scene_update_camera_bounds(scene);
+			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
 
 			/*if (was_key_pressed(input, KEY_O)) {
@@ -1339,9 +1344,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
 
 					// camera has been updated (now we need to recalculate some things)
-					scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
-					scene->mouse.x = scene->camera_bounds.min.x + (float)input->mouse_xy.x * scene->zoom.pixel_width;
-					scene->mouse.y = scene->camera_bounds.min.y + (float)input->mouse_xy.y * scene->zoom.pixel_height;
+					scene_update_camera_bounds(scene);
+					scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 				}
 
 				if (!gui_want_capture_mouse) {
