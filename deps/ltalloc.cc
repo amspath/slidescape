@@ -49,7 +49,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include LTALLOC_USER_CONFIG
 #endif
 #define LTALLOC_OVERFLOW_DETECTION
-
+// NOTE: operator new seems to sometimes override library calls as well (at least on macOS with SDL_Init()),
+// which is surprising. It also causes crashing. So disable.
+#define LTALLOC_DISABLE_OPERATOR_NEW_OVERRIDE
+#define LTALLOC_DISABLE_EXCEPTIONS
 
 #ifdef __cplusplus
 #include <new>
