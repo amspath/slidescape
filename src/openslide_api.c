@@ -39,6 +39,16 @@ bool init_openslide() {
 		library_handle = LoadLibraryA("libopenslide-0.dll");
 		SetDllDirectoryA(NULL);
 	}
+#elif defined(__APPLE__)
+	void* library_handle = dlopen("libopenslide.dylib", RTLD_LAZY);
+	if (!library_handle) {
+		// Check expected library path for MacPorts
+		library_handle = dlopen("/opt/local/lib/libopenslide.dylib", RTLD_LAZY);
+		if (!library_handle) {
+			// Check expected library path for Homebrew
+			library_handle = dlopen("/usr/local/opt/openslide/lib/libopenslide.dylib", RTLD_LAZY);
+		}
+	}
 #else
 	void* library_handle = dlopen("libopenslide.so", RTLD_LAZY);
 	if (!library_handle) {
