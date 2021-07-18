@@ -443,7 +443,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		if (ImGui::Button("Export", ImVec2(120, 0))) {
 			switch(image->backend) {
 				case IMAGE_BACKEND_TIFF: {
-					export_cropped_bigtiff(app_state, image, &image->tiff.tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
+					export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
 				} break;
 				default: {
 					console_print_error("Error: image backend not supported for exporting a region\n");

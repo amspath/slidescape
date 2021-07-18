@@ -96,7 +96,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	bool failed = false;
 	ASSERT(image->type == IMAGE_TYPE_WSI);
 	if (image->backend == IMAGE_BACKEND_TIFF) {
-		tiff_t* tiff = &image->tiff.tiff;
+		tiff_t* tiff = &image->tiff;
 		tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 
 		u64 tile_offset = level_ifd->tile_offsets[tile_index];
@@ -255,8 +255,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 //		console_print_error("thread %d: tile level %d, tile %d (%d, %d): TYRING\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		ASSERT(!"invalid code path");
 
-
-
+	} else if (image->backend == IMAGE_BACKEND_STBI) {
+		ASSERT(!"invalid code path");
 	} else {
 		console_print_error("thread %d: tile level %d, tile %d (%d, %d): unsupported image type\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		failed = true;
@@ -482,7 +482,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 
 			console_print("Loaded '%s'\n", filename);
 			if (image.backend == IMAGE_BACKEND_ISYNTAX) {
-				console_print("   iSyntax: loading took %g seconds\n", image.isyntax.isyntax.loading_time);
+				console_print("   iSyntax: loading took %g seconds\n", image.isyntax.loading_time);
 			}
 			return true;
 
@@ -507,7 +507,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
 		// Load using stb_image
 
-		image.type = IMAGE_TYPE_SIMPLE;
+		image.type = IMAGE_TYPE_WSI;
 		image.backend = IMAGE_BACKEND_STBI;
 		image.simple.channels = 4; // desired: RGBA
 		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
@@ -515,6 +515,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 
 			image.is_freshly_loaded = true;
 			image.is_valid = true;
+			init_image_from_stbi(app_state, &image, &image.simple, is_overlay);
 			return image;
 
 			//stbi_image_free(image->stbi.pixels);

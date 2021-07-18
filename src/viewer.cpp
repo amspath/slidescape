@@ -89,9 +89,18 @@ void unload_image(image_t* image) {
 			if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
 				unload_wsi(&image->wsi.wsi);
 			} else if (image->backend == IMAGE_BACKEND_TIFF) {
-				tiff_destroy(&image->tiff.tiff);
+				tiff_destroy(&image->tiff);
 			} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
-				isyntax_destroy(&image->isyntax.isyntax);
+				isyntax_destroy(&image->isyntax);
+			} else if (image->backend == IMAGE_BACKEND_STBI) {
+				if (image->simple.pixels) {
+					stbi_image_free(image->simple.pixels);
+					image->simple.pixels = NULL;
+				}
+				if (image->simple.texture != 0) {
+					unload_texture(image->simple.texture);
+					image->simple.texture = 0;
+				}
 			} else {
 				ASSERT(!"image backend invalid");
 			}
@@ -164,9 +173,9 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 
 	if (image->type == IMAGE_TYPE_WSI) {
 		// shorthand pointers for backend-specific data structure
-		tiff_t* tiff = &image->tiff.tiff;
+		tiff_t* tiff = &image->tiff;
 		wsi_t* openslide_image = &image->wsi.wsi;
-		isyntax_t* isyntax = &image->isyntax.isyntax;
+		isyntax_t* isyntax = &image->isyntax;
 
 
 		if (image->backend == IMAGE_BACKEND_TIFF) {
@@ -221,7 +230,7 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay) {
 	image->type = IMAGE_TYPE_WSI;
 	image->backend = IMAGE_BACKEND_TIFF;
-	image->tiff.tiff = tiff;
+	image->tiff = tiff;
 	image->is_freshly_loaded = true;
 
 	image->mpp_x = tiff.mpp_x;
@@ -321,10 +330,7 @@ bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, b
 				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
 				level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
 			}
-
 			DUMMY_STATEMENT;
-
-
 		}
 	}
 
@@ -349,8 +355,8 @@ bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, b
 bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* isyntax, bool is_overlay) {
 	image->type = IMAGE_TYPE_WSI;
 	image->backend = IMAGE_BACKEND_ISYNTAX;
-	image->isyntax.isyntax = *isyntax;
-	isyntax = &image->isyntax.isyntax;
+	image->isyntax = *isyntax;
+	isyntax = &image->isyntax;
 	image->is_freshly_loaded = true;
 
 	image->mpp_x = isyntax->mpp_x;
@@ -409,14 +415,64 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 					tile->is_empty = true;
 				}
 			}
-
-
 			DUMMY_STATEMENT;
-
-
 		}
 	}
 
+
+	image->is_valid = true;
+	image->is_freshly_loaded = true;
+	return image->is_valid;
+}
+
+bool init_image_from_stbi(app_state_t* app_state, image_t* image, simple_image_t* simple, bool is_overlay) {
+	image->type = IMAGE_TYPE_WSI;
+	image->backend = IMAGE_BACKEND_STBI;
+	image->simple = *simple;
+	simple = &image->simple;
+	image->is_freshly_loaded = true;
+
+	image->mpp_x = 1.0f;
+	image->mpp_y = 1.0f;
+	image->tile_width = simple->width;
+	image->tile_height = simple->height;
+	image->width_in_pixels = simple->width;
+	image->width_in_um = simple->width * image->mpp_x;
+	image->height_in_pixels = simple->height;
+	image->height_in_um = simple->height * image->mpp_y;
+
+	image->level_count = 1;
+	level_image_t* level_image = image->level_images + 0;
+	memset(level_image, 0, sizeof(*level_image));
+
+	level_image->exists = true;
+	level_image->pyramid_image_index = 0; // not used
+	level_image->downsample_factor = 1.0f;
+	level_image->tile_count = 1;
+	level_image->width_in_tiles = 1;
+	ASSERT(level_image->width_in_tiles > 0);
+	level_image->height_in_tiles = 1;
+	level_image->tile_width = image->width_in_pixels;
+	level_image->tile_height = image->height_in_pixels;
+	level_image->um_per_pixel_x = level_image->downsample_factor * image->mpp_x;
+	level_image->um_per_pixel_y = level_image->downsample_factor * image->mpp_y;
+	level_image->x_tile_side_in_um = level_image->um_per_pixel_x * image->tile_width;
+	level_image->y_tile_side_in_um = level_image->um_per_pixel_x * image->tile_height;
+	ASSERT(level_image->x_tile_side_in_um > 0);
+	ASSERT(level_image->y_tile_side_in_um > 0);
+	level_image->origin_offset = {};
+	level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
+	for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+		tile_t* tile = level_image->tiles + tile_index;
+		// Facilitate some introspection by storing self-referential information
+		// in the tile_t struct. This is needed for some specific cases where we
+		// pass around pointers to tile_t structs without caring exactly where they
+		// came from.
+		// (Specific example: we use this when exporting a selected region as BigTIFF)
+		tile->tile_index = tile_index;
+		tile->tile_x = tile_index % level_image->width_in_tiles;
+		tile->tile_y = tile_index / level_image->width_in_tiles;
+	}
 
 	image->is_valid = true;
 	image->is_freshly_loaded = true;
@@ -499,7 +555,7 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 	if (tiles_to_load > 0){
 		app_state->allow_idling_next_frame = false;
 
-		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) {
+		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) {
 			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
 			// (to reduce load on the server)
 			static u32 intermittent = 0;
@@ -624,9 +680,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		draw_rect(image->simple.texture);
 	}
 	else if (image->type == IMAGE_TYPE_WSI) {
-
-
-
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
@@ -762,7 +815,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 		}
 
 		if (image->backend == IMAGE_BACKEND_ISYNTAX) {
-			isyntax_t* isyntax = &image->isyntax.isyntax;
+			isyntax_t* isyntax = &image->isyntax;
 			isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				wsi->first_load_in_progress = true;
@@ -778,6 +831,18 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				global_tile_streamer = tile_streamer;
 				stream_image_tiles(&global_tile_streamer);
 			}
+		} else if (image->backend == IMAGE_BACKEND_STBI) {
+			simple_image_t* simple = &image->simple;
+			if (image->simple.texture == 0 && image->simple.pixels != NULL) {
+				image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, GL_RGBA);
+//			    image->origin_offset = (v2f) {50, 100};
+				image->is_freshly_loaded = false;
+				level_image_t* level_image = image->level_images + 0;
+				ASSERT(level_image->tiles && level_image->tile_count > 0);
+				tile_t* tile = level_image->tiles + 0;
+				tile->texture = image->simple.texture;
+			}
+
 		} else {
 
 
@@ -847,7 +912,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
-			i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.tiff.is_remote) ? 3 : 10;
+			i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) ? 3 : 10;
 			i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
 			request_tiles(app_state, image, tile_wishlist, tiles_to_load);
@@ -1226,6 +1291,17 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			float times_larger_y = (float)displayed_image->height_in_pixels / (float)client_height;
 			float times_larger = MAX(times_larger_x, times_larger_y);
 			float desired_zoom_pos = ceilf(log2f(times_larger * 1.1f));
+
+			// By default, allow zooming in up to 2x native resolution
+			viewer_min_level = -1;
+			// If the image is small, allow zooming in further
+			if (desired_zoom_pos < 2.0f) {
+				viewer_min_level = (i32)desired_zoom_pos - 3;
+			}
+			// Don't set the initial zoom level past native resolution for small images
+			if (desired_zoom_pos < 0.0f) {
+				desired_zoom_pos = 0.0f;
+			}
 
 			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, displayed_image->mpp_x, displayed_image->mpp_y);
 			scene->camera.x = displayed_image->width_in_um / 2.0f;

@@ -1010,7 +1010,7 @@ void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
 		tile_streamer = (tile_streamer_t*) userdata;
 		if (tile_streamer) {
 			tile_streamer_t tile_streamer_copy = *tile_streamer; // original may be updated next frame
-			isyntax_stream_image_tiles(&tile_streamer_copy, &tile_streamer->image->isyntax.isyntax);
+			isyntax_stream_image_tiles(&tile_streamer_copy, &tile_streamer->image->isyntax);
 		}
 		need_repeat = is_tile_streamer_frame_boundary_passed;
 		if (need_repeat) {
@@ -1018,7 +1018,7 @@ void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
 		}
 	} while (need_repeat);
 	is_tile_stream_task_in_progress = false;
-	atomic_decrement(&tile_streamer->image->isyntax.isyntax.refcount); // release
+	atomic_decrement(&tile_streamer->image->isyntax.refcount); // release
 
 }
 
@@ -1027,7 +1027,7 @@ void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
 void stream_image_tiles(tile_streamer_t* tile_streamer) {
 
 	if (!is_tile_stream_task_in_progress) {
-		atomic_increment(&tile_streamer->image->isyntax.isyntax.refcount); // retain; don't destroy isyntax while busy
+		atomic_increment(&tile_streamer->image->isyntax.refcount); // retain; don't destroy isyntax while busy
 		is_tile_stream_task_in_progress = true;
 		add_work_queue_entry(&global_work_queue, isyntax_stream_image_tiles_func, tile_streamer, sizeof(*tile_streamer));
 	} else {
@@ -1062,7 +1062,7 @@ void stream_image_tiles2(thread_memory_t* thread_memory) {
 				} break;
 
 				case IMAGE_BACKEND_ISYNTAX: {
-					isyntax_stream_image_tiles(&tile_streamer, &image->isyntax.isyntax);
+					isyntax_stream_image_tiles(&tile_streamer, &image->isyntax);
 				} break;
 
 			}

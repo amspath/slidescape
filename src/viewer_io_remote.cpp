@@ -30,7 +30,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 	ASSERT(image->type == IMAGE_TYPE_WSI);
 	if (image->backend == IMAGE_BACKEND_TIFF) {
-		tiff_t* tiff = &image->tiff.tiff;
+		tiff_t* tiff = &image->tiff;
 
 		if (tiff->is_remote) {
 

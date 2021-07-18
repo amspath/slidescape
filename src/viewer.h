@@ -138,26 +138,24 @@ typedef struct {
 	bool exists;
 } level_image_t;
 
+typedef struct stbi_t {
+	i32 channels_in_file;
+	i32 channels;
+	i32 width;
+	i32 height;
+	u8* pixels;
+	u32 texture;
+} simple_image_t;
+
 typedef struct image_t {
 	char name[512];
 	image_type_enum type;
 	image_backend_enum backend;
 	bool32 is_freshly_loaded; // TODO: remove or refactor, is this still needed?
 	union {
-		struct {
-			i32 channels_in_file;
-			i32 channels;
-			i32 width;
-			i32 height;
-			u8* pixels;
-			u32 texture;
-		} simple;
-		struct {
-			tiff_t tiff;
-		} tiff;
-		struct {
-			isyntax_t isyntax;
-		} isyntax;
+		simple_image_t simple;
+		tiff_t tiff;
+		isyntax_t isyntax;
 		struct {
 			wsi_t wsi;
 		} wsi;
@@ -351,6 +349,7 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset);
 void unload_all_images(app_state_t* app_state);
 bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay);
 bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* isyntax, bool is_overlay);
+bool init_image_from_stbi(app_state_t* app_state, image_t* image, simple_image_t* simple, bool is_overlay);
 bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);
