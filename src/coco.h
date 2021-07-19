@@ -74,7 +74,14 @@ typedef struct coco_category_t {
 	char supercategory[COCO_MAX_FIELD];
 	i32 id;
 	char name[COCO_MAX_FIELD];
+	rgba_t color;
 } coco_category_t;
+
+typedef struct coco_feature_t {
+	i32 id;
+	i32 category_id;
+	char name[COCO_MAX_FIELD];
+} coco_feature_t;
 
 typedef struct coco_t {
 	size_t original_filesize;
@@ -87,6 +94,8 @@ typedef struct coco_t {
 	i32 annotation_count;
 	coco_category_t* categories;
 	i32 category_count;
+	coco_feature_t* features;
+	i32 feature_count;
 	i32 main_license_id;
 	i32 main_category_id;
 	i32 main_image_id;

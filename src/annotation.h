@@ -76,15 +76,26 @@ typedef struct coordinate_t {
 	double x;
 	double y;
 //	i32 order;
-	bool8 selected;
+	bool selected;
 } coordinate_t;
 
 typedef struct annotation_group_t {
 	char name[64];
 	rgba_t color;
-	bool8 is_explicitly_defined; // true if there is an associated <Group> in the XML file
-	bool8 selected;
+	i32 id;
+	bool is_explicitly_defined; // true if there is an associated <Group> in the XML file
+	bool selected;
+	bool deleted; // TODO: is this right?
 } annotation_group_t;
+
+typedef struct annotation_feature_t {
+	char name[64];
+	rgba_t color;
+	i32 id;
+	bool restrict_to_group;
+	bool deleted;
+	i32 group_id;
+} annotation_feature_t;
 
 typedef struct annotation_hit_result_t {
 	i32 annotation_index;
@@ -98,15 +109,25 @@ typedef struct annotation_hit_result_t {
 } annotation_hit_result_t;
 
 typedef struct annotation_set_t {
-	annotation_t* stored_annotations; // sb
+	annotation_t* stored_annotations; // array
 	i32 stored_annotation_count;
 	annotation_t** active_annotations; // recreated every frame
-	coordinate_t* coordinates; // sb
-	i32 coordinate_count;
-	i32* active_annotation_indices; // sb
+	i32* active_annotation_indices; // array
 	i32 active_annotation_count;
-	annotation_group_t* groups; // sb
-	i32 group_count;
+
+	coordinate_t* coordinates; // array
+	i32 coordinate_count;
+
+	annotation_group_t* stored_groups; // array
+	i32 stored_group_count;
+	i32* active_group_indices; // array
+	i32 active_group_count;
+
+	annotation_feature_t* stored_features; // array
+	i32 stored_feature_count;
+	i32* active_feature_indices; // array
+	i32 active_feature_count;
+
 	bool enabled;
 	char* asap_xml_filename;
 	char* coco_filename;

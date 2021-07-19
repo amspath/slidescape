@@ -25,6 +25,51 @@
 
 #include "coco.h"
 
+
+static inline annotation_group_t* get_active_annotation_group(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_group_count);
+	return annotation_set->stored_groups + annotation_set->active_group_indices[active_index];
+}
+
+static inline annotation_feature_t* get_active_annotation_feature(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_feature_count);
+	return annotation_set->stored_features + annotation_set->active_feature_indices[active_index];
+}
+
+u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
+	annotation_group_t new_group = {};
+	strncpy(new_group.name, name, sizeof(new_group.name));
+	arrput(annotation_set->stored_groups, new_group);
+	u32 new_stored_group_index = annotation_set->stored_group_count++;
+
+	arrput(annotation_set->active_group_indices, new_stored_group_index);
+	u32 new_active_group_index = annotation_set->active_group_count++;
+
+	return new_active_group_index;
+}
+
+u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
+	annotation_feature_t new_feature = {};
+	strncpy(new_feature.name, name, sizeof(new_feature.name));
+	arrput(annotation_set->stored_features, new_feature);
+	u32 new_stored_feature_index = annotation_set->stored_feature_count++;
+
+	arrput(annotation_set->active_feature_indices, new_stored_feature_index);
+	u32 new_active_feature_index = annotation_set->active_feature_count++;
+
+	return new_active_feature_index;
+}
+
+i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name) {
+	for (i32 i = 0; i < annotation_set->stored_group_count; ++i) {
+		if (strcmp(annotation_set->stored_groups[i].name, group_name) == 0) {
+			return i;
+		}
+	}
+	return -1; // not found
+}
+
+
 void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 		annotation_set->active_annotations[i]->selected = false;
@@ -545,6 +590,42 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 	}
 }
 
+void annotation_group_delete(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_group_count);
+	i32 stored_index = annotation_set->active_group_indices[active_index];
+	ASSERT(stored_index >= 0 && stored_index < annotation_set->stored_group_count);
+	annotation_group_t* group = annotation_set->stored_groups + stored_index;
+	group->deleted = true;
+
+	i32 default_fallback_group = 0;
+	for (i32 i = 0; i < annotation_set->stored_annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->stored_annotations + i;
+		if (annotation->group_id == stored_index) {
+			annotation->group_id = 0;
+		}
+	}
+	arrdel(annotation_set->active_group_indices, active_index);
+	--annotation_set->active_group_count;
+	annotations_modified(annotation_set);
+}
+
+void annotation_feature_delete(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_feature_count);
+	i32 stored_index = annotation_set->active_feature_indices[active_index];
+	ASSERT(stored_index >= 0 && stored_index < annotation_set->stored_feature_count);
+	annotation_feature_t* feature = annotation_set->stored_features + stored_index;
+	feature->deleted = true;
+
+	i32 default_fallback_feature = 0;
+	for (i32 i = 0; i < annotation_set->stored_annotation_count; ++i) {
+		annotation_t* annotation = annotation_set->stored_annotations + i;
+		// TODO: reset invalid features
+	}
+	arrdel(annotation_set->active_feature_indices, active_index);
+	--annotation_set->active_feature_count;
+	annotations_modified(annotation_set);
+}
+
 // TODO: delete 'slice' of annotations, instead of hardcoded selected ones
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set) {
 	if (!annotation_set->stored_annotations) return;
@@ -669,7 +750,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		annotation_t* annotation = annotation_set->active_annotations[annotation_index];
-		annotation_group_t* group = annotation_set->groups + annotation->group_id;
+		annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };
 		rgba_t base_color = group->color;
 		u8 alpha = (u8)(annotation_opacity * 255.0f);
@@ -819,10 +900,16 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 
-	const char** item_previews = (const char**) alloca(annotation_set->group_count * sizeof(char*));
-	for (i32 i = 0; i < annotation_set->group_count; ++i) {
-		annotation_group_t* group = annotation_set->groups + i;
-		item_previews[i] = group->name;
+	const char** group_item_previews = (const char**) alloca(annotation_set->active_group_count * sizeof(char*));
+	for (i32 i = 0; i < annotation_set->active_group_count; ++i) {
+		annotation_group_t* group = get_active_annotation_group(annotation_set, i);
+		group_item_previews[i] = group->name;
+	}
+
+	const char** feature_item_previews = (const char**) alloca(annotation_set->active_feature_count * sizeof(char*));
+	for (i32 i = 0; i < annotation_set->active_feature_count; ++i) {
+		annotation_feature_t* feature = get_active_annotation_feature(annotation_set, i);
+		feature_item_previews[i] = feature->name;
 	}
 
 	// find group corresponding to the currently selected annotations
@@ -843,23 +930,23 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 
 	// Detect hotkey presses for group assignment
-	bool* hotkey_pressed = (bool*) alloca(annotation_set->group_count * sizeof(bool));
-	memset(hotkey_pressed, 0, annotation_set->group_count * sizeof(bool));
+	bool* hotkey_pressed = (bool*) alloca(annotation_set->active_group_count * sizeof(bool));
+	memset(hotkey_pressed, 0, annotation_set->active_group_count * sizeof(bool));
 
 	if (!gui_want_capture_keyboard) {
-		for (i32 i = 0; i < ATMOST(9, annotation_set->group_count); ++i) {
+		for (i32 i = 0; i < ATMOST(9, annotation_set->active_group_count); ++i) {
 			if (was_key_pressed(input, KEY_1+i)) {
 				hotkey_pressed[i] = true;
 			}
 		}
-		if (annotation_set->group_count >= 10 && was_key_pressed(input, KEY_0)) {
+		if (annotation_set->active_group_count >= 10 && was_key_pressed(input, KEY_0)) {
 			hotkey_pressed[9] = true;
 		}
 	}
 
 	const char* preview = "";
-	if (annotation_group_index >= 0 && annotation_group_index < annotation_set->group_count) {
-		preview = item_previews[annotation_group_index];
+	if (annotation_group_index >= 0 && annotation_group_index < annotation_set->active_group_count) {
+		preview = group_item_previews[annotation_group_index];
 	} else if (multiple_selected) {
 		preview = "(multiple)"; // if multiple annotations with different groups are selected
 	} else if (nothing_selected) {
@@ -909,27 +996,25 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			static i32 edit_group_index = -1;
 			const char* edit_group_preview = "";
 
-			if (edit_group_index >= 0 && edit_group_index < annotation_set->group_count) {
-				edit_group_preview = item_previews[edit_group_index];
+			if (edit_group_index >= 0 && edit_group_index < annotation_set->active_group_count) {
+				edit_group_preview = group_item_previews[edit_group_index];
 			} else {
 				edit_group_index = -1;
 			}
 
-			bool disable_interface = annotation_set->group_count <= 0;
+			bool disable_interface = annotation_set->active_group_count <= 0;
 			u32 selectable_flags = 0;
 
 			if (disable_interface) {
-				ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-				ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
-				selectable_flags |= ImGuiSelectableFlags_Disabled;
+				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
 			}
 
-			ImGui::Text("Number of groups: %d\n", annotation_set->group_count);
+			ImGui::Text("Number of groups: %d\n", annotation_set->active_group_count);
 			if (ImGui::BeginCombo("Select group", edit_group_preview, ImGuiComboFlags_HeightLargest)) {
-				for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
-					annotation_group_t* group = annotation_set->groups + group_index;
+				for (i32 group_index = 0; group_index < annotation_set->active_group_count; ++group_index) {
+					annotation_group_t* group = get_active_annotation_group(annotation_set, group_index);
 
-					if (ImGui::Selectable(item_previews[group_index], (edit_group_index == group_index), selectable_flags)) {
+					if (ImGui::Selectable(group_item_previews[group_index], (edit_group_index == group_index), selectable_flags)) {
 						edit_group_index = group_index;
 					}
 				}
@@ -939,9 +1024,14 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			annotation_group_t* selected_group = NULL;
 			if (edit_group_index >= 0) {
-				selected_group = annotation_set->groups + edit_group_index;
+				selected_group = get_active_annotation_group(annotation_set, edit_group_index);
 			}
 			const char* group_name = selected_group ? selected_group->name : "";
+
+			if (!disable_interface && selected_group == NULL) {
+				disable_interface = true;
+				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+			}
 
 			// Text field to display the group name, allowing for renaming.
 			{
@@ -964,7 +1054,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			ImGuiColorEditFlags flags = 0;
 			float color[3] = {};
 			if (edit_group_index >= 0) {
-				annotation_group_t* group = annotation_set->groups + edit_group_index;
+				annotation_group_t* group = annotation_set->stored_groups + edit_group_index;
 				rgba_t rgba = group->color;
 				color[0] = BYTE_TO_FLOAT(rgba.r);
 				color[1] = BYTE_TO_FLOAT(rgba.g);
@@ -981,10 +1071,168 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::ColorEdit3("Group color", (float*) color, flags);
 			}
 
-			if (disable_interface) {
-				ImGui::PopItemFlag();
-				ImGui::PopStyleVar();
+			if (ImGui::Button("Delete group")) {
+				//annotation_group_delete(annotation_set, edit_group_index);
+				if (selected_group) {
+					selected_group->deleted = true;
+				}
 			}
+
+			if (disable_interface) {
+				gui_pop_disabled_style();
+			}
+
+			ImGui::SameLine();
+			if (ImGui::Button("Add group")) {
+				char new_group_name[64];
+				snprintf(new_group_name, 64, "Group %d", annotation_set->stored_group_count);
+				edit_group_index = add_annotation_group(annotation_set, new_group_name);
+				annotations_modified(annotation_set);
+			}
+
+			ImGui::NewLine();
+
+
+		}
+
+		if (ImGui::CollapsingHeader("Features"))
+		{
+			static i32 edit_feature_index = -1;
+			const char* edit_feature_preview = "";
+
+			if (edit_feature_index >= 0 && edit_feature_index < annotation_set->active_feature_count) {
+				edit_feature_preview = feature_item_previews[edit_feature_index];
+			} else {
+				edit_feature_index = -1;
+			}
+
+			bool disable_interface = annotation_set->active_feature_count <= 0;
+			u32 selectable_flags = 0;
+
+			if (disable_interface) {
+				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+			}
+
+			ImGui::Text("Number of features: %d\n", annotation_set->active_feature_count);
+			if (ImGui::BeginCombo("Select feature", edit_feature_preview, ImGuiComboFlags_HeightLargest)) {
+				for (i32 feature_index = 0; feature_index < annotation_set->active_feature_count; ++feature_index) {
+					annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[feature_index];
+
+					if (ImGui::Selectable(feature_item_previews[feature_index], (edit_feature_index == feature_index), selectable_flags)) {
+						edit_feature_index = feature_index;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::Spacing();
+
+			annotation_feature_t* selected_feature = NULL;
+			if (edit_feature_index >= 0) {
+				selected_feature = annotation_set->stored_features + annotation_set->active_feature_indices[edit_feature_index];
+			}
+			const char* feature_name = selected_feature ? selected_feature->name : "";
+
+			if (!disable_interface && selected_feature == NULL) {
+				disable_interface = true;
+				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+			}
+
+			// Text field to display the feature name, allowing for renaming.
+			{
+				static char dummy_buf[64] = "";
+				char* feature_name_buf = dummy_buf;
+				ImGuiInputTextFlags flags;
+				if (selected_feature) {
+					feature_name_buf = selected_feature->name;
+					flags = 0;
+				} else {
+					feature_name_buf = dummy_buf;
+					flags = ImGuiInputTextFlags_ReadOnly;
+				}
+				if (ImGui::InputText("Feature name", feature_name_buf, 64)) {
+					annotations_modified(annotation_set);
+				}
+			}
+
+			bool restrict_to_group = selected_feature ? selected_feature->restrict_to_group : false;
+			if (ImGui::Checkbox("Restrict to group", &restrict_to_group)) {
+				if (selected_feature) selected_feature->restrict_to_group = restrict_to_group;
+			}
+
+			u32 saved_selectable_flags = selectable_flags;
+			if (!restrict_to_group) {
+				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+			}
+			annotation_group_t* feature_group = NULL;
+			const char* feature_group_preview = "";
+			if (selected_feature) {
+				if (selected_feature->group_id >= 0 && selected_feature->group_id < annotation_set->stored_group_count) {
+					feature_group = annotation_set->stored_groups + selected_feature->group_id;
+					feature_group_preview = feature_group->name;
+				}
+			}
+			if (ImGui::BeginCombo("Group", feature_group_preview, ImGuiComboFlags_HeightLargest)) {
+				if (edit_feature_index >= 0) {
+					annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[edit_feature_index];
+					for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
+						annotation_group_t* group = annotation_set->stored_groups + group_index;
+
+						if (ImGui::Selectable(group_item_previews[group_index], (feature->group_id == group_index), selectable_flags, (ImVec2){})) {
+							feature->group_id = group_index;
+							annotations_modified(annotation_set);
+						}
+					}
+				}
+
+				ImGui::EndCombo();
+			}
+			if (!restrict_to_group) {
+				gui_pop_disabled_style();
+				selectable_flags = saved_selectable_flags;
+			}
+
+#if 0
+			// Color picker for editing the feature color.
+			ImGuiColorEditFlags flags = 0;
+			float color[3] = {};
+			if (edit_feature_index >= 0) {
+				annotation_feature_t* feature = annotation_set->stored_features + edit_feature_index;
+				rgba_t rgba = feature->color;
+				color[0] = BYTE_TO_FLOAT(rgba.r);
+				color[1] = BYTE_TO_FLOAT(rgba.g);
+				color[2] = BYTE_TO_FLOAT(rgba.b);
+				if (ImGui::ColorEdit3("Feature color", (float*) color, flags)) {
+					rgba.r = FLOAT_TO_BYTE(color[0]);
+					rgba.g = FLOAT_TO_BYTE(color[1]);
+					rgba.b = FLOAT_TO_BYTE(color[2]);
+					feature->color = rgba;
+					annotations_modified(annotation_set);
+				}
+			} else {
+				flags = ImGuiColorEditFlags_NoPicker;
+				ImGui::ColorEdit3("Feature color", (float*) color, flags);
+			}
+#endif
+
+			if (ImGui::Button("Delete feature")) {
+				if (edit_feature_index >= 0) {
+					annotation_feature_delete(annotation_set, edit_feature_index);
+				}
+				edit_feature_index = -1;
+			}
+
+			if (disable_interface) {
+				gui_pop_disabled_style();
+			}
+
+			ImGui::SameLine();
+			if (ImGui::Button("Add feature")) {
+				char new_feature_name[64];
+				snprintf(new_feature_name, 64, "Feature %d", annotation_set->stored_feature_count);
+				edit_feature_index = add_annotation_feature(annotation_set, new_feature_name);
+				annotations_modified(annotation_set);
+			}
+
 
 			ImGui::NewLine();
 
@@ -995,16 +1243,14 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		{
 			u32 selectable_flags = 0;
 			if (nothing_selected) {
-				selectable_flags |= ImGuiSelectableFlags_Disabled;
-				ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-				ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
 			}
 
 			if (ImGui::BeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
-				for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
-					annotation_group_t* group = annotation_set->groups + group_index;
+				for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
+					annotation_group_t* group = annotation_set->stored_groups + group_index;
 
-					if (ImGui::Selectable(item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
+					if (ImGui::Selectable(group_item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
 					    || ((!nothing_selected) && hotkey_pressed[group_index])) {
 						set_group_for_selected_annotations(annotation_set, group_index);
 					}
@@ -1013,8 +1259,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			if (nothing_selected) {
-				ImGui::PopItemFlag();
-				ImGui::PopStyleVar();
+				gui_pop_disabled_style();
 			}
 
 			if (ImGui::Button("Open group assignment window")) {
@@ -1040,13 +1285,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		u32 selectable_flags = 0;
 		if (nothing_selected) {
-			selectable_flags |= ImGuiSelectableFlags_Disabled;
-			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+			gui_push_disabled_style_with_selectable_flags(&selectable_flags);
 		}
 
-		for (i32 group_index = 0; group_index < annotation_set->group_count; ++group_index) {
-			annotation_group_t* group = annotation_set->groups + group_index;
+		for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
+			annotation_group_t* group = annotation_set->stored_groups + group_index;
 
 			u32 rgba_u32 = *(u32*) &group->color;
 			ImVec4 color = ImColor(rgba_u32);
@@ -1064,7 +1307,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				set_group_for_selected_annotations(annotation_set, group_index);
 			}
 
-			ImGui::SameLine(0); ImGui::RadioButton(item_previews[group_index], &annotation_group_index, group_index);
+			ImGui::SameLine(0); ImGui::RadioButton(group_item_previews[group_index], &annotation_group_index, group_index);
 			if (group_index <= 9) {
 				ImGui::SameLine(ImGui::GetWindowWidth()-40.0f);
 				if (group_index <= 8) {
@@ -1083,8 +1326,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
 
 		if (nothing_selected) {
-			ImGui::PopItemFlag();
-			ImGui::PopStyleVar();
+			gui_pop_disabled_style();
 		}
 
 		ImGui::End();
@@ -1138,24 +1380,6 @@ enum {
 	ASAP_XML_PARSE_GROUPS = 0,
 	ASAP_XML_PARSE_ANNOTATIONS = 1,
 };
-
-u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
-	annotation_group_t new_group = {};
-	strncpy(new_group.name, name, sizeof(new_group.name));
-	arrput(annotation_set->groups, new_group);
-	u32 new_group_index = annotation_set->group_count;
-	++annotation_set->group_count;
-	return new_group_index;
-}
-
-i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name) {
-	for (i32 i = 0; i < annotation_set->group_count; ++i) {
-		if (strcmp(annotation_set->groups[i].name, group_name) == 0) {
-			return i;
-		}
-	}
-	return -1; // not found
-}
 
 rgba_t asap_xml_parse_color(const char* value) {
 	rgba_t rgba = {0, 0, 0, 255};
@@ -1228,10 +1452,13 @@ void group_set_attribute(annotation_group_t* group, const char* attr, const char
 
 void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	// destroy old state
-	if (annotation_set->stored_annotations) arrfree(annotation_set->stored_annotations);
-	if (annotation_set->coordinates) arrfree(annotation_set->coordinates);
-	if (annotation_set->active_annotation_indices) arrfree(annotation_set->active_annotation_indices);
-	if (annotation_set->groups) arrfree(annotation_set->groups);
+	arrfree(annotation_set->stored_annotations);
+	arrfree(annotation_set->coordinates);
+	arrfree(annotation_set->active_annotation_indices);
+	arrfree(annotation_set->stored_groups);
+	arrfree(annotation_set->active_group_indices);
+	arrfree(annotation_set->stored_features);
+	arrfree(annotation_set->active_feature_indices);
 	if (annotation_set->asap_xml_filename) {
 		// TODO: Fix leak! how to free strdup'd strings with ltalloc?
 //		free(annotation_set->asap_xml_filename);
@@ -1368,7 +1595,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 								if (group_index < 0) {
 									group_index = add_annotation_group(annotation_set, parsed_group->name);
 								}
-								annotation_group_t* destination_group = annotation_set->groups + group_index;
+								annotation_group_t* destination_group = annotation_set->stored_groups + group_index;
 								// 'Commit' the group with all its attributes
 								memcpy(destination_group, parsed_group, sizeof(*destination_group));
 							}
@@ -1467,22 +1694,22 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 
 		fprintf(fp, "<ASAP_Annotations>");
 
-		fprintf(fp, "<AnnotationGroups>");
+		fprintf(fp, "<AnnotationGroups>\n");
 
-		for (i32 group_index = 1 /* Skip group 0 ('None') */; group_index < annotation_set->group_count; ++group_index) {
-			annotation_group_t* group = annotation_set->groups + group_index;
+		for (i32 group_index = 1 /* Skip group 0 ('None') */; group_index < annotation_set->stored_group_count; ++group_index) {
+			annotation_group_t* group = annotation_set->stored_groups + group_index;
 
 			char color_buf[32];
 			asap_xml_print_color(color_buf, sizeof(color_buf), group->color);
 
 			const char* part_of_group = "None";
 
-			fprintf(fp, "<Group Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\"><Attributes /></Group>",
+			fprintf(fp, "<Group Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\"><Attributes /></Group>\n",
 					color_buf, group->name, part_of_group);
 
 		}
 
-		fprintf(fp, "</AnnotationGroups>");
+		fprintf(fp, "</AnnotationGroups>\n");
 
 		fprintf(fp, "<Annotations>");
 
@@ -1491,7 +1718,7 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 			char color_buf[32];
 			asap_xml_print_color(color_buf, sizeof(color_buf), annotation->color);
 
-			const char* part_of_group = annotation_set->groups[annotation->group_id].name;
+			const char* part_of_group = annotation_set->stored_groups[annotation_set->active_group_indices[annotation->group_id]].name;
 			const char* type_name = get_annotation_type_name(annotation->type);
 
 			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">",
@@ -1508,7 +1735,7 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 			}
 
 
-			fprintf(fp, "</Annotation>");
+			fprintf(fp, "</Annotation>\n");
 		}
 
 		fprintf(fp, "</Annotations></ASAP_Annotations>\n");

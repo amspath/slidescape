@@ -154,6 +154,11 @@ i64 memrw_write(const void* src, memrw_t* buffer, i64 bytes_to_write) {
 	return 0;
 }
 
+i64 memrw_write_string(const char* s, memrw_t* buffer) {
+	size_t len = strlen(s);
+	return memrw_write(s, buffer, len);
+}
+
 i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read) {
 	i64 bytes_left = buffer->used_size - buffer->cursor;
 	if (bytes_left >= 1) {

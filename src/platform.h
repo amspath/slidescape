@@ -331,6 +331,8 @@ memrw_t memrw_create(u64 capacity);
 void memrw_rewind(memrw_t* buffer);
 void memrw_seek(memrw_t* buffer, i64 offset);
 i64 memrw_write(const void* src, memrw_t* buffer, i64 bytes_to_write);
+i64 memrw_write_string(const char* s, memrw_t* buffer);
+#define memrw_write_literal(s, buffer) memrw_write((s), (buffer), COUNT(s)-1)
 i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read);
 void memrw_destroy(memrw_t* buffer);
 

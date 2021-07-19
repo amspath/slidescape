@@ -258,6 +258,56 @@ static void coco_parse_categories(coco_t* coco, json_array_s* info) {
 					if (strcmp(element_name, "id") == 0) {
 						category->id = atoi(payload_number->number);
 					}
+				} else if (element->value->type == json_type_array) {
+					json_array_s* payload_array = (json_array_s*) element->value->payload;
+					json_array_element_s* sub_array_element = payload_array->start;
+					if (strcmp(element_name, "color") == 0) {
+						i32 array_index = 0;
+						while (sub_array_element) {
+							if (element->value->type == json_type_number) {
+								json_number_s* payload_number = (json_number_s*) element->value->payload;
+								if (array_index < 4) {
+									category->color.values[array_index] = atoi(payload_number->number);
+								}
+							}
+							++array_index;
+							sub_array_element = sub_array_element->next;
+						}
+					}
+				}
+				element = element->next;
+			}
+		}
+
+		array_element = array_element->next;
+	}
+}
+
+static void coco_parse_features(coco_t* coco, json_array_s* info) {
+	console_print_verbose("[JSON] parsing features\n");
+
+	json_array_element_s* array_element = info->start;
+	while (array_element) {
+		if (array_element->value->type == json_type_object) {
+			json_object_s* feature_object = (json_object_s*)array_element->value->payload;
+			json_object_element_s* element = feature_object->start;
+			coco_feature_t* feature = arraddnptr(coco->features, 1);
+			memset(feature, 0, sizeof(*feature));
+			++coco->feature_count;
+			while (element) {
+				const char* element_name = element->name->string;
+				if (element->value->type == json_type_string) {
+					json_string_s* payload_string = (json_string_s*) element->value->payload;
+					if (strcmp(element_name, "name") == 0) {
+						coco_copy_parsed_string(coco, feature->name, payload_string);
+					}
+				} else if (element->value->type == json_type_number) {
+					json_number_s* payload_number = (json_number_s*) element->value->payload;
+					if (strcmp(element_name, "id") == 0) {
+						feature->id = atoi(payload_number->number);
+					} else if (strcmp(element_name, "category_id") == 0) {
+						feature->category_id = atoi(payload_number->number);
+					}
 				}
 				element = element->next;
 			}
@@ -343,12 +393,12 @@ bool load_coco_from_file(coco_t* coco, const char* json_filename) {
 
 static void coco_output_info(coco_t* coco, memrw_t* out) {
 	char buf[4096];
-	i32 len = snprintf(buf, sizeof(buf), "\"info\": {\"description\": \"%s\","
-		        "\"url\": \"%s\","
-				"\"version\": \"%s\","
-                "\"year\": %d,"
-                "\"contributor\": \"%s\","
-                "\"date_created\": \"%s\"}", coco->info.description, coco->info.url, coco->info.version,
+	i32 len = snprintf(buf, sizeof(buf), "\"info\":{\"description\": \"%s\","
+		        "\"url\":\"%s\","
+				"\"version\":\"%s\","
+                "\"year\":%d,"
+                "\"contributor\":\"%s\","
+                "\"date_created\":\"%s\"}", coco->info.description, coco->info.url, coco->info.version,
                                              coco->info.year, coco->info.contributor, coco->info.date_created);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
@@ -366,17 +416,20 @@ static void coco_output_license(coco_license_t* license, memrw_t* out) {
 }
 
 static void coco_output_licenses(coco_t* coco, memrw_t* out) {
-	const char* licenses_before = "\"licenses\": [";
-	memrw_write(licenses_before, out, strlen(licenses_before));
-	i32 last_license_index = coco->license_count - 1;
-	for (i32 license_index = 0; license_index < coco->license_count; ++license_index) {
-		coco_license_t* license = coco->licenses + license_index;
-		coco_output_license(license, out);
-		if (license_index < last_license_index) {
-			memrw_write(",\n", out, 2);
+	if (coco->license_count == 0) {
+		memrw_write_literal("\"licenses\":[]", out);
+	} else {
+		memrw_write_literal("\"licenses\":[", out);
+		i32 last_license_index = coco->license_count - 1;
+		for (i32 license_index = 0; license_index < coco->license_count; ++license_index) {
+			coco_license_t* license = coco->licenses + license_index;
+			coco_output_license(license, out);
+			if (license_index < last_license_index) {
+				memrw_write_literal(",\n", out);
+			}
 		}
+		memrw_write_literal("]", out);
 	}
-	memrw_write("]", out, 1);
 }
 
 static void coco_output_image(coco_image_t* image, memrw_t* out) {
@@ -396,17 +449,20 @@ static void coco_output_image(coco_image_t* image, memrw_t* out) {
 }
 
 static void coco_output_images(coco_t* coco, memrw_t* out) {
-	const char* images_before = "\"images\": [";
-	memrw_write(images_before, out, strlen(images_before));
-	i32 last_image_index = coco->image_count - 1;
-	for (i32 image_index = 0; image_index < coco->image_count; ++image_index) {
-		coco_image_t* image = coco->images + image_index;
-		coco_output_image(image, out);
-		if (image_index < last_image_index) {
-			memrw_write(",\n", out, 2);
+	if (coco->image_count == 0) {
+		memrw_write_literal("\"images\":[]", out);
+	} else {
+		memrw_write_literal("\"images\":[\n", out);
+		i32 last_image_index = coco->image_count - 1;
+		for (i32 image_index = 0; image_index < coco->image_count; ++image_index) {
+			coco_image_t* image = coco->images + image_index;
+			coco_output_image(image, out);
+			if (image_index < last_image_index) {
+				memrw_write_literal(",", out);
+			}
 		}
+		memrw_write_literal("\n]", out);
 	}
-	memrw_write("]", out, 1);
 }
 
 static void coco_output_coordinate_in_array_with_fmt(const char* fmt, v2f coordinate, memrw_t* out) {
@@ -417,7 +473,7 @@ static void coco_output_coordinate_in_array_with_fmt(const char* fmt, v2f coordi
 }
 
 static void coco_output_segmentation(coco_segmentation_t* segmentation, memrw_t* out) {
-	memrw_write("[", out, 1);
+	memrw_write_literal("[", out);
 	i32 coordinate_count_minus_one = segmentation->coordinate_count - 1;
 	for (i32 i = 0; i < coordinate_count_minus_one; ++i) {
 		coco_output_coordinate_in_array_with_fmt("%g,%g,", segmentation->coordinates[i], out);
@@ -426,7 +482,7 @@ static void coco_output_segmentation(coco_segmentation_t* segmentation, memrw_t*
 	if (last_coordinate_index >= 0) {
 		coco_output_coordinate_in_array_with_fmt("%g,%g", segmentation->coordinates[last_coordinate_index], out);
 	}
-	memrw_write("]", out, 1);
+	memrw_write_literal("]", out);
 }
 
 static void coco_output_annotation(coco_annotation_t* annotation, memrw_t* out) {
@@ -462,53 +518,103 @@ static void coco_output_annotation(coco_annotation_t* annotation, memrw_t* out) 
 }
 
 static void coco_output_annotations(coco_t* coco, memrw_t* out) {
-	const char* annotations_before = "\"annotations\": [";
-	memrw_write(annotations_before, out, strlen(annotations_before));
-	i32 last_annotation_index = coco->annotation_count - 1;
-	for (i32 annotation_index = 0; annotation_index < coco->annotation_count; ++annotation_index) {
-		coco_annotation_t* annotation = coco->annotations + annotation_index;
-		coco_output_annotation(annotation, out);
-		if (annotation_index < last_annotation_index) {
-			memrw_write(",\n", out, 2);
+	if (coco->annotation_count == 0) {
+		memrw_write_literal("\"annotations\":[]", out);
+	} else {
+		memrw_write_literal("\"annotations\":[\n", out);
+		i32 last_annotation_index = coco->annotation_count - 1;
+		for (i32 annotation_index = 0; annotation_index < coco->annotation_count; ++annotation_index) {
+			coco_annotation_t* annotation = coco->annotations + annotation_index;
+			coco_output_annotation(annotation, out);
+			if (annotation_index < last_annotation_index) {
+				memrw_write_literal(",\n", out);
+			}
 		}
+		memrw_write_literal("\n]", out);
 	}
-	memrw_write("]", out, 1);
 }
 
 static void coco_output_category(coco_category_t* category, memrw_t* out) {
 	char buf[4096];
 	i32 len = snprintf(buf, sizeof(buf), "{\"supercategory\":\"%s\","
 	                                     "\"id\":%d,"
-	                                     "\"name\":\"%s\"}", category->supercategory, category->id, category->name);
+	                                     "\"name\":\"%s\","
+										 "\"color\":[%d,%d,%d]}",
+										 category->supercategory, category->id, category->name,
+										 category->color.r, category->color.g, category->color.b);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
 	} else panic();
 }
 
 static void coco_output_categories(coco_t* coco, memrw_t* out) {
-	const char* categories_before = "\"categories\":[";
-	memrw_write(categories_before, out, strlen(categories_before));
-	i32 last_category_index = coco->category_count - 1;
-	for (i32 category_index = 0; category_index < coco->category_count; ++category_index) {
-		coco_category_t* category = coco->categories + category_index;
-		coco_output_category(category, out);
-		if (category_index < last_category_index) {
-			memrw_write(",\n", out, 2);
+	if (coco->category_count == 0) {
+		memrw_write_literal("\"categories\":[]", out);
+	} else {
+		memrw_write_literal("\"categories\":[\n", out);
+		i32 last_category_index = coco->category_count - 1;
+		for (i32 category_index = 0; category_index < coco->category_count; ++category_index) {
+			coco_category_t* category = coco->categories + category_index;
+			coco_output_category(category, out);
+			if (category_index < last_category_index) {
+				memrw_write_literal(",\n", out);
+			}
 		}
+		memrw_write_literal("\n]", out);
 	}
-	memrw_write("]", out, 1);
+}
+
+static void coco_output_feature(coco_feature_t* feature, memrw_t* out) {
+	char buf[4096];
+	i32 len = snprintf(buf, sizeof(buf), "{\"id\":%d,"
+										 "\"name\":\"%s\","
+	                                     "\"category_id\":%d}",
+	                   feature->id, feature->name, feature->category_id);
+	if (len > 0 && len < sizeof(buf)) {
+		memrw_write(buf, out, len);
+	} else panic();
+}
+
+static void coco_output_features(coco_t* coco, memrw_t* out) {
+	if (coco->feature_count == 0) {
+		memrw_write_literal("\"features\":[]", out);
+	} else {
+		memrw_write_literal("\"features\":[\n", out);
+		i32 last_feature_index = coco->feature_count - 1;
+		for (i32 feature_index = 0; feature_index < coco->feature_count; ++feature_index) {
+			coco_feature_t* feature = coco->features + feature_index;
+			coco_output_feature(feature, out);
+			if (feature_index < last_feature_index) {
+				memrw_write_literal(",\n", out);
+			}
+		}
+		memrw_write_literal("\n]", out);
+	}
 }
 
 void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_t* annotation_set) {
-	// reset/reallocate space for groups (categories)
-	arrsetlen(coco->categories, annotation_set->group_count);
-	memset(coco->categories, 0, annotation_set->group_count * sizeof(coco_category_t));
-	coco->category_count = annotation_set->group_count;
-	for (i32 i = 0; i < annotation_set->group_count; ++i) {
-		annotation_group_t* group = annotation_set->groups + i;
+	// Transfer groups (categories)
+	arrsetlen(coco->categories, annotation_set->active_group_count);
+	memset(coco->categories, 0, annotation_set->active_group_count * sizeof(coco_category_t));
+	coco->category_count = annotation_set->active_group_count;
+	for (i32 i = 0; i < annotation_set->active_group_count; ++i) {
+		annotation_group_t* group = annotation_set->stored_groups + annotation_set->active_group_indices[i];
 		coco_category_t* category = coco->categories + i;
 		category->id = i;
 		snprintf(category->name, COCO_MAX_FIELD, group->name);
+		category->color = group->color;
+	}
+
+	// Transfer features
+	arrsetlen(coco->features, annotation_set->active_feature_count);
+	memset(coco->features, 0, annotation_set->active_feature_count * sizeof(coco_feature_t));
+	coco->feature_count = annotation_set->active_feature_count;
+	for (i32 i = 0; i < annotation_set->active_feature_count; ++i) {
+		annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[i];
+		coco_feature_t* coco_feature = coco->features + i;
+		coco_feature->id = i;
+		snprintf(coco_feature->name, COCO_MAX_FIELD, feature->name);
+		coco_feature->category_id = feature->group_id;
 	}
 
 	// TODO: be less stupid about memory allocation
@@ -543,16 +649,18 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 			coordinate_t* coordinates = annotation_set->coordinates + annotation->first_coordinate;
 			coco_annotation->segmentation.coordinate_count = annotation->coordinate_count;
 
+			v2f mpp = annotation_set->mpp;
+			if (!(mpp.x > 0.0f && mpp.y > 0.0f)) {
+				ASSERT(!"mpp invalid or not initialized");
+				mpp = (v2f){1.0f, 1.0f}; // prevent divide by zero
+			}
 			for (i32 j = 0; j < annotation->coordinate_count; ++j) {
 				coordinate_t* coordinate = coordinates + j;
 				v2f* coco_coordinate = coco_annotation->segmentation.coordinates + j;
-				*coco_coordinate = (v2f) {(float)coordinate->x, (float)coordinate->y};
+				*coco_coordinate = (v2f) {(float)coordinate->x / mpp.x, (float)coordinate->y / mpp.y};
 			}
 		}
-
-
 	}
-
 }
 
 memrw_t save_coco(coco_t* coco) {
@@ -564,17 +672,19 @@ memrw_t save_coco(coco_t* coco) {
 	}
 	memrw_t out = memrw_create(out_size);
 
-	memrw_write("{\n", &out, 2);
+	memrw_write_literal("{\n", &out);
 	coco_output_info(coco, &out);
-	memrw_write(",\n", &out, 2);
+	memrw_write_literal(",\n", &out);
 	coco_output_licenses(coco, &out);
-	memrw_write(",\n", &out, 2);
+	memrw_write_literal(",\n", &out);
 	coco_output_images(coco, &out);
-	memrw_write(",\n", &out, 2);
+	memrw_write_literal(",\n", &out);
 	coco_output_annotations(coco, &out);
-	memrw_write(",\n", &out, 2);
+	memrw_write_literal(",\n", &out);
 	coco_output_categories(coco, &out);
-	memrw_write("}\n", &out, 2);
+	memrw_write_literal(",\n", &out);
+	coco_output_features(coco, &out);
+	memrw_write_literal("\n}\n", &out);
 
 	return out;
 

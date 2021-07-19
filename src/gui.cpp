@@ -55,17 +55,27 @@ void menu_close_file(app_state_t* app_state) {
 	unload_and_reinit_annotations(&app_state->scene.annotation_set);
 }
 
-void gui_push_disabled_style(bool condition) {
-	if (condition) {
-		ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+void gui_push_disabled_style() {
+	ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+}
+
+void gui_pop_disabled_style() {
+	ImGui::PopItemFlag();
+	ImGui::PopStyleVar();
+}
+
+void gui_push_disabled_style_with_selectable_flags(u32* selectable_flags) {
+	gui_push_disabled_style();
+	if (selectable_flags) {
+		*selectable_flags |= ImGuiSelectableFlags_Disabled;
 	}
 }
 
-void gui_pop_disabled_style(bool condition) {
-	if (condition) {
-		ImGui::PopItemFlag();
-		ImGui::PopStyleVar();
+void gui_push_disabled_style_with_button_flags(u32* button_flags) {
+	gui_push_disabled_style();
+	if (button_flags) {
+		*button_flags |= ImGuiButtonFlags_Disabled;
 	}
 }
 
@@ -311,9 +321,7 @@ void draw_layers_window(app_state_t* app_state) {
 	u32 button_flags = 0;
 	bool disable_gui = image_count == 0;
 	if (disable_gui) {
-		button_flags |= ImGuiButtonFlags_Disabled;
-		ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+		gui_push_disabled_style_with_button_flags(&button_flags);
 	}
 	if (ImGui::ButtonEx("Load paired image...", ImVec2(0,0), button_flags)) {
 		open_file_dialog(app_state, FILETYPE_HINT_OVERLAY);
@@ -322,8 +330,7 @@ void draw_layers_window(app_state_t* app_state) {
 	ImGui::Checkbox("Load next dragged image as overlay (F6)", &load_next_image_as_overlay);
 
 	if (disable_gui) {
-		ImGui::PopItemFlag();
-		ImGui::PopStyleVar();
+		gui_pop_disabled_style();
 	}
 
 	ImGui::NewLine();
@@ -557,30 +564,26 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		bool disable_gui = !app_state->use_image_adjustments;
 		if (disable_gui) {
-			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+			gui_push_disabled_style();
 		}
 
 		ImGui::SliderFloat("Black level", &app_state->black_level, 0.0f, 1.0f);
 		ImGui::SliderFloat("White level", &app_state->white_level, 0.0f, 1.0f);
 
 		if (disable_gui) {
-			ImGui::PopItemFlag();
-			ImGui::PopStyleVar();
+			gui_pop_disabled_style();
 		}
 
 		ImGui::NewLine();
 		ImGui::Checkbox("Filter transparent color", &app_state->scene.use_transparent_filter);
 		disable_gui = !app_state->scene.use_transparent_filter;
 		if (disable_gui) {
-			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * 0.5f);
+			gui_push_disabled_style();
 		}
 		ImGui::ColorEdit3("Transparent color", (float*) &app_state->scene.transparent_color); // Edit 3 floats representing a color
 		ImGui::SliderFloat("Tolerance", &app_state->scene.transparent_tolerance, 0.0f, 0.2f);
 		if (disable_gui) {
-			ImGui::PopItemFlag();
-			ImGui::PopStyleVar();
+			gui_pop_disabled_style();
 		}
 
 
@@ -683,23 +686,23 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		bool can_move_left = (selected_case_index > 0);
 		bool can_move_right = (selected_case_index < (i32)caselist->case_count-1);
 
-		gui_push_disabled_style(!can_move_left);
+		if (!can_move_left) gui_push_disabled_style();
 		if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
 			if (caselist->cases && can_move_left) {
 				app_state->selected_case_index = (--selected_case_index);
 				app_state->selected_case = selected_case = caselist->cases + selected_case_index;
 			}
 		}
-		gui_pop_disabled_style(!can_move_left);
+		if (!can_move_left) gui_pop_disabled_style();
 		ImGui::SameLine();
-		gui_push_disabled_style(!can_move_right);
+		if (!can_move_right) gui_push_disabled_style();
 		if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
 			if (caselist->cases && can_move_right) {
 				app_state->selected_case_index = (++selected_case_index);
 				app_state->selected_case = selected_case = caselist->cases + selected_case_index;
 			}
 		}
-		gui_pop_disabled_style(!can_move_right);
+		if (!can_move_right) gui_pop_disabled_style();
 		ImGui::SameLine();
 
 		if (ImGui::BeginCombo("##Select_case", case_preview, ImGuiComboFlags_HeightLarge)) {

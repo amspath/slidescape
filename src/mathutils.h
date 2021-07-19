@@ -42,7 +42,10 @@ typedef struct v2i {
 } v2i;
 
 typedef struct rgba_t {
-	u8 r, g, b, a;
+	union {
+		struct { u8 r, g, b, a; };
+		u8 values[4];
+	};
 } rgba_t;
 
 #ifndef V2F_DEFINED
@@ -56,6 +59,7 @@ typedef struct v3f {
 	union {
 		struct {float r, g, b; };
 		struct {float x, y, z; };
+		float values[3];
 	};
 } v3f;
 
@@ -65,6 +69,7 @@ typedef struct v4f {
 	union {
 		struct {float r, g, b, a; };
 		struct {float x, y, z, w; };
+		float values[4];
 	};
 } v4f;
 #endif
