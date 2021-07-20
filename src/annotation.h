@@ -111,7 +111,6 @@ typedef struct annotation_hit_result_t {
 typedef struct annotation_set_t {
 	annotation_t* stored_annotations; // array
 	i32 stored_annotation_count;
-	annotation_t** active_annotations; // recreated every frame
 	i32* active_annotation_indices; // array
 	i32 active_annotation_count;
 
@@ -179,7 +178,6 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
-void refresh_annotation_pointers(app_state_t* app_state, annotation_set_t* annotation_set);
 void recount_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 
 #ifdef __cplusplus

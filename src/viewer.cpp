@@ -1184,8 +1184,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	scene->drag_started = false;
 	scene->drag_ended = false;
 
-	refresh_annotation_pointers(app_state, &scene->annotation_set);
-
 	app_state->input = input;
 
 	// Set up rendering state for the next frame
