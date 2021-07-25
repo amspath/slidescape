@@ -114,10 +114,12 @@
 
 // Faster malloc(), realloc(), free()
 #include <ltalloc.h>
+#if WINDOWS
 #define malloc ltmalloc
 #define calloc ltcalloc
 #define free ltfree
 #define realloc ltrealloc
+#endif
 
 // Typesafe dynamic array and hash tables for C
 // https://github.com/nothings/stb/blob/master/stb_ds.h
