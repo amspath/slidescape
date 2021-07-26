@@ -93,6 +93,8 @@ bool init_openslide() {
 #ifdef _WIN32
 		//win32_diagnostic("LoadLibraryA");
 		console_print("OpenSlide not available: could not load libopenslide-0.dll\n");
+#elif defined(__APPLE__)
+		console_print("OpenSlide not available: could not load libopenslide.dylib (not installed?)\n");
 #else
 		console_print("OpenSlide not available: could not load libopenslide.so (not installed?)\n");
 #endif

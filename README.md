@@ -37,10 +37,13 @@ If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, a
 To enable OpenSlide support on Windows, download (or compile) the [64-bit binaries](https://openslide.org/download/) 
 and put all of the DLL files together in an `openslide/` folder, and put that folder in the same location as `slideviewer.exe`.
 
-To enable OpenSlide support on Linux, install the library, either using a package manager or 
+To enable OpenSlide support on Linux, install the `openslide` library, either using a package manager or 
 by building and installing it manually. The program will try to locate `libopenslide.so`, either in the 
 default system library paths or in `/usr/local/lib/`.
 
+To enable OpenSlide support on macOS, install the `openslide` library using Homebrew or MacPorts.
+The program will try to locate `libopenslide.dylib` in the default install path: either `/usr/local/opt/openslide/lib/` for
+Homebrew, or `/opt/local/lib/` for MacPorts.
 
 ## Credits
 
