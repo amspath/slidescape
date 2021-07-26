@@ -101,6 +101,7 @@ void unload_image(image_t* image) {
 					unload_texture(image->simple.texture);
 					image->simple.texture = 0;
 				}
+				image->simple.is_valid = false;
 			} else {
 				ASSERT(!"image backend invalid");
 			}
@@ -114,6 +115,7 @@ void unload_image(image_t* image) {
 					unload_texture(image->simple.texture);
 					image->simple.texture = 0;
 				}
+				image->simple.is_valid = false;
 			} else {
 				ASSERT(!"image backend invalid");
 			}
@@ -134,6 +136,16 @@ void unload_image(image_t* image) {
 			level_image->tiles = NULL;
 		}
 
+		if (image->macro_image.is_valid) {
+			if (image->macro_image.pixels) stbi_image_free(image->simple.pixels);
+			if (image->macro_image.texture) unload_texture(image->macro_image.texture);
+			memset(&image->macro_image, 0, sizeof(image->macro_image));
+		}
+		if (image->label_image.is_valid) {
+			if (image->label_image.pixels) stbi_image_free(image->simple.pixels);
+			if (image->label_image.texture) unload_texture(image->label_image.texture);
+			memset(&image->label_image, 0, sizeof(image->label_image));
+		}
 
 	}
 }
@@ -419,6 +431,33 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 		}
 	}
 
+	isyntax_image_t* macro_image = isyntax->images + isyntax->macro_image_index;
+	if (macro_image->image_type == ISYNTAX_IMAGE_TYPE_MACROIMAGE) {
+		if (macro_image->pixels) {
+			image->macro_image.pixels = macro_image->pixels;
+			macro_image->pixels = NULL; // transfer ownership
+			image->macro_image.width = macro_image->width;
+			image->macro_image.height = macro_image->height;
+			image->macro_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
+			image->macro_image.world_pos.x = -((float)wsi_image->offset_x * isyntax->mpp_x);
+			image->macro_image.world_pos.y = -((float)wsi_image->offset_y * isyntax->mpp_y);
+			image->macro_image.is_valid = true;
+		}
+	}
+	isyntax_image_t* label_image = isyntax->images + isyntax->label_image_index;
+	if (label_image->image_type == ISYNTAX_IMAGE_TYPE_LABELIMAGE) {
+		if (label_image->pixels) {
+			image->label_image.pixels = label_image->pixels;
+			label_image->pixels = NULL; // transfer ownership
+			image->label_image.width = label_image->width;
+			image->label_image.height = label_image->height;
+			image->label_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
+//			image->label_image.world_pos.x = -((float)wsi_image->offset_x * isyntax->mpp_x);
+//			image->label_image.world_pos.y = -((float)wsi_image->offset_y * isyntax->mpp_y);
+			image->label_image.is_valid = true;
+		}
+	}
+
 
 	image->is_valid = true;
 	image->is_freshly_loaded = true;
@@ -687,6 +726,25 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		float time_elapsed;
 		float max_texture_load_time = 0.007f; // TODO: pin to frame time
+
+		// Upload macro and label images
+		simple_image_t* macro_image = &image->macro_image;
+		simple_image_t* label_image = &image->label_image;
+		if (macro_image->is_valid) {
+			if (macro_image->texture == 0 && macro_image->pixels != NULL) {
+				macro_image->texture = load_texture(macro_image->pixels, macro_image->width, macro_image->height, GL_RGBA);
+				stbi_image_free(macro_image->pixels);
+				macro_image->pixels = NULL;
+			}
+		}
+		if (label_image->is_valid) {
+			if (label_image->texture == 0 && label_image->pixels != NULL) {
+				label_image->texture = load_texture(label_image->pixels, label_image->width, label_image->height, GL_RGBA);
+				stbi_image_free(label_image->pixels);
+				label_image->pixels = NULL;
+			}
+		}
+
 #if 1
 		if (!finalize_textures_immediately) {
 			// Finalize textures that were uploaded via PBO the previous frame
@@ -703,9 +761,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 					break;
 				}
 			}
-
-
-
 		}
 
 		/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
@@ -729,6 +784,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				mark_queue_entry_completed(&global_completion_queue);
 
 				if (entry.callback == viewer_notify_load_tile_completed) {
+					// TODO: what to do if a tile belongs to a different image?
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 					tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 					ASSERT(tile);
@@ -971,6 +1027,27 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
+		bool draw_macro_image_in_background = false;
+		// Render label and macro images
+		if (draw_macro_image_in_background) {
+			glDisable(GL_STENCIL_TEST);
+			if (macro_image->is_valid && macro_image->texture != 0) {
+				v2f pmax = {};
+				pmax.x = macro_image->width * macro_image->mpp;
+				pmax.y = macro_image->height * macro_image->mpp;
+
+				mat4x4 model_matrix;
+				mat4x4_translate(model_matrix,
+				                 image->origin_offset.x + macro_image->world_pos.x,
+				                 image->origin_offset.y + macro_image->world_pos.y,
+				                 10.0f);
+				mat4x4_scale_aniso(model_matrix, model_matrix, pmax.x, pmax.y, 1.0f);
+				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+
+				draw_rect(macro_image->texture);
+			}
+		}
+
 		{
 			// Set up the stencil buffer to prevent rendering outside the image area
 			bounds2f stencil_bounds = {0, 0, image->width_in_um, image->height_in_um};
@@ -1011,7 +1088,15 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			glStencilFunc(GL_EQUAL, 1, 0xFF);
 			glDisable(GL_STENCIL_TEST);
 
-			// TODO: how to restore state properly for drawing simple images?
+		}
+
+		// Draw tiles
+		if (draw_macro_image_in_background) {
+			glEnable(GL_BLEND);
+			glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+			glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+		} else {
+			glDisable(GL_BLEND);
 		}
 
 		// Draw all levels within the viewport, up to the current zoom factor

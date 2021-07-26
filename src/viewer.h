@@ -138,13 +138,16 @@ typedef struct {
 	bool exists;
 } level_image_t;
 
-typedef struct stbi_t {
+typedef struct simple_image_t {
 	i32 channels_in_file;
 	i32 channels;
 	i32 width;
 	i32 height;
 	u8* pixels;
 	u32 texture;
+	float mpp;
+	v2f world_pos;
+	bool is_valid;
 } simple_image_t;
 
 typedef struct image_t {
@@ -173,6 +176,8 @@ typedef struct image_t {
 	bool is_overlay;
 	v2f origin_offset;
 	bool is_valid;
+	simple_image_t macro_image;
+	simple_image_t label_image;
 } image_t;
 
 typedef struct load_tile_task_t {

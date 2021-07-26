@@ -832,7 +832,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							if (strcmp(parser->attrbuf, "DPScannedImage") == 0) {
 								// We started parsing a new image (which will be either a WSI, LABELIMAGE or MACROIMAGE).
 								parser->current_image = isyntax->images + isyntax->image_count;
-								++isyntax->image_count;
+								parser->running_image_index = isyntax->image_count++;
 							}
 						} else {
 							console_print_verbose("%sattr %s = %s\n", get_spaces(parser->node_stack_index), x->attr, parser->attrbuf);
