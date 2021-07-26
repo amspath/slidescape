@@ -1412,6 +1412,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (new_zoom.level != old_zoom.level) {
 					if (used_mouse_to_zoom) {
 						scene->zoom_pivot = scene->mouse;
+						scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, displayed_image->width_in_um);
+						scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, displayed_image->height_in_um);
 					} else {
 						scene->zoom_pivot = scene->camera;
 					}
