@@ -57,9 +57,12 @@ typedef enum asap_xml_attribute_enum {
 	ASAP_XML_ATTRIBUTE_Y = 6,
 } asap_xml_attribute_enum;
 
+#define MAX_ANNOTATION_FEATURES 64
+
 typedef struct annotation_t {
 	annotation_type_enum type;
 	char name[64];
+	float features[MAX_ANNOTATION_FEATURES]; // TODO: make expandable
 	bounds2f bounds;
 	rgba_t color;
 	i32 group_id;

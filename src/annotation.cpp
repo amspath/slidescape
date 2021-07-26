@@ -55,8 +55,9 @@ u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
 	annotation_feature_t new_feature = {};
 	strncpy(new_feature.name, name, sizeof(new_feature.name));
-	arrput(annotation_set->stored_features, new_feature);
 	u32 new_stored_feature_index = annotation_set->stored_feature_count++;
+	new_feature.id = new_stored_feature_index;
+	arrput(annotation_set->stored_features, new_feature);
 
 	arrput(annotation_set->active_feature_indices, new_stored_feature_index);
 	u32 new_active_feature_index = annotation_set->active_feature_count++;
@@ -738,6 +739,16 @@ void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 ne
 	}
 }
 
+void set_features_for_selected_annotations(annotation_set_t* annotation_set, float* features, i32 feature_count) {
+	// stub
+	for (i32 i = 0; i < annotation_set->selection_count; ++i) {
+		annotation_t* annotation = annotation_set->selected_annotations[i];
+		ASSERT(annotation->selected);
+		memcpy(annotation->features, features, feature_count * sizeof(annotation->features[0]));
+		annotations_modified(annotation_set);
+	}
+}
+
 void annotation_draw_coordinate_dot(ImDrawList* draw_list, v2f point, float node_size, rgba_t node_color) {
 	draw_list->AddCircleFilled(point, node_size, *(u32*)(&node_color), 12);
 }
@@ -1011,7 +1022,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			ImGui::Text("Number of groups: %d\n", annotation_set->active_group_count);
-			if (ImGui::BeginCombo("Select group", edit_group_preview, ImGuiComboFlags_HeightLargest)) {
+			if (ImGui::BeginCombo("Select group", "", ImGuiComboFlags_HeightLargest)) {
 				for (i32 group_index = 0; group_index < annotation_set->active_group_count; ++group_index) {
 					annotation_group_t* group = get_active_annotation_group(annotation_set, group_index);
 
@@ -1115,7 +1126,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			ImGui::Text("Number of features: %d\n", annotation_set->active_feature_count);
-			if (ImGui::BeginCombo("Select feature", edit_feature_preview, ImGuiComboFlags_HeightLargest)) {
+			if (ImGui::BeginCombo("Select feature", "", ImGuiComboFlags_HeightLargest)) {
 				for (i32 feature_index = 0; feature_index < annotation_set->active_feature_count; ++feature_index) {
 					annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[feature_index];
 
@@ -1277,57 +1288,171 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	if (show_annotation_group_assignment_window) {
 
-		ImGui::SetNextWindowPos((ImVec2){1359,43}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+		ImGui::SetNextWindowPos((ImVec2){1288,42}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
 		ImGui::SetNextWindowSize((ImVec2){285,572}, ImGuiCond_FirstUseEver);
 
-		ImGui::Begin("Assign group", &show_annotation_group_assignment_window);
+		ImGui::Begin("Assign", &show_annotation_group_assignment_window);
 
 		ImGui::TextUnformatted(preview);
 
-		u32 selectable_flags = 0;
-		if (nothing_selected) {
-			gui_push_disabled_style_with_selectable_flags(&selectable_flags);
-		}
-
-		for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
-			annotation_group_t* group = annotation_set->stored_groups + group_index;
-
-			u32 rgba_u32 = *(u32*) &group->color;
-			ImVec4 color = ImColor(rgba_u32);
-
-			static int e = 0;
-			ImGui::PushID(group_index);
-			color.w = 1.0f;
-			ImGui::PushStyleColor(ImGuiCol_CheckMark, color);
-//		    color.w = 0.6f;
-//		    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, color);
-//		    color.w = 0.7f;
-//		    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
-			if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))
-			    || ((!nothing_selected) && hotkey_pressed[group_index])) {
-				set_group_for_selected_annotations(annotation_set, group_index);
-			}
-
-			ImGui::SameLine(0); ImGui::RadioButton(group_item_previews[group_index], &annotation_group_index, group_index);
-			if (group_index <= 9) {
-				ImGui::SameLine(ImGui::GetWindowWidth()-40.0f);
-				if (group_index <= 8) {
-					ImGui::Text("[%d]", group_index+1);
-				} else if (group_index == 9) {
-					ImGui::TextUnformatted("[0]");
+		ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
+		if (ImGui::BeginTabBar("Feature assignment tab bar", tab_bar_flags))
+		{
+			if (ImGui::BeginTabItem("Groups"))
+			{
+				u32 selectable_flags = 0;
+				if (nothing_selected) {
+					gui_push_disabled_style_with_selectable_flags(&selectable_flags);
 				}
 
+				for (i32 group_index = 0; group_index < annotation_set->active_group_count; ++group_index) {
+					annotation_group_t* group = annotation_set->stored_groups + group_index;
+
+					u32 rgba_u32 = *(u32*) &group->color;
+					ImVec4 color = ImColor(rgba_u32);
+
+					static int e = 0;
+					ImGui::PushID(group_index);
+					color.w = 1.0f;
+					ImGui::PushStyleColor(ImGuiCol_CheckMark, color);
+//		            color.w = 0.6f;
+//		            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, color);
+//		            color.w = 0.7f;
+//		            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, color);
+					bool pressed_hotkey = false;
+					if (!nothing_selected) {
+						if (group_index >= 0 && group_index < 10) {
+							pressed_hotkey = hotkey_pressed[group_index];
+						}
+					}
+
+					if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))
+					    || pressed_hotkey) {
+						set_group_for_selected_annotations(annotation_set, group_index);
+					}
+
+					ImGui::SameLine(0); ImGui::RadioButton(group_item_previews[group_index], &annotation_group_index, group_index);
+					if (group_index <= 9) {
+						ImGui::SameLine(ImGui::GetWindowWidth()-40.0f);
+						if (group_index <= 8) {
+							ImGui::Text("[%d]", group_index+1);
+						} else if (group_index == 9) {
+							ImGui::TextUnformatted("[0]");
+						}
+
+					}
+					ImGui::PopStyleColor(1);
+					ImGui::PopID();
+
+				}
+
+				ImGui::Separator();
+				ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
+
+				if (nothing_selected) {
+					gui_pop_disabled_style();
+				}
+				ImGui::EndTabItem();
 			}
-			ImGui::PopStyleColor(1);
-			ImGui::PopID();
 
-		}
+			if (ImGui::BeginTabItem("Features"))
+			{
+				u32 selectable_flags = 0;
+				if (nothing_selected) {
+					gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				}
 
-		ImGui::Separator();
-		ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
+				static i32 selectable_feature_ids[MAX_ANNOTATION_FEATURES];
+				static float selectable_feature_values[MAX_ANNOTATION_FEATURES];
+				static bool selectable_feature_values_are_mixed[MAX_ANNOTATION_FEATURES];
+				memset(selectable_feature_ids, 0, sizeof(selectable_feature_ids));
+				memset(selectable_feature_values, 0, sizeof(selectable_feature_values));
+				memset(selectable_feature_values_are_mixed, 0, sizeof(selectable_feature_values_are_mixed));
+				i32 selectable_feature_count = 0;
 
-		if (nothing_selected) {
-			gui_pop_disabled_style();
+				if (!nothing_selected) {
+					for (i32 feature_index = 0; feature_index < annotation_set->active_feature_count; ++feature_index) {
+						annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[feature_index];
+						bool is_feature_allowed = true;
+						if (feature->restrict_to_group) {
+							for (i32 i = 0; i < annotation_set->selection_count; ++i) {
+								annotation_t* selected_annotation = annotation_set->selected_annotations[i];
+								is_feature_allowed = (selected_annotation->group_id == feature->group_id);
+								if (!is_feature_allowed) break;
+							}
+						}
+						if (is_feature_allowed) {
+							i32 selectable_index = selectable_feature_count++;
+							selectable_feature_ids[selectable_index] = feature->id;
+
+							// Get the current state of the feature values for the selected annotations
+							// NOTE: The values may be mixed if multiple annotations are selected!
+							ASSERT(annotation_set->selection_count >= 1);
+							annotation_t* first_selected = annotation_set->selected_annotations[0];
+							float first_value = first_selected->features[feature->id];
+							selectable_feature_values[selectable_index] = first_value;
+							bool mixed = false;
+							for (i32 i = 1; i < annotation_set->selection_count; ++i) {
+								annotation_t* selected = annotation_set->selected_annotations[i];
+								float value = selected->features[feature->id];
+								if (value != first_value) {
+									mixed = true;
+									break;
+								}
+							}
+							if (mixed) {
+								selectable_feature_values_are_mixed[selectable_index] = true;
+								ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+							}
+
+							bool checked = (first_value != 0.0f);
+
+							bool pressed_hotkey = false;
+							if (selectable_index >= 0 && selectable_index < 9) {
+								pressed_hotkey = was_key_pressed(input, KEY_1 + selectable_index);
+							} else if (selectable_index == 9) {
+								pressed_hotkey = was_key_pressed(input, KEY_0);
+							}
+							if (pressed_hotkey) {
+								checked = !checked;
+							}
+
+							if (ImGui::Checkbox(feature->name, &checked) || pressed_hotkey) {
+								// Set value for all selected annotations
+								for (i32 i = 0; i < annotation_set->selection_count; ++i) {
+									annotation_t* selected = annotation_set->selected_annotations[i];
+									float new_value = checked ? 1.0f : 0.0f;
+									selected->features[feature->id] = new_value;
+								}
+								annotations_modified(annotation_set);
+							}
+
+							if (selectable_index <= 9) {
+								ImGui::SameLine(ImGui::GetWindowWidth()-40.0f);
+								if (selectable_index <= 8) {
+									ImGui::Text("[%d]", selectable_index+1);
+								} else if (selectable_index == 9) {
+									ImGui::TextUnformatted("[0]");
+								}
+
+							}
+
+							if (mixed) {
+								ImGui::PopItemFlag();
+							}
+
+
+						}
+					}
+				}
+
+				if (nothing_selected) {
+					gui_pop_disabled_style();
+				}
+				ImGui::EndTabItem();
+			}
+
+			ImGui::EndTabBar();
 		}
 
 		ImGui::End();
