@@ -1155,8 +1155,13 @@ static inline void scene_update_camera_bounds(scene_t* scene) {
 }
 
 static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f client_mouse_xy) {
-	scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.pixel_width * app_state->display_scale_factor;
-	scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.pixel_height * app_state->display_scale_factor;
+	if (client_mouse_xy.x >= 0 && client_mouse_xy.y < app_state->client_viewport.w * app_state->display_scale_factor &&
+			client_mouse_xy.y >= 0 && client_mouse_xy.y < app_state->client_viewport.h * app_state->display_scale_factor) {
+		scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.pixel_width * app_state->display_scale_factor;
+		scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.pixel_height * app_state->display_scale_factor;
+	} else {
+		scene->mouse = scene->camera;
+	}
 }
 
 // TODO: refactor delta_t
@@ -1225,6 +1230,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	if (input) {
 		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
 
+		if (input->mouse_moved) {
+			app_state->seconds_without_mouse_movement = 0.0f;
+		} else {
+			app_state->seconds_without_mouse_movement += delta_t;
+		}
+
 		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
 			menu_close_file(app_state);
 			do_after_scene_render(app_state, input);
@@ -1253,14 +1264,15 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (input->mouse_buttons[0].down) {
 				// Mouse drag.
+				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
 				if (input->mouse_buttons[0].transition_count != 0) {
 					// Don't start dragging if clicked outside the window
-					rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
 					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){(i32)input->mouse_xy.x, (i32)input->mouse_xy.y})) {
 						scene->is_dragging = true; // drag start
 						scene->drag_started = true;
 						scene->cumulative_drag_vector = (v2f){};
-//					console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
+						mouse_hide();
+//					    console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 					}
 				} else if (scene->is_dragging) {
 					// already started dragging on a previous frame
@@ -1269,7 +1281,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->cumulative_drag_vector.y += scene->drag_vector.y;
 				}
 				input->drag_vector = (v2f){};
-				mouse_hide();
 			} else {
 				if (input->mouse_buttons[0].transition_count != 0) {
 					mouse_show();
@@ -1455,12 +1466,16 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 1500.0f * delta_t * panning_multiplier;
+			bool panning = false;
 			if (scene->panning_velocity.y != 0.0f) {
 				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.y;
-				mouse_hide();
+				panning = true;
 			}
 			if (scene->panning_velocity.x != 0.0f) {
 				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.x;
+				panning = true;
+			}
+			if (panning && app_state->seconds_without_mouse_movement > 0.25f) {
 				mouse_hide();
 			}
 

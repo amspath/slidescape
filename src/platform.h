@@ -183,6 +183,7 @@ typedef struct input_t {
 	v2f drag_start_xy;
 	v2f drag_vector;
 	v2f mouse_xy;
+	bool mouse_moved;
 	float delta_t;
 	union {
 		controller_input_t abstract_controllers[5];
@@ -397,6 +398,7 @@ extern i32 global_worker_thread_idle_count;
 extern THREAD_LOCAL i32 work_queue_call_depth;
 extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
+extern bool cursor_hidden;
 
 extern float total_rgb_transform_time;
 

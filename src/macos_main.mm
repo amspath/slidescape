@@ -567,7 +567,6 @@ u8* platform_alloc(size_t size) {
 	return result;
 }
 
-bool cursor_hidden;
 void mouse_show() {
 	if (cursor_hidden) {
 		[NSCursor unhide];

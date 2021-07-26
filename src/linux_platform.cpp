@@ -84,18 +84,18 @@ u8* platform_alloc(size_t size) {
     return result;
 }
 
-bool cursor_hidden;
+
 void mouse_show() {
     if (cursor_hidden) {
         cursor_hidden = false;
-	    SDL_ShowCursor(1);
+	    SDL_SetRelativeMouseMode(SDL_FALSE);
     }
 }
 
 void mouse_hide() {
     if (!cursor_hidden) {
         cursor_hidden = true;
-        SDL_ShowCursor(0);
+	    SDL_SetRelativeMouseMode(SDL_TRUE);
     }
 }
 

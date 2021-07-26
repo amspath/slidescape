@@ -449,8 +449,6 @@ void win32_process_keyboard_event(button_state_t* new_state, bool32 down_boolean
 	}
 }
 
-
-bool32 cursor_hidden;
 POINT stored_mouse_pos;
 
 void mouse_hide() {

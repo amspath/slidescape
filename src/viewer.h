@@ -334,6 +334,7 @@ typedef struct app_state_t {
 	u32 mouse_tool;
 	i64 last_frame_start;
 	i64 frame_counter;
+	float seconds_without_mouse_movement;
 	pixel_transfer_state_t pixel_transfer_states[32];
 	u32 next_pixel_transfer_to_submit;
 	window_handle_t main_window;
