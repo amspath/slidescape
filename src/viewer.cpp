@@ -1270,6 +1270,8 @@ static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f c
 	}
 }
 
+#define CLICK_DRAG_TOLERANCE 6.0f
+
 // TODO: refactor delta_t
 // TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
@@ -1354,7 +1356,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (was_button_released(&input->mouse_buttons[0])) {
 				float drag_distance = v2f_length(scene->cumulative_drag_vector);
 				// TODO: tweak this
-				if (drag_distance < 3.0f) {
+				if (drag_distance < CLICK_DRAG_TOLERANCE) {
 					scene->clicked = true;
 				}
 			}
@@ -1604,7 +1606,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			if (app_state->mouse_mode == MODE_VIEW) {
-				if (scene->is_dragging) {
+				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE) {
 					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
 					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
 
