@@ -315,8 +315,8 @@ void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 b
 i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 
 // TODO: move this somewhere suitable
-void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image);
-void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y);
+void isyntax_begin_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi_image);
+void isyntax_begin_load_tile(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y);
 
 #ifdef __cplusplus
 }

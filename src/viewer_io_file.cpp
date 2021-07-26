@@ -285,6 +285,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 #else//USE_MULTIPLE_OPENGL_CONTEXTS
 
 	viewer_notify_tile_completed_task_t completion_task = {};
+	completion_task.resource_id = task->resource_id;
 	completion_task.pixel_memory = temp_memory;
 	completion_task.tile_width = level_image->tile_width;
 	completion_task.tile_height = level_image->tile_height;
@@ -497,6 +498,8 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 
 	image_t image = (image_t){};
+	image.resource_id = global_next_resource_id++;
+
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
 
 	size_t filename_len = strlen(filename);

@@ -152,6 +152,7 @@ void unload_image(image_t* image) {
 
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset) {
 	arrput(app_state->loaded_images, image);
+	arrput(app_state->active_resources, image.resource_id);
 	app_state->scene.active_layer = arrlen(app_state->loaded_images)-1;
 	if (need_zoom_reset) {
 		app_state->scene.need_zoom_reset = true;
@@ -170,7 +171,7 @@ void unload_all_images(app_state_t *app_state) {
 			unload_image(old_image);
 		}
 		arrfree(app_state->loaded_images);
-		app_state->loaded_images = NULL;
+		arrfree(app_state->active_resources);
 	}
 	mouse_show();
 	app_state->scene.is_cropped = false;
@@ -646,6 +647,15 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 	}
 }
 
+bool is_resource_valid(app_state_t* app_state, i32 resource_id) {
+	for (i32 i = 0; i < arrlen(app_state->active_resources); ++i) {
+		if (app_state->active_resources[i] == resource_id) {
+			return true;
+		}
+	}
+	return false;
+}
+
 
 void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
 	scene_t* scene = &app_state->scene;
@@ -784,59 +794,69 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				mark_queue_entry_completed(&global_completion_queue);
 
 				if (entry.callback == viewer_notify_load_tile_completed) {
-					// TODO: what to do if a tile belongs to a different image?
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
-					tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-					ASSERT(tile);
-					tile->is_submitted_for_loading = false;
-
-					if (task->pixel_memory) {
-						bool need_free_pixel_memory = true;
-						if (task->want_gpu_residency) {
-							pixel_transfer_state_t* transfer_state =
-									submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
-									                              4, task->pixel_memory, finalize_textures_immediately);
-							if (finalize_textures_immediately) {
-								tile->texture = transfer_state->texture;
-							} else {
-								transfer_state->userdata = (void*) tile;
-								tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
-							}
-
-						}
-						if (tile->need_keep_in_cache) {
-							need_free_pixel_memory = false;
-							tile->pixels = task->pixel_memory;
-							tile->is_cached = true;
-						}
-						if (need_free_pixel_memory) {
-							free(task->pixel_memory);
-						}
+					if (!is_resource_valid(app_state, task->resource_id)) {
+						// Image doesn't exist anymore (was unloaded?)
+						if (task->pixel_memory) free(task->pixel_memory);
 					} else {
-						tile->is_empty = true; // failed; don't resubmit!
+						tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+						ASSERT(tile);
+						tile->is_submitted_for_loading = false;
+
+						if (task->pixel_memory) {
+							bool need_free_pixel_memory = true;
+							if (task->want_gpu_residency) {
+								pixel_transfer_state_t* transfer_state =
+										submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
+										                              4, task->pixel_memory, finalize_textures_immediately);
+								if (finalize_textures_immediately) {
+									tile->texture = transfer_state->texture;
+								} else {
+									transfer_state->userdata = (void*) tile;
+									tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
+								}
+
+							}
+							if (tile->need_keep_in_cache) {
+								need_free_pixel_memory = false;
+								tile->pixels = task->pixel_memory;
+								tile->is_cached = true;
+							}
+							if (need_free_pixel_memory) {
+								free(task->pixel_memory);
+							}
+						} else {
+							tile->is_empty = true; // failed; don't resubmit!
+						}
 					}
+
 
 				} else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
 					load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
-					tile_t* tile = task->tile;
-					ASSERT(tile);
-					tile->is_submitted_for_loading = false;
-					if (tile->is_cached && tile->pixels) {
-						if (tile->need_gpu_residency) {
-							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->image->tile_width,
-							                                                                       task->image->tile_height, 4,
-							                                                                       tile->pixels, finalize_textures_immediately);
-							tile->texture = transfer_state->texture;
-						} else {
-							ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
-						}
-
-						if (!task->need_keep_in_cache) {
-							tile_release_cache(tile);
-						}
+					if (!is_resource_valid(app_state, task->resource_id)) {
+						// Image no longer exists
 					} else {
-						console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+						tile_t* tile = task->tile;
+						ASSERT(tile);
+						tile->is_submitted_for_loading = false;
+						if (tile->is_cached && tile->pixels) {
+							if (tile->need_gpu_residency) {
+								pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->image->tile_width,
+								                                                                       task->image->tile_height, 4,
+								                                                                       tile->pixels, finalize_textures_immediately);
+								tile->texture = transfer_state->texture;
+							} else {
+								ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
+							}
+
+							if (!task->need_keep_in_cache) {
+								tile_release_cache(tile);
+							}
+						} else {
+							console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+						}
 					}
+
 				}
 			}
 
@@ -875,7 +895,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				wsi->first_load_in_progress = true;
-				isyntax_begin_first_load(isyntax, wsi);
+				isyntax_begin_first_load(image->resource_id, isyntax, wsi);
 			} else if (wsi->first_load_complete) {
 				tile_streamer_t tile_streamer = {};
 				tile_streamer.image = image;
@@ -953,6 +973,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 							break;
 						}
 						tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
+								.resource_id = image->resource_id,
 								.image = image, .tile = tile, .level = scale, .tile_x = tile_x, .tile_y = tile_y,
 								.priority = tile_priority,
 								.need_gpu_residency = true,

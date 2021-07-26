@@ -175,12 +175,14 @@ typedef struct image_t {
 	float height_in_um;
 	bool is_overlay;
 	v2f origin_offset;
-	bool is_valid;
 	simple_image_t macro_image;
 	simple_image_t label_image;
+	i32 resource_id;
+	bool is_valid;
 } image_t;
 
 typedef struct load_tile_task_t {
+	i32 resource_id;
 	image_t* image;
 	tile_t* tile;
 	i32 level;
@@ -198,6 +200,7 @@ typedef struct viewer_notify_tile_completed_task_t {
 	i32 tile_index;
 	i32 tile_width;
 	i32 tile_height;
+	i32 resource_id;
 	bool want_gpu_residency;
 } viewer_notify_tile_completed_task_t;
 
@@ -326,7 +329,7 @@ typedef struct app_state_t {
 	v4f clear_color;
 	float black_level;
 	float white_level;
-	image_t* loaded_images; // sb
+	image_t* loaded_images; // array
 	i32 displayed_image;
 	caselist_t caselist;
 	case_t* selected_case;
@@ -345,6 +348,7 @@ typedef struct app_state_t {
 	window_handle_t main_window;
 	bool is_window_title_set_for_image;
 	input_t* input;
+	i32* active_resources; // array
 } app_state_t;
 
 
@@ -420,6 +424,8 @@ extern benaphore_t tile_streamer_benaphore;
 extern tile_streamer_t global_tile_streamer;
 extern bool32 is_tile_stream_task_in_progress;
 extern bool32 is_tile_streamer_frame_boundary_passed;
+
+extern i32 global_next_resource_id INIT(= 1000);
 
 #undef INIT
 #undef extern

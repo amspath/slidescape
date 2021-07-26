@@ -105,6 +105,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						}
 
 						viewer_notify_tile_completed_task_t completion_task = {};
+						completion_task.resource_id = task->resource_id;
 						completion_task.pixel_memory = pixel_memory;
 						// TODO: check if we need to pass the tile height here too?
 						completion_task.tile_width = level_image->tile_width;

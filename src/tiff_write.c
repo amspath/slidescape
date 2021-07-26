@@ -371,6 +371,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 					} else {
 						tile->need_keep_in_cache = true;
 						wishlist[tiles_to_load++] = (load_tile_task_t){
+								.resource_id = image->resource_id,
 								.image = image, .tile = tile, .level = level,
 								.tile_x = tile->tile_x,
 								.tile_y = tile->tile_y,

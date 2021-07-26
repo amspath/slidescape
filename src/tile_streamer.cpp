@@ -20,7 +20,7 @@
 #include "viewer.h"
 
 
-void submit_tile_completed(void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
+void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 	image_t* image = &global_app_state.loaded_images[global_app_state.displayed_image]; // TODO: refactor: do something less ugly and dangerous than this
@@ -35,6 +35,7 @@ void submit_tile_completed(void* tile_pixels, i32 scale, i32 tile_index, i32 til
 	completion_task.scale = scale;
 	completion_task.tile_index = tile_index;
 	completion_task.want_gpu_residency = true;
+	completion_task.resource_id = resource_id;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	if (!add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, &completion_task, sizeof(completion_task))) {
 		ASSERT(!"tile cannot be submitted and will leak");
@@ -58,7 +59,7 @@ static void isyntax_init_dummy_codeblocks(isyntax_t* isyntax) {
 
 //isyntax_data_chunk_t isyntax_read_data_chunk(isyntax_t* isyntax, isyntax_image_t* wsi_image, i32 base_codeblock_index);
 
-static i32 isyntax_load_all_tiles_in_level(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, bool use_worker_threads) {
+static i32 isyntax_load_all_tiles_in_level(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, bool use_worker_threads) {
 	i32 tiles_loaded = 0;
 	i32 tile_index = 0;
 	isyntax_level_t* level = wsi->levels + scale;
@@ -67,10 +68,10 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_t* isyntax, isyntax_image_t* 
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
 			if (use_worker_threads) {
-				isyntax_begin_load_tile(isyntax, wsi, scale, tile_x, tile_y);
+				isyntax_begin_load_tile(resource_id, isyntax, wsi, scale, tile_x, tile_y);
 			} else {
 				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y);
-				submit_tile_completed(tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
+				submit_tile_completed(resource_id, tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
 			}
 			++tiles_loaded;
 		}
@@ -107,7 +108,7 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_t* isyntax, isyntax_image_t* 
 
 
 
-static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
+static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi) {
 
 	i64 start_first_load = get_clock();
 	i32 tiles_loaded = 0;
@@ -193,7 +194,7 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 	}
 
 	// Transform and submit the top level tiles
-	tiles_loaded += isyntax_load_all_tiles_in_level(isyntax, wsi, scale, true);
+	tiles_loaded += isyntax_load_all_tiles_in_level(resource_id, isyntax, wsi, scale, true);
 
 	// Decompress and transform the remaining levels in the data chunks.
 	if (levels_in_chunk >= 2) {
@@ -245,7 +246,7 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 			}
 		}
 		// Now do the inverse wavelet transforms
-		tiles_loaded += isyntax_load_all_tiles_in_level(isyntax, wsi, scale, true);
+		tiles_loaded += isyntax_load_all_tiles_in_level(resource_id, isyntax, wsi, scale, true);
 	}
 
 	// Now for the next level down (if present in the chunk)
@@ -298,7 +299,7 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 			}
 		}
 		// Now do the inverse wavelet transforms
-		tiles_loaded += isyntax_load_all_tiles_in_level(isyntax, wsi, scale, true);
+		tiles_loaded += isyntax_load_all_tiles_in_level(resource_id, isyntax, wsi, scale, true);
 	}
 
 	console_print("   iSyntax: loading the first %d tiles took %g seconds\n", tiles_loaded, get_seconds_elapsed(start_first_load, get_clock()));
@@ -331,6 +332,7 @@ static void isyntax_do_first_load(isyntax_t* isyntax, isyntax_image_t* wsi) {
 }
 
 typedef struct isyntax_load_tile_task_t {
+	i32 resource_id;
 	isyntax_t* isyntax;
 	isyntax_image_t* wsi;
 	i32 scale;
@@ -342,16 +344,17 @@ typedef struct isyntax_load_tile_task_t {
 void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) userdata;
 	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
-	submit_tile_completed(tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
+	submit_tile_completed(task->resource_id, tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
 	atomic_decrement(&task->isyntax->refcount); // release
 }
 
-void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+void isyntax_begin_load_tile(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_level_t* level = wsi->levels + scale;
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
 	isyntax_tile_t* tile = level->tiles + tile_index;
 	if (!tile->is_submitted_for_loading) {
 		isyntax_load_tile_task_t task = {};
+		task.resource_id = resource_id;
 		task.isyntax = isyntax;
 		task.wsi = wsi;
 		task.scale = scale;
@@ -370,18 +373,20 @@ void isyntax_begin_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale
 }
 
 typedef struct isyntax_first_load_task_t {
+	i32 resource_id;
 	isyntax_t* isyntax;
 	isyntax_image_t* wsi;
 } isyntax_first_load_task_t;
 
 void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_first_load_task_t* task = (isyntax_first_load_task_t*) userdata;
-	isyntax_do_first_load(task->isyntax, task->wsi);
+	isyntax_do_first_load(task->resource_id, task->isyntax, task->wsi);
 	atomic_decrement(&task->isyntax->refcount); // release
 }
 
-void isyntax_begin_first_load(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
+void isyntax_begin_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi_image) {
 	isyntax_first_load_task_t task = {};
+	task.resource_id = resource_id;
 	task.isyntax = isyntax;
 	task.wsi = wsi_image;
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
@@ -487,9 +492,10 @@ typedef struct isyntax_load_region_t {
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
 
 	isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
+	i32 resource_id = tile_streamer->image->resource_id;
 
 	if (!wsi->first_load_complete) {
-		isyntax_begin_first_load(isyntax, wsi);
+		isyntax_begin_first_load(resource_id, isyntax, wsi);
 	} else {
 		i64 perf_clock_begin = get_clock();
 
@@ -955,7 +961,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					++tiles_to_load;
 
 					// All the prerequisites have been met, we should be able to load this tile
-					isyntax_begin_load_tile(isyntax, wsi, scale, tile_x, tile_y);
+					isyntax_begin_load_tile(resource_id, isyntax, wsi, scale, tile_x, tile_y);
 
 					if (is_tile_streamer_frame_boundary_passed) {
 						goto break_out_of_loop2; // camera bounds updated, recalculate
