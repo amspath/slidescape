@@ -235,6 +235,10 @@ elseif(APPLE)
             COMMAND cp -f "${SDL2_PREFIX}/lib/libSDL2.dylib" "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}/libSDL2.dylib"
             COMMAND install_name_tool -change `${FIND_LINKED_DYLIB_COMMAND}`
             @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/slideviewer")
+    if (WITH_CODESIGN)
+        add_custom_command(TARGET slideviewer POST_BUILD
+                COMMAND codesign --deep -s "Developer ID Application" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slideviewer.app)
+    endif()
 else()
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     target_link_libraries(slideviewer pthread dl m GL GLEW SDL2)
