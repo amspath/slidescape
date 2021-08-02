@@ -534,17 +534,54 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 				if (raw->header.dwType == RIM_TYPEMOUSE)
 				{
+					/*console_print("WM_INPUT: usFlags=%d usButtonFlags=%x lLastX=%d lLastY=%d\n",
+								  raw->data.mouse.usFlags,
+								  raw->data.mouse.usButtonFlags,
+								  raw->data.mouse.lLastX,
+								  raw->data.mouse.lLastY);*/
 					if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
 						curr_input->drag_vector = (v2f){};
 						curr_input->drag_start_xy = curr_input->mouse_xy;
 					}
 
-					// We want relative mouse movement
-					if (!(raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE)) {
+					// We want raw relative mouse movement (this allows mouse input even at the edges of the screen!)
+					// But, it isn't guaranteed that we will actually get relative mouse movement.
+					// https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-rawmouse
+					i32 relative_x = 0;
+					i32 relative_y = 0;
+					if ((raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE) {
+						// Input is absolute (unfortunately).
+						// So, we have try to calculate the relative mouse movement as best as we can.
+						bool is_virtual_desktop = (raw->data.mouse.usFlags & MOUSE_VIRTUAL_DESKTOP) == MOUSE_VIRTUAL_DESKTOP;
+
+						i32 width = GetSystemMetrics(is_virtual_desktop ? SM_CXVIRTUALSCREEN : SM_CXSCREEN);
+						i32 height = GetSystemMetrics(is_virtual_desktop ? SM_CYVIRTUALSCREEN : SM_CYSCREEN);
+
+						i32 absolute_x = i32((raw->data.mouse.lLastX / 65535.0f) * width);
+						i32 absolute_y = i32((raw->data.mouse.lLastY / 65535.0f) * height);
+
+						static i32 prev_absolute_x;
+						static i32 prev_absolute_y;
+						static bool have_prev_absolute_xy = false;
+						if (have_prev_absolute_xy) {
+							relative_x = absolute_x - prev_absolute_x;
+							relative_y = absolute_y - prev_absolute_y;
+						} else {
+							have_prev_absolute_xy = true;
+						}
+						prev_absolute_x = absolute_x;
+						prev_absolute_y = absolute_y;
+					} else if (raw->data.mouse.lLastX != 0 || raw->data.mouse.lLastY != 0) {
+						// Input is relative (this is actually what we want!)
+						relative_x = raw->data.mouse.lLastX;
+						relative_y = raw->data.mouse.lLastY;
+					}
+
+					if (relative_x != 0 || relative_y != 0) {
 						if (curr_input->mouse_buttons[0].down) {
-							curr_input->drag_vector.x += (float)raw->data.mouse.lLastX;
-							curr_input->drag_vector.y += (float)raw->data.mouse.lLastY;
-//						    console_print("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
+							curr_input->drag_vector.x += (float)relative_x;
+							curr_input->drag_vector.y += (float)relative_y;
+							//console_print("Dragging: dx=%d dy=%d\n", curr_input->delta_mouse_x, curr_input->delta_mouse_y);
 						} else {
 							// not dragging
 							mouse_show();
@@ -552,7 +589,10 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 					}
 
 
+				} else {
+//					console_print("WM_INPUT: %d - \n");
 				}
+
 
 			} break;
 
