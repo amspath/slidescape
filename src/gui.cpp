@@ -951,12 +951,15 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 	if (lines) {
 		for (i32 i = 0; i < num_lines; ++i) {
 			char* line = lines[i];
-			if (line && strlen(line) > 0) {
+			size_t line_len = strlen(line);
+			if (line && line_len > 0) {
 				console_log_item_t new_item = {};
-				new_item.text = strdup(line);
+				// TODO: fix strdup() conflicting with ltmalloc()
+				new_item.text = (char*)malloc(line_len+1);
+				memcpy(new_item.text, line, line_len);
+				new_item.text[line_len] = '\0';
 				new_item.has_color = has_color;
 				new_item.item_type = item_type;
-				// TODO: critical section, make multi-threading proof!
 				benaphore_lock(&console_printer_benaphore);
 				arrput(console_log_items, new_item);
 				benaphore_unlock(&console_printer_benaphore);
