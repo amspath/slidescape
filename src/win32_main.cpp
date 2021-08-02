@@ -95,6 +95,8 @@ void win32_diagnostic(const char* prefix) {
 }
 
 HANDLE win32_open_overlapped_file_handle(const char* filename) {
+	// NOTE: Using the FILE_FLAG_NO_BUFFERING flag *might* be faster, but I am not actually noticing a speed increase,
+	// so I am keeping it turned off for now.
 	HANDLE handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
 	                            FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
 	                            /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
@@ -103,9 +105,27 @@ HANDLE win32_open_overlapped_file_handle(const char* filename) {
 }
 
 void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
+	// We align reads to 4K boundaries, so that file handles can be used with the FILE_FLAG_NO_BUFFERING flag.
+	// See: https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering
+	i64 aligned_offset = offset & ~(KILOBYTES(4)-1);
+	i64 align_delta = offset - aligned_offset;
+	ASSERT(align_delta >= 0);
+
+	i64 end_byte = offset + read_size;
+	i64 raw_read_size = end_byte - aligned_offset;
+	ASSERT(raw_read_size >= 0);
+
+	i64 bytes_to_read_in_last_sector = raw_read_size % KILOBYTES(4);
+	if (bytes_to_read_in_last_sector > 0) {
+		raw_read_size += KILOBYTES(4) - bytes_to_read_in_last_sector;
+	}
+
+	temp_memory_t temp_memory = begin_temp_memory(&thread_memory->temp_arena);
+	u8* temp_dest = (u8*)arena_push_size(&thread_memory->temp_arena, raw_read_size);
+
 	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 	// offset in the file where we want to do the read operation
-	LARGE_INTEGER offset_ = {.QuadPart = (i64)offset};
+	LARGE_INTEGER offset_ = {.QuadPart = (i64)aligned_offset};
 	OVERLAPPED overlapped = {};
 	overlapped = (OVERLAPPED) {};
 	overlapped.Offset = offset_.LowPart;
@@ -113,7 +133,7 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 	overlapped.hEvent = thread_memory->async_io_events[0];
 	ResetEvent(thread_memory->async_io_events[0]); // reset the event to unsignaled state
 
-	if (!ReadFile(file_handle, dest, read_size, NULL, &overlapped)) {
+	if (!ReadFile(file_handle, temp_dest, raw_read_size, NULL, &overlapped)) {
 		DWORD error = GetLastError();
 		if (error != ERROR_IO_PENDING) {
 			win32_diagnostic("ReadFile");
@@ -129,6 +149,10 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 	if(WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
 		win32_diagnostic("WaitForSingleObject");
 	}
+
+	memcpy(dest, temp_dest + align_delta, read_size);
+
+	end_temp_memory(&temp_memory);
 }
 
 // TODO: Queue I/O to run, then query later?

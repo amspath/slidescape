@@ -141,6 +141,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 				if (!tile->exists) continue;
 				isyntax_codeblock_t* top_chunk_codeblock = wsi->codeblocks + tile->codeblock_chunk_index;
 				u64 offset0 = top_chunk_codeblock->block_data_offset;
+//				console_print("loading chunk %d\n", tile->codeblock_chunk_index);
 
 				isyntax_codeblock_t* last_codeblock = wsi->codeblocks + tile->codeblock_chunk_index + chunk_codeblock_count - 1;
 				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
@@ -467,6 +468,11 @@ void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image
 }
 
 
+typedef struct index_count_pair_t {
+	i32 index;
+	i32 count;
+} index_count_pair_t;
+
 
 typedef struct isyntax_tile_req_t {
 	i32 tile_x;
@@ -488,6 +494,12 @@ typedef struct isyntax_load_region_t {
 	i32 height_in_tiles;
 	isyntax_tile_req_t* tile_req;
 } isyntax_load_region_t;
+
+static int chunk_index_compare_func (const void* a, const void* b) {
+	return ( *(i32*)a - *(i32*)b );
+}
+
+#define MAX_CHUNKS_TO_LOAD 48
 
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
 
@@ -526,8 +538,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		memset(regions, 0, scales_to_load_count * sizeof(isyntax_load_region_t));
 
 		u32 chunks_to_load_count = 0;
-		u32 chunks_to_load[16];
-		u32 max_chunks_to_load = COUNT(chunks_to_load);
+		i32 chunks_to_load[MAX_CHUNKS_TO_LOAD];
+		u32 max_chunks_to_load = 16;
+		u32 max_chunks_to_check = COUNT(chunks_to_load);
 
 
 
@@ -761,7 +774,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			local_tile_index = 0;
 			for (i32 tile_y = padded_bounds.min.y; tile_y < padded_bounds.max.y; ++tile_y) {
 				for (i32 tile_x = padded_bounds.min.x; tile_x < padded_bounds.max.x; ++tile_x, ++local_tile_index) {
-					if (chunks_to_load_count == max_chunks_to_load) {
+					if (chunks_to_load_count == max_chunks_to_check) {
 						goto break_out_of_loop;
 					}
 					isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
@@ -790,6 +803,96 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		i64 perf_clock_check = get_clock();
 		float perf_time_check = get_seconds_elapsed(perf_clock_check, perf_clock_begin);
 
+		// Sorting read operations by offset to improve read performance
+		qsort(chunks_to_load, chunks_to_load_count, sizeof(chunks_to_load[0]), chunk_index_compare_func);
+
+#if 0
+		// 'Coagulate' neighboring chunks together to reduce the number of I/O operations
+		// NOTE: This doesn't seem to be actually faster than using multiple small reads; maybe not worth it
+		index_count_pair_t coagulated_chunks_to_load[MAX_CHUNKS_TO_LOAD] = {};
+		i32 coagulated_load_count = 0;
+		i32 coagulated_chunk_count = 0;
+		{
+			i32 coagulated_index = -1;
+			i32 previous_chunk_index = -999;
+
+			for (i32 i = 0; i < chunks_to_load_count; ++i) {
+				i32 chunk_index = chunks_to_load[i];
+				isyntax_data_chunk_t * chunk = wsi->data_chunks + chunk_index;
+				if (chunk->data != NULL) {
+					continue; // already loaded, skip
+				} else {
+					if ((chunk_index - 1) == previous_chunk_index) {
+						coagulated_chunks_to_load[coagulated_index].count++;
+					} else {
+						++coagulated_index;
+						coagulated_chunks_to_load[coagulated_index] = (index_count_pair_t){chunk_index, 1};
+						++coagulated_load_count;
+					}
+					previous_chunk_index = chunk_index;
+					++coagulated_chunk_count;
+					if (coagulated_chunk_count == max_chunks_to_load) {
+						break;
+					}
+				}
+			}
+		}
+
+		coagulated_load_count = MIN(coagulated_load_count, max_chunks_to_load);
+
+		for (i32 i = 0; i < coagulated_load_count; ++i) {
+			i32 first_chunk_index = coagulated_chunks_to_load[i].index;
+			i32 chunk_count = coagulated_chunks_to_load[i].count;
+			ASSERT(chunk_count >= 1);
+			isyntax_data_chunk_t* first_chunk = wsi->data_chunks + first_chunk_index;
+			isyntax_data_chunk_t* last_chunk = wsi->data_chunks + first_chunk_index + (chunk_count - 1);
+
+			isyntax_codeblock_t* last_codeblock = wsi->codeblocks + last_chunk->top_codeblock_index + (last_chunk->codeblock_count_per_color * 3) - 1;
+			u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
+
+			u64 read_size = offset1 - first_chunk->offset;
+
+			temp_memory_t temp_memory2 = begin_temp_memory(&local_thread_memory->temp_arena);
+			u8* temp_dest = (u8*)arena_push_size(&local_thread_memory->temp_arena, read_size);
+
+//			if (chunk_count == 1) {
+//				console_print("loading chunk %d\n", first_chunk_index);
+//			} else {
+//				console_print("loading chunks %d - %d\n", first_chunk_index, first_chunk_index + chunk_count - 1);
+//			}
+
+			// Reserve space for chunks
+			for (i32 j = 0; j < chunk_count; ++j) {
+				isyntax_data_chunk_t* chunk = wsi->data_chunks + first_chunk_index + j;
+				ASSERT(chunk->data == NULL);
+				isyntax_codeblock_t* chunk_last_codeblock = wsi->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
+				u64 chunk_end = chunk_last_codeblock->block_data_offset + chunk_last_codeblock->block_size;
+				u64 chunk_read_size = chunk_end - chunk->offset;
+				chunk->data = (u8*)malloc(chunk_read_size);
+				memcpy(chunk->data, temp_dest + (chunk->offset - first_chunk->offset), chunk_read_size);
+			}
+
+			// Read one or more chunks at once
+#if WINDOWS
+			// TODO: 64 bit read offsets?
+			win32_overlapped_read(local_thread_memory, isyntax->file_handle, temp_dest, read_size, first_chunk->offset);
+#else
+			size_t bytes_read = pread(isyntax->file_handle, chunk->data, read_size, chunk->offset);
+#endif
+			// Copy data from one or more chunks back to individual chunks
+			for (i32 j = 0; j < chunk_count; ++j) {
+				isyntax_data_chunk_t* chunk = wsi->data_chunks + first_chunk_index + j;
+				isyntax_codeblock_t* chunk_last_codeblock = wsi->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
+				u64 chunk_end = chunk_last_codeblock->block_data_offset + chunk_last_codeblock->block_size;
+				u64 chunk_read_size = chunk_end - chunk->offset;
+				memcpy(chunk->data, temp_dest + (chunk->offset - first_chunk->offset), chunk_read_size);
+			}
+
+			end_temp_memory(&temp_memory2); // free temp_dest
+		}
+
+#else
+		chunks_to_load_count = MIN(chunks_to_load_count, max_chunks_to_load);
 
 		for (i32 i = 0; i < chunks_to_load_count; ++i) {
 			u32 chunk_index = chunks_to_load[i];
@@ -799,6 +902,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
 				u64 read_size = offset1 - chunk->offset;
 				chunk->data = (u8*)malloc(read_size);
+//				console_print("loading chunk %d\n", chunk_index);
+
 				// TODO: async I/O
 #if WINDOWS
 				// TODO: 64 bit read offsets?
@@ -818,14 +923,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			}
 		}
 
-		/*for (i32 i = 0; i < chunks_to_load_count; ++i) {
-			io_operation_t* op = ops + i;
-			while (!async_read_has_finished(op)) {
-//				aio_fsync()
-//				aio_suspend((const aiocb *const *)(&ops[i].cb), 1, NULL);
-			}
-			async_read_finalize(op);
-		}*/
+
+#endif
 
 		i64 perf_clock_io = get_clock();
 		float perf_time_io = get_seconds_elapsed(perf_clock_check, perf_clock_io);
