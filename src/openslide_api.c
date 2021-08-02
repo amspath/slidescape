@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "platform.h"
+#include "stringutils.h"
 
 #define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
@@ -33,12 +34,23 @@ bool init_openslide() {
 	i64 debug_start = get_clock();
 
 #ifdef _WIN32
+	// Look for DLLs in an openslide/ folder in the same location as the .exe
+	char dll_path[4096];
+	GetModuleFileNameA(NULL, dll_path, sizeof(dll_path));
+	char* pos = (char*)one_past_last_slash(dll_path, sizeof(dll_path));
+	i32 chars_left = sizeof(dll_path) - (pos - dll_path);
+	strncpy(pos, "openslide", chars_left);
+	SetDllDirectoryA(dll_path);
+
 	HINSTANCE library_handle = LoadLibraryA("libopenslide-0.dll");
 	if (!library_handle) {
-		SetDllDirectoryA("openslide");
+		// If DLL not found in the openslide/ folder, look one folder up (in the same location as the .exe)
+		*pos = '\0';
+		SetDllDirectoryA(dll_path);
 		library_handle = LoadLibraryA("libopenslide-0.dll");
-		SetDllDirectoryA(NULL);
 	}
+	SetDllDirectoryA(NULL);
+
 #elif defined(__APPLE__)
 	void* library_handle = dlopen("libopenslide.dylib", RTLD_LAZY);
 	if (!library_handle) {
