@@ -76,9 +76,6 @@ void init_draw_rect() {
 	ASSERT(!rect_initialized);
 	rect_initialized = true;
 
-	// suppress NVidia OpenGL driver warnings about 'no defined base level' while no textures are loaded
-	glDisable(GL_TEXTURE_2D);
-
 	glGenVertexArrays(1, &vao_rect);
 	glBindVertexArray(vao_rect);
 
@@ -223,7 +220,6 @@ void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state) {
 
 u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format) {
 	u32 texture = 0; //gl_gen_texture();
-	glEnable(GL_TEXTURE_2D);
 	glGenTextures(1, &texture);
 //	printf("Generated texture %d\n", texture);
 	glBindTexture(GL_TEXTURE_2D, texture);
@@ -411,7 +407,6 @@ void init_opengl_stuff(app_state_t* app_state) {
 	dummy_texture = load_texture(&dummy_texture_color, 1, 1, GL_BGRA);
 
 	// Make sure NVIDIA drivers don't complain about undefined base level for texture 0.
-	glEnable(GL_TEXTURE_2D);
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);

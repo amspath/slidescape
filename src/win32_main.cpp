@@ -894,7 +894,7 @@ void GLAPIENTRY opengl_debug_message_callback(GLenum source, GLenum type, GLuint
 }
 #endif
 
-void win32_init_opengl(HWND window) {
+bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	i64 debug_start = get_clock();
 
 	// Set environment variable needed for Mesa3D software driver support
@@ -904,11 +904,26 @@ void win32_init_opengl(HWND window) {
 	// https://stackoverflow.com/questions/4788398/changes-via-setenvironmentvariable-do-not-take-effect-in-library-that-uses-geten
 	_putenv_s("MESA_GL_VERSION_OVERRIDE", "4.3FC");
 
-	opengl32_dll_handle = LoadLibraryA("opengl32.dll");
+	if (use_software_renderer) {
+		char dll_path[4096];
+		GetModuleFileNameA(NULL, dll_path, sizeof(dll_path));
+		char* pos = (char*)one_past_last_slash(dll_path, sizeof(dll_path));
+		i32 chars_left = sizeof(dll_path) - (pos - dll_path);
+		strncpy(pos, "softwarerenderer", chars_left);
+		SetDllDirectoryA(dll_path);
+		opengl32_dll_handle = LoadLibraryA("opengl32software.dll");
+		SetDllDirectoryA(NULL);
+	} else {
+		opengl32_dll_handle = LoadLibraryA("opengl32.dll");
+
+	}
+
 	if (!opengl32_dll_handle) {
 		win32_diagnostic("LoadLibraryA");
 		console_print("Error initializing OpenGL: failed to load opengl32.dll.\n");
+		return false;
 	}
+
 
 	// Initializing OpenGL on Windows is somewhat tricky.
 	// https://mariuszbartosik.com/opengl-4-x-initialization-in-windows-without-a-framework/
@@ -962,9 +977,16 @@ void win32_init_opengl(HWND window) {
 	int suggested_pixel_format_index = wglChoosePixelFormat(dummy_dc, &desired_pixel_format);
 	PIXELFORMATDESCRIPTOR suggested_pixel_format;
 	wglDescribePixelFormat(dummy_dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
-	if (!SetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format)) {
-		win32_diagnostic("wglSetPixelFormat");
-		panic();
+	if (use_software_renderer) {
+		if (!wglSetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format)) {
+			win32_diagnostic("wglSetPixelFormat");
+			panic();
+		}
+	} else {
+		if (!SetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format)) {
+			win32_diagnostic("SetPixelFormat");
+			panic();
+		}
 	}
 
 	// Create the OpenGL context for the main thread.
@@ -985,8 +1007,14 @@ void win32_init_opengl(HWND window) {
 		panic();
 	}
 
-	char* version_string = (char*)temp_glGetString(GL_VERSION);
-	console_print("OpenGL supported version: %s\n", version_string);
+	char version_string[256] = {};
+	char* version_string_retrieved = (char*)temp_glGetString(GL_VERSION);
+	strncpy(version_string, version_string_retrieved, sizeof(version_string)-1);
+	if (use_software_renderer) {
+		console_print("OpenGL software renderer: %s\n", version_string);
+	} else {
+		console_print("OpenGL supported version: %s\n", version_string);
+	}
 
 	bool is_opengl_version_supported = false;
 	i32 major_required = 3;
@@ -999,13 +1027,49 @@ void win32_init_opengl(HWND window) {
 		}
 	}
 
+	// To test the software renderer
+//	if (!use_software_renderer) is_opengl_version_supported = false;
+
 	if (!is_opengl_version_supported) {
-		char buf[4096];
-		snprintf(buf, sizeof(buf), "Error: OpenGL version is insufficient.\n"
-							        "Required: %d.%d\n\n"
-		                           "Available on this system:\n%s", major_required, minor_required, version_string);
-		message_box(nullptr, buf);
-		panic();
+
+		bool success = false;
+		if (!use_software_renderer) {
+			// If the hardware renderer isn't working (maybe on a remote desktop environment?),
+			// we could try using the Mesa3D software renderer instead (if available).
+			wglMakeCurrent_alt(dummy_dc, NULL);
+			wglDeleteContext_alt(dummy_glrc);
+
+			wglSwapIntervalEXT = NULL;
+			wglGetSwapIntervalEXT = NULL;
+			wglGetExtensionsStringEXT = NULL;
+			wglCreateContextAttribsARB = NULL;
+			wglChoosePixelFormatARB = NULL;
+			wglSetPixelFormat = NULL;
+			wglDescribePixelFormat = NULL;
+			wglChoosePixelFormat = NULL;
+			wglGetProcAddress_alt = NULL;
+			wglCreateContext_alt = NULL;
+			wglMakeCurrent_alt = NULL;
+			wglDeleteContext_alt = NULL;
+			wglGetCurrentDC_alt = NULL;
+			wglSwapBuffers = NULL;
+
+			FreeLibrary(opengl32_dll_handle);
+			opengl32_dll_handle = NULL;
+
+			success = win32_init_opengl(window, true);
+		}
+
+		if (!success) {
+			char buf[4096];
+			snprintf(buf, sizeof(buf), "Error: OpenGL version is insufficient.\n"
+									   "Required: %d.%d\n\n"
+									   "Available on this system:\n%s", major_required, minor_required, version_string);
+			console_print_error("%s\n", buf);
+			message_box(&global_app_state, buf);
+			panic();
+		}
+		return success;
 	}
 
 	if (strstr(version_string, "NVIDIA")) {
@@ -1170,6 +1234,7 @@ void win32_init_opengl(HWND window) {
 
 	glDrawBuffer(GL_BACK);
 
+	return true;
 }
 
 
@@ -1385,7 +1450,7 @@ void win32_init_main_window(app_state_t* app_state) {
 		panic();
 	}
 
-	win32_init_opengl(app_state->main_window);
+	win32_init_opengl(app_state->main_window, false);
 
 	ShowWindow(app_state->main_window, window_start_maximized ? SW_MAXIMIZE : SW_SHOW);
 
