@@ -269,7 +269,7 @@ typedef struct network_location_t {
 struct tiff_t {
 	bool32 is_remote;
 	network_location_t location;
-	FILE* fp;
+	file_stream_t fp;
 #if !IS_SERVER
 	file_handle_t file_handle;
 #endif
@@ -356,7 +356,7 @@ typedef struct {
 #pragma pack(pop)
 
 u32 get_tiff_field_size(u16 data_type);
-u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
+u64 file_read_at_offset(void* dest, file_handle_t fp, u64 offset, u64 num_bytes);
 bool32 open_tiff_file(tiff_t* tiff, const char* filename);
 memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer);
 i64 find_end_of_http_headers(u8* str, u64 len);

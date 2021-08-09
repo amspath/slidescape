@@ -94,6 +94,15 @@ void win32_diagnostic(const char* prefix) {
     LocalFree(message_buffer);
 }
 
+void win32_diagnostic_verbose(const char* prefix) {
+	DWORD error_id = GetLastError();
+	char* message_buffer;
+	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+									 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
+	console_print_verbose("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
+	LocalFree(message_buffer);
+}
+
 HANDLE win32_open_overlapped_file_handle(const char* filename) {
 	// NOTE: Using the FILE_FLAG_NO_BUFFERING flag *might* be faster, but I am not actually noticing a speed increase,
 	// so I am keeping it turned off for now.
@@ -161,6 +170,87 @@ i32 win32_add_async_io_read(thread_memory_t* thread_memory, HANDLE file_handle, 
 	//stub
 
 	return io_index;
+}
+
+file_stream_t file_stream_open_for_reading(const char* filename) {
+	console_print_verbose("Attempting CreateFileA() for reading...\n");
+	HANDLE handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+								FILE_ATTRIBUTE_NORMAL /* | FILE_FLAG_SEQUENTIAL_SCAN */
+								/*| FILE_FLAG_NO_BUFFERING |*/ /* | FILE_FLAG_OVERLAPPED*/,
+								NULL);
+	if (handle == INVALID_HANDLE_VALUE) {
+		win32_diagnostic_verbose("CreateFile");
+		return 0;
+	} else {
+		return handle;
+	}
+}
+
+file_stream_t file_stream_open_for_writing(const char* filename) {
+	console_print_verbose("Attempting CreateFileA()...\n");
+	HANDLE handle = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+								FILE_ATTRIBUTE_NORMAL /* | FILE_FLAG_SEQUENTIAL_SCAN */
+								/*| FILE_FLAG_NO_BUFFERING |*/ /* | FILE_FLAG_OVERLAPPED*/,
+								NULL);
+	if (handle == INVALID_HANDLE_VALUE) {
+		win32_diagnostic("CreateFile");
+		return 0;
+	} else {
+		return handle;
+	}
+}
+
+i64 file_stream_read(void* dest, size_t bytes_to_read, file_stream_t file_stream) {
+	DWORD bytes_read;
+	console_print_verbose("Attempting ReadFile()...\n");
+//	OVERLAPPED overlapped = {};
+	if (!ReadFile(file_stream, dest, bytes_to_read, &bytes_read, NULL)) {
+		win32_diagnostic("ReadFile");
+		return 0;
+	} else {
+		console_print_verbose("ReadFile(): %d bytes read\n", bytes_read);
+		return (i64)bytes_read;
+	}
+}
+
+void file_stream_write(void* source, size_t bytes_to_write, file_stream_t file_stream) {
+	DWORD bytes_written;
+	if (!WriteFile(file_stream, source, bytes_to_write, &bytes_written, NULL)) {
+		win32_diagnostic("WriteFile");
+	}
+}
+
+i64 file_stream_get_filesize(file_stream_t file_stream) {
+	LARGE_INTEGER filesize = {};
+	if (!GetFileSizeEx(file_stream, &filesize)) {
+		win32_diagnostic("GetFileSizeEx");
+	}
+	return filesize.QuadPart;
+}
+
+i64 file_stream_get_pos(file_stream_t file_stream) {
+	LARGE_INTEGER file_position = {};
+	if (!SetFilePointerEx(file_stream, (LARGE_INTEGER){0}, &file_position, FILE_CURRENT)) {
+		win32_diagnostic("SetFilePointerEx");
+	}
+	return file_position.QuadPart;
+}
+
+bool file_stream_set_pos(file_stream_t file_stream, i64 offset) {
+	LARGE_INTEGER new_file_pointer = {};
+	new_file_pointer.QuadPart = offset;
+	if (!SetFilePointerEx(file_stream, new_file_pointer, NULL, FILE_BEGIN)) {
+		win32_diagnostic("SetFilePointerEx");
+		return false;
+	} else {
+		return true;
+	}
+}
+
+void file_stream_close(file_stream_t file_stream) {
+	if (!CloseHandle(file_stream)) {
+		win32_diagnostic("CloseHandle");
+	}
 }
 
 void load_openslide_task(int logical_thread_index, void* userdata) {

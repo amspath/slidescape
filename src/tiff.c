@@ -118,7 +118,8 @@ u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 	if (tag->data_is_offset) {
 		u64 bytesize = get_tiff_field_size(tag->data_type);
 		void* temp_integers = calloc(bytesize, tag->data_count);
-		if (file_read_at_offset(temp_integers, tiff->fp, tag->offset, tag->data_count * bytesize) != 1) {
+		u64 read_size = tag->data_count * bytesize;
+		if (file_read_at_offset(temp_integers, tiff->fp, tag->offset, read_size) != read_size) {
 			free(temp_integers);
 			return NULL; // failed
 		}
@@ -219,13 +220,13 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	ifd->color_space = TIFF_PHOTOMETRIC_RGB;
 
 	// Set the file position to the start of the IFD
-	if (!(next_ifd_offset != NULL && fseeko64(tiff->fp, *next_ifd_offset, SEEK_SET) == 0)) {
+	if (!(next_ifd_offset != NULL && file_stream_set_pos(tiff->fp, *next_ifd_offset))) {
 		return false; // failed
 	}
 
 	u64 tag_count = 0;
 	u64 tag_count_num_bytes = is_bigtiff ? 8 : 2;
-	if (fread(&tag_count, tag_count_num_bytes, 1, tiff->fp) != 1) return false;
+	if (file_stream_read(&tag_count, tag_count_num_bytes, tiff->fp) != tag_count_num_bytes) return false;
 	if (is_big_endian) {
 		tag_count = is_bigtiff ? bswap_64(tag_count) : bswap_16(tag_count);
 	}
@@ -234,7 +235,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	u64 tag_size = is_bigtiff ? 20 : 12;
 	u64 bytes_to_read = tag_count * tag_size;
 	u8* raw_tags = (u8*) malloc(bytes_to_read);
-	if (fread(raw_tags, bytes_to_read, 1, tiff->fp) != 1) {
+	if (file_stream_read(raw_tags, bytes_to_read, tiff->fp) != bytes_to_read) {
 		free(raw_tags);
 		return false; // failed
 	}
@@ -433,7 +434,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 
 	// Read the next IFD
-	if (fread(next_ifd_offset, tiff->bytesize_of_offsets, 1, tiff->fp) != 1) return false;
+	if (file_stream_read(next_ifd_offset, tiff->bytesize_of_offsets, tiff->fp) != tiff->bytesize_of_offsets) return false;
 	console_print_verbose("next ifd offset = %lld\n", *next_ifd_offset);
 	return true; // success
 }
@@ -533,95 +534,90 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 	console_print_verbose("Opening TIFF file %s\n", filename);
 	ASSERT(tiff);
 	int ret = 0; (void)ret; // for checking return codes from fgetpos, fsetpos, etc
-	FILE* fp = fopen64(filename, "rb");
+	file_stream_t fp = file_stream_open_for_reading(filename);
 	bool32 success = false;
 	if (fp) {
 		tiff->fp = fp;
-		struct stat st;
-		if (fstat(fileno(fp), &st) == 0) {
-			tiff->filesize = st.st_size;
-			if (tiff->filesize > 8) {
-				// read the 8-byte TIFF header / 16-byte BigTIFF header
-				tiff_header_t tiff_header = {};
-				if (fread(&tiff_header, sizeof(tiff_header_t) /*16*/, 1, fp) != 1) goto fail;
-				bool32 is_big_endian;
-				switch(tiff_header.byte_order_indication) {
-					case TIFF_BIG_ENDIAN: is_big_endian = true; break;
-					case TIFF_LITTLE_ENDIAN: is_big_endian = false; break;
-					default: goto fail;
-				}
-				tiff->is_big_endian = is_big_endian;
-				u16 filetype = maybe_swap_16(tiff_header.filetype, is_big_endian);
-				bool32 is_bigtiff;
-				switch(filetype) {
-					case 0x2A: is_bigtiff = false; break;
-					case 0x2B: is_bigtiff = true; break;
-					default: goto fail;
-				}
-				tiff->is_bigtiff = is_bigtiff;
-				u32 bytesize_of_offsets;
-				u64 next_ifd_offset = 0;
-				if (is_bigtiff) {
-					bytesize_of_offsets = maybe_swap_16(tiff_header.bigtiff.offset_size, is_big_endian);
-					if (bytesize_of_offsets != 8) goto fail;
-					if (tiff_header.bigtiff.always_zero != 0) goto fail;
-					next_ifd_offset = maybe_swap_64(tiff_header.bigtiff.first_ifd_offset, is_big_endian);
-				} else {
-					bytesize_of_offsets = 4;
-					next_ifd_offset = maybe_swap_32(tiff_header.tiff.first_ifd_offset, is_big_endian);
-				}
-				ASSERT((bytesize_of_offsets == 4 && !is_bigtiff) || (bytesize_of_offsets == 8 && is_bigtiff));
-				tiff->bytesize_of_offsets = bytesize_of_offsets;
+		tiff->filesize = file_stream_get_filesize(fp);
+		if (tiff->filesize > 8) {
+			// read the 8-byte TIFF header / 16-byte BigTIFF header
+			tiff_header_t tiff_header = {};
+			ret = file_stream_read(&tiff_header, sizeof(tiff_header_t) /*16*/, fp);
+			if (ret != sizeof(tiff_header_t)) goto fail;
+			bool32 is_big_endian;
+			switch(tiff_header.byte_order_indication) {
+				case TIFF_BIG_ENDIAN: is_big_endian = true; break;
+				case TIFF_LITTLE_ENDIAN: is_big_endian = false; break;
+				default: goto fail;
+			}
+			tiff->is_big_endian = is_big_endian;
+			u16 filetype = maybe_swap_16(tiff_header.filetype, is_big_endian);
+			bool32 is_bigtiff;
+			switch(filetype) {
+				case 0x2A: is_bigtiff = false; break;
+				case 0x2B: is_bigtiff = true; break;
+				default: goto fail;
+			}
+			tiff->is_bigtiff = is_bigtiff;
+			u32 bytesize_of_offsets;
+			u64 next_ifd_offset = 0;
+			if (is_bigtiff) {
+				bytesize_of_offsets = maybe_swap_16(tiff_header.bigtiff.offset_size, is_big_endian);
+				if (bytesize_of_offsets != 8) goto fail;
+				if (tiff_header.bigtiff.always_zero != 0) goto fail;
+				next_ifd_offset = maybe_swap_64(tiff_header.bigtiff.first_ifd_offset, is_big_endian);
+			} else {
+				bytesize_of_offsets = 4;
+				next_ifd_offset = maybe_swap_32(tiff_header.tiff.first_ifd_offset, is_big_endian);
+			}
+			ASSERT((bytesize_of_offsets == 4 && !is_bigtiff) || (bytesize_of_offsets == 8 && is_bigtiff));
+			tiff->bytesize_of_offsets = bytesize_of_offsets;
 
-				// Read and process the IFDs
-				while (next_ifd_offset != 0) {
-					console_print_verbose("Reading IFD #%llu\n", tiff->ifd_count);
-					tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
-					if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
-					arrput(tiff->ifds, ifd);
-					tiff->ifd_count += 1;
-				}
+			// Read and process the IFDs
+			while (next_ifd_offset != 0) {
+				console_print_verbose("Reading IFD #%llu\n", tiff->ifd_count);
+				tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
+				if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
+				arrput(tiff->ifds, ifd);
+				tiff->ifd_count += 1;
+			}
 
-				tiff_post_init(tiff);
+			tiff_post_init(tiff);
 
-				success = true;
+			success = true;
 
-				// cleanup
-				fclose(fp);
-				tiff->fp = NULL;
+			// cleanup
+			file_stream_close(fp);
+			tiff->fp = NULL;
 
-				// Prepare for Async I/O in the worker threads
+			// Prepare for Async I/O in the worker threads
 #if !IS_SERVER
 #if WINDOWS
-				// TODO: make async I/O platform agnostic
-				// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
-				// http://vec3.ca/using-win32-asynchronous-io/
-				tiff->file_handle = win32_open_overlapped_file_handle(filename);
+			// TODO: make async I/O platform agnostic
+			// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
+			// http://vec3.ca/using-win32-asynchronous-io/
+			tiff->file_handle = win32_open_overlapped_file_handle(filename);
 #else
-				tiff->file_handle = open(filename, O_RDONLY);
-				if (tiff->file_handle == -1) {
-					console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
-					return false;
-				} else {
-					// success
-				}
+			tiff->file_handle = open(filename, O_RDONLY);
+			if (tiff->file_handle == -1) {
+				console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
+				return false;
+			} else {
+				// success
+			}
 
 #endif
 #endif
-			}
 		}
+
 		// TODO: better error handling than this crap
 		fail:;
 		// Note: we need async i/o in the worker threads...
 		// so for now we close and reopen the file using platform-native APIs to make that possible.
 		if (tiff->fp) {
-			fclose(fp);
+			file_stream_close(fp);
 			tiff->fp = NULL;
 		}
-
-
-
-
 	}
 	return success;
 }
@@ -1003,7 +999,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 void tiff_destroy(tiff_t* tiff) {
 	if (tiff->fp) {
-		fclose(tiff->fp);
+		file_stream_close(tiff->fp);
 		tiff->fp = NULL;
 	}
 #if !IS_SERVER

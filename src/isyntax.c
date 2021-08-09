@@ -372,9 +372,9 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 					size_t decoded_len = 0;
 					i32 last_char = value[value_len-1];
 #if 0
-					FILE* test_out = fopen("test_b64.out", "wb");
-					fwrite(value, value_len, 1, test_out);
-					fclose(test_out);
+					FILE* test_out = file_stream_open_for_writing("test_b64.out");
+					file_stream_write(value, value_len, test_out);
+					file_stream_close(test_out);
 #endif
 					if (last_char == '/') {
 						value_len--; // The last character may cause the base64 decoding to fail if invalid
@@ -2027,15 +2027,15 @@ void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
 	if (fp && !codeblock->data) {
 		codeblock->data = calloc(1, codeblock->block_size + 8); // TODO: pool allocator
 		fseeko64(fp, codeblock->block_data_offset, SEEK_SET);
-		fread(codeblock->data, codeblock->block_size, 1, fp);
+		file_stream_read(codeblock->data, codeblock->block_size, fp);
 
 #if 0
 		char out_filename[512];
 		snprintf(out_filename, 512, "codeblocks/%d.bin", codeblock->block_data_offset);
-		FILE* out = fopen(out_filename, "wb");
+		FILE* out = file_stream_open_for_writing(out_filename);
 		if (out) {
-			fwrite(codeblock->data, codeblock->block_size, 1, out);
-			fclose(out);
+			file_stream_write(codeblock->data, codeblock->block_size, out);
+			file_stream_close(out);
 		}
 #endif
 	}
@@ -2091,23 +2091,24 @@ static void test_output_block_header(isyntax_image_t* wsi_image) {
 //			}
 		}
 
-		fclose(test_block_header_fp);
+		file_stream_close(test_block_header_fp);
 	}
 }
 #endif
 
 bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
+	console_print_verbose("Attempting to open iSyntax: %s\n", filename);
 	ASSERT(isyntax);
 	memset(isyntax, 0, sizeof(*isyntax));
 
 	int ret = 0; (void)ret;
-	FILE* fp = fopen64(filename, "rb");
+	file_stream_t fp = file_stream_open_for_reading(filename);
 	bool success = false;
 	if (fp) {
-		struct stat st;
-		if (fstat(fileno(fp), &st) == 0) {
-			isyntax->filesize = st.st_size;
+		i64 filesize = file_stream_get_filesize(fp);
+		if (filesize > 0) {
+			isyntax->filesize = filesize;
 
 			// https://www.openpathology.philips.com/wp-content/uploads/isyntax/4522%20207%2043941_2020_04_24%20Pathology%20iSyntax%20image%20format.pdf
 			// Layout of an iSyntax file:
@@ -2125,7 +2126,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 			size_t read_size = MEGABYTES(1);
 			char* read_buffer = malloc(read_size);
-			size_t bytes_read = fread(read_buffer, 1, read_size, fp);
+			size_t bytes_read = file_stream_read(read_buffer, read_size, fp);
 			io_ticks_elapsed += (get_clock() - io_begin);
 
 			if (bytes_read < 3) goto fail_1;
@@ -2138,7 +2139,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 			i32 chunk_index = 0;
 			for (;; ++chunk_index) {
-//				console_print("iSyntax: reading XML header chunk %d\n", chunk_index);
+//				console_print_verbose("iSyntax: reading XML header chunk %d\n", chunk_index);
 				i64 chunk_length = 0;
 				bool match = false;
 				char* pos = read_buffer;
@@ -2178,7 +2179,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						parse_ticks_elapsed += (get_clock() - parse_begin);
 
 						io_begin = get_clock();
-						bytes_read = fread(read_buffer, 1, read_size, fp); // read the next chunk
+						bytes_read = file_stream_read(read_buffer, read_size, fp); // read the next chunk
 						io_ticks_elapsed += (get_clock() - io_begin);
 
 						are_there_bytes_left = (bytes_read == read_size);
@@ -2274,11 +2275,11 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				}
 
 				io_begin = get_clock(); // for performance measurement
-				fseeko64(fp, isyntax_data_offset, SEEK_SET);
+				file_stream_set_pos(fp, isyntax_data_offset);
 				if (wsi_image->header_codeblocks_are_partial) {
 					// The seektable is required to be present, because the block header table did not contain all information.
 					dicom_tag_header_t seektable_header_tag = {};
-					fread(&seektable_header_tag, sizeof(dicom_tag_header_t), 1, fp);
+					file_stream_read(&seektable_header_tag, sizeof(dicom_tag_header_t), fp);
 
 					io_ticks_elapsed += (get_clock() - io_begin);
 					parse_begin = get_clock();
@@ -2292,7 +2293,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						}
 						isyntax_seektable_codeblock_header_t* seektable =
 								(isyntax_seektable_codeblock_header_t*) malloc(seektable_size);
-						fread(seektable, seektable_size, 1, fp);
+						file_stream_read(seektable, seektable_size, fp);
 
 						// Now fill in the missing data.
 						// NOTE: The number of codeblock entries in the seektable is much greater than the number of
@@ -2333,8 +2334,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 #if 0
 										FILE* out = fopen("hulskendecompressed4.raw", "wb");
 										if(out) {
-											fwrite(decompressed, codeblock->decompressed_size, 1, out);
-											fclose(out);
+											file_stream_write(decompressed, codeblock->decompressed_size, out);
+											file_stream_close(out);
 										}
 #endif
 										_aligned_free(decompressed);
@@ -2458,7 +2459,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			fail_1:
 			free(read_buffer);
 		}
-		fclose(fp);
+		file_stream_close(fp);
 
 		if (success) {
 #if WINDOWS

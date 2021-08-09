@@ -983,11 +983,13 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 					}
 				}
 			}
-//		console_print("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
+//			if (num_tasks_on_wishlist > 0) {
+//				console_print_verbose("Num tiles on wishlist = %d\n", num_tasks_on_wishlist);
+//			}
 
 			qsort(tile_wishlist, num_tasks_on_wishlist, sizeof(load_tile_task_t), priority_cmp_func);
 
-//		last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
+//		    last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
 			i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) ? 3 : 10;
 			i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);

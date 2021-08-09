@@ -87,9 +87,11 @@ typedef struct work_queue_entry_t {
 #if WINDOWS
 typedef HANDLE semaphore_handle_t;
 typedef HANDLE file_handle_t;
+typedef HANDLE file_stream_t;
 #else
 typedef sem_t* semaphore_handle_t;
 typedef int file_handle_t;
+typedef FILE* file_stream_t;
 #endif
 
 typedef struct work_queue_t {
@@ -299,7 +301,7 @@ static inline u8* platform_alloc(size_t size) { return (u8*)malloc(size);}
 
 mem_t* platform_allocate_mem_buffer(size_t capacity);
 mem_t* platform_read_entire_file(const char* filename);
-u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes);
+u64 file_read_at_offset(void* dest, file_stream_t fp, u64 offset, u64 num_bytes);
 
 void mouse_show();
 void mouse_hide();
@@ -310,8 +312,16 @@ void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
 void set_window_title(window_handle_t window, const char* title);
 void reset_window_title(window_handle_t window);
-
 void message_box(app_state_t* app_state, const char* message);
+
+file_stream_t file_stream_open_for_reading(const char* filename);
+file_stream_t file_stream_open_for_writing(const char* filename);
+i64 file_stream_read(void* dest, size_t bytes_to_read, file_stream_t file_stream);
+void file_stream_write(void* source, size_t bytes_to_write, file_stream_t file_stream);
+i64 file_stream_get_filesize(file_stream_t file_stream);
+i64 file_stream_get_pos(file_stream_t file_stream);
+bool file_stream_set_pos(file_stream_t file_stream, i64 offset);
+void file_stream_close(file_stream_t file_stream);
 
 i32 get_work_queue_task_count(work_queue_t* queue);
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);

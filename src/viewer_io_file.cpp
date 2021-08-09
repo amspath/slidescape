@@ -147,8 +147,10 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			}
 			free(read_buffer);
 		} else {
+//			console_print_verbose("[thread %d] loading tile: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 #if WINDOWS
 			win32_overlapped_read(thread_memory, tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
+//			console_print_verbose("[thread %d] read succeeded\n", logical_thread_index);
 #else
 			size_t bytes_read = pread(tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
 #endif
@@ -159,7 +161,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				} else {
 					if (decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data, compressed_tile_size_in_bytes,
 					                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		            console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+//		            console_print_verbose("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 					} else {
 						console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 						failed = true;
@@ -270,6 +272,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		temp_memory = NULL;
 	}
 
+//	console_print_verbose("[thread %d] completing...\n", logical_thread_index);
+
+
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 #if 1
 	upload_tile_on_worker_thread(image, temp_memory, level, tile_index, level_image->tile_width, level_image->tile_height);
@@ -298,6 +303,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	add_work_queue_entry(&global_completion_queue, task->completion_callback, &completion_task, sizeof(completion_task));
 
 #endif
+//	console_print_verbose("[thread %d] tile load done\n", logical_thread_index);
 
 }
 

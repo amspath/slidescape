@@ -41,42 +41,33 @@ mem_t* platform_allocate_mem_buffer(size_t capacity) {
 
 mem_t* platform_read_entire_file(const char* filename) {
 	mem_t* result = NULL;
-	FILE* fp = fopen(filename, "rb");
+	file_stream_t fp = file_stream_open_for_reading(filename);
 	if (fp) {
-		struct stat st;
-		if (fstat(fileno(fp), &st) == 0) {
-			i64 filesize = st.st_size;
-			if (filesize > 0) {
-				size_t allocation_size = sizeof(mem_t) + filesize + 1;
-				result = (mem_t*) malloc(allocation_size);
-				if (result) {
-					((u8*)result)[allocation_size-1] = '\0';
-					result->len = filesize;
-					result->capacity = filesize;
-					size_t bytes_read = fread(result->data, 1, filesize, fp);
-					if (bytes_read != filesize) {
-						panic();
-					}
+		i64 filesize = file_stream_get_filesize(fp);
+		if (filesize > 0) {
+			size_t allocation_size = sizeof(mem_t) + filesize + 1;
+			result = (mem_t*) malloc(allocation_size);
+			if (result) {
+				((u8*)result)[allocation_size-1] = '\0';
+				result->len = filesize;
+				result->capacity = filesize;
+				size_t bytes_read = file_stream_read(result->data, filesize, fp);
+				if (bytes_read != filesize) {
+					panic();
 				}
 			}
 		}
-		fclose(fp);
+		file_stream_close(fp);
 	}
 	return result;
 }
 
 
-u64 file_read_at_offset(void* dest, FILE* fp, u64 offset, u64 num_bytes) {
-	fpos_t prev_read_pos = {0}; // NOTE: fpos_t may be a struct!
-	int ret = fgetpos64(fp, &prev_read_pos); // for restoring the file position later
-	ASSERT(ret == 0); (void)ret;
-
-	fseeko64(fp, offset, SEEK_SET);
-	u64 result = fread(dest, num_bytes, 1, fp);
-
-	ret = fsetpos64(fp, &prev_read_pos); // restore previous file position
-	ASSERT(ret == 0); (void)ret;
-
+u64 file_read_at_offset(void* dest, file_stream_t fp, u64 offset, u64 num_bytes) {
+	i64 prev_read_pos = file_stream_get_pos(fp);
+	file_stream_set_pos(fp, offset);
+	u64 result = file_stream_read(dest, num_bytes, fp);
+	file_stream_set_pos(fp, prev_read_pos);
 	return result;
 }
 

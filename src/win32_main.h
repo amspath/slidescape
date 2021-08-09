@@ -49,6 +49,7 @@ typedef struct {
 
 
 void win32_diagnostic(const char* prefix);
+void win32_diagnostic_verbose(const char* prefix);
 HANDLE win32_open_overlapped_file_handle(const char* filename);
 void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset);
 
