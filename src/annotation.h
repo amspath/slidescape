@@ -61,7 +61,7 @@ typedef enum asap_xml_attribute_enum {
 
 typedef struct annotation_t {
 	annotation_type_enum type;
-	char name[64];
+	char name[256];
 	float features[MAX_ANNOTATION_FEATURES]; // TODO: make expandable
 	bounds2f bounds;
 	rgba_t color;
@@ -83,7 +83,7 @@ typedef struct coordinate_t {
 } coordinate_t;
 
 typedef struct annotation_group_t {
-	char name[64];
+	char name[256];
 	rgba_t color;
 	i32 id;
 	bool is_explicitly_defined; // true if there is an associated <Group> in the XML file
@@ -92,7 +92,7 @@ typedef struct annotation_group_t {
 } annotation_group_t;
 
 typedef struct annotation_feature_t {
-	char name[64];
+	char name[256];
 	rgba_t color;
 	i32 id;
 	bool restrict_to_group;

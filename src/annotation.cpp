@@ -739,6 +739,15 @@ void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 ne
 	}
 }
 
+void set_type_for_selected_annotations(annotation_set_t* annotation_set, i32 new_type) {
+	for (i32 i = 0; i < annotation_set->selection_count; ++i) {
+		annotation_t* annotation = annotation_set->selected_annotations[i];
+		ASSERT(annotation->selected);
+		annotation->type = (annotation_type_enum)new_type;
+		annotations_modified(annotation_set);
+	}
+}
+
 void set_features_for_selected_annotations(annotation_set_t* annotation_set, float* features, i32 feature_count) {
 	// stub
 	for (i32 i = 0; i < annotation_set->selection_count; ++i) {
@@ -938,7 +947,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		}
 	}
 	bool nothing_selected = (annotation_group_index == -1);
-	bool multiple_selected = (annotation_group_index == -2);
+	bool multiple_groups_selected = (annotation_group_index == -2);
 
 
 	// Detect hotkey presses for group assignment
@@ -956,13 +965,13 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		}
 	}
 
-	const char* preview = "";
+	const char* group_preview_string = "";
 	if (annotation_group_index >= 0 && annotation_group_index < annotation_set->active_group_count) {
-		preview = group_item_previews[annotation_group_index];
-	} else if (multiple_selected) {
-		preview = "(multiple)"; // if multiple annotations with different groups are selected
+		group_preview_string = group_item_previews[annotation_group_index];
+	} else if (multiple_groups_selected) {
+		group_preview_string = "(multiple)"; // if multiple annotations with different groups are selected
 	} else if (nothing_selected) {
-		preview = "(nothing selected)";
+		group_preview_string = "(nothing selected)";
 	}
 
 	if (show_annotations_window) {
@@ -1253,12 +1262,82 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		if (ImGui::CollapsingHeader("Annotation"))
 		{
+
+			// GUI for selecting an annotation using a slider input
+			static i32 annotation_to_select = -1;
+
+			// Update which annotation is currently displayed to be selected
+			if (annotation_set->selection_count == 1) {
+				for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+					annotation_t* a = get_active_annotation(annotation_set, i);
+					if (a->selected) {
+						annotation_to_select = i;
+						break;
+					}
+				}
+			}
+			annotation_to_select = CLAMP(annotation_to_select, -1, annotation_set->active_annotation_count - 1);
+			if (ImGui::DragInt("Select annotation", &annotation_to_select, 0.25f, -1, annotation_set->active_annotation_count - 1)) {
+				// Deselect all annotations except for this one
+				for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+					annotation_t* a = get_active_annotation(annotation_set, i);
+					if (i == annotation_to_select) {
+						a->selected = true;
+						// Center the screen on the new annotation
+						bounds2f bounds = bounds_for_annotation(annotation_set, a);
+						v2f center = {(bounds.max.x + bounds.min.x)*0.5f, (bounds.max.y + bounds.min.y)*0.5f};
+						scene_update_camera_pos(&app_state->scene, center);
+
+
+					} else {
+						a->selected = false;
+					}
+				}
+			}
+
 			u32 selectable_flags = 0;
 			if (nothing_selected) {
 				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
 			}
 
-			if (ImGui::BeginCombo("Assign group", preview, ImGuiComboFlags_HeightLargest)) {
+			static const char* annotation_types[] = {"Unknown type", "Rectangle", "Polygon", "Point", "Line", "Spline" };
+
+			// Figure out which types have been selected
+			i32 annotation_type_index = -1;
+			for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+				annotation_t* annotation = get_active_annotation(annotation_set, i);
+				if (annotation->selected) {
+					if (annotation_type_index == -1) {
+						annotation_type_index = annotation->type;
+					} else if (annotation_type_index != annotation->type) {
+						annotation_type_index = -2; // multiple types selected
+					}
+				}
+			}
+			bool no_types_selected = (annotation_type_index == -1);
+			bool multiple_types_selected = (annotation_type_index == -2);
+
+			const char* type_preview_string = "";
+			if (annotation_type_index >= 0 && annotation_type_index < annotation_set->active_group_count) {
+				type_preview_string = annotation_types[annotation_type_index];
+			} else if (multiple_types_selected) {
+				type_preview_string = "(multiple)"; // if multiple annotations with different groups are selected
+			} else if (no_types_selected) {
+				type_preview_string = "(nothing selected)";
+			}
+
+			if (ImGui::BeginCombo("Type", type_preview_string, ImGuiComboFlags_HeightLargest)) {
+				for (i32 type_index = 0; type_index < COUNT(annotation_types); ++type_index) {
+
+					if (ImGui::Selectable(annotation_types[type_index], (annotation_type_index == type_index), selectable_flags, (ImVec2){})) {
+						set_type_for_selected_annotations(annotation_set, type_index);
+					}
+				}
+				ImGui::EndCombo();
+			}
+
+
+			if (ImGui::BeginCombo("Assign group", group_preview_string, ImGuiComboFlags_HeightLargest)) {
 				for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
 					annotation_group_t* group = annotation_set->stored_groups + group_index;
 
@@ -1293,7 +1372,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::Begin("Assign", &show_annotation_group_assignment_window);
 
-		ImGui::TextUnformatted(preview);
+		ImGui::TextUnformatted(group_preview_string);
 
 		ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
 		if (ImGui::BeginTabBar("Feature assignment tab bar", tab_bar_flags))

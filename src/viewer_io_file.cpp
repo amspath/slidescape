@@ -434,6 +434,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 	const char* ext = get_file_extension(filename);
 	if (strcasecmp(ext, "json") == 0) {
+		// TODO: disambiguate between COCO annotations and case lists
 		reload_global_caselist(app_state, filename);
 		show_slide_list_window = true;
 		caselist_select_first_case(app_state, &app_state->caselist);
@@ -463,28 +464,40 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			unload_and_reinit_annotations(annotation_set);
 			annotation_set->mpp = (v2f){image.mpp_x, image.mpp_y};
 
-			// Check if there is an associated ASAP XML annotations file
+			// Check if there is an associated ASAP XML or COCO JSON annotations file
 			size_t filename_len = strlen(filename);
 			size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
 			char* temp_filename = (char*) alloca(temp_size);
 			strncpy(temp_filename, filename, temp_size);
-			replace_file_extension(temp_filename, temp_size, "xml");
-			if (file_exists(temp_filename)) {
-				console_print("Found XML annotations: %s\n", temp_filename);
-				load_asap_xml_annotations(app_state, temp_filename);
-			}
+			bool were_annotations_loaded = false;
 
+			// Load JSON first
 			replace_file_extension(temp_filename, temp_size, "json");
 			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
 			if (file_exists(temp_filename)) {
 				console_print("Found JSON annotations: %s\n", temp_filename);
-				load_coco_from_file(&annotation_set->coco, temp_filename);
+				coco_t coco = {};
+				load_coco_from_file(&coco, temp_filename);
+				coco_transfer_annotations_to_annotation_set(&coco, annotation_set);
+				coco_destroy(&coco);
+				were_annotations_loaded = true;
+				annotation_set->enabled = true;
 			} else {
 				coco_init_main_image(&annotation_set->coco, &image);
 			}
+
+			replace_file_extension(temp_filename, temp_size, "xml");
+			if (file_exists(temp_filename)) {
+				console_print("Found XML annotations: %s\n", temp_filename);
+				if (!were_annotations_loaded) {
+					load_asap_xml_annotations(app_state, temp_filename);
+				}
+			}
+
+
 			// TODO: only save/convert COCO, not the XML as well!
 			if (annotation_set->export_as_asap_xml) {
-				annotation_set->modified = true; // to force export in COCO as well
+//				annotation_set->modified = true; // to force export in COCO as well
 			}
 
 			console_print("Loaded '%s'\n", filename);

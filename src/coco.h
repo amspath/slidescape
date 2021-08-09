@@ -107,6 +107,7 @@ bool open_coco(coco_t* coco, const char* json_source, size_t json_length);
 bool load_coco_from_file(coco_t* coco, const char* json_filename);
 void coco_init_main_image(coco_t* coco, image_t* image);
 void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_t* annotation_set);
+void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t* annotation_set);
 memrw_t save_coco(coco_t* coco);
 void coco_destroy(coco_t* coco);
 coco_t coco_create_empty();

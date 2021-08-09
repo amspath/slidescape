@@ -264,8 +264,8 @@ static void coco_parse_categories(coco_t* coco, json_array_s* info) {
 					if (strcmp(element_name, "color") == 0) {
 						i32 array_index = 0;
 						while (sub_array_element) {
-							if (element->value->type == json_type_number) {
-								json_number_s* payload_number = (json_number_s*) element->value->payload;
+							if (sub_array_element->value->type == json_type_number) {
+								json_number_s* payload_number = (json_number_s*) sub_array_element->value->payload;
 								if (array_index < 4) {
 									category->color.values[array_index] = atoi(payload_number->number);
 								}
@@ -337,6 +337,7 @@ bool open_coco(coco_t* coco, const char* json_source, size_t json_length) {
 				console_print_verbose("[JSON] Root object has length %d\n", object->length);
 				ASSERT(object->length >= 1);
 				json_object_element_s* element = object->start;
+				coco->is_valid = true;
 				while (element) {
 					const char* element_name = element->name->string;
 					json_object_s* payload_object = (json_object_s*)element->value->payload;
@@ -373,7 +374,8 @@ bool open_coco(coco_t* coco, const char* json_source, size_t json_length) {
 		}
 
 	}
-	return true;
+
+	return coco->is_valid;
 }
 
 bool load_coco_from_file(coco_t* coco, const char* json_filename) {
@@ -601,7 +603,7 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		annotation_group_t* group = annotation_set->stored_groups + annotation_set->active_group_indices[i];
 		coco_category_t* category = coco->categories + i;
 		category->id = i;
-		snprintf(category->name, COCO_MAX_FIELD, group->name);
+		snprintf(category->name, MIN(sizeof(group->name), sizeof(category->name)), group->name);
 		category->color = group->color;
 	}
 
@@ -613,7 +615,7 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[i];
 		coco_feature_t* coco_feature = coco->features + i;
 		coco_feature->id = i;
-		snprintf(coco_feature->name, COCO_MAX_FIELD, feature->name);
+		snprintf(coco_feature->name, MIN(sizeof(feature->name), sizeof(coco_feature->name)), feature->name);
 		coco_feature->category_id = feature->group_id;
 	}
 
@@ -660,6 +662,113 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 				*coco_coordinate = (v2f) {(float)coordinate->x / mpp.x, (float)coordinate->y / mpp.y};
 			}
 		}
+	}
+}
+
+void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t* annotation_set) {
+
+
+	// TODO: transfer meta info, licenses, images
+	annotation_set->coco.info = coco->info;
+
+	// Transfer licenses
+	if (coco->license_count > 0) {
+		ASSERT(arrlen(coco->licenses) == coco->license_count);
+		arrsetlen(annotation_set->coco.licenses, arrlen(coco->licenses));
+		ASSERT(annotation_set->coco.licenses != NULL);
+		if (annotation_set->coco.licenses != NULL) {
+			memcpy(annotation_set->coco.licenses, coco->licenses, coco->license_count * sizeof(coco_license_t));
+			annotation_set->coco.license_count = coco->license_count;
+		}
+	}
+
+	// Transfer images
+	if (coco->image_count > 0) {
+		ASSERT(arrlen(coco->images) == coco->image_count);
+		arrsetlen(annotation_set->coco.images, arrlen(coco->images));
+		ASSERT(annotation_set->coco.images != NULL);
+		if (annotation_set->coco.images != NULL) {
+			memcpy(annotation_set->coco.images, coco->images, coco->image_count * sizeof(coco_image_t));
+			annotation_set->coco.image_count = coco->image_count;
+		}
+	}
+
+	// Transfer groups (categories)
+	i32 group_count = coco->category_count;
+	arrsetlen(annotation_set->stored_groups, group_count);
+	memset(annotation_set->stored_groups, 0, group_count * sizeof(annotation_group_t));
+	annotation_set->stored_group_count = group_count;
+	arrsetlen(annotation_set->active_group_indices, group_count);
+	annotation_set->active_group_count = group_count;
+	for (i32 i = 0; i < group_count; ++i) {
+		annotation_set->active_group_indices[i] = i;
+		coco_category_t* category = coco->categories + i;
+		annotation_group_t* group = annotation_set->stored_groups + i;
+		group->id = category->id;
+		group->color = category->color;
+		strncpy(group->name, category->name, MIN(sizeof(group->name), sizeof(category->name)));
+	}
+
+	// Transfer features
+	i32 feature_count = coco->feature_count;
+	arrsetlen(annotation_set->stored_features, feature_count);
+	memset(annotation_set->stored_features, 0, feature_count * sizeof(annotation_feature_t));
+	annotation_set->stored_feature_count = feature_count;
+	arrsetlen(annotation_set->active_feature_indices, feature_count);
+	annotation_set->active_feature_count = feature_count;
+	for (i32 i = 0; i < feature_count; ++i) {
+		annotation_set->active_feature_indices[i] = i;
+		coco_feature_t* coco_feature = coco->features + i;
+		annotation_feature_t* feature = annotation_set->stored_features + i;
+		feature->group_id = coco_feature->category_id; // TODO: lookup in hash table?
+		feature->id = coco_feature->id;
+		strncpy(feature->name, coco_feature->name, MIN(sizeof(feature->name), sizeof(coco_feature->name)));
+	}
+
+	// Transfer annotations
+	i32 annotation_count = coco->annotation_count;
+	arrsetlen(annotation_set->stored_annotations, annotation_count);
+	memset(annotation_set->stored_annotations, 0, annotation_count * sizeof(annotation_t));
+	annotation_set->stored_annotation_count = annotation_count;
+	arrsetlen(annotation_set->active_annotation_indices, annotation_count);
+	annotation_set->active_annotation_count = annotation_count;
+	i32 total_coordinate_count = 0; // count/accumulate while iterating over annotations below
+	for (i32 i = 0; i < annotation_count; ++i) {
+		annotation_set->active_annotation_indices[i] = i;
+		coco_annotation_t* coco_annotation = coco->annotations + i;
+		annotation_t* annotation = annotation_set->stored_annotations + i;
+		annotation->group_id = coco_annotation->category_id;
+		annotation->first_coordinate = total_coordinate_count;
+		annotation->coordinate_count = coco_annotation->segmentation.coordinate_count;
+		annotation->coordinate_capacity = annotation->coordinate_count;
+		if (annotation->coordinate_count > 0) {
+			annotation->has_coordinates = true;
+			if (annotation->coordinate_count == 1) {
+				annotation->type = ANNOTATION_POINT;
+			} else if (annotation->coordinate_count == 2) {
+				annotation->type = ANNOTATION_LINE;
+			} else {
+				annotation->type = ANNOTATION_POLYGON;
+			}
+		}
+
+		total_coordinate_count += coco_annotation->segmentation.coordinate_count;
+	}
+
+	// Transfer coordinates
+	arrsetlen(annotation_set->coordinates, total_coordinate_count); // allocate coordinates in bulk
+	memset(annotation_set->coordinates, 0, total_coordinate_count * sizeof(coordinate_t));
+	annotation_set->coordinate_count = total_coordinate_count;
+	i32 running_coordinate_index = 0;
+	for (i32 i = 0; i < annotation_count; ++i) {
+		coco_annotation_t* coco_annotation = coco->annotations + i;
+		annotation_t* annotation = annotation_set->stored_annotations + i;
+		coordinate_t* annotation_coordinates = annotation_set->coordinates + annotation->first_coordinate;
+		for (i32 j = 0; j < annotation->coordinate_count; ++j) {
+			v2f c = coco_annotation->segmentation.coordinates[j];
+			annotation_coordinates[j] = (coordinate_t){annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y};
+		}
+		running_coordinate_index += coco_annotation->segmentation.coordinate_count;
 	}
 }
 
@@ -776,17 +885,15 @@ void coco_init_main_image(coco_t* coco, image_t* image) {
 
 
 void coco_destroy(coco_t* coco) {
-	ASSERT(coco->is_valid);
-	if (coco->is_valid) {
-		coco->is_valid = false;
-		arrfree(coco->licenses);
-		arrfree(coco->images);
-		arrfree(coco->categories);
-		for (i32 i = 0; i < coco->annotation_count; ++i) {
-			coco_annotation_t* annotation = coco->annotations + i;
-			arrfree(annotation->segmentation.coordinates);
-		}
-		arrfree(coco->annotations);
+	coco->is_valid = false;
+	arrfree(coco->licenses);
+	arrfree(coco->images);
+	arrfree(coco->categories);
+	arrfree(coco->features);
+	for (i32 i = 0; i < coco->annotation_count; ++i) {
+		coco_annotation_t* annotation = coco->annotations + i;
+		arrfree(annotation->segmentation.coordinates);
 	}
+	arrfree(coco->annotations);
 }
 

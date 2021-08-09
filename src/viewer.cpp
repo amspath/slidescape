@@ -1262,6 +1262,11 @@ static inline void scene_update_camera_bounds(scene_t* scene) {
 	scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
 }
 
+void scene_update_camera_pos(scene_t* scene, v2f pos) {
+	scene->camera = pos;
+	scene_update_camera_bounds(scene);
+}
+
 static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f client_mouse_xy) {
 	if (client_mouse_xy.x >= 0 && client_mouse_xy.y < app_state->client_viewport.w * app_state->display_scale_factor &&
 			client_mouse_xy.y >= 0 && client_mouse_xy.y < app_state->client_viewport.h * app_state->display_scale_factor) {
