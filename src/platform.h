@@ -176,7 +176,7 @@ typedef struct controller_input_t {
 
 } controller_input_t;
 // Does the count of the controller_input_t.buttons[] array add up?
-COMPILE_TIME_ASSERT(controller_input_t, sizeof(((controller_input_t*)0)->buttons) == (offsetof(controller_input_t, terminator) - offsetof(controller_input_t, buttons) + sizeof(button_state_t)))
+STATIC_ASSERT(sizeof(((controller_input_t*)0)->buttons) == (offsetof(controller_input_t, terminator) - offsetof(controller_input_t, buttons) + sizeof(button_state_t)));
 
 typedef struct input_t {
 	button_state_t mouse_buttons[5];

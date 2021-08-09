@@ -356,7 +356,6 @@ typedef struct {
 #pragma pack(pop)
 
 u32 get_tiff_field_size(u16 data_type);
-u64 file_read_at_offset(void* dest, file_handle_t fp, u64 offset, u64 num_bytes);
 bool32 open_tiff_file(tiff_t* tiff, const char* filename);
 memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer);
 i64 find_end_of_http_headers(u8* str, u64 len);

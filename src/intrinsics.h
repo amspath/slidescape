@@ -106,6 +106,10 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
     return (read_value == comparand);
 }
 
+static inline u32 atomic_or(volatile u32* x, u32 mask) {
+	return __sync_or_and_fetch(x, mask);
+}
+
 static inline u32 bit_scan_forward(u32 x) {
 	return _bit_scan_forward(x);
 }
