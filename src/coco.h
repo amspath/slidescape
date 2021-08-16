@@ -29,6 +29,7 @@ extern "C" {
 #endif
 
 #define COCO_MAX_FIELD 512
+#define COCO_MAX_ANNOTATION_FEATURES 64
 
 typedef struct coco_info_t {
 	char description[COCO_MAX_FIELD];
@@ -68,6 +69,7 @@ typedef struct coco_annotation_t {
 	i32 image_id;
 	float area;
 	rect2f bbox;
+	float features[COCO_MAX_ANNOTATION_FEATURES];
 } coco_annotation_t;
 
 typedef struct coco_category_t {
@@ -80,6 +82,7 @@ typedef struct coco_category_t {
 typedef struct coco_feature_t {
 	i32 id;
 	i32 category_id;
+	bool restrict_to_group;
 	char name[COCO_MAX_FIELD];
 } coco_feature_t;
 

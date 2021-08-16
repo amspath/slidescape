@@ -212,6 +212,22 @@ static void coco_parse_annotations(coco_t* coco, json_array_s* info) {
 							sub_array_element = sub_array_element->next;
 						}
 						annotation->bbox = *((rect2f*)coordinates);
+					} else if (strcmp(element_name, "features") == 0) {
+						//[id,value,id,value,...]
+						i32 sub_element_index = 0;
+						i32 feature_id = 0;
+						while (sub_array_element && sub_element_index < (COCO_MAX_ANNOTATION_FEATURES * 2)) {
+							if (sub_array_element->value->type == json_type_number) {
+								json_number_s* payload_number = (json_number_s*) element->value->payload;
+								if (sub_element_index % 2 == 0) {
+									feature_id = atoi(payload_number->number);
+								} else {
+									annotation->features[feature_id] = strtof(payload_number->number, NULL);
+								}
+								++sub_element_index;
+							}
+							sub_array_element = sub_array_element->next;
+						}
 					}
 				} else if (element->value->type == json_type_number) {
 					json_number_s* payload_number = (json_number_s*) element->value->payload;
@@ -307,6 +323,7 @@ static void coco_parse_features(coco_t* coco, json_array_s* info) {
 						feature->id = atoi(payload_number->number);
 					} else if (strcmp(element_name, "category_id") == 0) {
 						feature->category_id = atoi(payload_number->number);
+						feature->restrict_to_group = true;
 					}
 				}
 				element = element->next;
@@ -356,6 +373,8 @@ bool open_coco(coco_t* coco, const char* json_source, size_t json_length) {
 							coco_parse_annotations(coco, payload_array);
 						} else if (strcmp(element_name, "categories") == 0) {
 							coco_parse_categories(coco, payload_array);
+						} else if (strcmp(element_name, "features") == 0) {
+							coco_parse_features(coco, payload_array);
 						}
 					}
 					element = element->next;
@@ -487,7 +506,7 @@ static void coco_output_segmentation(coco_segmentation_t* segmentation, memrw_t*
 	memrw_write_literal("]", out);
 }
 
-static void coco_output_annotation(coco_annotation_t* annotation, memrw_t* out) {
+static void coco_output_annotation(coco_t* coco, coco_annotation_t* annotation, memrw_t* out) {
 	char buf[4096];
 	// Part 1: everything before the segmentation field
 	i32 len = snprintf(buf, sizeof(buf), "{\"id\":%d,"
@@ -507,7 +526,29 @@ static void coco_output_annotation(coco_annotation_t* annotation, memrw_t* out) 
 	coco_segmentation_t* segmentation = &annotation->segmentation;
 	coco_output_segmentation(segmentation, out);
 
-	// Part 3: everything after the segmentation field
+	// Part 2: the feature data
+	memrw_write_literal("],\"features\":[", out);
+	bool need_comma = false;
+	for (i32 feature_index = 0; feature_index < coco->feature_count; ++feature_index) {
+		coco_feature_t* coco_feature = coco->features + feature_index;
+		if ((!coco_feature->restrict_to_group) || (annotation->category_id == coco_feature->category_id)) {
+			i32 id = coco_feature->id;
+			if (id >= 0 && id < COCO_MAX_ANNOTATION_FEATURES) {
+				if (need_comma) {
+					memrw_write_literal(",", out);
+				}
+				len = snprintf(buf, sizeof(buf), "%d,%g", coco_feature->id, annotation->features[coco_feature->id]);
+				ASSERT(len > 0 && len < sizeof(buf));
+				memrw_write(buf, out, len);
+				need_comma = true;
+			} else {
+				// TODO: support unconstrained IDs
+				console_print_error("coco_output_annotation(): feature IDs > %d not supported\n", coco_feature->id);
+			}
+		}
+	}
+
+	// Part 3: everything after
 	len = snprintf(buf, sizeof(buf), "],\"image_id\":%d,"
 	                                 "\"area\":%g,"
 	                                 "\"bbox\":[%g,%g,%g,%g]}", annotation->image_id, annotation->area,
@@ -527,7 +568,7 @@ static void coco_output_annotations(coco_t* coco, memrw_t* out) {
 		i32 last_annotation_index = coco->annotation_count - 1;
 		for (i32 annotation_index = 0; annotation_index < coco->annotation_count; ++annotation_index) {
 			coco_annotation_t* annotation = coco->annotations + annotation_index;
-			coco_output_annotation(annotation, out);
+			coco_output_annotation(coco, annotation, out);
 			if (annotation_index < last_annotation_index) {
 				memrw_write_literal(",\n", out);
 			}
@@ -569,12 +610,19 @@ static void coco_output_categories(coco_t* coco, memrw_t* out) {
 static void coco_output_feature(coco_feature_t* feature, memrw_t* out) {
 	char buf[4096];
 	i32 len = snprintf(buf, sizeof(buf), "{\"id\":%d,"
-										 "\"name\":\"%s\","
-	                                     "\"category_id\":%d}",
-	                   feature->id, feature->name, feature->category_id);
+										 "\"name\":\"%s\"",
+										 feature->id, feature->name);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
 	} else panic();
+
+	// If the category_id JSON field is not present, that means the feature is not restricted to a group
+	if (feature->restrict_to_group) {
+		len = snprintf(buf, sizeof(buf), ",\"category_id\":%d", feature->category_id);
+		ASSERT(len > 0 && len < sizeof(buf));
+		memrw_write(buf, out, len);
+	}
+	memrw_write_literal("}", out);
 }
 
 static void coco_output_features(coco_t* coco, memrw_t* out) {
@@ -617,6 +665,7 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		coco_feature->id = i;
 		snprintf(coco_feature->name, MIN(sizeof(feature->name), sizeof(coco_feature->name)), feature->name);
 		coco_feature->category_id = feature->group_id;
+		coco_feature->restrict_to_group = feature->restrict_to_group;
 	}
 
 	// TODO: be less stupid about memory allocation
@@ -662,6 +711,9 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 				*coco_coordinate = (v2f) {(float)coordinate->x / mpp.x, (float)coordinate->y / mpp.y};
 			}
 		}
+		ASSERT(MAX_ANNOTATION_FEATURES == COCO_MAX_ANNOTATION_FEATURES);
+		ASSERT(sizeof(coco_annotation->features) == sizeof(annotation->features));
+		memcpy(coco_annotation->features, annotation->features, sizeof(annotation->features));
 	}
 }
 
@@ -721,6 +773,7 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 		coco_feature_t* coco_feature = coco->features + i;
 		annotation_feature_t* feature = annotation_set->stored_features + i;
 		feature->group_id = coco_feature->category_id; // TODO: lookup in hash table?
+		feature->restrict_to_group = coco_feature->restrict_to_group;
 		feature->id = coco_feature->id;
 		strncpy(feature->name, coco_feature->name, MIN(sizeof(feature->name), sizeof(coco_feature->name)));
 	}
@@ -751,6 +804,9 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 				annotation->type = ANNOTATION_POLYGON;
 			}
 		}
+		ASSERT(MAX_ANNOTATION_FEATURES == COCO_MAX_ANNOTATION_FEATURES);
+		ASSERT(sizeof(coco_annotation->features) == sizeof(annotation->features));
+		memcpy(annotation->features, coco_annotation->features, sizeof(annotation->features));
 
 		total_coordinate_count += coco_annotation->segmentation.coordinate_count;
 	}

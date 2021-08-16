@@ -174,6 +174,8 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 first_coordinate_index, i32 second_coordinate_index);
 void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group);
+i32 annotation_cycle_selection_within_group(annotation_set_t* annotation_set, i32 delta);
+void center_scene_on_annotation(scene_t* scene, annotation_set_t* annotation_set, annotation_t* annotation);
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);

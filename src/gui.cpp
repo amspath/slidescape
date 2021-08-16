@@ -156,7 +156,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Load...", NULL, &menu_items_clicked.open_file)) {} // TODO: only accept annotation files here?
 			ImGui::Separator();
 			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
-			if (ImGui::MenuItem("Assign group...", NULL, &show_annotation_group_assignment_window)) {}
+			if (ImGui::MenuItem("Assign group/feature...", NULL, &show_annotation_group_assignment_window)) {}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
