@@ -64,7 +64,13 @@ endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+include_directories("${CMAKE_SOURCE_DIR}/src")
+include_directories("${CMAKE_SOURCE_DIR}/src/core")
 include_directories("${CMAKE_SOURCE_DIR}/src/imgui")
+include_directories("${CMAKE_SOURCE_DIR}/src/isyntax")
+include_directories("${CMAKE_SOURCE_DIR}/src/platform")
+include_directories("${CMAKE_SOURCE_DIR}/src/tiff")
+include_directories("${CMAKE_SOURCE_DIR}/src/utils")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
 include_directories("${CMAKE_SOURCE_DIR}/deps/keycode")
@@ -162,20 +168,21 @@ endif()
 prepend_path(KEYCODE_SOURCE_FILES deps/keycode)
 
 set(VIEWER_SOURCE_FILES
-        platform.c
-        viewer.cpp
-        stringutils.c
-        mathutils.c
-        shader.c
-        tiff.c
-        tiff_write.c
-        isyntax.c
-        caselist.cpp
-        coco.cpp
-        annotation.cpp
-        tile_streamer.cpp
-        openslide_api.c
-        ini.c
+        platform/platform.c
+        platform/shader.c
+        platform/openslide_api.c
+        core/viewer.cpp
+        core/gui.cpp
+        core/annotation.cpp
+        core/caselist.cpp
+        core/coco.cpp
+        core/ini.c
+        core/remote.c
+        tiff/tiff.c
+        tiff/tiff_write.c
+        tiff/tif_lzw.c
+        isyntax/isyntax.c
+        isyntax/isyntax_streamer.cpp
         imgui/imgui.cpp
         imgui/imgui_demo.cpp
         imgui/imgui_draw.cpp
@@ -183,20 +190,19 @@ set(VIEWER_SOURCE_FILES
         imgui/imgui_tables.cpp
         imgui/imgui_impl_opengl3.cpp
         imgui/imgui_freetype.cpp
-        gui.cpp
-        jpeg_decoder.c
-        remote.c
-        lz4.c
-        yxml.c
-        tif_lzw.c
-)
+        utils/stringutils.c
+        utils/mathutils.c
+        utils/lz4.c
+        utils/yxml.c
+        utils/jpeg_decoder.c
+        )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            win32_main.cpp  win32_gui.cpp   imgui/imgui_impl_win32.cpp     glad.c )
+            platform/win32_main.cpp  platform/win32_gui.cpp   imgui/imgui_impl_win32.cpp     platform/glad.c )
 else()
     # Note: SDL2 is used for both Linux and macOS
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            linux_main.cpp   linux_platform.cpp imgui/imgui_impl_sdl.cpp imgui/ImGuiFileDialog.cpp)
+            platform/linux_main.cpp   platform/linux_platform.cpp imgui/imgui_impl_sdl.cpp imgui/ImGuiFileDialog.cpp)
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
@@ -246,12 +252,12 @@ endif()
 target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
 
 set(SERVER_SOURCE_FILES
-        platform.c
+        platform/platform.c
         server.c
-        tiff.c
-        jpeg_decoder.c
-        lz4.c
-        stringutils.c
+        tiff/tiff.c
+        utils/jpeg_decoder.c
+        utils/lz4.c
+        utils/stringutils.c
 )
 prepend_path(SERVER_SOURCE_FILES src)
 add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} deps/ltalloc.cc)
