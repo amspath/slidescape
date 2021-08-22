@@ -516,6 +516,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 
 		} else {
 			console_print_error("Could not load '%s'\n", filename);
+			gui_add_modal_popup("Error##load_generic_file", "Could not load '%s'.\n", filename);
 			return false;
 		}
 

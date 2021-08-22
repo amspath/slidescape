@@ -447,6 +447,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
 				} break;
 				default: {
+					gui_add_modal_popup("Error##draw_export_region_dialog", "This image backend is currently not supported for exporting a region.\n");
 					console_print_error("Error: image backend not supported for exporting a region\n");
 				}
 			}
@@ -774,6 +775,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
 	draw_export_region_dialog(app_state);
 
+	gui_do_modal_popups();
+
 	if (show_layers_window) {
 		draw_layers_window(app_state);
 	}
@@ -967,6 +970,71 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 		}
 		free(lines);
 	}
+}
+
+typedef struct gui_modal_popup_t gui_modal_popup_t;
+struct gui_modal_popup_t {
+	char message[4096];
+	const char* title;
+	bool need_open;
+};
+
+static gui_modal_popup_t* gui_popup_stack;
+static i32 ticks_to_delay_before_first_dialog = 1;
+
+void gui_do_modal_popups() {
+
+	if (ticks_to_delay_before_first_dialog > 0) {
+		// For whatever reason, modal dialogs might not open properly on the first frame of the program.
+		// So, display the first dialog (e.g. "Could not load file") only after a short delay.
+		--ticks_to_delay_before_first_dialog;
+	} else {
+		if (arrlen(gui_popup_stack) > 0) {
+			gui_modal_popup_t* popup = gui_popup_stack;
+			if (popup->need_open) {
+				ImGui::OpenPopup(popup->title);
+
+				// Check that the popup is actually open!
+				ImGuiContext& g = *GImGui;
+				ImGuiWindow* window = g.CurrentWindow;
+				const ImGuiID id = window->GetID(popup->title);
+				if (ImGui::IsPopupOpen(id, ImGuiPopupFlags_None)) {
+					popup->need_open = false;
+				}
+			}
+			// Always center this window when appearing
+			ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+			ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+			bool open = true;
+			if (ImGui::BeginPopupModal(popup->title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+				ImGui::TextUnformatted(popup->message);
+				if (ImGui::Button("OK", ImVec2(120, 0))) {
+					popup->need_open = false;
+					ImGui::CloseCurrentPopup();
+					// destroy
+					arrdel(gui_popup_stack, 0);
+				}
+				ImGui::EndPopup();
+			}
+
+		}
+	}
+
+
+}
+
+void gui_add_modal_popup(const char* title, const char* message, ...) {
+	gui_modal_popup_t popup = {};
+	popup.title = title;
+
+	va_list args;
+	va_start(args, message);
+	vsnprintf(popup.message, sizeof(popup.message)-1, message, args);
+	popup.message[sizeof(popup.message)-1] = 0;
+	va_end(args);
+
+	popup.need_open = true;
+	arrpush(gui_popup_stack, popup);
 }
 
 void console_print(const char* fmt, ...) {

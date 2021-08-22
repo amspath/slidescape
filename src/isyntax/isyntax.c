@@ -2110,7 +2110,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 	isyntax_seektable_codeblock_header_t* seektable = NULL;
 	isyntax_data_chunk_t* data_chunks_memory = NULL;
 
-	if (0) { failed: cleanup:
+	if (0) { failed:
 		if (fp) file_stream_close(fp);
 		if (read_buffer != NULL) free(read_buffer);
 		if (seektable != NULL) free(seektable);

@@ -42,6 +42,8 @@ void gui_push_disabled_style_with_selectable_flags(u32* selectable_flags);
 void gui_push_disabled_style_with_button_flags(u32* button_flags);
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness);
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
+void gui_do_modal_popups();
+void gui_add_modal_popup(const char* title, const char* message, ...);
 void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open);
 
 
