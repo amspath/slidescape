@@ -558,8 +558,8 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length, ++doc) {
 		int c = *doc;
 		if (c == '\0') {
-			ASSERT(false); // this should never trigger
-			break;
+			// This should never trigger; iSyntax file is corrupt!
+			goto failed;
 		}
 		yxml_ret_t r = yxml_parse(x, c);
 		if (r == YXML_OK) {
@@ -2105,6 +2105,26 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 	int ret = 0; (void)ret;
 	file_stream_t fp = file_stream_open_for_reading(filename);
 	bool success = false;
+
+	char* read_buffer = NULL;
+	isyntax_seektable_codeblock_header_t* seektable = NULL;
+	isyntax_data_chunk_t* data_chunks_memory = NULL;
+
+	if (0) { failed: cleanup:
+		if (fp) file_stream_close(fp);
+		if (read_buffer != NULL) free(read_buffer);
+		if (seektable != NULL) free(seektable);
+		isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+		if (wsi_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
+			if (wsi_image->data_chunks != NULL) free(wsi_image->data_chunks);
+			for (i32 i = 0; i < wsi_image->level_count; ++i) {
+				isyntax_level_t* level = wsi_image->levels + i;
+				if (level->tiles != NULL) free(level->tiles);
+			}
+		}
+		return success;
+	}
+
 	if (fp) {
 		i64 filesize = file_stream_get_filesize(fp);
 		if (filesize > 0) {
@@ -2125,11 +2145,13 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			i64 parse_ticks_elapsed = 0;
 
 			size_t read_size = MEGABYTES(1);
-			char* read_buffer = malloc(read_size);
+			read_buffer = malloc(read_size);
 			size_t bytes_read = file_stream_read(read_buffer, read_size, fp);
 			io_ticks_elapsed += (get_clock() - io_begin);
 
-			if (bytes_read < 3) goto fail_1;
+			if (bytes_read < 3) {
+				goto failed;
+			}
 			bool are_there_bytes_left = (bytes_read == read_size);
 
 			// find EOT candidates, 3 bytes "\r\n\x04"
@@ -2156,10 +2178,14 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				}
 				if (match) {
 					// We found the end of the XML header. This is the last chunk to process.
-					if (!(header_length > 0 && header_length < isyntax->filesize)) goto fail_1;
+					if (!(header_length > 0 && header_length < isyntax->filesize)) {
+						goto failed;
+					}
 
 					parse_begin = get_clock();
-					isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, true);
+					if (!isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, true)) {
+						goto failed;
+					}
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 
 //					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
@@ -2175,7 +2201,9 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					if (are_there_bytes_left) {
 
 						parse_begin = get_clock();
-						isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, false);
+						if (!isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, false)) {
+							goto failed;
+						}
 						parse_ticks_elapsed += (get_clock() - parse_begin);
 
 						io_begin = get_clock();
@@ -2186,7 +2214,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						continue;
 					} else {
 						console_print_error("iSyntax parsing error: didn't find the end of the XML header (unexpected end of file)\n");
-						goto fail_1;
+						goto failed;
 					}
 				}
 			}
@@ -2271,7 +2299,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					i32 tiles_per_color = total_coeff_tile_count;
 					block_id += codeblock->color_component * tiles_per_color;
 					codeblock->block_id = block_id;
-					DUMMY_STATEMENT;
 				}
 
 				io_begin = get_clock(); // for performance measurement
@@ -2291,8 +2318,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							ASSERT(wsi_image->codeblock_count > 0);
 							seektable_size = sizeof(isyntax_seektable_codeblock_header_t) * wsi_image->codeblock_count;
 						}
-						isyntax_seektable_codeblock_header_t* seektable =
-								(isyntax_seektable_codeblock_header_t*) malloc(seektable_size);
+						seektable = (isyntax_seektable_codeblock_header_t*) malloc(seektable_size);
 						file_stream_read(seektable, seektable_size, fp);
 
 						// Now fill in the missing data.
@@ -2307,7 +2333,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
 							if (codeblock->block_id > seektable_entry_count) {
 								ASSERT(!"block ID out of bounds");
-								continue;
+								goto failed;
 							}
 							isyntax_seektable_codeblock_header_t* seektable_entry = seektable + codeblock->block_id;
 							ASSERT(seektable_entry->block_data_offset_header.group == 0x301D);
@@ -2361,7 +2387,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 							}
 						}
 						wsi_image->data_chunks = (isyntax_data_chunk_t*) calloc(1, max_possible_chunk_count * sizeof(isyntax_data_chunk_t));
-
 
 						// Create tables for spatial lookup of codeblocks and codeblock chunks from tile coordinates
 						for (i32 i = 0; i < wsi_image->level_count; ++i) {
@@ -2438,11 +2463,12 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 //						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 						isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());
 					} else {
-						// TODO: error
+						goto failed;
 					}
 				}
 			} else {
-				// TODO: error
+				// non-partial header blocks are not supported
+				goto failed;
 			}
 
 			size_t ll_coeff_block_size = isyntax->block_width * isyntax->block_height * sizeof(icoeff_t);
@@ -2453,10 +2479,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			isyntax->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
 			isyntax->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
 
-			// TODO: further implement iSyntax support
 			success = true;
 
-			fail_1:
 			free(read_buffer);
 		}
 		file_stream_close(fp);
