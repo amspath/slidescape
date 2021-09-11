@@ -102,7 +102,7 @@ typedef struct work_queue_t {
 	i32 volatile completion_goal;
 	i32 volatile start_count;
 	i32 volatile start_goal;
-	work_queue_entry_t entries[256];
+	work_queue_entry_t entries[1024];
 } work_queue_t;
 
 typedef struct benaphore_t {

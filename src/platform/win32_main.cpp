@@ -1595,7 +1595,7 @@ void win32_init_main_window(app_state_t* app_state) {
 	int initial_window_height = desired_window_rect.bottom - desired_window_rect.top;
 
 	app_state->main_window = CreateWindowExA(0,//WS_EX_TOPMOST|WS_EX_LAYERED,
-	                              main_window_class.lpszClassName, "Slideviewer",
+	                              main_window_class.lpszClassName, APP_TITLE,
 	                                     window_style,
 	                                     0/*CW_USEDEFAULT*/, 0/*CW_USEDEFAULT*/, initial_window_width, initial_window_height,
 	                                     0, 0, g_instance, 0);

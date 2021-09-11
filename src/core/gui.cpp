@@ -85,6 +85,22 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickne
 	draw_list->AddPolyline((ImVec2*)points, count, color, true, thickness);
 }
 
+void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, float thickness, scene_t* scene) {
+	for (i32 i = 0; i < count; ++i) {
+		points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.pixel_width);
+	}
+	gui_draw_polygon_outline(points, 4, color, thickness);
+}
+
+void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene) {
+	v2f points[4];
+	points[0] = (v2f) { bounds.left, bounds.top };
+	points[1] = (v2f) { bounds.left, bounds.bottom };
+	points[2] = (v2f) { bounds.right, bounds.bottom };
+	points[3] = (v2f) { bounds.right, bounds.top };
+	gui_draw_polygon_outline_in_scene(points, 4, color, thickness, scene);
+}
+
 bool enable_load_debug_coco_file;
 bool enable_load_debug_isyntax_file;
 const char* coco_test_filename = "coco_test_in.json";
@@ -782,11 +798,11 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	}
 
 	if (show_about_window) {
-		ImGui::Begin("About Slideviewer", &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
+		ImGui::Begin("About " APP_TITLE, &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
 
-		ImGui::TextUnformatted("Slideviewer - a whole-slide image viewer for digital pathology");
+		ImGui::TextUnformatted(APP_TITLE " - a whole-slide image viewer for digital pathology");
 		ImGui::Text("Author: Pieter Valkema\n");
-		ImGui::TextUnformatted("Version: " SLIDEVIEWER_VERSION );
+		ImGui::TextUnformatted("Version: " APP_VERSION );
 
 
 		ImGui::Text("\nLicense information:\nThis program is free software: you can redistribute it and/or modify\n"

@@ -264,6 +264,8 @@ typedef struct scene_t {
 	v2f mouse;
 	v2f right_clicked_pos;
 	bounds2f camera_bounds;
+	bounds2f tile_load_bounds;
+	bool restrict_load_bounds;
 	float r_minus_l;
 	float t_minus_b;
 	zoom_state_t zoom;
@@ -312,7 +314,9 @@ typedef struct pixel_transfer_state_t {
 
 typedef struct tile_streamer_t {
 	image_t* image;
+	scene_t* scene;
 	v2f origin_offset;
+	v2f camera_center;
 	bounds2f camera_bounds;
 	bounds2f crop_bounds;
 	bool is_cropped;
@@ -422,7 +426,6 @@ extern i32 desired_window_width INIT(=1280);
 extern i32 desired_window_height INIT(=720);
 
 extern benaphore_t tile_streamer_benaphore;
-extern tile_streamer_t global_tile_streamer;
 extern bool32 is_tile_stream_task_in_progress;
 extern bool32 is_tile_streamer_frame_boundary_passed;
 

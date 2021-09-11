@@ -122,6 +122,14 @@ bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, f
 	return result;
 }
 
+bounds2f tile_bounds_to_world_bounds(bounds2i tile_bounds, float tile_width, float tile_height, v2f image_pos) {
+	bounds2f result = {};
+	result.left = tile_bounds.left * tile_width + image_pos.x;
+	result.right = (tile_bounds.right) * tile_width + image_pos.x;
+	result.top = tile_bounds.top * tile_height + image_pos.y;
+	result.bottom = (tile_bounds.bottom) * tile_height + image_pos.y;
+	return result;
+}
 
 bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b) {
 	bounds2f bounds = {

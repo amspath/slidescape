@@ -900,12 +900,17 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				tile_streamer_t tile_streamer = {};
 				tile_streamer.image = image;
 				tile_streamer.origin_offset = image->origin_offset; // TODO: superfluous?
-				tile_streamer.camera_bounds = scene->camera_bounds;
+				if (!scene->restrict_load_bounds) {
+					tile_streamer.camera_bounds = scene->camera_bounds;
+				} else {
+					tile_streamer.camera_bounds = scene->tile_load_bounds;
+				}
+				tile_streamer.camera_center = scene->camera;
+				tile_streamer.scene = scene;
 				tile_streamer.crop_bounds = scene->crop_bounds;
 				tile_streamer.is_cropped = scene->is_cropped;
 				tile_streamer.zoom = scene->zoom;
-				global_tile_streamer = tile_streamer;
-				stream_image_tiles(&global_tile_streamer);
+				stream_image_tiles(&tile_streamer);
 			}
 		} else if (image->backend == IMAGE_BACKEND_STBI) {
 			simple_image_t* simple = &image->simple;
@@ -1607,6 +1612,21 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
 //				console_print("switching to creation mode\n");
 			}*/
+
+			// Debug feature: view 'frozen' outline of camera bounds
+#if DO_DEBUG
+			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_F8)) {
+				if (scene->restrict_load_bounds) {
+					scene->restrict_load_bounds = false;
+				} else {
+					scene->tile_load_bounds = scene->camera_bounds;
+					scene->restrict_load_bounds = true;
+				}
+			}
+			if (scene->restrict_load_bounds) {
+				gui_draw_bounds_in_scene(scene->tile_load_bounds, (rgba_t){0,0,0,128}, 2.0f, scene);
+			}
+#endif
 
 			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;

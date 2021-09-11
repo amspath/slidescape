@@ -19,6 +19,8 @@
 #include "common.h"
 #include "viewer.h"
 
+// TODO: remove
+#include "gui.h"
 
 void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
@@ -71,7 +73,9 @@ static i32 isyntax_load_all_tiles_in_level(i32 resource_id, isyntax_t* isyntax, 
 				isyntax_begin_load_tile(resource_id, isyntax, wsi, scale, tile_x, tile_y);
 			} else {
 				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y);
-				submit_tile_completed(resource_id, tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
+				if (tile_pixels) {
+					submit_tile_completed(resource_id, tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
+				}
 			}
 			++tiles_loaded;
 		}
@@ -330,6 +334,8 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 
 	wsi->first_load_complete = true;
 
+	// TODO: begin to preload next level down
+
 }
 
 typedef struct isyntax_load_tile_task_t {
@@ -345,7 +351,9 @@ typedef struct isyntax_load_tile_task_t {
 void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) userdata;
 	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
-	submit_tile_completed(task->resource_id, tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
+	if (tile_pixels) {
+		submit_tile_completed(task->resource_id, tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
+	}
 	atomic_decrement(&task->isyntax->refcount); // release
 }
 
@@ -479,9 +487,11 @@ typedef struct isyntax_tile_req_t {
 	i32 tile_y;
 	i32 level_tile_index;
 	i32 region_tile_index;
-	u32 adj_need_ll_mask;
-	u32 adj_need_h_mask;
-	bool want_load;
+	u32 adj_need_ll_mask; // TODO: remove
+	u32 adj_need_h_mask; // TODO: remove
+	u32 need_ll_edges_mask; // which edges need to be valid
+	bool want_full_load_for_display;
+	bool want_partial_load_for_reconstruction;
 	bool need_h_coeff;
 	bool need_ll_coeff;
 } isyntax_tile_req_t;
@@ -495,11 +505,309 @@ typedef struct isyntax_load_region_t {
 	isyntax_tile_req_t* tile_req;
 } isyntax_load_region_t;
 
+typedef struct isyntax_chunk_load_task_t {
+	i32 index;
+	i32 priority;
+} isyntax_chunk_load_task_t;
+
+// Sort chunks based on their index (ascending order as the chunks occur in the file)
 static int chunk_index_compare_func (const void* a, const void* b) {
-	return ( *(i32*)a - *(i32*)b );
+	return ( ((isyntax_chunk_load_task_t*)a)->index - ((isyntax_chunk_load_task_t*)a)->index );
 }
 
-#define MAX_CHUNKS_TO_LOAD 48
+// Sort chunks based on assigned priority scores (closer to center of screen = higher priority)
+static int chunk_priority_compare_func (const void* a, const void* b) {
+	return ( ((isyntax_chunk_load_task_t*)b)->priority - ((isyntax_chunk_load_task_t*)a)->priority );
+}
+
+#define MAX_CHUNKS_TO_LOAD 512
+
+void isyntax_stream_image_tiles2(tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
+	isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
+	i32 resource_id = tile_streamer->image->resource_id;
+
+	if (!wsi->first_load_complete) {
+		isyntax_begin_first_load(resource_id, isyntax, wsi);
+	} else {
+		i64 perf_clock_begin = get_clock();
+
+		arena_t* arena = &local_thread_memory->temp_arena;
+		temp_memory_t temp_memory = begin_temp_memory(arena);
+
+		ASSERT(wsi->level_count >= 0);
+		i32 highest_visible_scale = ATLEAST(wsi->max_scale, 0);
+		i32 lowest_visible_scale = ATLEAST(tile_streamer->zoom.level, 0);
+		lowest_visible_scale = ATMOST(highest_visible_scale, lowest_visible_scale);
+
+#if 0
+		// Greedily retrieve chunks of one extra level down
+		i32 lowest_scale_to_preload = ATLEAST(ATMOST(tile_streamer->zoom.level, 5), 0);
+		lowest_visible_scale = ATMOST(lowest_scale_to_preload, lowest_visible_scale);
+#else
+		i32 lowest_scale_to_preload = lowest_visible_scale;
+#endif
+
+		// Never look at highest scales, which have already been loaded at first load
+		i32 highest_scale_to_load = highest_visible_scale;
+		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
+			isyntax_level_t* level = wsi->levels + scale;
+			if (level->is_fully_loaded) {
+				--highest_scale_to_load;
+			} else {
+				break;
+			}
+		}
+
+		i32 scales_to_load_count = (highest_scale_to_load+1) - lowest_scale_to_preload;
+		if (scales_to_load_count <= 0) {
+			return;
+		}
+		// Allocate temporary memory to hold scales_to_load + 1 regions
+		// (extra an extra one only for memory safety; we will later want to refer to the region that is 'one higher',
+		// so we want to prevent ever having a pointer to out-of-bounds memory even if we would never dereference it)
+		isyntax_load_region_t* regions = (isyntax_load_region_t*) arena_push_size(arena, (scales_to_load_count+1) * sizeof(isyntax_load_region_t));
+		memset(regions, 0, scales_to_load_count * sizeof(isyntax_load_region_t));
+
+		u32 chunks_to_load_count = 0;
+		isyntax_chunk_load_task_t chunks_to_load[MAX_CHUNKS_TO_LOAD] = {};
+		u32 max_chunks_to_load = 32;
+		u32 max_chunks_to_check = COUNT(chunks_to_load);
+
+		// Pass 0: determine visible area and pre-initialize variables
+
+		i32 scale_to_load_index = 0;
+		for (i32 scale = lowest_scale_to_preload; scale <= highest_scale_to_load; ++scale, ++scale_to_load_index) {
+			isyntax_level_t* level = wsi->levels + scale;
+			bounds2i level_tiles_bounds = {{ 0, 0, (i32)level->width_in_tiles, (i32)level->height_in_tiles }};
+
+			bounds2i visible_tiles = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds, level->x_tile_side_in_um,
+																 level->y_tile_side_in_um, tile_streamer->origin_offset);
+
+			visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
+
+			if (tile_streamer->is_cropped) {
+				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds,
+																		level->x_tile_side_in_um,
+																		level->y_tile_side_in_um, tile_streamer->origin_offset);
+				visible_tiles = clip_bounds2i(visible_tiles, crop_tile_bounds);
+			}
+
+			size_t tile_req_size = (level->width_in_tiles) * (level->height_in_tiles) * sizeof(isyntax_tile_req_t);
+			isyntax_tile_req_t* tile_requirements = (isyntax_tile_req_t*)arena_push_size(arena, tile_req_size);
+			memset(tile_requirements, 0, tile_req_size);
+
+			isyntax_load_region_t* region = regions + scale_to_load_index;
+			region->width_in_tiles = level->width_in_tiles;
+			region->height_in_tiles = level->height_in_tiles;
+			region->scale = scale;
+			//			region->padded_bounds = padded_bounds;
+			region->visible_bounds = visible_tiles;
+			region->tile_req = tile_requirements;
+
+		}
+
+		// Pass 1: determine which tiles need to be loaded
+
+		scale_to_load_index = 0;
+		for (i32 scale = lowest_scale_to_preload; scale <= highest_scale_to_load; ++scale, ++scale_to_load_index) {
+			isyntax_level_t* level = wsi->levels + scale;
+			isyntax_load_region_t* region = regions + scale_to_load_index;
+			bounds2i visible_tiles = region->visible_bounds;
+			isyntax_tile_req_t* tile_requirements = region->tile_req;
+
+			// - Determine which tiles need to be fully loaded (i.e. visible)
+			// - Determine which additional tiles need to have coefficients available to make reconstruction possible
+
+			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
+				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
+					i32 width_in_tiles = level->width_in_tiles;
+					i32 tile_index = tile_y * width_in_tiles + tile_x;
+					isyntax_tile_t* central_tile = level->tiles + tile_y * width_in_tiles + tile_x;
+					if (!central_tile->is_loaded) {
+
+						u32 adjacent = isyntax_get_adjacent_tiles_mask_only_existing(level, tile_x, tile_y);
+
+						tile_requirements[tile_index].want_full_load_for_display = true;
+						tile_requirements[tile_index].want_partial_load_for_reconstruction = true;
+						tile_requirements[tile_index].need_ll_edges_mask = 0x1FF; // all edges required to be valid
+
+						if (adjacent & ISYNTAX_ADJ_TILE_TOP_LEFT) {
+							i32 adj_tile_index = (tile_y-1) * width_in_tiles + (tile_x-1);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_TOP_CENTER) {
+							i32 adj_tile_index = (tile_y - 1) * width_in_tiles + (tile_x);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
+							i32 adj_tile_index = (tile_y - 1) * width_in_tiles + (tile_x + 1);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
+							i32 adj_tile_index = (tile_y) * width_in_tiles + (tile_x - 1);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_CENTER) {
+							i32 adj_tile_index = (tile_y) * width_in_tiles + (tile_x);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
+							i32 adj_tile_index = (tile_y) * width_in_tiles + (tile_x + 1);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
+							i32 adj_tile_index = (tile_y + 1) * width_in_tiles + (tile_x - 1);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
+							i32 adj_tile_index = (tile_y + 1) * width_in_tiles + (tile_x);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+						}
+						if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
+							i32 adj_tile_index = (tile_y + 1) * width_in_tiles + (tile_x + 1);
+							isyntax_tile_req_t* adj_tile_req = tile_requirements + adj_tile_index;
+							adj_tile_req->need_ll_coeff = true;
+							adj_tile_req->need_h_coeff = true;
+							adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+						}
+					}
+				}
+			}
+
+			// Now, 'escalate' the tiles with missing LL coefficients to the higher levels.
+
+			// NOTE: We need to be a bit careful, these references to 'one higher' level and region may be out of bounds.
+			isyntax_level_t* higher_level = wsi->levels + scale + 1;
+			isyntax_load_region_t* higher_region = region + 1;
+			ASSERT(scale + 1 < COUNT(wsi->levels));
+
+			for (i32 tile_y = 0; tile_y < level->height_in_tiles; ++tile_y) {
+				for (i32 tile_x = 0; tile_x < level->width_in_tiles; ++tile_x) {
+					i32 width_in_tiles = level->width_in_tiles;
+					i32 tile_index = tile_y * width_in_tiles + tile_x;
+					isyntax_tile_t* tile = level->tiles + tile_y * width_in_tiles + tile_x;
+					isyntax_tile_req_t* tile_req = tile_requirements + tile_index;
+
+					if (tile_req->need_ll_coeff && !tile->has_ll) {
+						// For getting the LL coefficients, we need the (scale+1) level to be reconstructed first
+						ASSERT(scale + 1 < highest_scale_to_load);
+						i32 higher_tile_x = tile_x / 2;
+						i32 higher_tile_y = tile_y / 2;
+						i32 higher_tile_index = higher_tile_y * higher_level->width_in_tiles + higher_tile_x;
+						isyntax_tile_req_t* higher_tile_req = higher_region->tile_req + higher_tile_index;
+
+						higher_tile_req->need_ll_coeff = true;
+						higher_tile_req->need_h_coeff = true;
+						higher_tile_req->want_partial_load_for_reconstruction = true;
+
+						// The higher level tile shares some of the same edge validity requirements.
+						// However, some of the edges map to the inside/center of the higher level tile and are therefore
+						// not required to be valid. So we subtract these edges from the LL edge validity requirements.
+						u32 new_required_ll_edges = tile_req->need_ll_edges_mask;
+						if ((tile_y % 2 == 0) && (tile_x % 2 == 0)) { // top left
+							new_required_ll_edges &= ~(ISYNTAX_ADJ_TILE_TOP_RIGHT | ISYNTAX_ADJ_TILE_CENTER_RIGHT |
+									ISYNTAX_ADJ_TILE_BOTTOM_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER | ISYNTAX_ADJ_TILE_BOTTOM_LEFT);
+						} else if ((tile_y % 2 == 0) && (tile_x % 2 == 1)) { // top right
+							new_required_ll_edges &= ~(ISYNTAX_ADJ_TILE_TOP_LEFT | ISYNTAX_ADJ_TILE_CENTER_LEFT |
+									ISYNTAX_ADJ_TILE_BOTTOM_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER | ISYNTAX_ADJ_TILE_BOTTOM_LEFT);
+						} else if ((tile_y % 2 == 1) && (tile_x % 2 == 0)) { // bottom left
+							new_required_ll_edges &= ~(ISYNTAX_ADJ_TILE_BOTTOM_RIGHT | ISYNTAX_ADJ_TILE_CENTER_RIGHT |
+									ISYNTAX_ADJ_TILE_TOP_RIGHT | ISYNTAX_ADJ_TILE_TOP_CENTER | ISYNTAX_ADJ_TILE_TOP_LEFT);
+						} else if ((tile_y % 2 == 1) && (tile_x % 2 == 1)) { // bottom right
+							new_required_ll_edges &= ~(ISYNTAX_ADJ_TILE_BOTTOM_LEFT | ISYNTAX_ADJ_TILE_CENTER_LEFT |
+									ISYNTAX_ADJ_TILE_TOP_RIGHT | ISYNTAX_ADJ_TILE_TOP_CENTER | ISYNTAX_ADJ_TILE_TOP_LEFT);
+						} else {
+							ASSERT(!"invalid code path");
+						}
+						higher_tile_req->need_ll_edges_mask |= new_required_ll_edges;
+
+
+					}
+
+					if (tile_req->need_h_coeff && !tile->has_h) {
+						// add chunk to load to list
+					}
+
+				}
+			}
+
+		}
+
+		// Pass 2: Create a list of chunks to be loaded
+		scale_to_load_index = 0;
+		for (i32 scale = highest_scale_to_load; scale >= lowest_scale_to_preload; --scale, ++scale_to_load_index) {
+			isyntax_level_t* level = wsi->levels + scale;
+			isyntax_load_region_t* region = regions + scale_to_load_index;
+			bounds2i visible_tiles = region->visible_bounds;
+			isyntax_tile_req_t* tile_requirements = region->tile_req;
+
+			float center_tile_x = (float)(visible_tiles.max.x + visible_tiles.min.x) * 0.5f;
+			float center_tile_y = (float)(visible_tiles.max.y + visible_tiles.min.y) * 0.5f;
+			i32 base_priority = 1000 + (8 - scale) * 100; // highest priority for the least zoomed out levels
+
+			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
+				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
+					if (chunks_to_load_count == max_chunks_to_check) {
+						goto break_out_of_loop;
+					}
+					i32 tile_index = tile_y * level->width_in_tiles + tile_x;
+					isyntax_tile_t* tile = level->tiles + tile_index;
+					isyntax_tile_req_t* req = tile_requirements + tile_index;
+					if (req->need_h_coeff) {
+						u32 chunk_index = tile->data_chunk_index;
+						bool already_in_list = false;
+						for (i32 i = 0; i < chunks_to_load_count; ++i) {
+							if (chunks_to_load[i].index == chunk_index) {
+								already_in_list = true;
+								break;
+							}
+						}
+						if (!already_in_list) {
+
+							// Calculate priority score based on distance to the center tile
+							float distance_from_center_tile_x = tile_x - center_tile_x;
+							float distance_from_center_tile_y = tile_y - center_tile_y;
+							float distance_from_center_tile = sqrtf(SQUARE(distance_from_center_tile_x) + SQUARE(distance_from_center_tile_y));
+							float priority_bonus = (10.0f - distance_from_center_tile) * 30.0f; // can be tweaked.
+							i32 priority = /*base_priority +*/ (i32)priority_bonus;
+							if (scale < lowest_visible_scale) {
+								priority = priority * 0.1f - 1000.0f;
+							}
+
+							isyntax_chunk_load_task_t chunk_to_load = {(i32)chunk_index, priority};
+							chunks_to_load[chunks_to_load_count++] = chunk_to_load;
+						}
+					}
+				}
+			}
+			break_out_of_loop:;
+		}
+
+	}
+}
 
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax) {
 
@@ -519,6 +827,11 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		i32 lowest_visible_scale = ATLEAST(tile_streamer->zoom.level, 0);
 		lowest_visible_scale = ATMOST(highest_visible_scale, lowest_visible_scale);
 
+		// Greedily retrieve chunks of one extra level down
+		i32 lowest_scale_to_preload = ATLEAST(ATMOST(tile_streamer->zoom.level, 5), 0);
+		lowest_visible_scale = ATMOST(lowest_scale_to_preload, lowest_visible_scale);
+
+
 		// Never look at highest scales, which have already been loaded at first load
 		i32 highest_scale_to_load = highest_visible_scale;
 		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
@@ -530,7 +843,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			}
 		}
 
-		i32 scales_to_load_count = (highest_scale_to_load+1) - lowest_visible_scale;
+		i32 scales_to_load_count = (highest_scale_to_load+1) - lowest_scale_to_preload;
 		if (scales_to_load_count <= 0) {
 			return;
 		}
@@ -538,24 +851,30 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		memset(regions, 0, scales_to_load_count * sizeof(isyntax_load_region_t));
 
 		u32 chunks_to_load_count = 0;
-		i32 chunks_to_load[MAX_CHUNKS_TO_LOAD];
-		u32 max_chunks_to_load = 16;
+		isyntax_chunk_load_task_t chunks_to_load[MAX_CHUNKS_TO_LOAD] = {};
+		u32 max_chunks_to_load = 32;
 		u32 max_chunks_to_check = COUNT(chunks_to_load);
 
 
 
 		i32 scale_to_load_index = 0;
-		for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale, ++scale_to_load_index) {
+		for (i32 scale = highest_scale_to_load; scale >= lowest_scale_to_preload; --scale, ++scale_to_load_index) {
 			isyntax_level_t* level = wsi->levels + scale;
 			bounds2i level_tiles_bounds = {{ 0, 0, (i32)level->width_in_tiles, (i32)level->height_in_tiles }};
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&tile_streamer->camera_bounds, level->x_tile_side_in_um,
 			                                                     level->y_tile_side_in_um, tile_streamer->origin_offset);
+
 			// TODO: Fix visible tiles not being calculated correctly for higher levels while zoomed in very far?
 			visible_tiles.min.x -= 1;
 			visible_tiles.min.y -= 1;
 			visible_tiles.max.x += 1;
 			visible_tiles.max.y += 1;
+
+//			bounds2f world_bounds = tile_bounds_to_world_bounds(visible_tiles, level->x_tile_side_in_um, level->y_tile_side_in_um, tile_streamer->origin_offset);
+//			gui_draw_bounds_in_scene(world_bounds, (rgba_t){0,0,0,128}, 2.0f, tile_streamer->scene);
+
+
 
 			visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
 
@@ -610,7 +929,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 						if (tile_x >= visible_tiles.min.x && tile_y >= visible_tiles.min.y &&
 						    tile_x < visible_tiles.max.x && tile_y < visible_tiles.max.y)
 						{
-							tile_req[local_tile_index].want_load = true;
+							tile_req[local_tile_index].want_full_load_for_display = true;
+							tile_req[local_tile_index].want_partial_load_for_reconstruction = true;
 
 							u32 need_ll_mask = 0;
 							u32 need_h_mask = 0;
@@ -619,6 +939,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 								if (adj_tile->exists) {
 									i32 adj_local_tile_index = (local_tile_y-1) * local_bounds_width + (local_tile_x-1);
 									isyntax_tile_req_t* adj_tile_req = tile_req + adj_local_tile_index;
+									adj_tile_req->need_ll_edges_mask |= (ISYNTAX_ADJ_TILE_BOTTOM_RIGHT);
 									if (!adj_tile->has_ll) {
 										need_ll_mask |= ISYNTAX_ADJ_TILE_TOP_LEFT;
 										adj_tile_req->need_ll_coeff = true;
@@ -636,6 +957,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 								if (adj_tile->exists) {
 									i32 adj_local_tile_index = (local_tile_y - 1) * local_bounds_width + (local_tile_x);
 									isyntax_tile_req_t* adj_tile_req = tile_req + adj_local_tile_index;
+									adj_tile_req->need_ll_edges_mask |= (ISYNTAX_ADJ_TILE_BOTTOM_CENTER);
 									if (!adj_tile->has_ll) {
 										need_ll_mask |= ISYNTAX_ADJ_TILE_TOP_CENTER;
 										adj_tile_req->need_ll_coeff = true;
@@ -771,6 +1093,10 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 
 			// Pass: determine which chunks need to be loaded
+			float center_tile_x = (float)(padded_bounds.max.x + padded_bounds.min.x) * 0.5f;
+			float center_tile_y = (float)(padded_bounds.max.y + padded_bounds.min.y) * 0.5f;
+			i32 base_priority = 1000 + (8 - scale) * 100; // highest priority for the least zoomed out levels
+
 			local_tile_index = 0;
 			for (i32 tile_y = padded_bounds.min.y; tile_y < padded_bounds.max.y; ++tile_y) {
 				for (i32 tile_x = padded_bounds.min.x; tile_x < padded_bounds.max.x; ++tile_x, ++local_tile_index) {
@@ -783,13 +1109,25 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 						u32 chunk_index = tile->data_chunk_index;
 						bool already_in_list = false;
 						for (i32 i = 0; i < chunks_to_load_count; ++i) {
-							if (chunks_to_load[i] == chunk_index) {
+							if (chunks_to_load[i].index == chunk_index) {
 								already_in_list = true;
 								break;
 							}
 						}
 						if (!already_in_list) {
-							chunks_to_load[chunks_to_load_count++] = chunk_index;
+
+							// Calculate priority score based on distance to the center tile
+							float distance_from_center_tile_x = tile_x - center_tile_x;
+							float distance_from_center_tile_y = tile_y - center_tile_y;
+							float distance_from_center_tile = sqrtf(SQUARE(distance_from_center_tile_x) + SQUARE(distance_from_center_tile_y));
+							float priority_bonus = (10.0f - distance_from_center_tile) * 30.0f; // can be tweaked.
+							i32 priority = /*base_priority +*/ (i32)priority_bonus;
+							if (scale < lowest_visible_scale) {
+								priority = priority * 0.1f - 1000.0f;
+							}
+
+							isyntax_chunk_load_task_t chunk_to_load = {(i32)chunk_index, priority};
+							chunks_to_load[chunks_to_load_count++] = chunk_to_load;
 						}
 					}
 				}
@@ -803,8 +1141,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		i64 perf_clock_check = get_clock();
 		float perf_time_check = get_seconds_elapsed(perf_clock_check, perf_clock_begin);
 
-		// Sorting read operations by offset to improve read performance
-		qsort(chunks_to_load, chunks_to_load_count, sizeof(chunks_to_load[0]), chunk_index_compare_func);
+		// Sort by priority to first load chunks near the center of the screen
+		qsort(chunks_to_load, chunks_to_load_count, sizeof(chunks_to_load[0]), chunk_priority_compare_func);
 
 #if 0
 		// 'Coagulate' neighboring chunks together to reduce the number of I/O operations
@@ -892,10 +1230,16 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		}
 
 #else
+		// Cap max chunks to load per iteration
 		chunks_to_load_count = MIN(chunks_to_load_count, max_chunks_to_load);
 
+		// Sorting read operations by offset to improve read performance
+		qsort(chunks_to_load, chunks_to_load_count, sizeof(chunks_to_load[0]), chunk_index_compare_func);
+
+		i64 clock_io_start = get_clock();
+		i32 chunks_loaded = 0;
 		for (i32 i = 0; i < chunks_to_load_count; ++i) {
-			u32 chunk_index = chunks_to_load[i];
+			u32 chunk_index = chunks_to_load[i].index;
 			isyntax_data_chunk_t * chunk = wsi->data_chunks + chunk_index;
 			if (!chunk->data) {
 				isyntax_codeblock_t* last_codeblock = wsi->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
@@ -920,6 +1264,13 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 //
 //				async_read_submit(op);
 #endif
+
+				++chunks_loaded;
+				float seconds_elapsed_io = get_seconds_elapsed(clock_io_start, get_clock());
+				if (seconds_elapsed_io > 0.2f) {
+//					console_print("Loaded %d chunks before timing out\n", i+1);
+					break;
+				}
 			}
 		}
 
@@ -928,9 +1279,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 		i64 perf_clock_io = get_clock();
 		float perf_time_io = get_seconds_elapsed(perf_clock_check, perf_clock_io);
-		if (chunks_to_load_count > 0) {
-			//console_print("IO time for %d chunks: %g seconds\n", chunks_to_load_count, get_seconds_elapsed(io_start, get_clock()));
-		}
+//		if (chunks_loaded > 0) {
+//			console_print("IO time for %d chunks: %g seconds\n", chunks_loaded, get_seconds_elapsed(clock_io_start, get_clock()));
+//		}
 
 		// Now try to reconstruct the tiles
 		// Decompress tiles
@@ -993,7 +1344,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					i32 local_tile_index = local_tile_y * region->width_in_tiles + local_tile_x;
 					isyntax_tile_req_t* req = region->tile_req + local_tile_index;
 
-					if (!req->want_load) {
+					if (!req->want_full_load_for_display) {
 						continue; // This tile does not need to be loaded (probably because it has already been loaded)
 					}
 

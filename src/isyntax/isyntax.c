@@ -1124,6 +1124,48 @@ u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile
 	return adj_tiles;
 }
 
+u32 isyntax_get_adjacent_tiles_mask_only_existing(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
+	u32 adjacent = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
+	u32 mask = 0;
+	if (adjacent & ISYNTAX_ADJ_TILE_TOP_LEFT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_TOP_CENTER) {
+		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_CENTER) {
+		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_CENTER;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
+		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+	}
+	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
+		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
+		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+	}
+	return mask;
+}
+
 u32 isyntax_get_adjacent_tiles_mask_with_missing_ll_coeff(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
 	u32 adjacent = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
 	u32 mask = 0;
@@ -1178,7 +1220,7 @@ static size_t get_idwt_buffer_size(i32 block_width, i32 block_height) {
 	return idwt_buffer_size;
 }
 
-void isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer) {
+u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer) {
 	isyntax_level_t* level = wsi->levels + scale;
 	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
 	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
@@ -1234,6 +1276,9 @@ void isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* ws
 
 	icoeff_t* ll_hl_lh_hh[4] = {};
 
+	u32 invalid_neighbors_ll = 0;
+	u32 invalid_neighbors_h = 0;
+
 	// Now do the stitching, with margins sampled from adjacent tiles for each quadrant
 	// LL | HL
 	// LH | HH
@@ -1241,67 +1286,82 @@ void isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* ws
 	// top left corner
 	if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_LEFT) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride) + left_margin_source_x,
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t* source = ll_hl_lh_hh[i];
-			icoeff_t* dest = quadrants[i];
-			for (i32 y = 0; y < pad_l; ++y) {
-				memcpy(dest, source, pad_l_copy_size);
-				source += source_stride;
-				dest += dest_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride) + left_margin_source_x,
+									   color_channel, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t* source = ll_hl_lh_hh[i];
+				icoeff_t* dest = quadrants[i];
+				for (i32 y = 0; y < pad_l; ++y) {
+					memcpy(dest, source, pad_l_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
 			}
 		}
-
 	}
 	// top center
 	if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_CENTER) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + tile_x;
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + pad_l;
-			for (i32 y = 0; y < pad_l; ++y) {
-				memcpy(dest, source, row_copy_size);
-				source += source_stride;
-				dest += dest_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + pad_l;
+				for (i32 y = 0; y < pad_l; ++y) {
+					memcpy(dest, source, row_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
 			}
 		}
-
 	}
 	// top right corner
 	if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + pad_l + block_width;
-			for (i32 y = 0; y < pad_l; ++y) {
-				memcpy(dest, source, pad_r_copy_size);
-				source += source_stride;
-				dest += dest_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + pad_l + block_width;
+				for (i32 y = 0; y < pad_l; ++y) {
+					memcpy(dest, source, pad_r_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
 			}
 		}
-
 	}
 	// center left
 	if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + (pad_l * dest_stride);
-			for (i32 y = 0; y < block_height; ++y) {
-				memcpy(dest, source, pad_l_copy_size);
-				dest += dest_stride;
-				source += source_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + (pad_l * dest_stride);
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, pad_l_copy_size);
+					dest += dest_stride;
+					source += source_stride;
+				}
 			}
 		}
-
 	}
 	// center (main tile)
 	if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER) {
@@ -1321,66 +1381,82 @@ void isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* ws
 	// center right
 	if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + (pad_l * dest_stride) + pad_l + block_width;
-			for (i32 y = 0; y < block_height; ++y) {
-				memcpy(dest, source, pad_r_copy_size);
-				dest += dest_stride;
-				source += source_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + (pad_l * dest_stride) + pad_l + block_width;
+				for (i32 y = 0; y < block_height; ++y) {
+					memcpy(dest, source, pad_r_copy_size);
+					dest += dest_stride;
+					source += source_stride;
+				}
 			}
 		}
-
 	}
 	// bottom left corner
 	if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride);
-			for (i32 y = 0; y < pad_r; ++y) {
-				memcpy(dest, source, pad_l_copy_size);
-				source += source_stride;
-				dest += dest_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride);
+				for (i32 y = 0; y < pad_r; ++y) {
+					memcpy(dest, source, pad_l_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
 			}
 		}
-
 	}
 	// bottom center
 	if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + tile_x;
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride) + pad_l;
-			for (i32 y = 0; y < pad_r; ++y) {
-				memcpy(dest, source, row_copy_size);
-				source += source_stride;
-				dest += dest_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride) + pad_l;
+				for (i32 y = 0; y < pad_r; ++y) {
+					memcpy(dest, source, row_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
 			}
 		}
-
 	}
 	// bottom right corner
 	if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
 		isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
-		get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
-		                           source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
-		for (i32 i = 0; i < 4; ++i) {
-			icoeff_t *source = ll_hl_lh_hh[i];
-			icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride) + pad_l + block_width;
-			for (i32 y = 0; y < pad_r; ++y) {
-				memcpy(dest, source, pad_r_copy_size);
-				source += source_stride;
-				dest += dest_stride;
+		if (source_tile->exists) {
+			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
+			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
+									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
+			for (i32 i = 0; i < 4; ++i) {
+				icoeff_t *source = ll_hl_lh_hh[i];
+				icoeff_t *dest = quadrants[i] + ((pad_l + block_height) * dest_stride) + pad_l + block_width;
+				for (i32 y = 0; y < pad_r; ++y) {
+					memcpy(dest, source, pad_r_copy_size);
+					source += source_stride;
+					dest += dest_stride;
+				}
 			}
 		}
-
 	}
 
 	bool output_pngs = false;
@@ -1390,6 +1466,9 @@ void isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* ws
 		output_pngs = true;
 	}*/
 	isyntax_idwt(idwt, quadrant_width, quadrant_height, output_pngs, debug_png);
+
+	u32 invalid_edges = invalid_neighbors_h | invalid_neighbors_ll;
+	return invalid_edges;
 }
 
 u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
@@ -1416,13 +1495,15 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	float elapsed_idwt = 0.0f;
 	float elapsed_malloc = 0.0f;
 
+	u32 invalid_edges = 0;
+
 	for (i32 color = 0; color < 3; ++color) {
 		i64 start_idwt = get_clock();
 		// idwt will be allocated in temporary memory (only needed for the duration of this function)
 		size_t idwt_buffer_size = idwt_width * idwt_height * sizeof(icoeff_t);
 		icoeff_t* idwt = arena_push_size(arena, idwt_buffer_size);
 		memset(idwt, 0, idwt_buffer_size);
-		isyntax_idwt_tile_for_color_channel(isyntax, wsi, scale, tile_x, tile_y, color, idwt);
+		invalid_edges |= isyntax_idwt_tile_for_color_channel(isyntax, wsi, scale, tile_x, tile_y, color, idwt);
 		elapsed_idwt += get_seconds_elapsed(start_idwt, get_clock());
 		ASSERT(idwt);
 		switch(color) {
@@ -1498,14 +1579,30 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 				}
 			}
 
+			// After the last color channel, we can report that the children now have their LL blocks available.
 			if (color == 2) {
 				child_top_left->has_ll = true;
 				child_top_right->has_ll = true;
 				child_bottom_left->has_ll = true;
 				child_bottom_right->has_ll = true;
+
+				// Even if the parent tile has invalid edges around the outside, its child LL blocks will still have valid edges on the inside.
+				child_top_left->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER);
+				child_top_right->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_LEFT | ISYNTAX_ADJ_TILE_BOTTOM_LEFT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER);
+				child_bottom_left->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_RIGHT | ISYNTAX_ADJ_TILE_TOP_RIGHT | ISYNTAX_ADJ_TILE_TOP_CENTER);
+				child_bottom_right->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_LEFT | ISYNTAX_ADJ_TILE_TOP_LEFT | ISYNTAX_ADJ_TILE_TOP_CENTER);
+
+				if (invalid_edges != 0) {
+					console_print("load: scale=%d x=%d y=%d  idwt time =%g  invalid edges=%x\n", scale, tile_x, tile_y, elapsed_idwt, invalid_edges);
+					// early out
+					tile->is_submitted_for_loading = false;
+					end_temp_memory(&temp_memory);
+					return NULL;
+				}
 			}
 		}
 	}
+
 	tile->is_loaded = true; // Meaning: it is now safe to start loading 'child' tiles of the next level
 
 	// For the Y (luminance) color channel, we actually need the absolute value of the Y-channel wavelet coefficient.
@@ -1521,8 +1618,8 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	u32* bgra = convert_ycocg_to_bgra_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset,
 											tile_width, tile_height, idwt_stride);
 
-	float elapsed_rgb = get_seconds_elapsed(start, get_clock());
-//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed_rgb, elapsed_malloc);
+	//		float elapsed_rgb = get_seconds_elapsed(start, get_clock());
+	//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed_rgb, elapsed_malloc);
 
 	/*if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1) {
 		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
