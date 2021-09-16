@@ -36,10 +36,6 @@ LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPAR
 void imgui_create_context();
 void gui_draw_open_file_dialog(app_state_t* app_state);
 void menu_close_file(app_state_t* app_state);
-void gui_push_disabled_style();
-void gui_pop_disabled_style();
-void gui_push_disabled_style_with_selectable_flags(u32* selectable_flags);
-void gui_push_disabled_style_with_button_flags(u32* button_flags);
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness);
 void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, float thickness, scene_t* scene);
 void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene);

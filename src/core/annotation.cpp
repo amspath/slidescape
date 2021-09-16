@@ -1054,7 +1054,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 //		if (ImGui::CollapsingHeader("Annotation"))
 		{
 			if (!annotation_set->enabled) {
-				gui_push_disabled_style();
+				ImGui::BeginDisabled();
 			}
 
 			// GUI for selecting an annotation using a slider input
@@ -1088,7 +1088,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			u32 selectable_flags = 0;
 			if (nothing_selected) {
-				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				ImGui::BeginDisabled();
 			}
 
 			static const char* annotation_types[] = {"Unknown type", "Rectangle", "Polygon", "Point", "Line", "Spline" };
@@ -1121,7 +1121,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			if (ImGui::BeginCombo("Type##annotation_debug_select_type", type_preview_string, ImGuiComboFlags_HeightLargest)) {
 				for (i32 type_index = 0; type_index < COUNT(annotation_types); ++type_index) {
 
-					if (ImGui::Selectable(annotation_types[type_index], (annotation_type_index == type_index), selectable_flags, (ImVec2){})) {
+					if (ImGui::Selectable(annotation_types[type_index], (annotation_type_index == type_index), 0, (ImVec2){})) {
 						set_type_for_selected_annotations(annotation_set, type_index);
 					}
 				}
@@ -1135,7 +1135,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
 					annotation_group_t* group = annotation_set->stored_groups + group_index;
 
-					if (ImGui::Selectable(group_item_previews[group_index], (annotation_group_index == group_index), selectable_flags, (ImVec2){})
+					if (ImGui::Selectable(group_item_previews[group_index], (annotation_group_index == group_index), 0, (ImVec2){})
 					|| ((!nothing_selected) && hotkey_pressed[group_index])) {
 						set_group_for_selected_annotations(annotation_set, group_index);
 					}
@@ -1144,11 +1144,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			if (nothing_selected) {
-				gui_pop_disabled_style();
+				ImGui::EndDisabled();
 			}
 
 			if (!annotation_set->enabled) {
-				gui_pop_disabled_style();
+				ImGui::EndDisabled();
 			}
 
 			if (ImGui::Button("Assign group or feature...")) {
@@ -1184,10 +1184,9 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			bool disable_interface = annotation_set->active_group_count <= 0;
-			u32 selectable_flags = 0;
 
 			if (disable_interface) {
-				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				ImGui::BeginDisabled();
 			}
 
 			ImGui::Text("Number of groups: %d\n", annotation_set->active_group_count);
@@ -1195,7 +1194,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				for (i32 group_index = 0; group_index < annotation_set->active_group_count; ++group_index) {
 					annotation_group_t* group = get_active_annotation_group(annotation_set, group_index);
 
-					if (ImGui::Selectable(group_item_previews[group_index], (edit_group_index == group_index), selectable_flags)) {
+					if (ImGui::Selectable(group_item_previews[group_index], (edit_group_index == group_index))) {
 						edit_group_index = group_index;
 					}
 				}
@@ -1211,7 +1210,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			if (!disable_interface && selected_group == NULL) {
 				disable_interface = true;
-				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				ImGui::BeginDisabled();
 			}
 
 			// Text field to display the group name, allowing for renaming.
@@ -1260,7 +1259,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			if (disable_interface) {
-				gui_pop_disabled_style();
+				ImGui::EndDisabled();
 			}
 
 			ImGui::SameLine();
@@ -1288,10 +1287,9 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			bool disable_interface = annotation_set->active_feature_count <= 0;
-			u32 selectable_flags = 0;
 
 			if (disable_interface) {
-				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				ImGui::BeginDisabled();
 			}
 
 			ImGui::Text("Number of features: %d\n", annotation_set->active_feature_count);
@@ -1299,7 +1297,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				for (i32 feature_index = 0; feature_index < annotation_set->active_feature_count; ++feature_index) {
 					annotation_feature_t* feature = annotation_set->stored_features + annotation_set->active_feature_indices[feature_index];
 
-					if (ImGui::Selectable(feature_item_previews[feature_index], (edit_feature_index == feature_index), selectable_flags)) {
+					if (ImGui::Selectable(feature_item_previews[feature_index], (edit_feature_index == feature_index), 0)) {
 						edit_feature_index = feature_index;
 					}
 				}
@@ -1315,7 +1313,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			if (!disable_interface && selected_feature == NULL) {
 				disable_interface = true;
-				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				ImGui::BeginDisabled();
 			}
 
 			// Text field to display the feature name, allowing for renaming.
@@ -1341,9 +1339,8 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				annotations_modified(annotation_set);
 			}
 
-			u32 saved_selectable_flags = selectable_flags;
 			if (!restrict_to_group) {
-				gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+				ImGui::BeginDisabled();
 			}
 			annotation_group_t* feature_group = NULL;
 			const char* feature_group_preview = "";
@@ -1359,7 +1356,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
 						annotation_group_t* group = annotation_set->stored_groups + group_index;
 
-						if (ImGui::Selectable(group_item_previews[group_index], (feature->group_id == group_index), selectable_flags, (ImVec2){})) {
+						if (ImGui::Selectable(group_item_previews[group_index], (feature->group_id == group_index), 0, (ImVec2){})) {
 							feature->group_id = group_index;
 							annotations_modified(annotation_set);
 						}
@@ -1369,8 +1366,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::EndCombo();
 			}
 			if (!restrict_to_group) {
-				gui_pop_disabled_style();
-				selectable_flags = saved_selectable_flags;
+				ImGui::EndDisabled();
 			}
 
 #if 0
@@ -1404,7 +1400,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			}
 
 			if (disable_interface) {
-				gui_pop_disabled_style();
+				ImGui::EndDisabled();
 			}
 
 			ImGui::SameLine();
@@ -1456,9 +1452,8 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		{
 			if (ImGui::BeginTabItem("Groups"))
 			{
-				u32 selectable_flags = 0;
 				if (nothing_selected) {
-					gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+					ImGui::BeginDisabled();
 				}
 
 				for (i32 group_index = 0; group_index < annotation_set->active_group_count; ++group_index) {
@@ -1482,7 +1477,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 						}
 					}
 
-					if (ImGui::Selectable("", (annotation_group_index == group_index), selectable_flags, ImVec2(0,ImGui::GetFrameHeight()))
+					if (ImGui::Selectable("", (annotation_group_index == group_index), 0, ImVec2(0,ImGui::GetFrameHeight()))
 					    || pressed_hotkey) {
 						set_group_for_selected_annotations(annotation_set, group_index);
 					}
@@ -1506,15 +1501,14 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::Checkbox("Auto-assign last group", &auto_assign_last_group);
 
 				if (nothing_selected) {
-					gui_pop_disabled_style();
+					ImGui::EndDisabled();
 				}
 				ImGui::EndTabItem();
 			}
 
 			if (ImGui::BeginTabItem("Features")) {
-				u32 selectable_flags = 0;
 				if (nothing_selected) {
-					gui_push_disabled_style_with_selectable_flags(&selectable_flags);
+					ImGui::BeginDisabled();
 				}
 
 				static i32 selectable_feature_ids[MAX_ANNOTATION_FEATURES];
@@ -1602,13 +1596,13 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				}
 
 				if (selectable_feature_count == 0) {
-					gui_push_disabled_style();
+					ImGui::BeginDisabled();
 					ImGui::TextUnformatted("(no features)\n");
-					gui_pop_disabled_style();
+					ImGui::EndDisabled();
 				}
 
 				if (nothing_selected) {
-					gui_pop_disabled_style();
+					ImGui::EndDisabled();
 				}
 				ImGui::EndTabItem();
 			}
