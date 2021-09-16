@@ -179,6 +179,7 @@ void center_scene_on_annotation(scene_t* scene, annotation_set_t* annotation_set
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
+void draw_annotation_palette_window();
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);

@@ -32,6 +32,7 @@
 
 #include "win32_gui.h"
 #include "gui.h"
+#include "font_definitions.h"
 
 void win32_gui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();

@@ -1511,8 +1511,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::EndTabItem();
 			}
 
-			if (ImGui::BeginTabItem("Features"))
-			{
+			if (ImGui::BeginTabItem("Features")) {
 				u32 selectable_flags = 0;
 				if (nothing_selected) {
 					gui_push_disabled_style_with_selectable_flags(&selectable_flags);
@@ -1656,6 +1655,49 @@ void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotatio
 		ImGui::EndPopup();
 	}
 }
+
+#include "font_definitions.h"
+// https://fontawesome.com/v4.7/cheatsheet/
+
+void draw_annotation_palette_window() {
+	if (show_annotation_palette_window) {
+
+
+		ImGui::SetNextWindowPos((ImVec2){1288,42}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
+		ImGui::SetNextWindowSize((ImVec2){285,572}, ImGuiCond_FirstUseEver);
+
+		ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
+		if (ImGui::Begin("##annotation_palette_window", &show_annotation_palette_window, window_flags)) {
+
+			ImGui::PushFont(global_icon_font);
+			if (ImGui::Button(ICON_FA_HAND_PAPER_O "##palette_window")) {}
+			if (ImGui::Button(ICON_FA_ARROWS_H "##palette_window")) {}
+			if (ImGui::Button(ICON_FA_CIRCLE_O "##palette_window")) {}
+			ImGui::PopFont();
+
+			if (ImGui::Button("Edit (E)##palette_window")) {}
+			if (ImGui::Button("Add line (M)##palette_window")) {}
+			if (ImGui::Button("Add arrow (A)##palette_window")) {}
+			if (ImGui::Button("Add text (W)##palette_window")) {}
+			if (ImGui::Button("Add ellipse##palette_window")) {}
+			if (ImGui::Button("Add circle##palette_window")) {}
+			if (ImGui::Button("Add rectangle##palette_window")) {}
+			if (ImGui::Button("Add poly (F)##palette_window")) {}
+			// Closed/open poly
+			if (ImGui::Button("Add notes##palette_window")) {}
+			if (ImGui::Button("Classify##palette_window")) {}
+
+			if (ImGui::Button("Toggle grid##palette_window")) {}
+			if (ImGui::Button("Toggle scale bar##palette_window")) {}
+			if (ImGui::Button("Toggle overview##palette_window")) {}
+
+			ImGui::End();
+		}
+
+
+	}
+}
+
 
 
 // Annotation save/load procedures.
