@@ -17,7 +17,7 @@
 //---- Define assertion handler. Defaults to calling assert().
 // If your macro uses multiple statements, make sure is enclosed in a 'do { .. } while (0)' block so it can be used as a single statement.
 #ifdef _WIN32
-#define IM_ASSERT(_EXPR)  do {if (!(_EXPR)) __debugbreak();} while(0)
+#define IM_ASSERT(_EXPR)  do {if (!(_EXPR)) { __builtin_trap();}} while(0)
 #endif
 //#define IM_ASSERT(_EXPR)  ((void)(_EXPR))     // Disable asserts
 

@@ -50,6 +50,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 
 
+
 // globals
 #if defined(GUI_IMPL)
 #define INIT(...) __VA_ARGS__
@@ -81,6 +82,7 @@ extern char remote_filename[128] INIT(= "sample.tiff");
 #ifdef __cplusplus
 extern ImFont* global_main_font;
 extern ImFont* global_fixed_width_font;
+extern ImFont* global_icon_font;
 #endif
 
 extern i32 viewer_min_level INIT(= -1);
@@ -99,6 +101,7 @@ extern float annotation_hover_distance INIT(= 10.0f);
 extern float annotation_insert_hover_distance INIT(= 25.0f);
 extern bool show_delete_annotation_prompt;
 extern bool dont_ask_to_delete_annotations;
+extern bool show_annotation_palette_window INIT(=true);
 
 // gui_coco.cpp
 extern bool show_coco_editor_window;

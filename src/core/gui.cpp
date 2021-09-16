@@ -183,6 +183,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Image options...", NULL, &show_image_options_window)) {}
 			if (ImGui::MenuItem("Layers...", "L", &show_layers_window)) {}
 			ImGui::Separator();
+			bool* show_scale_bar = (arrlen(app_state->loaded_images) > 0) ? &scene->scale_bar.enabled : NULL;
+			if (ImGui::MenuItem("Show scale bar", NULL, show_scale_bar, (show_scale_bar != NULL))) {}
+			ImGui::Separator();
 			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 			ImGui::Separator();
 
@@ -788,6 +791,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state, input);
 	}
+//	draw_annotation_palette_window();
 	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
 	draw_export_region_dialog(app_state);
 
@@ -963,6 +967,8 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 	ImGui::End();
 }
+
+
 
 void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_type) {
 	size_t num_lines = 0;

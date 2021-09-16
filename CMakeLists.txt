@@ -172,6 +172,7 @@ set(VIEWER_SOURCE_FILES
         platform/shader.c
         platform/openslide_api.c
         core/viewer.cpp
+        core/scene.cpp
         core/gui.cpp
         core/annotation.cpp
         core/caselist.cpp

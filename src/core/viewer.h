@@ -212,6 +212,22 @@ typedef struct load_tile_task_batch_t {
 	load_tile_task_t tile_tasks[TILE_LOAD_BATCH_MAX];
 } load_tile_task_batch_t;
 
+typedef struct scale_bar_t {
+	char text[64];
+	float max_width;
+	float width;
+	float height;
+	v2f pos;
+	v2f pos_max; // lower right corner
+	v2f pos_center;
+	v2f drag_start_offset;
+	corner_enum corner;
+	v2f pos_relative_to_corner;
+	float text_x;
+	bool enabled;
+	bool initialized;
+} scale_bar_t;
+
 
 enum entity_type_enum {
 	ENTITY_SIMPLE_IMAGE = 1,
@@ -223,11 +239,19 @@ enum mouse_mode_enum {
 	MODE_CREATE_SELECTION_BOX,
 	MODE_VIEW_OR_SELECT_ANNOTATION_NODE,
 	MODE_DRAG_ANNOTATION_NODE,
+	MODE_DRAG_SCALE_BAR,
 };
 
 enum placement_tool_enum {
 	TOOL_NONE,
-	TOOL_PLACE_OUTLINE,
+	TOOL_CREATE_OUTLINE,
+	TOOL_EDIT_EXISTING_COORDINATES,
+	TOOL_CREATE_LINE,
+	TOOL_CREATE_ARROW,
+	TOOL_CREATE_ELLIPSE,
+	TOOL_CREATE_RECTANGLE,
+	TOOL_CREATE_POLY,
+	TOOL_CREATE_TEXT,
 };
 
 typedef struct entity_t {
@@ -259,7 +283,7 @@ typedef struct zoom_state_t {
 } zoom_state_t;
 
 typedef struct scene_t {
-	rect2i viewport;
+	rect2f viewport;
 	v2f camera;
 	v2f mouse;
 	v2f right_clicked_pos;
@@ -287,6 +311,7 @@ typedef struct scene_t {
 	bool8 drag_started;
 	bool8 drag_ended;
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
+	bool8 viewport_changed;
 	rect2f selection_box;
 	bool8 has_selection_box;
 	v2f drag_vector;
@@ -298,6 +323,7 @@ typedef struct scene_t {
 	v3f transparent_color;
 	float transparent_tolerance;
 	bool use_transparent_filter;
+	scale_bar_t scale_bar;
 	bool8 initialized;
 } scene_t;
 
@@ -400,9 +426,13 @@ void viewer_init_options(app_state_t* app_state);
 // viewer_zoom.cpp
 void zoom_update_pos(zoom_state_t* zoom, float pos);
 
-// tile_streamer.cpp
+// isyntax_streamer.cpp
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);
 void stream_image_tiles(tile_streamer_t* tile_streamer);
+
+// scene.cpp
+void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
+void draw_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
 
 // globals
 #if defined(VIEWER_IMPL)

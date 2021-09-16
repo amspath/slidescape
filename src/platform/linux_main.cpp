@@ -374,22 +374,27 @@ int main(int argc, const char** argv)
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
+	static const ImWchar ranges[] = {
+			0x0020, 0x00FF, // Basic Latin + Latin Supplement
+			0x0370, 0x03FF, // Greek
+			0,
+	};
 #if LINUX
-	global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoSans-Regular.ttf", 17.0f);
+	global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoSans-Regular.ttf", 17.0f, NULL, ranges);
 	if (!global_main_font) {
-		global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16.0f);
+		global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16.0f, NULL, ranges);
 	}
-	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf/NotoMono-Regular.ttf", 15.0f);
+	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf/NotoMono-Regular.ttf", 15.0f, NULL, ranges);
 	if (!global_fixed_width_font) {
-		global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf", 15.0f);
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf", 15.0f, NULL, ranges);
 		if (!global_fixed_width_font) {
-			global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15.0f);
+			global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15.0f, NULL, ranges);
 		}
 	}
 	io.Fonts->AddFontDefault();
 #elif APPLE
 	float font_size = 16.0f * app_state->display_scale_factor;
-	global_main_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/SFNSText.ttf", font_size, NULL, io.Fonts->GetGlyphRangesJapanese());
+	global_main_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/SFNSText.ttf", font_size, NULL, ranges);
 //	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/Courier.dfont", 15.0f);
 	global_fixed_width_font = io.Fonts->AddFontDefault();
 	io.Fonts->Build();

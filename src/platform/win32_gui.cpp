@@ -78,17 +78,43 @@ void win32_init_gui(app_state_t* app_state) {
 //	font_config.OversampleV = 2;
 //	font_config.RasterizerMultiply = 1.2f;
 	float system_font_size = 17.0f;
-	global_main_font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", system_font_size,
-											 &font_config, io.Fonts->GetGlyphRangesJapanese());
-	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\consola.ttf", 14.0f,
-	                                                &font_config, io.Fonts->GetGlyphRangesJapanese());
-	if (!global_main_font) {
-		// could not load font
+	static const ImWchar ranges[] =
+	{
+			0x0020, 0x00FF, // Basic Latin + Latin Supplement
+			0x0370, 0x03FF, // Greek
+			0,
+	};
+	const char* main_ui_font_filename = "c:\\Windows\\Fonts\\segoeui.ttf";
+	if (file_exists(main_ui_font_filename)) {
+		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, system_font_size, &font_config, ranges);
 	}
+	if (!global_main_font) {
+		console_print_error("Main UI font '%s' could not be loaded", main_ui_font_filename);
+	}
+
+	const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+	const char* icon_font_filename = "resources/FontAwesome4/font.ttf";
+	if (file_exists(icon_font_filename)) {
+		global_icon_font = io.Fonts->AddFontFromFileTTF(icon_font_filename, 40.0f, &font_config, icon_ranges);
+	}
+	if (!global_icon_font) {
+//		console_print_error("Icon font could not be loaded");
+	}
+
+	const char* fixed_width_font_filename = "c:\\Windows\\Fonts\\consola.ttf";
+	if (file_exists(fixed_width_font_filename)) {
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f, &font_config, ranges);
+	}
+	if (!global_fixed_width_font) {
+		console_print_error("Fixed width font '%s' could not be loaded", fixed_width_font_filename);
+	}
+
+
 	io.Fonts->AddFontDefault();
 //	IM_ASSERT(font != NULL);
 
 	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
+	io.Fonts->Build();
 
 	is_fullscreen = check_fullscreen(app_state->main_window);
 

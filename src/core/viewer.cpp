@@ -1302,7 +1302,21 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	ASSERT(scene->initialized);
 
 	// Note: could be changed to allow e.g. multiple scenes side by side
-	scene->viewport = app_state->client_viewport;
+	{
+		rect2f old_viewport = scene->viewport;
+		rect2f new_viewport = (rect2f) {
+				(float)app_state->client_viewport.x,
+				(float)app_state->client_viewport.y,
+				(float)app_state->client_viewport.w,
+				(float)app_state->client_viewport.h,
+		};
+		if (new_viewport.x != old_viewport.x || old_viewport.y != new_viewport.y || old_viewport.w != new_viewport.w || old_viewport.h != new_viewport.h) {
+			scene->viewport_changed = true;
+		} else {
+			scene->viewport_changed = false;
+		}
+		scene->viewport = new_viewport;
+	}
 
 	scene->clicked = false;
 	scene->right_clicked = false;
@@ -1631,6 +1645,15 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
 				app_state->use_image_adjustments = !app_state->use_image_adjustments;
 			}
+			update_scale_bar(scene, &scene->scale_bar);
+
+			if (app_state->mouse_mode == MODE_VIEW) {
+				if (scene->drag_started && v2f_between_points(input->mouse_xy, scene->scale_bar.pos, scene->scale_bar.pos_max)) {
+					scene->scale_bar.drag_start_offset = (v2f){input->mouse_xy.x - scene->scale_bar.pos.x,
+					                                           input->mouse_xy.y - scene->scale_bar.pos.y};
+					app_state->mouse_mode = MODE_DRAG_SCALE_BAR;
+				}
+			}
 
 			if (app_state->mouse_mode == MODE_VIEW) {
 				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE) {
@@ -1687,6 +1710,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 
+			// Update dragging of objects
 			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE){
 				if (scene->is_dragging) {
 					i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
@@ -1699,10 +1723,21 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					}
 				} else if (scene->drag_ended) {
 					app_state->mouse_mode = MODE_VIEW;
-//						scene->annotation_set.is_edit_mode = false;
+//					scene->annotation_set.is_edit_mode = false;
 
 				}
 
+			} else if (app_state->mouse_mode == MODE_DRAG_SCALE_BAR) {
+				scale_bar_t* scale_bar = &scene->scale_bar;
+				if (scene->is_dragging) {
+					// Update the position of the scale bar while dragging the mouse.
+					scale_bar->pos.x = input->mouse_xy.x - scale_bar->drag_start_offset.x;
+					scale_bar->pos.y = input->mouse_xy.y - scale_bar->drag_start_offset.y;
+					update_scale_bar(scene, scale_bar);
+				} else if (scene->drag_ended) {
+					app_state->mouse_mode = MODE_VIEW;
+					update_scale_bar(scene, scale_bar);
+				}
 			}
 
 			/*if (scene->clicked && !gui_want_capture_mouse) {
@@ -1728,6 +1763,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
+		draw_scale_bar(scene, &scene->scale_bar);
 	}
 
 
@@ -1757,7 +1793,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	if (image_count <= 1) {
 		// Render everything at once
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 		image_t* image = app_state->loaded_images + 0;
 		update_and_render_image(app_state, input, delta_t, image);
@@ -1786,7 +1822,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		// Second pass
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
 		glUseProgram(finalblit_shader.program);

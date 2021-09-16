@@ -60,10 +60,18 @@ bool is_point_inside_rect2i(rect2i rect, v2i point) {
 	return result;
 }
 
-v2i rect2i_center_point(rect2i* rect) {
+v2i rect2i_center_point(rect2i rect) {
 	v2i result = {
-			.x = rect->x + rect->w / 2,
-			.y = rect->y + rect->h / 2,
+			.x = rect.x + rect.w / 2,
+			.y = rect.y + rect.h / 2,
+	};
+	return result;
+}
+
+v2f rect2f_center_point(rect2f rect) {
+	v2f result = {
+			.x = rect.x + rect.w * 0.5f,
+			.y = rect.y + rect.h * 0.5f,
 	};
 	return result;
 }
@@ -194,5 +202,53 @@ bool v2f_within_bounds(bounds2f bounds, v2f point) {
 	bool result = point.x >= bounds.left && point.x < bounds.right && point.y >= bounds.top && point.y < bounds.bottom;
 	return result;
 }
+
+bool v2f_between_points(v2f v, v2f p0, v2f p1) {
+	bool result = v.x >= p0.x && v.x < p1.x && v.y >= p0.y && v.y < p1.y;
+	return result;
+}
+
+v2f v2f_average(v2f a, v2f b) {
+	v2f result = {a.x + b.x, a.y + b.y};
+	result.x *= 0.5f;
+	result.y *= 0.5f;
+	return result;
+}
+
+corner_enum get_closest_corner(v2f center_point, v2f p) {
+	if (p.x <= center_point.x) {
+		if (p.y <= center_point.y) {
+			return CORNER_TOP_LEFT;
+		} else {
+			return CORNER_BOTTOM_LEFT;
+		}
+	} else {
+		if (p.y <= center_point.y) {
+			return CORNER_TOP_RIGHT;
+		} else {
+			return CORNER_BOTTOM_RIGHT;
+		}
+	}
+}
+
+v2f get_corner_pos(rect2f rect, corner_enum corner) {
+	switch(corner) {
+		default:
+		case CORNER_TOP_LEFT: {
+			return (v2f){rect.x, rect.y};
+		} break;
+		case CORNER_TOP_RIGHT: {
+			return (v2f){rect.x + rect.w, rect.y};
+		} break;
+		case CORNER_BOTTOM_LEFT: {
+			return (v2f){rect.x, rect.y + rect.h};
+		} break;
+		case CORNER_BOTTOM_RIGHT: {
+			return (v2f){rect.x + rect.w, rect.y + rect.h};
+		} break;
+	}
+}
+
+
 
 

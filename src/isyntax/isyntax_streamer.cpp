@@ -831,7 +831,6 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 		i32 lowest_scale_to_preload = ATLEAST(ATMOST(tile_streamer->zoom.level, 5), 0);
 		lowest_visible_scale = ATMOST(lowest_scale_to_preload, lowest_visible_scale);
 
-
 		// Never look at highest scales, which have already been loaded at first load
 		i32 highest_scale_to_load = highest_visible_scale;
 		for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
@@ -1140,6 +1139,12 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 		i64 perf_clock_check = get_clock();
 		float perf_time_check = get_seconds_elapsed(perf_clock_check, perf_clock_begin);
+
+		/*static u32 prev_chunks_to_load_count;
+		if (chunks_to_load_count != prev_chunks_to_load_count) {
+			console_print("Chunks to load: %d\n", chunks_to_load_count);
+			prev_chunks_to_load_count = chunks_to_load_count;
+		}*/
 
 		// Sort by priority to first load chunks near the center of the screen
 		qsort(chunks_to_load, chunks_to_load_count, sizeof(chunks_to_load[0]), chunk_priority_compare_func);

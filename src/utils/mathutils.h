@@ -89,6 +89,15 @@ typedef struct bounds2f {
 } bounds2f;
 
 
+typedef enum corner_enum {
+	CORNER_TOP_LEFT = 0,
+	CORNER_TOP_RIGHT = 1,
+	CORNER_BOTTOM_LEFT = 2,
+	CORNER_BOTTOM_RIGHT = 3,
+} corner_enum;
+
+
+
 #pragma pack(pop)
 
 static inline float v2i_length(v2i v)                       { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
@@ -106,7 +115,8 @@ rect2i clip_rect(rect2i* first, rect2i* second);
 bounds2i clip_bounds2i(bounds2i a, bounds2i b);
 bounds2f clip_bounds2f(bounds2f a, bounds2f b);
 bool is_point_inside_rect2i(rect2i rect, v2i point);
-v2i rect2i_center_point(rect2i* rect);
+v2i rect2i_center_point(rect2i rect);
+v2f rect2f_center_point(rect2f rect);
 rect2f rect2f_recanonicalize(rect2f* rect);
 bounds2f rect2f_to_bounds(rect2f* rect);
 v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
@@ -119,6 +129,10 @@ bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float
 rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y);
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr);
 bool v2f_within_bounds(bounds2f bounds, v2f point);
+bool v2f_between_points(v2f v, v2f p0, v2f p1);
+v2f v2f_average(v2f a, v2f b);
+corner_enum get_closest_corner(v2f center_point, v2f p);
+v2f get_corner_pos(rect2f rect, corner_enum corner);
 
 // globals
 #if defined(MATHUTILS_IMPL)
