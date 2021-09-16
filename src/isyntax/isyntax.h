@@ -292,6 +292,7 @@ typedef struct isyntax_t {
 	isyntax_parser_t parser;
 	float mpp_x;
 	float mpp_y;
+	bool is_mpp_known;
 	i32 block_width;
 	i32 block_height;
 	i32 tile_width;

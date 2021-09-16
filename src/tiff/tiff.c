@@ -450,7 +450,9 @@ void tiff_post_init(tiff_t* tiff) {
 	tiff->level_images_ifd_index = 0;
 
 	// Determine the resolution of the base level
+	// TODO: if resolution tags are missing, try to extract this information from the iSyntax header
 	tiff->mpp_x = tiff->mpp_y = 0.25f;
+	tiff->is_mpp_known = true;
 	tiff_ifd_t* main_image = tiff->main_image_ifd;
 	if (main_image->x_resolution.b > 0 && main_image->y_resolution.b > 0) {
 		if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
@@ -458,6 +460,7 @@ void tiff_post_init(tiff_t* tiff) {
 			float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
 			tiff->mpp_x = 10000.0f / pixels_per_centimeter_x;
 			tiff->mpp_y = 10000.0f / pixels_per_centimeter_y;
+			tiff->is_mpp_known = true;
 		}
 	}
 
@@ -634,6 +637,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer) {
 
 	u64 uncompressed_size = 0;
 
+	// TODO: is_mpp_known
 	// block: general TIFF header / meta
 	uncompressed_size += sizeof(serial_block_t);
 	tiff_serial_header_t serial_header = (tiff_serial_header_t){

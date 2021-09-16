@@ -290,6 +290,7 @@ struct tiff_t {
 	bool8 is_big_endian;
 	float mpp_x;
 	float mpp_y;
+	bool is_mpp_known;
 	i32 max_downsample_level;
 };
 

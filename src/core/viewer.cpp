@@ -248,6 +248,7 @@ bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, b
 
 	image->mpp_x = tiff.mpp_x;
 	image->mpp_y = tiff.mpp_y;
+	image->is_mpp_known = tiff.is_mpp_known;
 	ASSERT(tiff.main_image_ifd);
 	image->tile_width = tiff.main_image_ifd->tile_width;
 	image->tile_height = tiff.main_image_ifd->tile_height;
@@ -374,6 +375,7 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 
 	image->mpp_x = isyntax->mpp_x;
 	image->mpp_y = isyntax->mpp_y;
+	image->is_mpp_known = isyntax->is_mpp_known;
 	isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
 	image->tile_width = isyntax->tile_width;
 	image->tile_height = isyntax->tile_height;
@@ -474,12 +476,13 @@ bool init_image_from_stbi(app_state_t* app_state, image_t* image, simple_image_t
 
 	image->mpp_x = 1.0f;
 	image->mpp_y = 1.0f;
+	image->is_mpp_known = false;
 	image->tile_width = simple->width;
 	image->tile_height = simple->height;
 	image->width_in_pixels = simple->width;
-	image->width_in_um = simple->width * image->mpp_x;
+	image->width_in_um = (float)simple->width * image->mpp_x;
 	image->height_in_pixels = simple->height;
-	image->height_in_um = simple->height * image->mpp_y;
+	image->height_in_um = (float)simple->height * image->mpp_y;
 
 	image->level_count = 1;
 	level_image_t* level_image = image->level_images + 0;
@@ -555,6 +558,7 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
 	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
 	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
+	scene->is_mpp_known = false;
 	scene->initialized = true;
 }
 
@@ -1452,6 +1456,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			scene->need_zoom_reset = false;
 		}
+		scene->is_mpp_known = displayed_image->is_mpp_known;
 
 		zoom_state_t old_zoom = scene->zoom;
 

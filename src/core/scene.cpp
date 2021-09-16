@@ -63,14 +63,21 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 		scale_bar->pos_relative_to_corner = v2f_subtract(scale_bar->pos, corner_pos);
 
 		// Update the text in the scale bar.
-		const char* unit = "μm";
-		if (adjusted_width >= 999.999f) {
-			adjusted_width *= 1e-3f;
-			unit = "mm";
-		} else if (adjusted_width < 1.0f) {
-			adjusted_width *= 1e3f;
-			unit = "pm";
+		const char* unit;
+		if (scene->is_mpp_known) {
+			if (adjusted_width >= 999.999f) {
+				adjusted_width *= 1e-3f;
+				unit = "mm";
+			} else if (adjusted_width < 1.0f) {
+				adjusted_width *= 1e3f;
+				unit = "pm";
+			} else {
+				unit = "μm";
+			}
+		} else {
+			unit = "px";
 		}
+
 		snprintf(scale_bar->text, sizeof(scale_bar->text)-1, "%g %s", adjusted_width, unit);
 
 		// Calculate the X offset of the text so that the text appears centered.

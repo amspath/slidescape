@@ -319,8 +319,10 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 					float mpp = atof(value);
 					if (isyntax->parser.dimension_index == 0 /*x*/) {
 						isyntax->mpp_x = mpp;
+						isyntax->is_mpp_known = true;
 					} else if (isyntax->parser.dimension_index == 1 /*y*/) {
 						isyntax->mpp_y = mpp;
+						isyntax->is_mpp_known = true;
 					}
 				} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
@@ -726,7 +728,10 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 									++parser->header_template_index;
 									parser->dimension_index = 0;
 								} break;
-								case UFS_IMAGE_DIMENSIONS:                    flags &= ~ISYNTAX_OBJECT_UFSImageDimension; break;
+								case UFS_IMAGE_DIMENSIONS: {
+									flags &= ~ISYNTAX_OBJECT_UFSImageDimension;
+									++parser->dimension_index;
+								} break;
 								case UFS_IMAGE_DIMENSION_RANGES: {
 									flags &= ~ISYNTAX_OBJECT_UFSImageDimensionRange;
 									++parser->dimension_index;
@@ -738,6 +743,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							}
 							parser->data_object_flags = flags;
 						} else if (parser->current_node_type == ISYNTAX_NODE_ARRAY) {
+							parser->dimension_index = 0;
 							elem_name = "Array";
 						}
 
@@ -2316,11 +2322,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				}
 			}
 
-			if (isyntax->mpp_x <= 0.0f) {
-				isyntax->mpp_x = 0.25f; // should usually be 0.25; zero or below can never be right
-			}
-			if (isyntax->mpp_y <= 0.0f) {
-				isyntax->mpp_y = 0.25f;
+			if (isyntax->mpp_x <= 0.0f || isyntax->mpp_y <= 0.0f) {
+				isyntax->mpp_x = 1.0f; // should usually be 0.25; zero or below can never be right
+				isyntax->mpp_y = 1.0f;
+				isyntax->is_mpp_known = false;
 			}
 
 			isyntax->block_width = isyntax->header_templates[0].block_width;

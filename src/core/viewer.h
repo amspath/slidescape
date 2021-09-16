@@ -72,6 +72,7 @@ typedef struct wsi_t {
 	const char* barcode;
 	float mpp_x;
 	float mpp_y;
+	bool is_mpp_known;
 	i32 max_downsample_level;
 	u32 tile_width;
 	u32 tile_height;
@@ -169,6 +170,7 @@ typedef struct image_t {
 	level_image_t level_images[WSI_MAX_LEVELS];
 	float mpp_x;
 	float mpp_y;
+	bool is_mpp_known;
 	i64 width_in_pixels;
 	float width_in_um;
 	i64 height_in_pixels;
@@ -324,6 +326,7 @@ typedef struct scene_t {
 	float transparent_tolerance;
 	bool use_transparent_filter;
 	scale_bar_t scale_bar;
+	bool is_mpp_known;
 	bool8 initialized;
 } scene_t;
 

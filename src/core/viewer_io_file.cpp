@@ -362,20 +362,23 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 			}
 		}
 
-		wsi->mpp_x = 0.25f; // microns per pixel (default)
-		wsi->mpp_y = 0.25f; // microns per pixel (default)
+		wsi->mpp_x = 1.0f; // microns per pixel (default)
+		wsi->mpp_y = 1.0f; // microns per pixel (default)
+		wsi->is_mpp_known = false;
 		const char* mpp_x_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-x");
 		const char* mpp_y_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-y");
 		if (mpp_x_string) {
 			float mpp = atof(mpp_x_string);
 			if (mpp > 0.0f) {
 				wsi->mpp_x = mpp;
+				wsi->is_mpp_known = true;
 			}
 		}
 		if (mpp_y_string) {
 			float mpp = atof(mpp_y_string);
 			if (mpp > 0.0f) {
 				wsi->mpp_y = mpp;
+				wsi->is_mpp_known = true;
 			}
 		}
 
@@ -597,6 +600,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 			image.is_freshly_loaded = true;
 			image.mpp_x = wsi->mpp_x;
 			image.mpp_y = wsi->mpp_y;
+			image.is_mpp_known = wsi->is_mpp_known;
 			image.tile_width = wsi->tile_width;
 			image.tile_height = wsi->tile_height;
 			image.width_in_pixels = wsi->width;
