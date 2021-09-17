@@ -27,6 +27,8 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 		scale_bar->width = scale_bar->max_width;
 		scale_bar->height = ImGui::GetFrameHeight();
 		scale_bar->pos = (v2f) {50.0f, scene->viewport.h - 50.0f};
+		scale_bar->pos_relative_to_corner = scale_bar->pos;
+		scale_bar->corner = CORNER_TOP_LEFT;
 		scale_bar->enabled = false;
 		scale_bar->initialized = true;
 	}

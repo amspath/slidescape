@@ -46,8 +46,10 @@
 #define APPLE 0
 #endif
 
-#if !WINDOWS
+#if LINUX
 #include <features.h>
+#endif
+#if !WINDOWS
 #include <unistd.h> // for access(), F_OK
 #include <stdlib.h>
 //#define _aligned_malloc(size, alignment) aligned_alloc(alignment, size)

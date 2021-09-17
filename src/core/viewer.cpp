@@ -1309,10 +1309,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	{
 		rect2f old_viewport = scene->viewport;
 		rect2f new_viewport = (rect2f) {
-				(float)app_state->client_viewport.x,
-				(float)app_state->client_viewport.y,
-				(float)app_state->client_viewport.w,
-				(float)app_state->client_viewport.h,
+				(float)app_state->client_viewport.x * app_state->display_points_per_pixel,
+				(float)app_state->client_viewport.y * app_state->display_points_per_pixel,
+				(float)app_state->client_viewport.w * app_state->display_points_per_pixel,
+				(float)app_state->client_viewport.h * app_state->display_points_per_pixel,
 		};
 		if (new_viewport.x != old_viewport.x || old_viewport.y != new_viewport.y || old_viewport.w != new_viewport.w || old_viewport.h != new_viewport.h) {
 			scene->viewport_changed = true;
@@ -1402,7 +1402,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (input->mouse_buttons[0].down) {
 				// Mouse drag.
-				rect2i valid_drag_start_rect = {0, 0, client_width, client_height};
+				rect2i valid_drag_start_rect = {0, 0, (i32)(client_width * app_state->display_scale_factor), (i32)(client_height * app_state->display_scale_factor)};
 				if (input->mouse_buttons[0].transition_count != 0) {
 					// Don't start dragging if clicked outside the window
 					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){(i32)input->mouse_xy.x, (i32)input->mouse_xy.y})) {
@@ -1653,9 +1653,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			update_scale_bar(scene, &scene->scale_bar);
 
 			if (app_state->mouse_mode == MODE_VIEW) {
-				if (scene->drag_started && v2f_between_points(input->mouse_xy, scene->scale_bar.pos, scene->scale_bar.pos_max)) {
-					scene->scale_bar.drag_start_offset = (v2f){input->mouse_xy.x - scene->scale_bar.pos.x,
-					                                           input->mouse_xy.y - scene->scale_bar.pos.y};
+				v2f mouse = input->mouse_xy;
+				if (scene->drag_started && v2f_between_points(mouse, scene->scale_bar.pos, scene->scale_bar.pos_max)) {
+					scene->scale_bar.drag_start_offset = (v2f){mouse.x - scene->scale_bar.pos.x,
+					                                           mouse.y - scene->scale_bar.pos.y};
 					app_state->mouse_mode = MODE_DRAG_SCALE_BAR;
 				}
 			}
@@ -1734,10 +1735,17 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			} else if (app_state->mouse_mode == MODE_DRAG_SCALE_BAR) {
 				scale_bar_t* scale_bar = &scene->scale_bar;
-				if (scene->is_dragging) {
+				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE) {
 					// Update the position of the scale bar while dragging the mouse.
+#if WINDOWS
 					scale_bar->pos.x = input->mouse_xy.x - scale_bar->drag_start_offset.x;
 					scale_bar->pos.y = input->mouse_xy.y - scale_bar->drag_start_offset.y;
+#else
+					// TODO: figure out why on macOS, input->mouse_xy is {0,0} while dragging
+					scale_bar->pos.x += scene->drag_vector.x;
+					scale_bar->pos.y += scene->drag_vector.y;
+#endif
+					console_print_verbose("mouse = %d, %d\n", input->mouse_xy.x, input->mouse_xy.y);
 					update_scale_bar(scene, scale_bar);
 				} else if (scene->drag_ended) {
 					app_state->mouse_mode = MODE_VIEW;

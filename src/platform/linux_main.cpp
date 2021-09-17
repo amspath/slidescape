@@ -495,7 +495,7 @@ int main(int argc, const char** argv)
 
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame(g_window);
+        ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
         // Update and render our application
