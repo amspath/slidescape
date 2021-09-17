@@ -327,6 +327,7 @@ typedef struct scene_t {
 	bool use_transparent_filter;
 	scale_bar_t scale_bar;
 	bool is_mpp_known;
+	bool enable_grid;
 	bool8 initialized;
 } scene_t;
 
@@ -403,7 +404,6 @@ bool32 was_button_pressed(button_state_t* button);
 bool32 was_button_released(button_state_t* button);
 bool32 was_key_pressed(input_t* input, i32 keycode);
 bool32 is_key_down(input_t* input, i32 keycode);
-void init_scene(app_state_t *app_state, scene_t *scene);
 void init_app_state(app_state_t* app_state);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
@@ -426,16 +426,17 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 // viewer_options.cpp
 void viewer_init_options(app_state_t* app_state);
 
-// viewer_zoom.cpp
-void zoom_update_pos(zoom_state_t* zoom, float pos);
-
 // isyntax_streamer.cpp
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);
 void stream_image_tiles(tile_streamer_t* tile_streamer);
 
 // scene.cpp
+void zoom_update_pos(zoom_state_t* zoom, float pos);
+void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, float base_pixel_width, float base_pixel_height);
+void init_scene(app_state_t *app_state, scene_t *scene);
 void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
-void draw_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
+void draw_scale_bar(scale_bar_t* scale_bar);
+void draw_grid(scene_t* scene);
 
 // globals
 #if defined(VIEWER_IMPL)

@@ -55,7 +55,6 @@
 #include "viewer_opengl.cpp"
 #include "viewer_io_file.cpp"
 #include "viewer_io_remote.cpp"
-#include "viewer_zoom.cpp"
 #include "viewer_options.cpp"
 
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
@@ -547,19 +546,6 @@ bool32 is_key_down(input_t* input, i32 keycode) {
 
 int priority_cmp_func (const void* a, const void* b) {
 	return ( (*(load_tile_task_t*)b).priority - (*(load_tile_task_t*)a).priority );
-}
-
-void init_scene(app_state_t *app_state, scene_t *scene) {
-	memset(scene, 0, sizeof(scene_t));
-	scene->clear_color = app_state->clear_color;
-	scene->transparent_color = (v3f){1.0f, 1.0f, 1.0f};
-	scene->transparent_tolerance = 0.01f;
-	scene->use_transparent_filter = false;
-	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
-	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
-	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
-	scene->is_mpp_known = false;
-	scene->initialized = true;
 }
 
 void init_app_state(app_state_t* app_state) {
@@ -1775,8 +1761,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		}
 
+		draw_grid(scene);
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
-		draw_scale_bar(scene, &scene->scale_bar);
+		draw_scale_bar(&scene->scale_bar);
 	}
 
 

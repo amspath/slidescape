@@ -152,6 +152,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
+			bool has_image_loaded = (arrlen(app_state->loaded_images) > 0);
 			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
 			if (ImGui::MenuItem("Reset zoom", NULL, &menu_items_clicked.reset_zoom)) {}
 			ImGui::Separator();
@@ -159,8 +160,10 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Image options...", NULL, &show_image_options_window)) {}
 			if (ImGui::MenuItem("Layers...", "L", &show_layers_window)) {}
 			ImGui::Separator();
-			bool* show_scale_bar = (arrlen(app_state->loaded_images) > 0) ? &scene->scale_bar.enabled : NULL;
+			bool* show_scale_bar = has_image_loaded ? &scene->scale_bar.enabled : NULL;
 			if (ImGui::MenuItem("Show scale bar", NULL, show_scale_bar, (show_scale_bar != NULL))) {}
+			bool* show_grid = has_image_loaded ? &scene->enable_grid : NULL;
+			if (ImGui::MenuItem("Show grid", NULL, show_grid, (show_grid != NULL))) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 			ImGui::Separator();

@@ -21,6 +21,39 @@
 #include "viewer.h"
 #include "gui.h"
 
+void zoom_update_pos(zoom_state_t* zoom, float pos) {
+	ASSERT(pos > -50);
+	zoom->pos = pos;
+	zoom->downsample_factor = exp2f(zoom->pos);
+	zoom->pixel_width = zoom->downsample_factor * zoom->base_pixel_width;
+	zoom->pixel_height = zoom->downsample_factor * zoom->base_pixel_height;
+	zoom->level  = (i32)floorf(pos);
+	ASSERT(zoom->notch_size != 0.0f);
+	zoom->notches = (i32) floorf((pos / zoom->notch_size));
+}
+
+void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, float base_pixel_width, float base_pixel_height) {
+	memset(zoom, 0, sizeof(zoom_state_t));
+	zoom->base_pixel_height = base_pixel_height;
+	zoom->base_pixel_width = base_pixel_width;
+	zoom->notch_size = notch_size;
+	zoom_update_pos(zoom, zoom_position);
+}
+
+void init_scene(app_state_t *app_state, scene_t *scene) {
+	memset(scene, 0, sizeof(scene_t));
+	scene->clear_color = app_state->clear_color;
+	scene->transparent_color = (v3f){1.0f, 1.0f, 1.0f};
+	scene->transparent_tolerance = 0.01f;
+	scene->use_transparent_filter = false;
+	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
+	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
+	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
+	scene->is_mpp_known = false;
+	scene->enable_grid = false;
+	scene->initialized = true;
+}
+
 void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 	if (!scale_bar->initialized) {
 		scale_bar->max_width = 200.0f;
@@ -89,14 +122,7 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 	}
 }
 
-void scale_bar_set_pos(scene_t* scene, scale_bar_t* scale_bar, v2f pos) {
-	corner_enum closest_corner = get_closest_corner(rect2f_center_point(scene->viewport), scale_bar->pos);
-	scale_bar->corner = closest_corner;
-	v2f corner_pos = get_corner_pos(scene->viewport, closest_corner);
-	scale_bar->pos_relative_to_corner = v2f_subtract(scale_bar->pos, corner_pos);
-}
-
-void draw_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
+void draw_scale_bar(scale_bar_t* scale_bar) {
 	if (scale_bar->enabled) {
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
@@ -106,6 +132,33 @@ void draw_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 
 		ImVec2 text_pos = {scale_bar->pos.x + scale_bar->text_x, scale_bar->pos.y};
 		draw_list->AddText(text_pos, col_b, scale_bar->text);
+	}
+}
+
+void draw_grid(scene_t* scene) {
+	if (scene->enable_grid) {
+		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+
+		v2f p0 = {scene->viewport.x, scene->viewport.y};
+		v2f p1 = {p0.x + scene->viewport.w, p0.y + scene->viewport.h};
+
+		draw_list->PushClipRect(p0, p1, true);
+		{
+			const float world_step = 1000.0f;
+			const float grid_step = world_step / scene->zoom.pixel_width;
+			v2f scrolling;
+			scrolling.x = grid_step - fmodf(scene->camera_bounds.min.x, world_step) / scene->zoom.pixel_width;
+			scrolling.y = grid_step - fmodf(scene->camera_bounds.min.y, world_step) / scene->zoom.pixel_height;
+			u32 line_color = IM_COL32(50, 50, 50, 80);
+			for (float x = fmodf(scrolling.x, grid_step); x < scene->viewport.w; x += grid_step) {
+				draw_list->AddLine(ImVec2(p0.x + x, p0.y), ImVec2(p0.x + x, p1.y), line_color);
+			}
+			for (float y = fmodf(scrolling.y, grid_step); y < scene->viewport.h; y += grid_step)
+				draw_list->AddLine(ImVec2(p0.x, p0.y + y), ImVec2(p1.x, p0.y + y), line_color);
+		}
+
+		draw_list->PopClipRect();
+
 	}
 }
 
