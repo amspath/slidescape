@@ -142,6 +142,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Crop view to region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
 				menu_items_clicked.crop_region = true;
 			}
+			ImGui::Separator();
+			if (ImGui::MenuItem("General options...", NULL, &show_general_options_window)) {}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Annotation")) {
@@ -165,10 +167,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool* show_grid = has_image_loaded ? &scene->enable_grid : NULL;
 			if (ImGui::MenuItem("Show grid", NULL, show_grid, (show_grid != NULL))) {}
 			ImGui::Separator();
-			if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
-			ImGui::Separator();
 
-			if (ImGui::MenuItem("General options...", NULL, &show_general_options_window)) {}
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Show console", "F3", &show_console_window)) {}
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
@@ -184,6 +183,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (enable_load_debug_isyntax_file) {
 					if (ImGui::MenuItem("Load iSyntax test file", NULL, &menu_items_clicked.load_isyntax_test_file, enable_load_debug_isyntax_file)) {}
 				}
+				ImGui::Separator();
+				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
