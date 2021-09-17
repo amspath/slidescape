@@ -1324,6 +1324,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	i32 image_count = arrlen(app_state->loaded_images);
 	ASSERT(image_count >= 0);
+	app_state->is_any_image_loaded = (image_count > 0);
 
 	if (image_count == 0) {
 		if (app_state->is_window_title_set_for_image) {
@@ -1611,6 +1612,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
 			scene_update_camera_bounds(scene);
 			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
+
+			if (was_key_pressed(input, KEY_G) && input->keyboard.key_ctrl.down && !input->keyboard.key_alt.down) {
+				scene->enable_grid = !scene->enable_grid;
+			}
+			if (was_key_pressed(input, KEY_B) && input->keyboard.key_ctrl.down && !input->keyboard.key_alt.down) {
+				scene->scale_bar.enabled = !scene->scale_bar.enabled;
+			}
 
 
 			/*if (was_key_pressed(input, KEY_O)) {

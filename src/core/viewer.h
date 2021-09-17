@@ -231,30 +231,31 @@ typedef struct scale_bar_t {
 } scale_bar_t;
 
 
-enum entity_type_enum {
+typedef enum entity_type_enum {
 	ENTITY_SIMPLE_IMAGE = 1,
 	ENTITY_TILED_IMAGE = 2,
-};
+} entity_type_enum;
 
-enum mouse_mode_enum {
+typedef enum mouse_mode_enum {
 	MODE_VIEW,
+	MODE_INSERT,
 	MODE_CREATE_SELECTION_BOX,
-	MODE_VIEW_OR_SELECT_ANNOTATION_NODE,
 	MODE_DRAG_ANNOTATION_NODE,
 	MODE_DRAG_SCALE_BAR,
-};
+} mouse_mode_enum;
 
-enum placement_tool_enum {
+typedef enum placement_tool_enum {
 	TOOL_NONE,
 	TOOL_CREATE_OUTLINE,
 	TOOL_EDIT_EXISTING_COORDINATES,
+	TOOL_CREATE_POINT,
 	TOOL_CREATE_LINE,
 	TOOL_CREATE_ARROW,
+	TOOL_CREATE_FREEFORM,
 	TOOL_CREATE_ELLIPSE,
 	TOOL_CREATE_RECTANGLE,
-	TOOL_CREATE_POLY,
 	TOOL_CREATE_TEXT,
-};
+} placement_tool_enum;
 
 typedef struct entity_t {
 	u32 type;
@@ -365,6 +366,7 @@ typedef struct app_state_t {
 	float white_level;
 	image_t* loaded_images; // array
 	i32 displayed_image;
+	bool is_any_image_loaded;
 	caselist_t caselist;
 	case_t* selected_case;
 	i32 selected_case_index;
@@ -372,8 +374,8 @@ typedef struct app_state_t {
 	bool use_image_adjustments;
 	bool initialized;
 	bool allow_idling_next_frame;
-	u32 mouse_mode;
-	u32 mouse_tool;
+	mouse_mode_enum mouse_mode;
+	placement_tool_enum mouse_tool;
 	i64 last_frame_start;
 	i64 frame_counter;
 	float seconds_without_mouse_movement;

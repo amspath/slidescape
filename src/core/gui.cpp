@@ -163,9 +163,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Layers...", "L", &show_layers_window)) {}
 			ImGui::Separator();
 			bool* show_scale_bar = has_image_loaded ? &scene->scale_bar.enabled : NULL;
-			if (ImGui::MenuItem("Show scale bar", NULL, show_scale_bar, (show_scale_bar != NULL))) {}
+			if (ImGui::MenuItem("Show scale bar", "Ctrl+B", show_scale_bar, (show_scale_bar != NULL))) {}
 			bool* show_grid = has_image_loaded ? &scene->enable_grid : NULL;
-			if (ImGui::MenuItem("Show grid", NULL, show_grid, (show_grid != NULL))) {}
+			if (ImGui::MenuItem("Show grid", "Ctrl+G", show_grid, (show_grid != NULL))) {}
 			ImGui::Separator();
 
 			if (ImGui::BeginMenu("Debug")) {
