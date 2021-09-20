@@ -1272,6 +1272,29 @@ static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f c
 	}
 }
 
+
+void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
+	switch(tool) {
+		default: case TOOL_NONE: {
+			if (app_state->mouse_mode != MODE_VIEW) {
+				app_state->mouse_mode = MODE_VIEW;
+				// TODO: reset edit functionality?
+			}
+		} break;
+		case TOOL_CREATE_OUTLINE: // TODO: how to handle creation of selection boxes; different from annotations?
+		case TOOL_CREATE_POINT:
+		case TOOL_CREATE_LINE:
+		case TOOL_CREATE_ARROW:
+		case TOOL_CREATE_FREEFORM:
+		case TOOL_CREATE_ELLIPSE:
+		case TOOL_CREATE_RECTANGLE:
+		case TOOL_CREATE_TEXT: {
+			app_state->mouse_mode = MODE_INSERT;
+		} break;
+	}
+	app_state->mouse_tool = tool;
+}
+
 #define CLICK_DRAG_TOLERANCE 6.0f
 
 // TODO: refactor delta_t
@@ -1613,13 +1636,29 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene_update_camera_bounds(scene);
 			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
-			if (was_key_pressed(input, KEY_G) && input->keyboard.key_ctrl.down && !input->keyboard.key_alt.down) {
+			u32 key_modifiers_without_shift = input->keyboard.modifiers & ~KMOD_SHIFT;
+			if (was_key_pressed(input, KEY_G) && key_modifiers_without_shift == KMOD_CTRL) {
 				scene->enable_grid = !scene->enable_grid;
 			}
-			if (was_key_pressed(input, KEY_B) && input->keyboard.key_ctrl.down && !input->keyboard.key_alt.down) {
+			if (was_key_pressed(input, KEY_B) && key_modifiers_without_shift == KMOD_CTRL) {
 				scene->scale_bar.enabled = !scene->scale_bar.enabled;
 			}
 
+#if ENABLE_INSERT_TOOLS
+			if (was_key_pressed(input, KEY_Q) && key_modifiers_without_shift == 0) {
+				viewer_switch_tool(app_state, TOOL_CREATE_POINT);
+			} else if (was_key_pressed(input, KEY_M) && key_modifiers_without_shift == 0) {
+				viewer_switch_tool(app_state, TOOL_CREATE_LINE);
+			} else if (was_key_pressed(input, KEY_F) && key_modifiers_without_shift == 0) {
+				viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
+			} else if (was_key_pressed(input, KEY_E) && key_modifiers_without_shift == 0) {
+				viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
+			} else if (was_key_pressed(input, KEY_R) && key_modifiers_without_shift == 0) {
+				viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
+			} else if (was_key_pressed(input, KEY_T) && key_modifiers_without_shift == 0) {
+				viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
+			}
+#endif
 
 			/*if (was_key_pressed(input, KEY_O)) {
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
@@ -1688,6 +1727,58 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 					}
 
+				}
+			} else if (app_state->mouse_mode == MODE_INSERT) {
+				if (!gui_want_capture_mouse) {
+					if (app_state->mouse_tool == TOOL_CREATE_POINT) {
+						if (scene->clicked) {
+							// create point
+							console_print("Creating a point\n");
+							viewer_switch_tool(app_state, TOOL_NONE);
+						}
+					} else if (app_state->mouse_tool == TOOL_CREATE_LINE) {
+						if (scene->drag_started) {
+							// create first point
+							console_print("Creating a line\n");
+						}
+						if (scene->drag_ended) {
+							// drop second point, finalize line
+							console_print("Finalizing a line\n");
+							viewer_switch_tool(app_state, TOOL_NONE);
+						}
+					} else if (app_state->mouse_tool == TOOL_CREATE_FREEFORM) {
+						if (scene->drag_started) {
+							// create first point
+						} else if (scene->is_dragging) {
+							// drop points along the way
+						} else if (scene->drag_ended) {
+							// finalize freeform
+							viewer_switch_tool(app_state, TOOL_NONE);
+						}
+					} else if (app_state->mouse_tool == TOOL_CREATE_ELLIPSE) {
+						if (scene->drag_started) {
+							// create first bounding point
+						} else if (scene->is_dragging) {
+							// update second bounding point and visualize the ellipse
+						} else if (scene->drag_ended) {
+							// finalize ellipse
+							viewer_switch_tool(app_state, TOOL_NONE);
+						}
+					} else if (app_state->mouse_tool == TOOL_CREATE_RECTANGLE) {
+						if (scene->drag_started) {
+							// create first bounding point
+						} else if (scene->is_dragging) {
+							// update second bounding point and visualize the shape
+						} else if (scene->drag_ended) {
+							// finalize shape
+							viewer_switch_tool(app_state, TOOL_NONE);
+						}
+					} else if (app_state->mouse_tool == TOOL_CREATE_TEXT) {
+						if (scene->clicked) {
+							// create text
+							viewer_switch_tool(app_state, TOOL_NONE);
+						}
+					}
 				}
 			}
 

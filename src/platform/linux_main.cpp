@@ -196,6 +196,12 @@ bool linux_process_input() {
     linux_process_button_event(&curr_input->keyboard.key_alt, io.KeyAlt);
     linux_process_button_event(&curr_input->keyboard.key_super, io.KeySuper);
 
+	curr_input->keyboard.modifiers = 0;
+	if (curr_input->keyboard.key_ctrl.down) curr_input->keyboard.modifiers |= KMOD_CTRL;
+	if (curr_input->keyboard.key_alt.down) curr_input->keyboard.modifiers |= KMOD_ALT;
+	if (curr_input->keyboard.key_shift.down) curr_input->keyboard.modifiers |= KMOD_SHIFT;
+	if (curr_input->keyboard.key_super.down) curr_input->keyboard.modifiers |= KMOD_GUI;
+
 	curr_input->mouse_z = io.MouseWheel;
 
 	SDL_GetRelativeMouseState(&mouse_x, &mouse_y);

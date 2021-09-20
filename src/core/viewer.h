@@ -46,6 +46,8 @@ typedef struct texture_t {
 #define WSI_TILE_DIM 512
 #define BYTES_PER_PIXEL 4
 
+#define ENABLE_INSERT_TOOLS 0
+
 typedef struct {
 	i64 width;
 	i64 height;
@@ -410,6 +412,7 @@ void init_app_state(app_state_t* app_state);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void scene_update_camera_pos(scene_t* scene, v2f pos);
+void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
 void do_after_scene_render(app_state_t* app_state, input_t* input);
 

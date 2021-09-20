@@ -116,6 +116,12 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool load_coco_test_file;
 			bool load_isyntax_test_file;
 			bool reset_zoom;
+			bool insert_point;
+			bool insert_line;
+			bool insert_freeform;
+			bool insert_ellipse;
+			bool insert_rectangle;
+			bool insert_text;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -147,8 +153,18 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Annotation")) {
-			if (ImGui::MenuItem("Load...", NULL, &menu_items_clicked.open_file)) {} // TODO: only accept annotation files here?
+#if ENABLE_INSERT_TOOLS
+			if (ImGui::BeginMenu("Insert")) {
+				if (ImGui::MenuItem("Point", "Q", &menu_items_clicked.insert_point)) {}
+				if (ImGui::MenuItem("Line", "M", &menu_items_clicked.insert_line)) {}
+				if (ImGui::MenuItem("Freeform", "F", &menu_items_clicked.insert_freeform)) {}
+				if (ImGui::MenuItem("Ellipse", "E", &menu_items_clicked.insert_ellipse)) {}
+				if (ImGui::MenuItem("Rectangle", "R", &menu_items_clicked.insert_rectangle)) {}
+				if (ImGui::MenuItem("Text", "T", &menu_items_clicked.insert_text)) {}
+				ImGui::EndMenu();
+			}
 			ImGui::Separator();
+#endif
 			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
 			if (ImGui::MenuItem("Assign group/feature...", NULL, &show_annotation_group_assignment_window)) {}
 			ImGui::EndMenu();
@@ -250,6 +266,21 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		} else if (menu_items_clicked.reset_zoom) {
 			scene->need_zoom_reset = true;
 		}
+#if ENABLE_INSERT_TOOLS
+		else if (menu_items_clicked.insert_point) {
+			viewer_switch_tool(app_state, TOOL_CREATE_POINT);
+		} else if (menu_items_clicked.insert_line) {
+			viewer_switch_tool(app_state, TOOL_CREATE_LINE);
+		} else if (menu_items_clicked.insert_freeform) {
+			viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
+		} else if (menu_items_clicked.insert_ellipse) {
+			viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
+		} else if (menu_items_clicked.insert_rectangle) {
+			viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
+		} else if (menu_items_clicked.insert_text) {
+			viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
+		}
+#endif
 	}
 
 }

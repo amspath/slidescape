@@ -1465,6 +1465,12 @@ bool win32_process_input(app_state_t* app_state) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->mouse_buttons[i].down;
 	}
 
+	curr_input->keyboard.modifiers = 0;
+	if (curr_input->keyboard.key_ctrl.down) curr_input->keyboard.modifiers |= KMOD_CTRL;
+	if (curr_input->keyboard.key_alt.down) curr_input->keyboard.modifiers |= KMOD_ALT;
+	if (curr_input->keyboard.key_shift.down) curr_input->keyboard.modifiers |= KMOD_SHIFT;
+	if (curr_input->keyboard.key_super.down) curr_input->keyboard.modifiers |= KMOD_GUI;
+
 	return did_idle;
 }
 
