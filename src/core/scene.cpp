@@ -140,21 +140,24 @@ void draw_grid(scene_t* scene) {
 	if (scene->enable_grid) {
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 
-		v2f p0 = {scene->viewport.x, scene->viewport.y};
-		v2f p1 = {p0.x + scene->viewport.w, p0.y + scene->viewport.h};
+		rect2f viewport = scene->viewport;
+
+		v2f p0 = {viewport.x, viewport.y};
+		v2f p1 = {p0.x + viewport.w, p0.y + viewport.h};
 
 		draw_list->PushClipRect(p0, p1, true);
 		{
+			float pixel_width = scene->zoom.pixel_width * global_app_state.display_scale_factor;
 			const float world_step = 1000.0f;
-			const float grid_step = world_step / scene->zoom.pixel_width;
+			const float grid_step = world_step / pixel_width;
 			v2f scrolling;
-			scrolling.x = grid_step - fmodf(scene->camera_bounds.min.x, world_step) / scene->zoom.pixel_width;
-			scrolling.y = grid_step - fmodf(scene->camera_bounds.min.y, world_step) / scene->zoom.pixel_height;
+			scrolling.x = grid_step - fmodf(scene->camera_bounds.min.x, world_step) / pixel_width;
+			scrolling.y = grid_step - fmodf(scene->camera_bounds.min.y, world_step) / pixel_width;
 			u32 line_color = IM_COL32(50, 50, 50, 80);
-			for (float x = fmodf(scrolling.x, grid_step); x < scene->viewport.w; x += grid_step) {
+			for (float x = fmodf(scrolling.x, grid_step); x < viewport.w; x += grid_step) {
 				draw_list->AddLine(ImVec2(p0.x + x, p0.y), ImVec2(p0.x + x, p1.y), line_color);
 			}
-			for (float y = fmodf(scrolling.y, grid_step); y < scene->viewport.h; y += grid_step)
+			for (float y = fmodf(scrolling.y, grid_step); y < viewport.h; y += grid_step)
 				draw_list->AddLine(ImVec2(p0.x, p0.y + y), ImVec2(p1.x, p0.y + y), line_color);
 		}
 
