@@ -51,6 +51,7 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
 	scene->is_mpp_known = false;
 	scene->enable_grid = false;
+	scene->enable_annotations = true;
 	scene->initialized = true;
 }
 

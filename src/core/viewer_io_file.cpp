@@ -485,7 +485,6 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 				coco_transfer_annotations_to_annotation_set(&coco, annotation_set);
 				coco_destroy(&coco);
 				were_annotations_loaded = true;
-				annotation_set->enabled = true;
 
 				// Enable export as XML (make sure XML annotations do not get out of date!)
 				annotation_set->export_as_asap_xml = true;

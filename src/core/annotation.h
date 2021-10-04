@@ -38,24 +38,11 @@ typedef enum annotation_type_enum {
 	ANNOTATION_POINT = 3,
 	ANNOTATION_LINE = 4,
 	ANNOTATION_SPLINE = 5,
+	ANNOTATION_ELLIPSE = 6,
+	ANNOTATION_TEXT = 7,
 } annotation_type_enum;
 
-typedef enum asap_xml_element_enum {
-	ASAP_XML_ELEMENT_NONE = 0, // for unhandled elements
-	ASAP_XML_ELEMENT_ANNOTATION = 1,
-	ASAP_XML_ELEMENT_COORDINATE = 2,
-	ASAP_XML_ELEMENT_GROUP = 3,
-} asap_xml_element_enum;
 
-typedef enum asap_xml_attribute_enum {
-	ASAP_XML_ATTRIBUTE_NONE = 0, // for unhandled attributes
-	ASAP_XML_ATTRIBUTE_COLOR = 1,
-	ASAP_XML_ATTRIBUTE_NAME = 2,
-	ASAP_XML_ATTRIBUTE_PARTOFGROUP = 3,
-	ASAP_XML_ATTRIBUTE_TYPE = 4,
-	ASAP_XML_ATTRIBUTE_X = 5,
-	ASAP_XML_ATTRIBUTE_Y = 6,
-} asap_xml_attribute_enum;
 
 #define MAX_ANNOTATION_FEATURES 64
 
@@ -73,14 +60,16 @@ typedef struct annotation_t {
 	bool8 selected;
 	bool8 has_valid_bounds;
 	bool8 has_properties;
+
+	v2f p0, p1;
 } annotation_t;
 
-typedef struct coordinate_t {
-	double x;
-	double y;
+/*typedef struct coordinate_t {
+	float x;
+	float y;
 //	i32 order;
-	bool selected;
-} coordinate_t;
+//	bool selected;
+} coordinate_t;*/
 
 typedef struct annotation_group_t {
 	char name[256];
@@ -117,7 +106,7 @@ typedef struct annotation_set_t {
 	i32* active_annotation_indices; // array
 	i32 active_annotation_count;
 
-	coordinate_t* coordinates; // array
+	v2f* coordinates; // array
 	i32 coordinate_count;
 
 	annotation_group_t* stored_groups; // array
@@ -130,7 +119,6 @@ typedef struct annotation_set_t {
 	i32* active_feature_indices; // array
 	i32 active_feature_count;
 
-	bool enabled;
 	char* asap_xml_filename;
 	char* coco_filename;
 	char base_filename[512];
@@ -150,6 +138,7 @@ typedef struct annotation_set_t {
 	v2f coordinate_drag_start_offset;
 	i32 last_assigned_annotation_group;
 	bool last_assigned_group_is_valid;
+	i32 editing_annotation_index; // The active index of the annotation that is currently being edited
 	v2f mpp; // microns per pixel
 	coco_t coco;
 	bool export_as_asap_xml;
@@ -162,14 +151,35 @@ static inline bool coordinate_index_valid_for_annotation(i32 coordinate_index, a
 	return result;
 }
 
+static inline annotation_t* get_active_annotation(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_annotation_count);
+	return annotation_set->stored_annotations + annotation_set->active_annotation_indices[active_index];
+}
 
+static inline annotation_group_t* get_active_annotation_group(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_group_count);
+	return annotation_set->stored_groups + annotation_set->active_group_indices[active_index];
+}
+
+static inline annotation_feature_t* get_active_annotation_feature(annotation_set_t* annotation_set, i32 active_index) {
+	ASSERT(active_index >= 0 && active_index < annotation_set->active_feature_count);
+	return annotation_set->stored_features + annotation_set->active_feature_indices[active_index];
+}
+
+u32 add_annotation_group(annotation_set_t* annotation_set, const char* name);
+u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name);
+i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name);
+void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
+void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos);
+void create_line_annotation(annotation_set_t* annotation_set, v2f pos);
+void create_point_annotation(annotation_set_t* annotation_set, v2f pos);
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
 bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
 bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin);
 annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected);
 i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);
 void annotations_modified(annotation_set_t* annotation_set);
-void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, coordinate_t new_coordinate);
+void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, v2f new_coordinate);
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index);
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 first_coordinate_index, i32 second_coordinate_index);

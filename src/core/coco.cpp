@@ -29,7 +29,6 @@
 #include <time.h>
 
 
-extern app_state_t global_app_state;
 
 static void coco_copy_parsed_string(coco_t* coco, char* dest, json_string_s* payload_string) {
 	size_t len = MIN(payload_string->string_size, COCO_MAX_FIELD-1);
@@ -697,7 +696,7 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		arrsetlen(coco_annotation->segmentation.coordinates, annotation->coordinate_count);
 		if (annotation->coordinate_count > 0) {
 			ASSERT(coco_annotation->segmentation.coordinates != NULL);
-			coordinate_t* coordinates = annotation_set->coordinates + annotation->first_coordinate;
+			v2f* coordinates = annotation_set->coordinates + annotation->first_coordinate;
 			coco_annotation->segmentation.coordinate_count = annotation->coordinate_count;
 
 			v2f mpp = annotation_set->mpp;
@@ -706,9 +705,9 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 				mpp = (v2f){1.0f, 1.0f}; // prevent divide by zero
 			}
 			for (i32 j = 0; j < annotation->coordinate_count; ++j) {
-				coordinate_t* coordinate = coordinates + j;
+				v2f* coordinate = coordinates + j;
 				v2f* coco_coordinate = coco_annotation->segmentation.coordinates + j;
-				*coco_coordinate = (v2f) {(float)coordinate->x / mpp.x, (float)coordinate->y / mpp.y};
+				*coco_coordinate = (v2f) {coordinate->x / mpp.x, coordinate->y / mpp.y};
 			}
 		}
 		ASSERT(MAX_ANNOTATION_FEATURES == COCO_MAX_ANNOTATION_FEATURES);
@@ -813,16 +812,16 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 
 	// Transfer coordinates
 	arrsetlen(annotation_set->coordinates, total_coordinate_count); // allocate coordinates in bulk
-	memset(annotation_set->coordinates, 0, total_coordinate_count * sizeof(coordinate_t));
+	memset(annotation_set->coordinates, 0, total_coordinate_count * sizeof(v2f));
 	annotation_set->coordinate_count = total_coordinate_count;
 	i32 running_coordinate_index = 0;
 	for (i32 i = 0; i < annotation_count; ++i) {
 		coco_annotation_t* coco_annotation = coco->annotations + i;
 		annotation_t* annotation = annotation_set->stored_annotations + i;
-		coordinate_t* annotation_coordinates = annotation_set->coordinates + annotation->first_coordinate;
+		v2f* annotation_coordinates = annotation_set->coordinates + annotation->first_coordinate;
 		for (i32 j = 0; j < annotation->coordinate_count; ++j) {
 			v2f c = coco_annotation->segmentation.coordinates[j];
-			annotation_coordinates[j] = (coordinate_t){annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y};
+			annotation_coordinates[j] = (v2f){annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y};
 		}
 		running_coordinate_index += coco_annotation->segmentation.coordinate_count;
 	}

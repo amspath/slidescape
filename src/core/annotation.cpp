@@ -1,6 +1,6 @@
 /*
   Slideviewer, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2020  Pieter Valkema
+  Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,20 +25,9 @@
 
 #include "coco.h"
 
-static inline annotation_t* get_active_annotation(annotation_set_t* annotation_set, i32 active_index) {
-	ASSERT(active_index >= 0 && active_index < annotation_set->active_annotation_count);
-	return annotation_set->stored_annotations + annotation_set->active_annotation_indices[active_index];
-}
 
-static inline annotation_group_t* get_active_annotation_group(annotation_set_t* annotation_set, i32 active_index) {
-	ASSERT(active_index >= 0 && active_index < annotation_set->active_group_count);
-	return annotation_set->stored_groups + annotation_set->active_group_indices[active_index];
-}
 
-static inline annotation_feature_t* get_active_annotation_feature(annotation_set_t* annotation_set, i32 active_index) {
-	ASSERT(active_index >= 0 && active_index < annotation_set->active_feature_count);
-	return annotation_set->stored_features + annotation_set->active_feature_indices[active_index];
-}
+#include "annotation_asap_xml.cpp"
 
 u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 	annotation_group_t new_group = {};
@@ -55,7 +44,7 @@ u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
 	annotation_feature_t new_feature = {};
 	strncpy(new_feature.name, name, sizeof(new_feature.name));
-	u32 new_stored_feature_index = annotation_set->stored_feature_count++;
+	i32 new_stored_feature_index = annotation_set->stored_feature_count++;
 	new_feature.id = new_stored_feature_index;
 	arrput(annotation_set->stored_features, new_feature);
 
@@ -83,13 +72,92 @@ void select_annotation(annotation_set_t* annotation_set, annotation_t* annotatio
 	annotation->selected = true;
 }
 
+void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos) {
+	annotation_t new_annotation = (annotation_t){};
+	new_annotation.type = ANNOTATION_ELLIPSE;
+	new_annotation.p0 = pos;
+	new_annotation.p1 = pos;
+	new_annotation.bounds = {};
+	new_annotation.bounds.min = pos;
+	new_annotation.bounds.max = pos;
+	new_annotation.group_id = annotation_set->last_assigned_annotation_group;
+
+	arrput(annotation_set->stored_annotations, new_annotation);
+	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
+
+	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
+	annotation_set->active_annotation_count++;
+
+	annotations_modified(annotation_set);
+
+	i32 active_index = annotation_set->active_annotation_count - 1;
+	annotation_set->editing_annotation_index = active_index;
+}
+
+void finalize_ellipse_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f pos) {
+	ASSERT(annotation->type == ANNOTATION_ELLIPSE);
+	annotation->p1 = pos;
+	// TODO: recalculate bounds
+
+	if (annotation->has_coordinates) {
+		// ?
+	} else {
+		// TODO
+	}
+
+}
+
+void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
+	arrput(annotation_set->coordinates, pos);
+	arrput(annotation_set->coordinates, pos);
+
+	i32 first_coordinate = annotation_set->coordinate_count;
+	annotation_set->coordinate_count += 2;
+
+	annotation_t new_annotation = (annotation_t){};
+	new_annotation.type = ANNOTATION_LINE;
+	new_annotation.p0 = pos;
+	new_annotation.p1 = pos;
+	new_annotation.bounds = {};
+	new_annotation.bounds.min = pos;
+	new_annotation.bounds.max = pos;
+
+	new_annotation.group_id = annotation_set->last_assigned_annotation_group;
+	new_annotation.coordinate_capacity = 2;
+	new_annotation.coordinate_count = 2;
+	new_annotation.first_coordinate = first_coordinate;
+	new_annotation.has_coordinates = true;
+
+	// unselect all other annotations, only select the new one
+	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+		annotation_t* annotation = get_active_annotation(annotation_set, i);
+		annotation->selected = false;
+	}
+	new_annotation.selected = true;
+
+	arrput(annotation_set->stored_annotations, new_annotation);
+	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
+
+	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
+	annotation_set->active_annotation_count++;
+
+	// Select the second point for dragging
+	annotation_set->selected_coordinate_index = annotation_set->coordinate_count - 1;
+
+	annotations_modified(annotation_set);
+
+}
+
 void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
-	coordinate_t coordinate = {pos.x, pos.y};
-	arrput(annotation_set->coordinates, coordinate);
+	arrput(annotation_set->coordinates, pos);
 	i32 coordinate_index = annotation_set->coordinate_count++;
 
 	annotation_t new_annotation = (annotation_t){};
 	new_annotation.type = ANNOTATION_POINT;
+	new_annotation.p0 = pos;
+	new_annotation.bounds = {};
+	new_annotation.bounds.min = pos;
+	new_annotation.bounds.max = pos;
 //		new_annotation.name;
 	new_annotation.group_id = annotation_set->last_assigned_annotation_group;
 	new_annotation.coordinate_capacity = 1;
@@ -149,7 +217,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 		float coordinate_pixel_distance = hit_result.coordinate_distance / scene->zoom.pixel_width;
 
 		annotation_t* hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
-		coordinate_t* hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
+		v2f* hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
 
 		annotation_set->hovered_coordinate = hit_result.coordinate_index;
 		annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
@@ -187,8 +255,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 						float pixel_distance_to_edge = distance_to_edge / scene->zoom.pixel_width;
 						if (pixel_distance_to_edge < annotation_insert_hover_distance) {
 							// try to insert a new coordinate, and start dragging that
-							coordinate_t new_coordinate = { .x = (double)projected_point.x, .y = (double)projected_point.y };
-							insert_coordinate(app_state, annotation_set, hit_annotation, insert_at_index, new_coordinate);
+							insert_coordinate(app_state, annotation_set, hit_annotation, insert_at_index, projected_point);
 							// update state so we can immediately interact with the newly created coordinate
 							annotation_set->is_insert_coordinate_mode = false;
 							annotation_set->force_insert_mode = false;
@@ -308,7 +375,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	if (annotation_set->selection_count > 0) {
 		if (!gui_want_capture_keyboard) {
 			if (was_key_pressed(input, KEY_DeleteForward)) {
-				if (hit_result.annotation_index > 0) {
+				if (hit_result.annotation_index >= 0) {
 					if (dont_ask_to_delete_annotations) {
 						delete_selected_annotations(app_state, annotation_set);
 					} else {
@@ -336,7 +403,7 @@ bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* a
 	bounds2f result = { +FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX };
 	if (annotation->coordinate_count >=1) {
 		for (i32 coordinate_index = annotation->first_coordinate; coordinate_index < annotation->first_coordinate + annotation->coordinate_count; ++coordinate_index) {
-			coordinate_t* coordinate = annotation_set->coordinates + coordinate_index;
+			v2f* coordinate = annotation_set->coordinates + coordinate_index;
 			float x = (float)coordinate->x;
 			float y = (float)coordinate->y;
 			result.left = MIN(result.left, x);
@@ -416,9 +483,9 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 		ASSERT(annotation->has_coordinates);
 		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 			i32 global_coordinate_index = annotation->first_coordinate + i;
-			coordinate_t* coordinate = annotation_set->coordinates + global_coordinate_index;
-			float delta_x = point.x - (float)coordinate->x;
-			float delta_y = point.y - (float)coordinate->y;
+			v2f* coordinate = annotation_set->coordinates + global_coordinate_index;
+			float delta_x = point.x - coordinate->x;
+			float delta_y = point.y - coordinate->y;
 			float sq_distance = SQUARE(delta_x) + SQUARE(delta_y);
 			if (sq_distance < nearest_coordinate_distance_sq) {
 				nearest_coordinate_distance_sq = sq_distance;
@@ -438,8 +505,8 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 	ASSERT(annotation->coordinate_count > 0);
 	if (annotation->coordinate_count == 1) {
 		// trivial case
-		coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate;
-		v2f line_point = {(float)coordinate->x, (float)coordinate->y};
+		v2f* coordinate = annotation_set->coordinates + annotation->first_coordinate;
+		v2f line_point = *coordinate;
 		if (t_ptr) *t_ptr = 0.0f;
 		if (projected_point_ptr) *projected_point_ptr = line_point;
 		if (distance_ptr) {
@@ -454,11 +521,11 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 		float t_closest = 0.0f;
 		bool found_closest = false;
 		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-			coordinate_t* coordinate_current = annotation_set->coordinates + annotation->first_coordinate + i;
+			v2f* coordinate_current = annotation_set->coordinates + annotation->first_coordinate + i;
 			i32 coordinate_index_after = (i + 1) % annotation->coordinate_count;
-			coordinate_t* coordinate_after = annotation_set->coordinates + annotation->first_coordinate + coordinate_index_after;
-			v2f line_start = {(float)coordinate_current->x, (float)coordinate_current->y};
-			v2f line_end = {(float)coordinate_after->x, (float)coordinate_after->y};
+			v2f* coordinate_after = annotation_set->coordinates + annotation->first_coordinate + coordinate_index_after;
+			v2f line_start = *coordinate_current;
+			v2f line_end = *coordinate_after;
 			float t = 0.0f;
 			v2f projected_point = project_point_on_line_segment(point, line_start, line_end, &t);
 			float distance_sq = v2f_length_squared(v2f_subtract(point, projected_point));
@@ -528,22 +595,22 @@ bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annota
 	return changed;
 }
 
-void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, coordinate_t new_coordinate) {
+void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, v2f new_coordinate) {
 	if (insert_at_index >= 0 && insert_at_index <= annotation->coordinate_count) {
 		if (annotation->coordinate_count == annotation->coordinate_capacity) {
 			// Make room by expanding annotation_set->coordinates and copying the coordinates to the end
 			i32 new_capacity = annotation->coordinate_capacity * 2;
 			i32 old_first_coordinate = annotation->first_coordinate;
 			annotation->first_coordinate = annotation_set->coordinate_count;
-			coordinate_t* new_coordinates = arraddnptr(annotation_set->coordinates, new_capacity);
+			v2f* new_coordinates = arraddnptr(annotation_set->coordinates, new_capacity);
 			annotation_set->coordinate_count += new_capacity;
 			annotation->coordinate_capacity = new_capacity;
-			coordinate_t* old_coordinates = annotation_set->coordinates + old_first_coordinate;
-			memcpy(new_coordinates, old_coordinates, sizeof(coordinate_t) * annotation->coordinate_count);
+			v2f* old_coordinates = annotation_set->coordinates + old_first_coordinate;
+			memcpy(new_coordinates, old_coordinates, sizeof(v2f) * annotation->coordinate_count);
 		}
-		coordinate_t* coordinates_at_insertion_point = annotation_set->coordinates + annotation->first_coordinate + insert_at_index;
+		v2f* coordinates_at_insertion_point = annotation_set->coordinates + annotation->first_coordinate + insert_at_index;
 		i32 num_coordinates_to_move = annotation->coordinate_count - insert_at_index;
-		memmove(coordinates_at_insertion_point + 1, coordinates_at_insertion_point, num_coordinates_to_move * sizeof(coordinate_t));
+		memmove(coordinates_at_insertion_point + 1, coordinates_at_insertion_point, num_coordinates_to_move * sizeof(v2f));
 		++annotation->coordinate_count;
 		*coordinates_at_insertion_point = new_coordinate;
 
@@ -571,7 +638,7 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 			i32 trailing_coordinate_count = one_past_last_coordinate - (coordinate_index + 1);
 			if (trailing_coordinate_count > 0) {
 				// move the trailing coordinates one place forward
-				size_t temp_size = trailing_coordinate_count * sizeof(coordinate_t);
+				size_t temp_size = trailing_coordinate_count * sizeof(v2f);
 				void* temp_copy = alloca(temp_size);
 				memcpy(temp_copy, annotation_set->coordinates + (coordinate_index + 1), temp_size);
 				memcpy(annotation_set->coordinates + coordinate_index, temp_copy, temp_size);
@@ -702,11 +769,11 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		i32 new_coordinate_count_lower_part = lower_coordinate_index + 1;
 		i32 new_coordinate_count_upper_part = annotation->coordinate_count - upper_coordinate_index;
 		i32 new_coordinate_count = new_coordinate_count_lower_part + new_coordinate_count_upper_part;
-		coordinate_t* new_coordinates = arraddnptr(annotation_set->coordinates, new_coordinate_count);
+		v2f* new_coordinates = arraddnptr(annotation_set->coordinates, new_coordinate_count);
 		annotation_set->coordinate_count += new_coordinate_count;
-		coordinate_t* original_coordinates = annotation_set->coordinates + annotation->first_coordinate;
-		memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(coordinate_t));
-		memcpy(&new_coordinates[lower_coordinate_index + 1], &original_coordinates[upper_coordinate_index], new_coordinate_count_upper_part * sizeof(coordinate_t));
+		v2f* original_coordinates = annotation_set->coordinates + annotation->first_coordinate;
+		memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(v2f));
+		memcpy(&new_coordinates[lower_coordinate_index + 1], &original_coordinates[upper_coordinate_index], new_coordinate_count_upper_part * sizeof(v2f));
 
 		annotation_t new_annotation = *annotation;
 		new_annotation.first_coordinate = new_first_coordinate;
@@ -818,7 +885,7 @@ void annotation_draw_coordinate_dot(ImDrawList* draw_list, v2f point, float node
 }
 
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min) {
-	if (!annotation_set->enabled) return;
+	if (!scene->enable_annotations) return;
 
 	recount_selected_annotations(app_state, annotation_set);
 
@@ -839,13 +906,13 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			thickness = annotation_selected_line_thickness;
 		}
 		u32 annotation_color = *(u32*)(&base_color);
+		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 		if (annotation->has_coordinates) {
-			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 			// TODO: don't abuse the stack here
 			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 				i32 coordinate_index = annotation->first_coordinate + i;
-				coordinate_t* coordinate = annotation_set->coordinates + coordinate_index;
+				v2f* coordinate = annotation_set->coordinates + coordinate_index;
 				v2f world_pos = {(float)coordinate->x, (float)coordinate->y};
 				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
 				points[i] = transformed_pos;
@@ -853,7 +920,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
 			if (annotation->coordinate_count >= 4) {
-				draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, true, thickness);
+				draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, ImDrawFlags_Closed, thickness);
 			} else if (annotation->coordinate_count >= 2) {
 				draw_list->AddLine(points[0], points[1], annotation_color, thickness);
 				if (annotation->coordinate_count == 3) {
@@ -931,13 +998,13 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 				if (annotation_set->is_edit_mode && annotation_set->is_split_mode) {
 					if (annotation_set->selected_coordinate_index >= annotation->first_coordinate && annotation_set->selected_coordinate_index < annotation->first_coordinate + annotation->coordinate_count) {
-						coordinate_t* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
+						v2f* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
 						v2f world_pos = {(float)split_coordinate->x, (float)split_coordinate->y};
 						v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
 						v2f split_line_points[2] = {};
 						split_line_points[0] = transformed_pos;
 						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.pixel_width);
-						draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, false, thickness);
+						draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, 0, thickness);
 					} else {
 #if DO_DEBUG
 						console_print_error("Error: tried to draw line for annotation split mode, but the selected coordinate (%d) is invalid for this annotation\n", annotation_set->selected_coordinate_index);
@@ -947,6 +1014,35 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				}
 			}
 
+		} else {
+			// Annotation does NOT have coordinates
+			if (annotation->type == ANNOTATION_ELLIPSE) {
+				v2f p0 = world_pos_to_screen_pos(annotation->p0, camera_min, scene->zoom.pixel_width);
+				v2f p1 = world_pos_to_screen_pos(annotation->p1, camera_min, scene->zoom.pixel_width);
+				v2f center = v2f_average(p0, p1);
+				v2f v = v2f_subtract(p1, p0);
+				float len = v2f_length(v);
+				float angle = atan2f(-v.y, v.x);
+				float radius_x = cosf(angle) * len;
+				float radius_y = sinf(angle) * len;
+//				float radius_average = fabsf(radius_x) + fabsf(radius_y) * 0.5f;
+//				draw_list->AddCircle(center, radius_average, IM_COL32(255, 255, 0, 255), 0, 2.0f);
+
+				if (len > 50.0f) {
+					DUMMY_STATEMENT;
+				}
+
+				const i32 segment_count = 48;
+				v2f p_ellipse[segment_count] = {};
+				float theta = 0;
+				float theta_step = (IM_PI * 2.0f) / segment_count;
+				for (i32 i = 0; i < segment_count; ++i) {
+					p_ellipse[i].x = center.x + radius_x * cosf(theta);
+					p_ellipse[i].y = center.y + radius_y * sinf(theta);
+					theta += theta_step;
+				}
+				draw_list->AddPolyline((const ImVec2*)(p_ellipse), segment_count, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 2.0f);
+			}
 		}
 	}
 
@@ -979,6 +1075,7 @@ void center_scene_on_annotation(scene_t* scene, annotation_set_t* annotation_set
 
 void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
+	scene_t* scene = &app_state->scene;
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 
 	const char** group_item_previews = (const char**) alloca(annotation_set->active_group_count * sizeof(char*));
@@ -1053,7 +1150,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 //		if (ImGui::CollapsingHeader("Annotation"))
 		{
-			if (!annotation_set->enabled) {
+			if (!scene->enable_annotations) {
 				ImGui::BeginDisabled();
 			}
 
@@ -1091,7 +1188,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::BeginDisabled();
 			}
 
-			static const char* annotation_types[] = {"Unknown type", "Rectangle", "Polygon", "Point", "Line", "Spline" };
+			static const char* annotation_types[] = {"Unknown type", "Rectangle", "Polygon", "Point", "Line", "Spline", "Ellipse", "Text" };
 
 			// Figure out which types have been selected
 			i32 annotation_type_index = -1;
@@ -1147,7 +1244,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::EndDisabled();
 			}
 
-			if (!annotation_set->enabled) {
+			if (!scene->enable_annotations) {
 				ImGui::EndDisabled();
 			}
 
@@ -1419,7 +1516,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		if (ImGui::CollapsingHeader("Options"))
 		{
-			ImGui::Checkbox("Show annotations", &annotation_set->enabled);
+			ImGui::Checkbox("Show annotations", &scene->enable_annotations);
 			ImGui::SliderFloat("Annotation opacity", &annotation_opacity, 0.0f, 1.0f);
 
 			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f);
@@ -1693,87 +1790,6 @@ void draw_annotation_palette_window() {
 }
 
 
-
-// Annotation save/load procedures.
-
-// XML parsing using the yxml library.
-// https://dev.yorhel.nl/yxml/man
-#define YXML_STACK_BUFFER_SIZE KILOBYTES(32)
-
-enum {
-	ASAP_XML_PARSE_GROUPS = 0,
-	ASAP_XML_PARSE_ANNOTATIONS = 1,
-};
-
-rgba_t asap_xml_parse_color(const char* value) {
-	rgba_t rgba = {0, 0, 0, 255};
-	if (strlen(value) != 7 || value[0] != '#') {
-		console_print("annotation_set_attribute(): Color attribute \"%s\" not in form #rrggbb\n", value);
-	} else {
-		char temp[3] = {};
-		temp[0] = value[1];
-		temp[1] = value[2];
-		rgba.r = (u8)strtoul(temp, NULL, 16);
-		temp[0] = value[3];
-		temp[1] = value[4];
-		rgba.g = (u8)strtoul(temp, NULL, 16);
-		temp[0] = value[5];
-		temp[1] = value[6];
-		rgba.b = (u8)strtoul(temp, NULL, 16);
-	}
-	return rgba;
-}
-
-void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, const char* attr,
-                              const char* value) {
-	if (strcmp(attr, "Color") == 0) {
-		annotation->color = asap_xml_parse_color(value);
-	} else if (strcmp(attr, "Name") == 0) {
-		strncpy(annotation->name, value, sizeof(annotation->name));
-	} else if (strcmp(attr, "PartOfGroup") == 0) {
-		i32 group_index = find_annotation_group(annotation_set, value);
-		if (group_index < 0) {
-			group_index = add_annotation_group(annotation_set, value); // Group not found --> create it
-		}
-		annotation->group_id = group_index;
-	} else if (strcmp(attr, "Type") == 0) {
-		if (strcmp(value, "Rectangle") == 0) {
-			annotation->type = ANNOTATION_RECTANGLE;
-		} else if (strcmp(value, "Polygon") == 0) {
-			annotation->type = ANNOTATION_POLYGON;
-		} else if (strcmp(value, "Spline") == 0) {
-			annotation->type = ANNOTATION_SPLINE;
-		} else if (strcmp(value, "Dot") == 0) {
-			annotation->type = ANNOTATION_POINT;
-		} else {
-			console_print("Warning: annotation '%s' with unrecognized type '%s', defaulting to 'Polygon'.\n", annotation->name, value);
-			annotation->type = ANNOTATION_POLYGON;
-		}
-	}
-}
-
-void coordinate_set_attribute(annotation_set_t* annotation_set, coordinate_t* coordinate, const char* attr,
-                              const char* value) {
-	if (strcmp(attr, "Order") == 0) {
-		// ignored
-//		coordinate->order = atoi(value);
-	} else if (strcmp(attr, "X") == 0) {
-		coordinate->x = atof(value) * annotation_set->mpp.x;
-	} else if (strcmp(attr, "Y") == 0) {
-		coordinate->y = atof(value) * annotation_set->mpp.y;
-	}
-}
-
-void group_set_attribute(annotation_group_t* group, const char* attr, const char* value) {
-	if (strcmp(attr, "Color") == 0) {
-		group->color = asap_xml_parse_color(value);
-	} else if (strcmp(attr, "Name") == 0) {
-		strncpy(group->name, value, sizeof(group->name));
-	} else if (strcmp(attr, "PartOfGroup") == 0) {
-		// TODO: allow nested groups?
-	}
-}
-
 void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	// destroy old state
 	arrfree(annotation_set->stored_annotations);
@@ -1800,271 +1816,6 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	annotation_set->coco = coco_create_empty();
 }
 
-
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
-
-	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-	annotation_group_t current_group = {};
-	asap_xml_element_enum current_element_type = ASAP_XML_ELEMENT_NONE;
-
-	mem_t* file = platform_read_entire_file(filename);
-	yxml_t* x = NULL;
-	bool32 success = false;
-	i64 start = get_clock();
-
-	if (0) { failed: cleanup:
-		if (x) free(x);
-		if (file) free(file);
-		return success;
-	}
-
-	if (file) {
-		// hack: merge memory for yxml_t struct and stack buffer
-		// Note: what is a good stack buffer size?
-		x = (yxml_t*) malloc(sizeof(yxml_t) + YXML_STACK_BUFFER_SIZE);
-
-		// ASAP puts all of the group definitions at the end of the file, instead of the beginning.
-		// To preserve the order of the groups, we need to load the XML in two passes:
-		// pass 0: read annotation groups only
-		// pass 1: read annotations and coordinates
-		for (i32 pass = 0; pass < 2; ++pass) {
-			yxml_init(x, x + 1, YXML_STACK_BUFFER_SIZE);
-
-			// parse XML byte for byte
-			char attrbuf[128];
-			char* attrbuf_end = attrbuf + sizeof(attrbuf);
-			char* attrcur = NULL;
-			char contentbuf[128];
-			char* contentbuf_end = contentbuf + sizeof(contentbuf);
-			char* contentcur = NULL;
-
-			char* doc = (char*) file->data;
-			for (; *doc; doc++) {
-				yxml_ret_t r = yxml_parse(x, *doc);
-				if (r == YXML_OK) {
-					continue; // nothing worthy of note has happened -> continue
-				} else if (r < 0) {
-					goto failed;
-				} else if (r > 0) {
-					// token
-					switch(r) {
-						case YXML_ELEMSTART: {
-							// start of an element: '<Tag ..'
-//						    console_print("element start: %s\n", x->elem);
-							contentcur = contentbuf;
-							*contentcur = '\0';
-
-							current_element_type = ASAP_XML_ELEMENT_NONE;
-							if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Annotation") == 0) {
-								annotation_t new_annotation = (annotation_t){};
-								arrput(annotation_set->stored_annotations, new_annotation);
-								++annotation_set->stored_annotation_count;
-								current_element_type = ASAP_XML_ELEMENT_ANNOTATION;
-							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Coordinate") == 0) {
-								ASSERT(annotation_set->stored_annotation_count == arrlen(annotation_set->stored_annotations));
-								ASSERT(annotation_set->stored_annotation_count > 0);
-								if (annotation_set->stored_annotations != NULL && annotation_set->stored_annotation_count > 0) {
-									coordinate_t new_coordinate = (coordinate_t){};
-									arrput(annotation_set->coordinates, new_coordinate);
-									current_element_type = ASAP_XML_ELEMENT_COORDINATE;
-
-									annotation_t* current_annotation = arrlastptr(annotation_set->stored_annotations);
-									if (!current_annotation->has_coordinates) {
-										current_annotation->first_coordinate = annotation_set->coordinate_count;
-										current_annotation->has_coordinates = true;
-									}
-									current_annotation->coordinate_count++;
-									current_annotation->coordinate_capacity++; // used for delete/insert operations
-									++annotation_set->coordinate_count;
-								}
-							} else if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
-								current_element_type = ASAP_XML_ELEMENT_GROUP;
-								// reset the state (start parsing a new group)
-								current_group = (annotation_group_t){};
-								current_group.is_explicitly_defined = true; // (because this group has an XML tag)
-							}
-						} break;
-						case YXML_CONTENT: {
-							// element content
-//						    console_print("   element content: %s\n", x->elem);
-							if (!contentcur) break;
-							char* tmp = x->data;
-							while (*tmp && contentbuf < contentbuf_end) {
-								*(contentcur++) = *(tmp++);
-							}
-							if (contentcur == contentbuf_end) {
-								// too long content
-								// TODO: harden against buffer overflow, see approach in isyntax.c
-								console_print("load_asap_xml_annotations(): encountered a too long XML element content\n");
-								goto failed;
-							}
-							*contentcur = '\0';
-						} break;
-						case YXML_ELEMEND: {
-							// end of an element: '.. />' or '</Tag>'
-//						    console_print("element end: %s\n", x->elem);
-							if (contentcur) {
-								// NOTE: usually only whitespace (newlines and such)
-//							    console_print("elem content: %s\n", contentbuf);
-							}
-							if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
-								annotation_group_t* parsed_group = &current_group;
-								// Check if a group already exists with this name, if not create it
-								i32 group_index = find_annotation_group(annotation_set, parsed_group->name);
-								if (group_index < 0) {
-									group_index = add_annotation_group(annotation_set, parsed_group->name);
-								}
-								annotation_group_t* destination_group = annotation_set->stored_groups + group_index;
-								// 'Commit' the group with all its attributes
-								memcpy(destination_group, parsed_group, sizeof(*destination_group));
-							}
-						} break;
-						case YXML_ATTRSTART: {
-							// attribute: 'Name=..'
-//						    console_print("attr start: %s\n", x->attr);
-							attrcur = attrbuf;
-							*attrcur = '\0';
-						} break;
-						case YXML_ATTRVAL: {
-							// attribute value
-//						    console_print("   attr val: %s\n", x->attr);
-							if (!attrcur) break;
-							char* tmp = x->data;
-							while (*tmp && attrbuf < attrbuf_end) {
-								*(attrcur++) = *(tmp++);
-							}
-							if (attrcur == attrbuf_end) {
-								// too long attribute
-								console_print("load_asap_xml_annotations(): encountered a too long XML attribute\n");
-								goto failed;
-							}
-							*attrcur = '\0';
-						} break;
-						case YXML_ATTREND: {
-							// end of attribute '.."'
-							if (attrcur) {
-//							    console_print("attr %s = %s\n", x->attr, attrbuf);
-								if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
-									annotation_set_attribute(annotation_set, arrlastptr(annotation_set->stored_annotations), x->attr, attrbuf);
-								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_COORDINATE) {
-									coordinate_set_attribute(annotation_set, arrlastptr(annotation_set->coordinates), x->attr, attrbuf);
-								} else if (pass == ASAP_XML_PARSE_GROUPS && current_element_type == ASAP_XML_ELEMENT_GROUP) {
-									group_set_attribute(&current_group, x->attr, attrbuf);
-								}
-							}
-						} break;
-						case YXML_PISTART:
-						case YXML_PICONTENT:
-						case YXML_PIEND:
-							break; // processing instructions (uninteresting, skip)
-						default: {
-							console_print("yxml_parse(): unrecognized token (%d)\n", r);
-							goto failed;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// At this point, the indices for the 'active' annotations are all nicely in order (as they are loaded).
-	// So we simply set the indices in ascending order, as a reference to look up the actual annotation_t struct.
-	// (later on, the indices might get reordered by the user, annotations might get deleted, inserted, etc.)
-	ASSERT(annotation_set->active_annotation_indices == NULL);
-	arrsetlen(annotation_set->active_annotation_indices, annotation_set->stored_annotation_count);
-	annotation_set->active_annotation_count = annotation_set->stored_annotation_count;
-	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
-		annotation_set->active_annotation_indices[i] = i;
-	}
-
-	annotation_set->asap_xml_filename = strdup(filename); // TODO: fix leak
-	annotation_set->export_as_asap_xml = true;
-	success = true;
-	annotation_set->enabled = true;
-	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
-	console_print("Loaded ASAP XML annotations in %g seconds.\n", seconds_elapsed);
-
-	goto cleanup;
-	// return success;
-}
-
-const char* get_annotation_type_name(annotation_type_enum type) {
-	const char* result = "";
-	switch(type) {
-		case ANNOTATION_UNKNOWN_TYPE: default: break;
-		case ANNOTATION_RECTANGLE: result = "Rectangle"; break;
-		case ANNOTATION_POLYGON: result = "Polygon"; break;
-		case ANNOTATION_SPLINE: result = "Spline"; break;
-		case ANNOTATION_POINT: result = "Dot"; break;
-	}
-	return result;
-
-}
-
-void asap_xml_print_color(char* buf, size_t bufsize, rgba_t rgba) {
-	snprintf(buf, bufsize, "#%02x%02x%02x", rgba.r, rgba.g, rgba.b);
-}
-
-void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out) {
-	ASSERT(annotation_set);
-	FILE* fp = fopen(filename_out, "wb");
-	if (fp) {
-//		const char* base_tag = "<ASAP_Annotations><Annotations>";
-
-		fprintf(fp, "<ASAP_Annotations>");
-
-		fprintf(fp, "<AnnotationGroups>\n");
-
-		for (i32 group_index = 1 /* Skip group 0 ('None') */; group_index < annotation_set->stored_group_count; ++group_index) {
-			annotation_group_t* group = annotation_set->stored_groups + group_index;
-
-			char color_buf[32];
-			asap_xml_print_color(color_buf, sizeof(color_buf), group->color);
-
-			const char* part_of_group = "None";
-
-			fprintf(fp, "<Group Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\"><Attributes /></Group>\n",
-					color_buf, group->name, part_of_group);
-
-		}
-
-		fprintf(fp, "</AnnotationGroups>\n");
-
-		fprintf(fp, "<Annotations>");
-
-		for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
-			annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
-			char color_buf[32];
-			asap_xml_print_color(color_buf, sizeof(color_buf), annotation->color);
-
-			const char* part_of_group = annotation_set->stored_groups[annotation_set->active_group_indices[annotation->group_id]].name;
-			const char* type_name = get_annotation_type_name(annotation->type);
-
-			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">",
-			        color_buf, annotation->name, part_of_group, type_name);
-
-			if (annotation->has_coordinates) {
-				fprintf(fp, "<Coordinates>");
-				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
-					coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
-					fprintf(fp, "<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />", coordinate_index,
-			            coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
-				}
-				fprintf(fp, "</Coordinates>");
-			}
-
-
-			fprintf(fp, "</Annotation>\n");
-		}
-
-		fprintf(fp, "</Annotations></ASAP_Annotations>\n");
-
-		fclose(fp);
-
-
-	}
-}
-
 void geojson_print_feature(FILE* fp, annotation_set_t* annotation_set, annotation_t* annotation) {
 	const char* geometry_type;
 	switch(annotation->type) {
@@ -2088,7 +1839,7 @@ void geojson_print_feature(FILE* fp, annotation_set_t* annotation_set, annotatio
 			if (coordinate_index != 0) {
 				fprintf(fp, ", ");
 			}
-			coordinate_t* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
+			v2f* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
 			fprintf(fp, "[%g, %g]", coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
 		}
 	}
@@ -2175,3 +1926,5 @@ void recount_selected_annotations(app_state_t* app_state, annotation_set_t* anno
 	}
 	annotation_set->selection_count = selection_count;
 }
+
+

@@ -331,6 +331,7 @@ typedef struct scene_t {
 	scale_bar_t scale_bar;
 	bool is_mpp_known;
 	bool enable_grid;
+	bool enable_annotations;
 	bool8 initialized;
 } scene_t;
 

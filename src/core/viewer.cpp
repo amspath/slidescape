@@ -1313,6 +1313,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	scene_t* scene = &app_state->scene;
 	ASSERT(app_state->initialized);
 	ASSERT(scene->initialized);
+	annotation_set_t* annotation_set = &scene->annotation_set;
 
 	// Note: could be changed to allow e.g. multiple scenes side by side
 	{
@@ -1361,10 +1362,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	image_t* displayed_image = app_state->loaded_images + app_state->displayed_image;
 
-	// Workaround for drag onto window being registered as a click
+
 	if (displayed_image->is_freshly_loaded) {
 		set_window_title(app_state->main_window, displayed_image->name);
 		app_state->is_window_title_set_for_image = true;
+		// Workaround for drag onto window being registered as a click
 		input->mouse_buttons[0].down = false;
 		input->mouse_buttons[0].transition_count = 0;
 		displayed_image->is_freshly_loaded = false;
@@ -1732,19 +1734,16 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (!gui_want_capture_mouse) {
 					if (app_state->mouse_tool == TOOL_CREATE_POINT) {
 						if (scene->clicked) {
-							// create point
-							console_print("Creating a point\n");
+							create_point_annotation(&scene->annotation_set, scene->mouse);
+//							console_print("Creating a point\n");
 							viewer_switch_tool(app_state, TOOL_NONE);
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_LINE) {
 						if (scene->drag_started) {
-							// create first point
-							console_print("Creating a line\n");
-						}
-						if (scene->drag_ended) {
-							// drop second point, finalize line
-							console_print("Finalizing a line\n");
-							viewer_switch_tool(app_state, TOOL_NONE);
+							create_line_annotation(&scene->annotation_set, scene->mouse);
+							app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
+							app_state->mouse_tool = TOOL_NONE;
+//							console_print("Creating a line\n");
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_FREEFORM) {
 						if (scene->drag_started) {
@@ -1757,9 +1756,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_ELLIPSE) {
 						if (scene->drag_started) {
-							// create first bounding point
+							create_ellipse_annotation(annotation_set, scene->mouse);
 						} else if (scene->is_dragging) {
-							// update second bounding point and visualize the ellipse
+							annotation_t* ellipse = get_active_annotation(annotation_set, annotation_set->editing_annotation_index);
+							ellipse->p1 = scene->mouse;
 						} else if (scene->drag_ended) {
 							// finalize ellipse
 							viewer_switch_tool(app_state, TOOL_NONE);
@@ -1806,7 +1806,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (scene->is_dragging) {
 					i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
 					if (coordinate_index >= 0 && coordinate_index < scene->annotation_set.coordinate_count) {
-						coordinate_t* coordinate = scene->annotation_set.coordinates + coordinate_index;
+						v2f* coordinate = scene->annotation_set.coordinates + coordinate_index;
 						coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
 						coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
 						// TODO: invalidate annotation bounds
