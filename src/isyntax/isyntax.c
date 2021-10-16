@@ -903,7 +903,8 @@ static void signed_magnitude_to_twos_complement_16_block(u16* data, u32 len) {
 	}
 #else
 	// Slow version
-	for (i32 i = 0; i < len; ++i) {
+    i32 i = 0;
+	for (; i < len; ++i) {
 		data[i] = signed_magnitude_to_twos_complement_16(data[i]);
 	}
 #endif
@@ -932,8 +933,9 @@ static void convert_to_absolute_value_16_block(i16* data, u32 len) {
 		}
 	}
 #else
-		// Slow version
-	for (i32 i = 0; i < len; ++i) {
+    // Slow version
+    i32 i = 0;
+	for (; i < len; ++i) {
 		data[i] = signed_magnitude_to_twos_complement_16(data[i]) & 0x7FFF;
 	}
 #endif
@@ -1766,14 +1768,14 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			bitmasks[0] = *(u16*)(byte_pos);
 			byte_pos += 2;
 			bits_read += 2*8;
-			total_mask_bits = _popcnt32(bitmasks[0]);
+			total_mask_bits = popcount(bitmasks[0]);
 		} else if (coeff_count == 3) {
 			bitmasks[0] = *(u16*)(byte_pos);
 			bitmasks[1] = *(u16*)(byte_pos+2);
 			bitmasks[2] = *(u16*)(byte_pos+4);
 			byte_pos += 6;
 			bits_read += 6*8;
-			total_mask_bits = _popcnt32(bitmasks[0]) + _popcnt32(bitmasks[1]) + _popcnt32(bitmasks[2]);
+			total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 		} else {
 			panic();
 		}
@@ -2026,13 +2028,13 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		if (decompressed_length < expected_length) {
 			if (coeff_count == 1) {
 				bitmasks[0] = *(u16*)(decompressed_buffer + decompressed_length - 2);
-				total_mask_bits = _popcnt32(bitmasks[0]);
+				total_mask_bits = popcount(bitmasks[0]);
 			} else if (coeff_count == 3) {
 				byte_pos = decompressed_buffer + decompressed_length - 6;
 				bitmasks[0] = *(u16*)(byte_pos);
 				bitmasks[1] = *(u16*)(byte_pos+2);
 				bitmasks[2] = *(u16*)(byte_pos+4);
-				total_mask_bits = _popcnt32(bitmasks[0]) + _popcnt32(bitmasks[1]) + _popcnt32(bitmasks[2]);
+				total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 			} else {
 				panic(); // TODO: handle error gracefully?
 			}

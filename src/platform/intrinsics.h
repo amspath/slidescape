@@ -85,7 +85,7 @@ static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchan
 }
 
 static inline u32 bit_scan_forward(u32 x) {
-	return _bit_scan_forward(x);
+	return __builtin_ctz(x);
 }
 
 #else
@@ -214,3 +214,15 @@ static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
 	return is_big_endian ? bswap_64(x) : x;
 }
 
+#if APPLE_ARM
+static inline i32 popcount(u32 x) {
+    int c = 0;
+    for (; x != 0; x &= x - 1)
+        c++;
+    return c;
+}
+#else
+static inline i32 popcount(u32 x) {
+    return _popcnt(x);
+}
+#endif

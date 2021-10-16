@@ -403,7 +403,13 @@ int main(int argc, const char** argv)
 	const char* main_ui_font_filename = "/System/Library/Fonts/SFNSText.ttf";
 	if (file_exists(main_ui_font_filename)) {
 		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, font_size, NULL, ranges);
-	}
+	} else {
+        main_ui_font_filename = "/System/Library/Fonts/SFNS.ttf";
+        if (file_exists(main_ui_font_filename)) {
+            global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, font_size, NULL, ranges);
+        }
+    }
+
 	const char* fixed_width_font_filename = "/System/Library/Fonts/Menlo.ttc";
 	if (file_exists(fixed_width_font_filename)) {
 		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f * app_state->display_scale_factor, NULL, ranges);
@@ -411,11 +417,16 @@ int main(int argc, const char** argv)
 			global_fixed_width_font->Scale = app_state->display_points_per_pixel;
 		}
 	}
-//	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/System/Library/Fonts/Courier.dfont", 15.0f);
-	ImFont* font_default = io.Fonts->AddFontDefault();
-	if (!global_fixed_width_font) {
+
+    ImFont* font_default = io.Fonts->AddFontDefault();
+    if (!global_main_font) {
+        console_print_error("Cannot load main UI font, defaulting to built-in font.\n");
+        global_main_font = font_default;
+    }
+    if (!global_fixed_width_font) {
 		global_fixed_width_font = font_default;
 	}
+
 	io.Fonts->Build();
 	global_main_font->Scale = app_state->display_points_per_pixel;
 #endif

@@ -210,7 +210,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #		define PAUSE __asm__ __volatile__("rd    %%ccr, %%g0\n\t" ::: "memory")
 #	elif defined(__ppc__)  || defined(_ARCH_PPC) || defined(_ARCH_PWR) || defined(_ARCH_PWR2) || defined(_POWER)
 #		define PAUSE __asm__ __volatile__("or 27,27,27")
-#	elif defined(__ANDROID__)
+#	elif defined(__ANDROID__) || defined(__arm64)
 #		include <sched.h> //for sched_yield
 #		define PAUSE sched_yield()
 #	else

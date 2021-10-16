@@ -41,9 +41,16 @@
 
 #ifdef __APPLE__
 #define APPLE 1
+#include <TargetConditionals.h>
+#if TARGET_CPU_ARM64
+#define APPLE_ARM 1
+#else
+#define APPLE_ARM 0
+#endif
 #define OPENGL_H <OpenGL/gl3.h>
 #else
 #define APPLE 0
+#define APPLE_ARM 0
 #endif
 
 #if LINUX

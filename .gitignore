@@ -4,6 +4,7 @@ release/
 build/
 *.exe
 *.dll
+*.app/*
 
 data/
 openslide/
