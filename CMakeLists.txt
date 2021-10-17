@@ -187,7 +187,7 @@ set(VIEWER_SOURCE_FILES
         tiff/tiff_write.c
         tiff/tif_lzw.c
         isyntax/isyntax.c
-        isyntax/isyntax_streamer.cpp
+        isyntax/isyntax_streamer.c
         imgui/imgui.cpp
         imgui/imgui_demo.cpp
         imgui/imgui_draw.cpp

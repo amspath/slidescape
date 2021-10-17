@@ -113,6 +113,10 @@ HANDLE win32_open_overlapped_file_handle(const char* filename) {
 	return handle;
 }
 
+file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
+	return win32_open_overlapped_file_handle(filename);
+}
+
 size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
 	// We align reads to 4K boundaries, so that file handles can be used with the FILE_FLAG_NO_BUFFERING flag.
 	// See: https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering
@@ -171,14 +175,6 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
 	size_t bytes_read = win32_overlapped_read(local_thread_memory, file_handle, dest, bytes_to_read, offset);
 	return bytes_read;
-}
-
-// TODO: Queue I/O to run, then query later?
-i32 win32_add_async_io_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
-	i32 io_index = thread_memory->async_io_index;
-	//stub
-
-	return io_index;
 }
 
 file_stream_t file_stream_open_for_reading(const char* filename) {

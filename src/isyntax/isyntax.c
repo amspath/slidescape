@@ -155,11 +155,7 @@ static void parse_three_integers(const char* str, i32* first, i32* second, i32* 
 	atoi_and_advance(str, third);
 }
 
-void isyntax_decode_base64_embedded_jpeg_file(isyntax_t* isyntax) {
-	// stub
-}
-
-void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
+static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	switch(group) {
 		default: {
@@ -216,7 +212,7 @@ void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 eleme
 	}
 }
 
-void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
+static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	// Parse metadata belong to one of the images in the file (either a WSI, LABELIMAGE or MACROIMAGE)
 
@@ -224,6 +220,8 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 	if (!image) {
 		image = isyntax->parser.current_image = &isyntax->images[0];
 	}
+
+	bool success = true;
 
 	switch(group) {
 		default: {
@@ -294,8 +292,6 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 						image->pixels = stbi_load_from_memory(decoded, decoded_len, &image->width, &image->height, &channels_in_file, 4);
 #endif
 						free(decoded);
-						// TODO: actually display the image
-						DUMMY_STATEMENT;
 					}
 				} break;
 				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
@@ -400,8 +396,8 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 							u32 block_count = header_size / 48;
 							u32 should_be_zero = header_size % 48;
 							if (should_be_zero != 0) {
-								// TODO: handle error condition
-								DUMMY_STATEMENT;
+								// TODO: handle error condition properly
+								success = false;
 							}
 
 							image->codeblock_count = block_count;
@@ -425,8 +421,8 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 							u32 block_count = header_size / 80;
 							u32 should_be_zero = header_size % 80;
 							if (should_be_zero != 0) {
-								// TODO: handle error condition
-								DUMMY_STATEMENT;
+								// TODO: handle error condition properly
+								success = false;
 							}
 
 							image->codeblock_count = block_count;
@@ -447,18 +443,20 @@ void isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group, u32 el
 								DUMMY_STATEMENT;
 							}
 						} else {
-							// TODO: handle error condition
+							// TODO: handle error condition properly
+							success = false;
 						}
 
 						free(decoded);
 					} else {
-						//TODO: handle error condition
+						//TODO: handle error condition properly
+						success = false;
 					}
 				} break;
-
 			}
 		} break;
 	}
+	return success;
 }
 
 bool isyntax_validate_dicom_attr(const char* expected, const char* observed) {
@@ -621,6 +619,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
 
 				} break;
+
 				case YXML_CONTENT: {
 					// element content
 					if (!parser->contentcur) break;
@@ -676,6 +675,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 
 					*parser->contentcur = '\0';
 				} break;
+
 				case YXML_ELEMEND: {
 					// end of an element: '.. />' or '</Tag>'
 
@@ -685,20 +685,21 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						// Now at the YXML_ELEMEND stage we can parse the complete tag at once (attributes + content).
 						console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), size:%-8u = %s\n", get_spaces(parser->node_stack_index),
 						                      parser->current_dicom_attribute_name,
-						                      parser->current_dicom_group_tag, parser->current_dicom_element_tag, parser->contentlen, parser->contentbuf);
+						                      parser->current_dicom_group_tag, parser->current_dicom_element_tag,
+											  parser->contentlen, parser->contentbuf);
 
-#if 0
-						if (parser->node_stack[parser->node_stack_index].group == 0) {
-							DUMMY_STATEMENT; // probably the group is 0 because this is a top level node.
-						}
-#endif
+//						if (parser->node_stack[parser->node_stack_index].group == 0) {
+//							DUMMY_STATEMENT; // probably the group is 0 because this is a top level node.
+//						}
 
 						if (parser->node_stack_index == 2) {
-							isyntax_parse_ufsimport_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
-							                        parser->contentbuf, parser->contentlen);
+							isyntax_parse_ufsimport_child_node(isyntax, parser->current_dicom_group_tag,
+															   parser->current_dicom_element_tag,
+															   parser->contentbuf, parser->contentlen);
 						} else {
-							isyntax_parse_scannedimage_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
-							                                   parser->contentbuf, parser->contentlen);
+							isyntax_parse_scannedimage_child_node(isyntax, parser->current_dicom_group_tag,
+																  parser->current_dicom_element_tag,
+																  parser->contentbuf, parser->contentlen);
 						}
 					} else {
 						// We have reached the end of a branch or array node, or a leaf node WITH children.
@@ -761,6 +762,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					}
 
 				} break;
+
 				case YXML_ATTRSTART: {
 					// attribute: 'Name=..'
 //				    console_print_verbose("attr start: %s\n", x->attr);
@@ -768,6 +770,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					*parser->attrcur = '\0';
 					parser->attrlen = 0;
 				} break;
+
 				case YXML_ATTRVAL: {
 					// attribute value
 				    //console_print_verbose("   attr val: %s\n", x->attr);
@@ -789,6 +792,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					}
 					*parser->attrcur = '\0';
 				} break;
+
 				case YXML_ATTREND: {
 					// end of attribute '.."'
 					if (parser->attrcur) {
@@ -801,15 +805,12 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 								memcpy(parser->current_dicom_attribute_name, parser->attrbuf, copy_size);
 								i32 one_past_last_char = MIN(parser->attrlen, sizeof(parser->current_dicom_attribute_name)-1);
 								parser->current_dicom_attribute_name[one_past_last_char] = '\0';
-								DUMMY_STATEMENT;
 							} else if (parser->attribute_index == 1 /* Group="0x...." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Group");
 								parser->current_dicom_group_tag = strtoul(parser->attrbuf, NULL, 0);
-								DUMMY_STATEMENT;
 							} else if (parser->attribute_index == 2 /* Element="0x...." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Element");
 								parser->current_dicom_element_tag = strtoul(parser->attrbuf, NULL, 0);
-								DUMMY_STATEMENT;
 							} else if (parser->attribute_index == 3 /* PMSVR="..." */) {
 								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "PMSVR");
 								if (strcmp(parser->attrbuf, "IDataObjectArray") == 0) {
@@ -821,11 +822,14 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							                              parser->current_dicom_attribute_name,
 									                      parser->current_dicom_group_tag, parser->current_dicom_element_tag);
 									if (parser->node_stack_index == 2) { // At level of UfsImport
-										isyntax_parse_ufsimport_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
-										                        parser->contentbuf, parser->contentlen);
+										isyntax_parse_ufsimport_child_node(isyntax, parser->current_dicom_group_tag,
+																		   parser->current_dicom_element_tag,
+																		   parser->contentbuf, parser->contentlen);
 									} else {
-										isyntax_parse_scannedimage_child_node(isyntax, parser->current_dicom_group_tag, parser->current_dicom_element_tag,
-										                                   parser->contentbuf, parser->contentlen);
+										bool parse_ok = isyntax_parse_scannedimage_child_node(isyntax,
+																			  parser->current_dicom_group_tag,
+																			  parser->current_dicom_element_tag,
+																			  parser->contentbuf, parser->contentlen);
 									}
 
 								}
@@ -847,6 +851,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 
 					}
 				} break;
+
 				case YXML_PISTART:
 				case YXML_PICONTENT:
 				case YXML_PIEND:
@@ -983,7 +988,6 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 	i32 R = B + Co;
 	return (rgba_t){ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255};
 }
-
 
 static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
 	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
@@ -1243,14 +1247,13 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 	i32 pad_l = ISYNTAX_IDWT_PAD_L;
 	i32 pad_r = ISYNTAX_IDWT_PAD_R;
 	i32 pad_l_plus_r = pad_l + pad_r;
-//		ASSERT(sizeof(icoeff_t) * pad_amount == sizeof(u64)); // blit 64 bits == 4 pixels
+//	ASSERT(sizeof(icoeff_t) * pad_amount == sizeof(u64)); // blit 64 bits == 4 pixels
 	i32 block_width = isyntax->block_width;
 	i32 block_height = isyntax->block_height;
 	i32 quadrant_width = block_width + pad_l_plus_r;
 	i32 quadrant_height = block_height + pad_l_plus_r;
 	i32 full_width = 2 * quadrant_width;
 	i32 full_height = 2 * quadrant_height;
-	size_t idwt_buffer_size = full_width * full_height * sizeof(icoeff_t);
 	icoeff_t* idwt = dest_buffer; // allocated/given by the caller ahead of time
 
 	i32 dest_stride = full_width;
@@ -1536,8 +1539,8 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			ASSERT(child_bottom_left->color_channels[color].coeff_ll == NULL);
 			ASSERT(child_bottom_right->color_channels[color].coeff_ll == NULL);
 
-			// NOTE: malloc() and free() can become a bottleneck, they don't scale well especially across many threads
-			// TODO: make a block allocator
+			// NOTE: malloc() and free() can become a bottleneck, they don't scale well especially across many threads.
+			// We use a custom block allocator to address this.
 			i64 start_malloc = get_clock();
 			child_top_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
 			child_top_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
@@ -1835,7 +1838,9 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				save_code_in_huffman_fast_lookup_table(&huffman, code, code_size, symbol);
 				++fast_count;
 			} else {
-				// TODO: how to make this faster?
+				// Prepare the slow method for decoding Huffman codes that are too large to fit in the fast lookup table.
+				// (Slow method = iterating over possible symbols and checking if they match)
+				// Value being >= 256 in the 'fast' lookup table is the hint that we need the slow method.
 				u32 prefix = code & fast_mask;
 				u16 old_fast_data = huffman.fast[prefix];
 				u8 old_lowest_symbol_index = old_fast_data & 0xFF;
@@ -1875,7 +1880,7 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	}
 
 	// Decode the message
-	u8* decompressed_buffer = (u8*)arena_push_size(temp_arena, serialized_length);
+	u8* decompressed_buffer = (u8*)arena_push_size(temp_arena, serialized_length); // TODO: check that length is sane
 
 	u32 zerorun_code = huffman.code[zerorun_symbol];
 	u32 zerorun_code_size = huffman.size[zerorun_symbol];
@@ -2590,24 +2595,11 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 		file_stream_close(fp);
 
 		if (success) {
-#if WINDOWS
-			// TODO: make async I/O platform agnostic
-			// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
-			// http://vec3.ca/using-win32-asynchronous-io/
-			isyntax->file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
-			                                         FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
-			                                         /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
-			                                         NULL);
-#else
-			isyntax->file_handle = open(filename, O_RDONLY);
-				if (isyntax->file_handle == -1) {
-					console_print_error("Error: Could not reopen file for asynchronous I/O\n");
-					return false;
-				} else {
-					// success
-				}
-
-#endif
+			isyntax->file_handle = open_file_handle_for_simultaneous_access(filename);
+			if (!isyntax->file_handle) {
+				console_print_error("Error: Could not reopen file for asynchronous I/O\n");
+				success = false;
+			}
 		}
 	}
 	return success;

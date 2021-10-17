@@ -216,6 +216,16 @@ void file_stream_close(file_stream_t file_stream) {
 	fclose(file_stream);
 }
 
+file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
+	file_handle_t fd = open(filename, O_RDONLY);
+	if (fd == -1) {
+		console_print_error("Error: Could not reopen file for asynchronous I/O\n");
+		return 0;
+	} else {
+		return fd;
+	}
+}
+
 size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
 	size_t bytes_read = pread(file_handle, dest, bytes_to_read, offset);
 	return bytes_read;
