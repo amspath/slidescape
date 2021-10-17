@@ -149,27 +149,15 @@ bool linux_process_input() {
     old_input = curr_input;
     curr_input = temp;
 
-
-    // reset the transition counts.
-    // TODO: can't we just do that, instead of reinitializing the reset?
-
-
     curr_input->drag_start_xy = old_input->drag_start_xy;
     curr_input->drag_vector = old_input->drag_vector;
 
     ImGuiIO& io = ImGui::GetIO();
+	curr_input->mouse_xy = io.MousePos;
 
-    // Retrieve the mouse cursor position
-	// SDL_GetGlobalMouseState() tracks mouse events even when not the foreground application
-	// (--> can get window positions outside the client area, and immediately start dragging when gaining focus)
-    i32 mouse_x = 0, mouse_y = 0;
-	u32 mouse_buttons = SDL_GetGlobalMouseState(&mouse_x, &mouse_y);
-	i32 window_x = 0, window_y = 0;
-	SDL_GetWindowPosition(global_app_state.main_window, &window_x, &window_y);
-	curr_input->mouse_xy = (v2f){(float)(mouse_x - window_x), (float)(mouse_y - window_y)};
-
-
-    u32 button_count = MIN(COUNT(curr_input->mouse_buttons), 5);
+	SDL_PumpEvents();
+	u32 mouse_buttons = SDL_GetMouseState(NULL, NULL);
+	u32 button_count = MIN(COUNT(curr_input->mouse_buttons), 5);
     memset_zero(&curr_input->mouse_buttons);
     for (u32 i = 0; i < button_count; ++i) {
         curr_input->mouse_buttons[i].down = old_input->mouse_buttons[i].down;
@@ -204,6 +192,7 @@ bool linux_process_input() {
 
 	curr_input->mouse_z = io.MouseWheel;
 
+	i32 mouse_x = 0, mouse_y = 0;
 	SDL_GetRelativeMouseState(&mouse_x, &mouse_y);
 	v2f mouse_delta = (v2f){(float)mouse_x, (float)mouse_y};
     curr_input->drag_vector = mouse_delta;
