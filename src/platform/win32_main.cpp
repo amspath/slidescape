@@ -1783,9 +1783,9 @@ int main(int argc, const char** argv) {
 	console_printer_benaphore = benaphore_create();
 	console_print("Starting up...\n");
 
-	// Don't open multiple instances of the program -> switch to the existing one
+	// Don't open multiple instances of the program when opening a file -> switch to the existing instance
 	// (unless Shift is being held down)
-	if (!(GetKeyState(VK_SHIFT) & 0x8000)) {
+	if (g_argc > 1 && !(GetKeyState(VK_SHIFT) & 0x8000)) {
 		win32_check_already_running();
 	}
 
