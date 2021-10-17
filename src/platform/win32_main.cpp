@@ -35,6 +35,7 @@
 //#define VC_EXTRALEAN
 #include <windows.h>
 #include <xinput.h>
+#include <psapi.h> // for EnumProcesses() and GetModuleFileNameExA()
 
 #include <glad/glad.h>
 #include <GL/wgl.h>
@@ -55,6 +56,7 @@
 #include "caselist.h"
 
 
+
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
 #if PREFER_DEDICATED_GRAPHICS
@@ -65,6 +67,19 @@
 __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #endif
+
+
+
+
+
+struct win32_copydata_message_t {
+	i32 argc;
+	bool need_open;
+	char filename[512];
+};
+
+#define SV_COPYDATA_TYPE 0x511d3
+static HWND global_already_running_app_hwnd;
 
 HINSTANCE g_instance;
 HINSTANCE g_prev_instance;
@@ -520,6 +535,16 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_INPUT: {
 			result = DefWindowProcA(window, message, wparam, lparam); // apparently this is needed for cleanup?
 		}; break;
+
+		case WM_COPYDATA: {
+			PCOPYDATASTRUCT cds = (PCOPYDATASTRUCT) lparam;
+			if (cds->dwData == SV_COPYDATA_TYPE) {
+				win32_copydata_message_t* message_data = (win32_copydata_message_t*) cds->lpData;
+				if (message_data->argc > 1 && message_data->need_open) {
+					load_generic_file(&global_app_state, message_data->filename, 0);
+				}
+			}
+		} break;
 
 		case WM_CHAR:
 		case WM_DEADCHAR:
@@ -1686,6 +1711,64 @@ void create_ico() {
 
 #endif
 
+WINBOOL CALLBACK win32_enum_windows_proc_func(HWND hwnd, LPARAM lparam) {
+	DWORD process_id;
+	GetWindowThreadProcessId(hwnd, &process_id);
+//	console_print("process_id=%d lparam=%d\n", process_id, lparam);
+	if (process_id == lparam) {
+//		console_print("Found hwnd=%d\n", hwnd);
+		global_already_running_app_hwnd = hwnd;
+		return FALSE;
+	}
+	return TRUE;
+}
+
+void win32_check_already_running() {
+	DWORD processes[4096];
+	DWORD bytes_read;
+	EnumProcesses(processes, sizeof(processes), &bytes_read);
+	DWORD process_count = bytes_read / sizeof(DWORD);
+
+	CHAR curr_name[MAX_PATH];
+	GetModuleFileNameExA(GetCurrentProcess(), NULL, curr_name, MAX_PATH);
+	DWORD curr_process_id = GetCurrentProcessId();
+
+	for(i32 i = 0; i < process_count; ++i) {
+		HANDLE process = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processes[i]);
+		CHAR name[MAX_PATH];
+		GetModuleFileNameExA(process, NULL, name, MAX_PATH);
+		CloseHandle(process);
+		if (processes[i] != curr_process_id && strcmp(name, curr_name) == 0) {
+			console_print("Already running!\n");
+			EnumWindows(win32_enum_windows_proc_func, (LPARAM)processes[i]);
+			if (global_already_running_app_hwnd) {
+				if (!IsWindowVisible(global_already_running_app_hwnd)) {
+					ShowWindow(global_already_running_app_hwnd, SW_SHOW);
+				}
+				SetForegroundWindow(global_already_running_app_hwnd);
+
+				// TODO: prevent race condition when opening multiple files
+
+				win32_copydata_message_t message_data = {};
+				message_data.argc = g_argc;
+				if (g_argc > 1) {
+					message_data.need_open = true;
+					strncpy(message_data.filename, g_argv[1], sizeof(message_data.filename)-1);
+				}
+
+				COPYDATASTRUCT cds = {};
+				cds.dwData = SV_COPYDATA_TYPE;
+				cds.cbData = sizeof(win32_copydata_message_t);
+				cds.lpData = &message_data;
+
+				SendMessageA(global_already_running_app_hwnd, WM_COPYDATA, NULL, (LPARAM)(&cds));
+
+				exit(0);
+			}
+		}
+	}
+}
+
 
 int main(int argc, const char** argv) {
 	g_instance = GetModuleHandle(NULL);
@@ -1699,6 +1782,12 @@ int main(int argc, const char** argv) {
 
 	console_printer_benaphore = benaphore_create();
 	console_print("Starting up...\n");
+
+	// Don't open multiple instances of the program -> switch to the existing one
+	// (unless Shift is being held down)
+	if (!(GetKeyState(VK_SHIFT) & 0x8000)) {
+		win32_check_already_running();
+	}
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
