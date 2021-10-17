@@ -113,7 +113,7 @@ HANDLE win32_open_overlapped_file_handle(const char* filename) {
 	return handle;
 }
 
-void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
+size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
 	// We align reads to 4K boundaries, so that file handles can be used with the FILE_FLAG_NO_BUFFERING flag.
 	// See: https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering
 	i64 aligned_offset = offset & ~(KILOBYTES(4)-1);
@@ -129,6 +129,7 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 		raw_read_size += KILOBYTES(4) - bytes_to_read_in_last_sector;
 	}
 
+	// TODO: detect if read size does not fit in the arena, and allocate memory if needed
 	temp_memory_t temp_memory = begin_temp_memory(&thread_memory->temp_arena);
 	u8* temp_dest = (u8*)arena_push_size(&thread_memory->temp_arena, raw_read_size);
 
@@ -146,6 +147,8 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 		DWORD error = GetLastError();
 		if (error != ERROR_IO_PENDING) {
 			win32_diagnostic("ReadFile");
+			end_temp_memory(&temp_memory);
+			return 0;
 		}
 	}
 
@@ -162,6 +165,12 @@ void win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, v
 	memcpy(dest, temp_dest + align_delta, read_size);
 
 	end_temp_memory(&temp_memory);
+	return read_size;
+}
+
+size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
+	size_t bytes_read = win32_overlapped_read(local_thread_memory, file_handle, dest, bytes_to_read, offset);
+	return bytes_read;
 }
 
 // TODO: Queue I/O to run, then query later?

@@ -215,3 +215,8 @@ bool file_stream_set_pos(file_stream_t file_stream, i64 offset) {
 void file_stream_close(file_stream_t file_stream) {
 	fclose(file_stream);
 }
+
+size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
+	size_t bytes_read = pread(file_handle, dest, bytes_to_read, offset);
+	return bytes_read;
+}

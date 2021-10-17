@@ -223,6 +223,6 @@ static inline i32 popcount(u32 x) {
 }
 #else
 static inline i32 popcount(u32 x) {
-    return _popcnt(x);
+    return _popcnt32(x);
 }
 #endif

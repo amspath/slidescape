@@ -344,6 +344,7 @@ i64 file_stream_get_filesize(file_stream_t file_stream);
 i64 file_stream_get_pos(file_stream_t file_stream);
 bool file_stream_set_pos(file_stream_t file_stream, i64 offset);
 void file_stream_close(file_stream_t file_stream);
+size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read);
 
 i32 get_work_queue_task_count(work_queue_t* queue);
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
