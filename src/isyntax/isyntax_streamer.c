@@ -590,9 +590,13 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 	isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
 	i32 resource_id = tile_streamer->image->resource_id;
 
+	i64 clock_start = get_clock();
+	i32 tiles_loaded = 0;
+
+
 	if (!wsi->first_load_complete) {
 		isyntax_begin_first_load(resource_id, isyntax, wsi);
-	} else {
+	} else for (i32 iteration = 0; iteration < 3; ++iteration) {
 		arena_t* arena = &local_thread_memory->temp_arena;
 		temp_memory_t temp_memory = begin_temp_memory(arena);
 
@@ -913,13 +917,9 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 
 				}
 
-
-
 //		        i64 perf_clock_decompress = get_clock();
 //		        float perf_time_decompress = get_seconds_elapsed(perf_clock_io, perf_clock_decompress);
 
-//		        i32 max_tiles_to_load = 5;
-				i32 tiles_to_load = 0;
 				for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale) {
 					isyntax_level_t *level = wsi->levels + scale;
 					isyntax_load_region_t *region = regions + scale;
@@ -1004,9 +1004,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 								}
 							}
 
-
-
-							++tiles_to_load;
+							++tiles_loaded;
 
 							// All the prerequisites have been met, we should be able to load this tile
 							isyntax_begin_load_tile(resource_id, isyntax, wsi, scale, tile_x, tile_y);
@@ -1022,20 +1020,23 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					}
 				}
 				break_out_of_loop2:;
-
-//		        i64 perf_clock_load = get_clock();
-//		        float perf_time_load = get_seconds_elapsed(perf_clock_decompress, perf_clock_load);
-
-//				if (tiles_to_load > 0) {
-//			        console_print("Requested %d tiles, tasks waiting=%d, idle=%d; time: check=%.4f io=%.4f decompress=%.4f load=%.4f\n",
-//						  tiles_to_load, get_work_queue_task_count(&global_work_queue), global_worker_thread_idle_count, perf_time_check, perf_time_io, perf_time_decompress, perf_time_load);
-//				}
 			}
 		}
 
 		end_temp_memory(&temp_memory);
-	}
 
+		// Iterate a few times, to allow more tiles to load; early out if we are taking too long.
+        float elapsed = get_seconds_elapsed(clock_start, get_clock());
+		if (is_tile_streamer_frame_boundary_passed) {
+//			console_print("streaming elapsed: %g s; loaded %d tiles\n", elapsed, tiles_loaded);
+			break;
+		}
+
+	}
+//	float elapsed = get_seconds_elapsed(clock_start, get_clock());
+//	if (elapsed > 1e-4f) {
+//		console_print("streaming elapsed: %g; loaded %d tiles\n", elapsed, tiles_loaded);
+//	}
 }
 
 void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
