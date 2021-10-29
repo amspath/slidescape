@@ -436,8 +436,8 @@ void console_print(const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf)-1, fmt, args);
-	fprintf(stdout, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
+	fprintf(stdout, "%s", buf);
 	va_end(args);
 
 	console_split_lines_and_add_log_item(buf, false, 0);
@@ -449,8 +449,8 @@ void console_print_verbose(const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf)-1, fmt, args);
-	fprintf(stdout, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
+	fprintf(stdout, "%s", buf);
 	va_end(args);
 
 	console_split_lines_and_add_log_item(buf, true, 2);
@@ -462,8 +462,8 @@ void console_print_error(const char* fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf)-1, fmt, args);
-	fprintf(stderr, "%s", buf);
 	buf[sizeof(buf)-1] = 0;
+	fprintf(stderr, "%s", buf);
 	va_end(args);
 
 	console_split_lines_and_add_log_item(buf, true, 1);

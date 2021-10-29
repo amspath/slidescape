@@ -366,7 +366,9 @@ memrw_t memrw_create(u64 capacity);
 void memrw_rewind(memrw_t* buffer);
 void memrw_seek(memrw_t* buffer, i64 offset);
 i64 memrw_write(const void* src, memrw_t* buffer, i64 bytes_to_write);
+i64 memrw_putc(i64 c, memrw_t* buffer);
 i64 memrw_write_string(const char* s, memrw_t* buffer);
+i64 memrw_printf(memrw_t* buffer, const char* fmt, ...);
 #define memrw_write_literal(s, buffer) memrw_write((s), (buffer), COUNT(s)-1)
 i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read);
 void memrw_destroy(memrw_t* buffer);
@@ -388,6 +390,10 @@ void* block_alloc(block_allocator_t* allocator);
 void block_free(block_allocator_t* allocator, void* ptr_to_free);
 
 void init_thread_memory(i32 logical_thread_index);
+
+unsigned int crc32(unsigned char* buffer, int len);
+unsigned int crc32_skip_carriage_return(unsigned char* buffer, int len);
+
 
 #if IS_SERVER
 #define console_print printf

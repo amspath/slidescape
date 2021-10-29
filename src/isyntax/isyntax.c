@@ -44,6 +44,7 @@
 #include "stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STBIW_CRC32 crc32
 #include <stb_image_write.h>
 
 #include <ctype.h>
