@@ -35,8 +35,10 @@
 #define _WIN32_WINNT 0x0600
 #define WINVER 0x0600
 #define OPENGL_H <glad/glad.h>
+#define PATH_SEP "\\"
 #else
 #define WINDOWS 0
+#define PATH_SEP "/"
 #endif
 
 #ifdef __APPLE__

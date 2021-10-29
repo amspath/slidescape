@@ -36,6 +36,7 @@
 #include <windows.h>
 #include <xinput.h>
 #include <psapi.h> // for EnumProcesses() and GetModuleFileNameExA()
+#include <shlobj.h> // for SHGetFolderPathA
 
 #include <glad/glad.h>
 #include <GL/wgl.h>
@@ -285,6 +286,23 @@ u8* platform_alloc(size_t size) {
 		panic();
 	}
 	return result;
+}
+
+static char appdata_path[MAX_PATH];
+
+void win32_setup_appdata() {
+	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appdata_path))) {
+		i32 appdata_path_len = strlen(appdata_path);
+		strncpy(appdata_path + appdata_path_len, "\\Slidescape", sizeof(appdata_path) - appdata_path_len);
+//		console_print("%s\n", path_buf);
+		if (!file_exists(appdata_path)) {
+			if (!CreateDirectoryA(appdata_path, 0)) {
+				win32_diagnostic("CreateDirectoryA");
+				return;
+			}
+		}
+		global_settings_dir = appdata_path;
+	}
 }
 
 // Timer-related procedures
@@ -1791,6 +1809,8 @@ int main(int argc, const char** argv) {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
+	win32_setup_appdata();
+
 	get_system_info();
 
 	app_state_t* app_state = &global_app_state;
@@ -1825,7 +1845,6 @@ int main(int argc, const char** argv) {
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
 
-	is_vsync_enabled = false;
 	set_swap_interval(is_vsync_enabled ? 1 : 0);
 
 	i64 last_clock = get_clock();

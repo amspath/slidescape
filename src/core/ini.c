@@ -59,40 +59,40 @@ static bool update_linked_value(void* link, void* value, size_t link_size) {
 	return value_changed;
 }
 
-bool ini_apply_option(ini_entry_t* entry) {
+bool ini_apply_option(ini_option_t* option, const char* value_string) {
 	bool value_changed = false;
-	switch(entry->link_type) {
+	switch(option->link_type) {
 		default:
 		case INI_LINK_VOID: {
 			// nothing to do
 		} break;
 		case INI_LINK_INTEGER_SIGNED: {
-			i64 value = atoll(entry->value);
-			value_changed = update_linked_value(entry->link, &value, entry->link_size);
+			i64 value = atoll(value_string);
+			value_changed = update_linked_value(option->link, &value, option->link_size);
 		} break;
 		case INI_LINK_INTEGER_UNSIGNED: {
-			i64 value_raw = atoll(entry->value);
+			i64 value_raw = atoll(value_string);
 			if (value_raw >= 0) {
 				u64 value = (i64)value_raw;
-				value_changed = update_linked_value(entry->link, &value, entry->link_size);
+				value_changed = update_linked_value(option->link, &value, option->link_size);
 			} else {
 				// TODO: handle error condition: invalid input
 			}
 		} break;
 		case INI_LINK_FLOAT: {
-			float value = (float)atof(entry->value);
-			value_changed = update_linked_value(entry->link, &value, sizeof(float));
+			float value = (float)atof(value_string);
+			value_changed = update_linked_value(option->link, &value, sizeof(float));
 		} break;
 		case INI_LINK_BOOL: {
 			bool value = false;
-			if (strcasecmp(entry->value, "true") == 0) {
+			if (strcasecmp(value_string, "true") == 0) {
 				value = true;
-			} else if (strcasecmp(entry->value, "false") == 0) {
+			} else if (strcasecmp(value_string, "false") == 0) {
 				value = false;
 			} else {
-				value = (bool)atoll(entry->value);
+				value = (bool)atoll(value_string);
 			}
-			value_changed = update_linked_value(entry->link, &value, sizeof(bool));
+			value_changed = update_linked_value(option->link, &value, sizeof(bool));
 		} break;
 		case INI_LINK_STRING: {
 			ASSERT(!"not implemented");
@@ -105,49 +105,61 @@ bool ini_apply_option(ini_entry_t* entry) {
 }
 
 void ini_apply(ini_t* ini) {
-	for (i32 i = 0; i < ini->entry_count; ++i) {
-		ini_entry_t* entry = ini->entries + i;
-		if (entry->type != INI_ENTRY_OPTION) continue;
-		bool value_changed = ini_apply_option(entry);
-		if (value_changed) {
-			console_print("Applied option '%s = %s'\n", entry->name, entry->value);
+	for (i32 section_index = 0; section_index < ini->section_count; ++section_index) {
+		ini_section_t* section = ini->sections + section_index;
+		for (i32 i = 0; i < section->option_count; ++i) {
+			ini_option_t* option = section->options + i;
+			ini_entry_t* entry = ini->entries + option->entry_index;
+			const char* value_string = entry->value;
+			bool value_changed = ini_apply_option(option, value_string);
+			if (value_changed) {
+				console_print_verbose("Applied option '%s = %s'\n", option->name, value_string);
+			}
 		}
 	}
 }
 
-void ini_begin_section(ini_t* ini, const char* section) {
-	ini->current_section = section;
-	// TODO: if section doesn't exist: insert new section
+void ini_begin_section(ini_t* ini, const char* section_name) {
+	ini->current_section_name = section_name;
 	bool match = false;
-	for (i32 i = 0; i < ini->entry_count; ++i) {
-		ini_entry_t* entry = ini->entries + i;
-		if (entry->type != INI_ENTRY_SECTION) continue;
-		if (strncmp(section, entry->name, sizeof(entry->name)-1) == 0) {
+	for (i32 i = 0; i < ini->section_count; ++i) {
+		ini_section_t* section = ini->sections + i;
+		if (strncmp(section_name, section->name, INI_MAX_NAME) == 0) {
 			match = true;
+			ini->current_section_index = i;
 			break;
 		}
 	}
 	if (!match) {
-
+		ini_section_t section = {};
+		strncpy(section.name, section_name, INI_MAX_NAME);
+		arrput(ini->sections, section);
+		ini->current_section_index = ini->section_count++;
 	}
 }
 
 
 void ini_register_option(ini_t* ini, const char* name, u32 link_type, u32 link_size, void* link) {
 	bool match = false;
-	for (i32 i = 0; i < ini->entry_count; ++i) {
-		ini_entry_t* entry = ini->entries + i;
-		if (entry->type != INI_ENTRY_OPTION) continue;
-		if (strncmp(name, entry->name, sizeof(entry->name)-1) == 0) {
+	ini_section_t* section = ini->sections + ini->current_section_index;
+	for (i32 i = 0; i < section->option_count; ++i) {
+		ini_option_t* option = section->options + i;
+		if (strncmp(name, option->name, INI_MAX_NAME) == 0) {
 			match = true;
-			entry->link_type = link_type;
-			entry->link_size = link_size;
-			entry->link = link;
+			option->link_type = link_type;
+			option->link_size = link_size;
+			option->link = link;
 			break;
 		}
 	}
 	if (!match) {
-		// TODO: add new option, not yet present in INI file.
+		ini_option_t option = {};
+		strncpy(option.name, name, INI_MAX_NAME);
+		option.link_type = link_type;
+		option.link_size = link_size;
+		option.link = link;
+		arrput(section->options, option);
+		++section->option_count;
 	}
 }
 
@@ -213,9 +225,32 @@ ini_t* ini_load(char* ini_string, size_t len) {
 	size_t line_count = 0;
 	char** lines = split_into_lines(ini_string, &line_count);
 
+	ini_section_t null_section = {}; // entries are placed here until the first 'real' section is defined
+	arrput(ini->sections, null_section);
+	++ini->section_count;
+	ini_section_t* current_section = ini->sections;
+
+	i32 running_section_index = 0;
 	for (i32 line_index = 0; line_index < line_count; ++line_index) {
 		ini_entry_t entry = ini_parse_line(lines[line_index]);
 		entry.sparse_index = (line_index+1) * 10000; // ordering of entries with 'spaced out' indices, to allow for easy insertion later
+		if (entry.type == INI_ENTRY_SECTION) {
+			ini_section_t section = {};
+			section.highest_sparse_index = line_index * 10000;
+			memcpy(section.name, entry.name, INI_MAX_NAME);
+			arrput(ini->sections, section);
+			++ini->section_count;
+			++running_section_index;
+			current_section = ini->sections + running_section_index;
+		} else if (entry.type == INI_ENTRY_OPTION) {
+			ini_option_t option = {};
+			memcpy(option.name, entry.name, INI_MAX_NAME);
+			option.entry_index = line_index;
+			option.sparse_index = entry.sparse_index;
+			arrput(current_section->options, option);
+			++current_section->option_count;
+		}
+		entry.section_index = running_section_index;
 		arrput(ini->entries, entry);
 		++ini->entry_count;
 	}
@@ -237,42 +272,42 @@ ini_t* ini_load_from_file(const char* filename) {
 	}
 }
 
-void ini_sync_value_string(ini_entry_t* entry) {
-	size_t maxstr = sizeof(entry->value)-1;
-	if (entry->link) {
-		switch(entry->link_type) {
+void ini_option_get_value_string(ini_option_t* option, char* buf, size_t buf_size) {
+	size_t maxstr = buf_size-1;
+	if (option->link) {
+		switch(option->link_type) {
 			case INI_LINK_VOID: {
 
 			} break;
 			case INI_LINK_INTEGER_SIGNED: {
 				i64 value = 0;
-				switch(entry->link_size) {
+				switch(option->link_size) {
 					default: break;
-					case 1: value = *(i8*)entry->link; break;
-					case 2: value = *(i16*)entry->link; break;
-					case 4: value = *(i32*)entry->link; break;
-					case 8: value = *(i64*)entry->link; break;
+					case 1: value = *(i8*)option->link; break;
+					case 2: value = *(i16*)option->link; break;
+					case 4: value = *(i32*)option->link; break;
+					case 8: value = *(i64*)option->link; break;
 				}
-				snprintf(entry->value, maxstr, "%lld", value);
+				snprintf(buf, maxstr, "%lld", value);
 			} break;
 			case INI_LINK_INTEGER_UNSIGNED: {
 				u64 value = 0;
-				switch(entry->link_size) {
+				switch(option->link_size) {
 					default: break;
-					case 1: value = *(u8*)entry->link; break;
-					case 2: value = *(u16*)entry->link; break;
-					case 4: value = *(u32*)entry->link; break;
-					case 8: value = *(u64*)entry->link; break;
+					case 1: value = *(u8*)option->link; break;
+					case 2: value = *(u16*)option->link; break;
+					case 4: value = *(u32*)option->link; break;
+					case 8: value = *(u64*)option->link; break;
 				}
-				snprintf(entry->value, maxstr, "%llu", value);
+				snprintf(buf, maxstr, "%llu", value);
 			} break;
 			case INI_LINK_FLOAT: {
-				float value = *(float*)entry->link;
-				snprintf(entry->value, maxstr, "%f", value);
+				float value = *(float*)option->link;
+				snprintf(buf, maxstr, "%g", value);
 			} break;
 			case INI_LINK_BOOL: {
-				float value = *(bool*)entry->link;
-				snprintf(entry->value, maxstr, value ? "true" : "false");
+				float value = *(bool*)option->link;
+				snprintf(buf, maxstr, value ? "true" : "false");
 			} break;
 			case INI_LINK_STRING: {
 
@@ -282,6 +317,7 @@ void ini_sync_value_string(ini_entry_t* entry) {
 			} break;
 		}
 	}
+	buf[maxstr] = '\0';
 }
 
 void ini_save(ini_t* ini, const char* filename) {
@@ -289,17 +325,27 @@ void ini_save(ini_t* ini, const char* filename) {
 
 	FILE* fp = fopen(filename, "w");
 
+	memrw_t out = {};
+	memrw_init(&out, KILOBYTES(32));
+
+
+	// TODO: for each section, make sure all options have been touched
+	bool* options_written = (bool*)alloca(ini->entry_count * sizeof(bool));
+	memset(options_written, 0, ini->entry_count * sizeof(bool));
+
 	for (i32 i = 0; i < ini->entry_count; ++i) {
 		ini_entry_t* entry = ini->entries + i;
 		if (entry->type == INI_ENTRY_EMPTY_OR_COMMENT) {
-			fprintf(fp, "%s\n", entry->value);
+			memrw_printf(&out, "%s\n", entry->value);
 		} else if (entry->type == INI_ENTRY_SECTION) {
-			fprintf(fp, "[%s]\n", entry->name);
+			memrw_printf(&out, "[%s]\n", entry->name);
 		} else if (entry->type == INI_ENTRY_OPTION) {
-			ini_sync_value_string(entry);
-			fprintf(fp, "%s=%s\n", entry->name, entry->value);
+			ini_option_get_value_string(entry);
+			memrw_printf(&out, "%s=%s\n", entry->name, entry->value);
 		}
 	}
+
+	memrw_destroy(&out);
 
 	fclose(fp);
 }

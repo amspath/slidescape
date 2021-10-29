@@ -16,13 +16,22 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+static char options_ini_filename[512];
+
 void viewer_init_options(app_state_t* app_state) {
-	ini_t* ini = ini_load_from_file("slideviewer.ini");
+	if (global_settings_dir) {
+		snprintf(options_ini_filename, sizeof(options_ini_filename), "%s" PATH_SEP "%s", global_settings_dir, "slideviewer.ini");
+	} else {
+		strncpy(options_ini_filename, "slideviewer.ini", sizeof(options_ini_filename));
+	}
+
+	ini_t* ini = ini_load_from_file(options_ini_filename);
 
 	ini_begin_section(ini, "General");
 	ini_register_i32(ini, "window_width", &desired_window_width);
 	ini_register_i32(ini, "window_height", &desired_window_height);
 	ini_register_bool(ini, "window_start_maximized", &window_start_maximized);
+	ini_register_bool(ini, "vsync", &is_vsync_enabled);
 
 	ini_apply(ini);
 }

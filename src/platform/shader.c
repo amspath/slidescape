@@ -38,7 +38,7 @@ bool32 are_any_shader_sources_missing;
 #ifdef STRINGIFY_SHADERS
 
 // Shader sources can be either loaded from file (preferred, if available), or loaded directly from memory.
-// In debug builds, the file stringified_shaders.c is automatically generated, containing the shader sources.
+// In debug builds, the file stringified_shaders.h is automatically generated, containing the shader sources.
 // In this way, the shader sources are embedded in the executable; they do not need to be included in a release package.
 
 #define MAX_SHADERS 32

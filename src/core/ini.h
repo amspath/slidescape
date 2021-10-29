@@ -40,28 +40,45 @@ enum ini_link_type_enum {
 	INI_LINK_CUSTOM = 6,
 };
 
+#define INI_MAX_NAME 64
+
+typedef struct ini_option_t {
+	u32 link_type;
+	u32 link_size;
+	void* link;
+	char name[INI_MAX_NAME];
+	u32 entry_index;
+	u32 sparse_index;
+} ini_option_t;
+
+typedef struct ini_section_t {
+	char name[INI_MAX_NAME];
+	u32 highest_sparse_index;
+	u32 lowest_entry_index;
+	u32 entry_count;
+	ini_option_t* options;
+	i32 option_count;
+} ini_section_t;
 
 typedef struct ini_entry_t {
 	u32 sparse_index; // ordering of entries with 'spaced out' indices, to allow for easy insertion later
 	u32 type;
-	char name[64];
+	char name[INI_MAX_NAME];
 	char value[256];
 	const char* section;
+	i32 section_index;
 	u32 link_type;
 	u32 link_size;
 	void* link;
 } ini_entry_t;
 
-typedef struct ini_option_t {
-	u32 type;
-	u32 line_id;
-	void* linked_value;
-} ini_option_t;
-
 typedef struct ini_t {
 	ini_entry_t* entries;
 	i32 entry_count;
-	const char* current_section;
+	ini_section_t* sections;
+	i32 section_count;
+	const char* current_section_name;
+	i32 current_section_index;
 } ini_t;
 
 

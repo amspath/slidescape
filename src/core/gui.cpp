@@ -37,11 +37,19 @@
 static void*   imgui_malloc_wrapper(size_t size, void* user_data)    { IM_UNUSED(user_data); return ltmalloc(size); }
 static void    imgui_free_wrapper(void* ptr, void* user_data)        { IM_UNUSED(user_data); ltfree(ptr); }
 
+static char imgui_ini_filename[512];
+
 void imgui_create_context() {
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
 	ImGui::SetAllocatorFunctions(imgui_malloc_wrapper, imgui_free_wrapper);
 	ImGui::CreateContext();
+
+	ImGuiIO& io = ImGui::GetIO();
+	if (global_settings_dir) {
+		snprintf(imgui_ini_filename, sizeof(imgui_ini_filename), "%s" PATH_SEP "%s", global_settings_dir, "imgui.ini");
+		io.IniFilename = imgui_ini_filename;
+	}
 }
 
 void menu_close_file(app_state_t* app_state) {

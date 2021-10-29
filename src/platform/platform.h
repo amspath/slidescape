@@ -400,9 +400,9 @@ unsigned int crc32_skip_carriage_return(unsigned char* buffer, int len);
 #define console_print_error(...) fprintf(stderr, __VA_ARGS__)
 #define console_print_verbose(...) do { if (is_verbose_mode) fprintf(stderr, __VA_ARGS__); } while(0)
 #else
-void console_print(const char* fmt, ...); // defined in gui.cpp
-void console_print_verbose(const char* fmt, ...); // defined in gui.cpp
-void console_print_error(const char* fmt, ...);
+void console_print(const char* fmt, ...); // defined in console.cpp
+void console_print_verbose(const char* fmt, ...); // defined in console.cpp
+void console_print_error(const char* fmt, ...); // // defined in console.cpp
 #endif
 
 
@@ -439,6 +439,7 @@ extern THREAD_LOCAL i32 work_queue_call_depth;
 extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
 extern bool cursor_hidden;
+extern const char* global_settings_dir;
 
 extern float total_rgb_transform_time;
 

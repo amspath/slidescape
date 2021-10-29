@@ -102,8 +102,6 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 		char* cmd = command_copy;
 
 		// Parse arguments
-		// consume whitespace
-
 		if (strcmp(cmd, "exit") == 0) {
 			is_program_running = false;
 		} else if (strcmp(cmd, "open") == 0) {
@@ -114,10 +112,26 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 		} else if (strcmp(cmd, "close") == 0) {
 			menu_close_file(app_state);
 		} else if (strcmp(cmd, "zoom") == 0) {
-			// TODO: implement zoom [x] | zoom reset
-			app_state->scene.need_zoom_reset = true;
+			if (arg) {
+				float new_zoom_level = strtof(arg, NULL);
+				app_state->scene.zoom.pos = new_zoom_level;
+				zoom_update_pos(&app_state->scene.zoom, app_state->scene.zoom.pos);
+			} else {
+				app_state->scene.need_zoom_reset = true;
+			}
 		} else if (strcmp(cmd, "cd") == 0) {
-			// TODO: change working directory
+			if (arg) {
+				chdir(arg);
+				char buf[2048];
+				if (getcwd(buf, sizeof(buf))) {
+					console_print("%s\n", buf);
+				}
+			}
+		} else if (strcmp(cmd, "pwd") == 0) {
+			char buf[2048];
+			if (getcwd(buf, sizeof(buf))) {
+				console_print("%s\n", buf);
+			}
 		} else if (strcmp(cmd, "next") == 0) {
 			// TODO: load the next file in the folder
 		} else if (strcmp(cmd, "prev") == 0) {
@@ -128,6 +142,8 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 				console_fraction_of_height = new_height;
 				console_fill_screen = (console_fraction_of_height >= 1.0f);
 			}
+		} else if (strcmp(cmd, "clear") == 0) {
+			console_clear_log();
 		} else {
 			console_print("Unknown command: %s\n", cmd);
 		}
