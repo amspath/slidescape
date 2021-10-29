@@ -1251,7 +1251,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 									   "Available on this system:\n%s", major_required, minor_required, version_string);
 			console_print_error("%s\n", buf);
 			message_box(&global_app_state, buf);
-			panic();
+			exit(0);
 		}
 		return success;
 	}
