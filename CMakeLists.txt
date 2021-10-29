@@ -178,6 +178,7 @@ set(VIEWER_SOURCE_FILES
         core/viewer.cpp
         core/scene.cpp
         core/gui.cpp
+        core/console.cpp
         core/annotation.cpp
         core/caselist.cpp
         core/coco.cpp

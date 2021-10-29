@@ -30,11 +30,11 @@ void strip_character(char* s, char character_to_strip) {
 	}
 }
 
-char* find_next_token(char* s, char separator) {
+char* find_next_token(const char* s, char separator) {
 	if (!s) return NULL;
 	char c;
 	while ((c = *s++)) {
-		if (c == separator) return s;
+		if (c == separator) return (char*)s;
 	}
 	return NULL;
 }

@@ -22,21 +22,16 @@
 #include OPENGL_H
 
 #include "imgui.h"
-#include "imgui_freetype.h"
 #include "imgui_internal.h"
-#include "imgui_impl_opengl3.h"
 
 #include "openslide_api.h"
 #include "viewer.h"
 #include "remote.h"
-#include "caselist.h"
 #include "tiff_write.h"
-#include "coco.h"
 #include "isyntax.h"
 
 #define GUI_IMPL
 #include "gui.h"
-#include "annotation.h"
 #include "stringutils.h"
 
 static void*   imgui_malloc_wrapper(size_t size, void* user_data)    { IM_UNUSED(user_data); return ltmalloc(size); }
@@ -847,162 +842,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 }
 
-struct console_log_item_t {
-	char* text;
-	bool has_color;
-	u32 item_type;
-};
-
-console_log_item_t* console_log_items; //sb
-
-void console_clear_log() {
-	benaphore_lock(&console_printer_benaphore);
-	for (int i = 0; i < arrlen(console_log_items); i++) {
-		console_log_item_t* item = console_log_items + i;
-		if (item->text) {
-			free(item->text);
-		}
-	}
-	arrfree(console_log_items);
-	console_log_items = NULL;
-	benaphore_unlock(&console_printer_benaphore);
-}
-
-bool console_fill_screen = false;
-
-void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open) {
-
-	float desired_fraction_of_height = console_fill_screen ? 1.0f : 0.33f;
-
-	rect2i viewport = app_state->client_viewport;
-	viewport.x *= app_state->display_points_per_pixel;
-	viewport.y *= app_state->display_points_per_pixel;
-	viewport.w *= app_state->display_points_per_pixel;
-	viewport.h *= app_state->display_points_per_pixel;
-
-	float desired_width = (float) viewport.w;
-	float desired_height = roundf((float)viewport.h * desired_fraction_of_height);
-	if (show_menu_bar) {
-		float vertical_space_left = viewport.h - desired_height;
-		float need_space = 23.0f;
-		if (vertical_space_left < need_space) {
-			desired_height = (float)viewport.h - need_space;
-		}
-	}
-	ImGui::SetNextWindowSize(ImVec2(desired_width, desired_height), ImGuiCond_Always);
-	ImGui::SetNextWindowPos(ImVec2(0,viewport.h - desired_height), ImGuiCond_Always);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
-	if (!ImGui::Begin(window_title, p_open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse)) {
-		ImGui::End();
-		return;
-	}
-	ImGui::PopStyleVar(2);
-
-#if 0
-	if (ImGui::SmallButton("Add Debug Text"))  { console_print("%d some text\n", sb_count(console_log_items)); console_print("some more text\n"); console_print("display very important message here!\n"); } ImGui::SameLine();
-	if (ImGui::SmallButton("Add Debug Error")) { console_print_error("[error] something went wrong\n"); } ImGui::SameLine();
-	if (ImGui::SmallButton("Clear"))           { console_clear_log(); } ImGui::SameLine();
-	bool copy_to_clipboard = ImGui::SmallButton("Copy");
-	ImGui::Separator();
-#endif
-
-
-
-	// Reserve enough left-over height for 1 separator + 1 input text
-	const float footer_height_to_reserve = 0.0f;//ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
-	ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false, ImGuiWindowFlags_HorizontalScrollbar);
-	if (ImGui::BeginPopupContextWindow())
-	{
-		if (ImGui::Selectable("Clear")) console_clear_log();
-		if (ImGui::MenuItem("Verbose mode", NULL, &is_verbose_mode)) {}
-		if (ImGui::MenuItem("Fill screen", NULL, &console_fill_screen)) {}
-		ImGui::EndPopup();
-	}
-	benaphore_lock(&console_printer_benaphore);
-	i32 item_count = arrlen(console_log_items);
-	if (item_count > 0) {
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
-		ImGui::PushFont(global_fixed_width_font);
-		ImGuiListClipper clipper;
-		clipper.Begin(arrlen(console_log_items));
-		while (clipper.Step()) {
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-				console_log_item_t item = console_log_items[i];
-//				if (!Filter.PassFilter(item))
-//					continue;
-
-				// Normally you would store more information in your item than just a string.
-				// (e.g. make Items[] an array of structure, store color/type etc.)
-				ImVec4 color = {1.0f, 1.0f, 1.0f, 1.0f};
-				if (item.has_color) {
-					if (item.item_type == 1)      { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);}
-					else if (item.item_type == 2) { color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);}
-					else if (strncmp(item.text, "# ", 2) == 0) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f);  }
-					ImGui::PushStyleColor(ImGuiCol_Text, color);
-				}
-				ImGui::TextUnformatted(item.text);
-				if (item.has_color) {
-					ImGui::PopStyleColor();
-				}
-			}
-		}
-		ImGui::PopFont();
-		ImGui::PopStyleVar();
-	}
-	benaphore_unlock(&console_printer_benaphore);
-	if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
-		ImGui::SetScrollHereY(0.0f);
-
-	ImGui::EndChild();
-//	ImGui::Separator();
-
-	// Command-line
-	/*bool reclaim_focus = false;
-	ImGuiInputTextFlags input_text_flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
-	if (ImGui::InputText("Input", InputBuf, IM_ARRAYSIZE(InputBuf), input_text_flags, &TextEditCallbackStub, (void*)this))
-	{
-		char* s = InputBuf;
-		Strtrim(s);
-		if (s[0])
-			ExecCommand(s);
-		strcpy(s, "");
-		reclaim_focus = true;
-	}
-
-	// Auto-focus on window apparition
-	ImGui::SetItemDefaultFocus();
-	if (reclaim_focus)
-		ImGui::SetKeyboardFocusHere(-1); // Auto focus previous widget*/
-
-	ImGui::End();
-}
-
-
-
-void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_type) {
-	size_t num_lines = 0;
-	char** lines = split_into_lines(raw, &num_lines);
-	if (lines) {
-		for (i32 i = 0; i < num_lines; ++i) {
-			char* line = lines[i];
-			size_t line_len = strlen(line);
-			if (line && line_len > 0) {
-				console_log_item_t new_item = {};
-				// TODO: fix strdup() conflicting with ltmalloc()
-				new_item.text = (char*)malloc(line_len+1);
-				memcpy(new_item.text, line, line_len);
-				new_item.text[line_len] = '\0';
-				new_item.has_color = has_color;
-				new_item.item_type = item_type;
-				benaphore_lock(&console_printer_benaphore);
-				arrput(console_log_items, new_item);
-				benaphore_unlock(&console_printer_benaphore);
-			}
-		}
-		free(lines);
-	}
-}
 
 typedef struct gui_modal_popup_t gui_modal_popup_t;
 struct gui_modal_popup_t {
@@ -1069,43 +908,5 @@ void gui_add_modal_popup(const char* title, const char* message, ...) {
 	arrpush(gui_popup_stack, popup);
 }
 
-void console_print(const char* fmt, ...) {
-
-	char buf[4096];
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf)-1, fmt, args);
-	fprintf(stdout, "%s", buf);
-	buf[sizeof(buf)-1] = 0;
-	va_end(args);
-
-	console_split_lines_and_add_log_item(buf, false, 0);
-}
-
-void console_print_verbose(const char* fmt, ...) {
-	if (!is_verbose_mode) return;
-	char buf[4096];
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf)-1, fmt, args);
-	fprintf(stdout, "%s", buf);
-	buf[sizeof(buf)-1] = 0;
-	va_end(args);
-
-	console_split_lines_and_add_log_item(buf, true, 2);
-}
-
-
-void console_print_error(const char* fmt, ...) {
-	char buf[4096];
-	va_list args;
-	va_start(args, fmt);
-	vsnprintf(buf, sizeof(buf)-1, fmt, args);
-	fprintf(stderr, "%s", buf);
-	buf[sizeof(buf)-1] = 0;
-	va_end(args);
-
-	console_split_lines_and_add_log_item(buf, true, 1);
-}
 
 
