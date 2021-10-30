@@ -681,10 +681,12 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		}
 
 		ImGui::NewLine();
+
+		bool prev_is_vsync_enabled = is_vsync_enabled;
 		ImGui::Checkbox("Enable Vsync", &is_vsync_enabled);
-
-
-
+		if (prev_is_vsync_enabled != is_vsync_enabled) {
+			set_swap_interval(is_vsync_enabled ? 1 : 0);
+		}
 
 		ImGui::End();
 	}

@@ -916,13 +916,9 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			request_tiles(app_state, image, tile_wishlist, tiles_to_load);
 		}
 
-
-
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 
 		// RENDERING
-
-
 		mat4x4 projection = {};
 		{
 			float l = -0.5f * scene->r_minus_l;
@@ -969,7 +965,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
-		bool draw_macro_image_in_background = false;
 		// Render label and macro images
 		if (draw_macro_image_in_background) {
 			glDisable(GL_STENCIL_TEST);
@@ -1310,7 +1305,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		} else {
 			if (was_button_released(&input->mouse_buttons[0])) {
 				float drag_distance = v2f_length(scene->cumulative_drag_vector);
-				// TODO: tweak this
 				if (drag_distance < CLICK_DRAG_TOLERANCE) {
 					scene->clicked = true;
 				}
@@ -1354,8 +1348,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 		}
 	}
-
-	last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (1)", 5.0f);
 
 	if (displayed_image->type == IMAGE_TYPE_WSI) {
 		if (scene->need_zoom_reset) {
@@ -1458,8 +1450,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					}
 				}
 			}
-
-
 
 			if (dlevel != 0) {
 //		        console_print("mouse_z = %d\n", input->mouse_z);

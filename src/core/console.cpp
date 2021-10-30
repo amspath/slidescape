@@ -144,6 +144,22 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 			}
 		} else if (strcmp(cmd, "clear") == 0) {
 			console_clear_log();
+		} else if (strcmp(cmd, "macro") == 0) {
+			draw_macro_image_in_background = !draw_macro_image_in_background;
+		} else if (strcmp(cmd, "label") == 0) {
+			draw_label_image_in_background = !draw_label_image_in_background;
+		} else if (strcmp(cmd, "grid") == 0) {
+			app_state->scene.enable_grid = !app_state->scene.enable_grid;
+		} else if (strcmp(cmd, "scalebar") == 0) {
+			app_state->scene.scale_bar.enabled = !app_state->scene.scale_bar.enabled;
+		} else if (strcmp(cmd, "vsync") == 0) {
+			if (arg) {
+				if (arg[0] == '0') is_vsync_enabled = 0;
+				if (arg[0] == '1') is_vsync_enabled = 1;
+				set_swap_interval(is_vsync_enabled ? 1 : 0);
+			} else {
+				console_print("vsync: %d\n", is_vsync_enabled);
+			}
 		} else {
 			console_print("Unknown command: %s\n", cmd);
 		}

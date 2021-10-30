@@ -464,6 +464,8 @@ extern v2f simple_view_pos; // used by simple images (remove?)
 extern bool window_start_maximized INIT(=true);
 extern i32 desired_window_width INIT(=1280);
 extern i32 desired_window_height INIT(=720);
+extern bool draw_macro_image_in_background;
+extern bool draw_label_image_in_background; // TODO: implement
 
 extern benaphore_t tile_streamer_benaphore;
 extern bool32 is_tile_stream_task_in_progress;
