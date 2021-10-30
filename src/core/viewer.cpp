@@ -102,23 +102,10 @@ void unload_image(image_t* image) {
 				}
 				image->simple.is_valid = false;
 			} else {
-				ASSERT(!"image backend invalid");
+				panic("invalid image backend");
 			}
-		} else if (image->type == IMAGE_TYPE_SIMPLE) {
-			if (image->backend == IMAGE_BACKEND_STBI) {
-				if (image->simple.pixels) {
-					stbi_image_free(image->simple.pixels);
-					image->simple.pixels = NULL;
-				}
-				if (image->simple.texture != 0) {
-					unload_texture(image->simple.texture);
-					image->simple.texture = 0;
-				}
-				image->simple.is_valid = false;
-			} else {
-				ASSERT(!"image backend invalid");
-			}
-
+		} else {
+			panic("invalid image type");
 		}
 
 		for (i32 i = 0; i < image->level_count; ++i) {
@@ -628,12 +615,8 @@ void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wis
 						tile->need_keep_in_cache = task.need_keep_in_cache;
 					}
 				}
-
-
 			}
 		}
-
-
 	}
 }
 
@@ -646,6 +629,136 @@ bool is_resource_valid(app_state_t* app_state, i32 resource_id) {
 	return false;
 }
 
+image_t* get_image_from_resource_id(app_state_t* app_state, i32 resource_id) {
+	i32 image_index = 0;
+	for (; image_index < arrlen(app_state->loaded_images); ++image_index) {
+		image_t* image = app_state->loaded_images + image_index;
+		if (image->resource_id == resource_id) {
+			return image;
+		}
+	}
+	return NULL;
+}
+
+
+void viewer_process_completion_queue(app_state_t* app_state) {
+	float max_texture_load_time = 0.007f; // TODO: pin to frame time
+#if 1
+	if (!finalize_textures_immediately) {
+		// Finalize textures that were uploaded via PBO the previous frame
+		for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
+			pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
+			if (transfer_state->need_finalization) {
+				finalize_texture_upload_using_pbo(transfer_state);
+				tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
+				tile->texture = transfer_state->texture;
+			}
+			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+			if (time_elapsed > max_texture_load_time) {
+//			    	console_print("Warning: texture finalization is taking too much time\n");
+				break;
+			}
+		}
+	}
+
+	/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
+	if (time_elapsed > 0.005f) {
+		console_print("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
+	}*/
+
+//	last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
+#endif
+
+	// Retrieve completed tasks from the worker threads
+	i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
+	while (is_queue_work_in_progress(&global_completion_queue)) {
+		work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
+		if (entry.is_valid) {
+			if (!entry.callback) panic();
+			mark_queue_entry_completed(&global_completion_queue);
+
+			if (entry.callback == viewer_notify_load_tile_completed) {
+				viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
+				image_t* image = get_image_from_resource_id(app_state, task->resource_id);
+				if (!image) {
+					// Image doesn't exist anymore (was unloaded?)
+					if (task->pixel_memory) free(task->pixel_memory);
+				} else {
+					// Upload the tile to the GPU
+					tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+					ASSERT(tile);
+					tile->is_submitted_for_loading = false;
+
+					if (task->pixel_memory) {
+						bool need_free_pixel_memory = true;
+						if (task->want_gpu_residency) {
+							pixel_transfer_state_t* transfer_state =
+									submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
+									                              4, task->pixel_memory, finalize_textures_immediately);
+							if (finalize_textures_immediately) {
+								tile->texture = transfer_state->texture;
+							} else {
+								transfer_state->userdata = (void*) tile;
+								tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
+							}
+						}
+						if (tile->need_keep_in_cache) {
+							need_free_pixel_memory = false;
+							tile->pixels = task->pixel_memory;
+							tile->is_cached = true;
+						}
+						if (need_free_pixel_memory) {
+							free(task->pixel_memory);
+						}
+					} else {
+						tile->is_empty = true; // failed; don't resubmit!
+					}
+				}
+
+			} else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
+				load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
+				if (!is_resource_valid(app_state, task->resource_id)) {
+					// Image no longer exists
+				} else {
+					tile_t* tile = task->tile;
+					ASSERT(tile);
+					tile->is_submitted_for_loading = false;
+					if (tile->is_cached && tile->pixels) {
+						if (tile->need_gpu_residency) {
+							pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state,
+							                                                                       task->image->tile_width,
+							                                                                       task->image->tile_height,
+							                                                                       4,
+							                                                                       tile->pixels,
+							                                                                       finalize_textures_immediately);
+							tile->texture = transfer_state->texture;
+						} else {
+							ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
+						}
+
+						if (!task->need_keep_in_cache) {
+							tile_release_cache(tile);
+						}
+					} else {
+						console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
+					}
+				}
+
+			}
+		}
+
+		float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+		if (time_elapsed > max_texture_load_time) {
+//				console_print("Warning: texture submission is taking too much time\n");
+			break;
+		}
+
+		if (pixel_transfer_index_start == app_state->next_pixel_transfer_to_submit) {
+//				console_print("Warning: not enough PBO's to do all the pixel transfers\n");
+			break;
+		}
+	}
+}
 
 void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
 	scene_t* scene = &app_state->scene;
@@ -653,81 +766,15 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 	i32 client_width = app_state->client_viewport.w;
 	i32 client_height = app_state->client_viewport.h;
 
-	if (image->type == IMAGE_TYPE_SIMPLE) {
-		// Display a basic image
-
-		float display_pos_x = 0.0f;
-		float display_pos_y = 0.0f;
-
-		float L = display_pos_x;
-		float R = display_pos_x + client_width;
-		float T = display_pos_y;
-		float B = display_pos_y + client_height;
-		mat4x4 ortho_projection =
-				{
-						{ 2.0f/(R-L),   0.0f,         0.0f,   0.0f },
-						{ 0.0f,         2.0f/(T-B),   0.0f,   0.0f },
-						{ 0.0f,         0.0f,        -1.0f,   0.0f },
-						{ (R+L)/(L-R),  (T+B)/(B-T),  0.0f,   1.0f },
-				};
-
-		// Set up model matrix: scale and translate to the correct world position
-		if (image->simple.texture == 0 && image->simple.pixels != NULL) {
-			image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, GL_RGBA);
-//			image->origin_offset = (v2f) {50, 100};
-			image->is_freshly_loaded = false;
-		}
-		float pan_multiplier = 2.0f;
-		if (scene->is_dragging) {
-			image->origin_offset.x += scene->drag_vector.x * pan_multiplier;
-			image->origin_offset.y += scene->drag_vector.y * pan_multiplier;
-		}
-
-		mat4x4 model_matrix;
-		mat4x4_identity(model_matrix);
-		mat4x4_translate_in_place(model_matrix, image->origin_offset.x, image->origin_offset.y, 0.0f);
-		mat4x4_scale_aniso(model_matrix, model_matrix, image->simple.width * 2, image->simple.height * 2, 1.0f);
-
-
-		glUseProgram(basic_shader.program);
-		glUniform1i(basic_shader.u_tex, 0);
-
-		if (app_state->use_image_adjustments) {
-			glUniform1f(basic_shader.u_black_level, app_state->black_level);
-			glUniform1f(basic_shader.u_white_level, app_state->white_level);
-		} else {
-			glUniform1f(basic_shader.u_black_level, 0.0f);
-			glUniform1f(basic_shader.u_white_level, 1.0f);
-		}
-
-		glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
-
-		v2f* view_pos = &simple_view_pos;
-
-		mat4x4 view_matrix;
-		mat4x4_identity(view_matrix);
-		mat4x4_translate_in_place(view_matrix, -view_pos->x, -view_pos->y, 0.0f);
-		mat4x4_scale_aniso(view_matrix, view_matrix, 0.5f, 0.5f, 1.0f);
-
-		mat4x4 projection_view_matrix;
-		mat4x4_mul(projection_view_matrix, ortho_projection, view_matrix);
-
-		glUniformMatrix4fv(basic_shader.u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
-
-		// todo: bunch up vertex and index uploads
-
-		draw_rect(image->simple.texture);
-	}
-	else if (image->type == IMAGE_TYPE_WSI) {
+	if (image->type == IMAGE_TYPE_WSI) {
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: process input (2)", 5.0f);
 
 		// IO
 
 		float time_elapsed;
-		float max_texture_load_time = 0.007f; // TODO: pin to frame time
 
-		// Upload macro and label images
+		// Upload macro and label images (just-in-time)
 		simple_image_t* macro_image = &image->macro_image;
 		simple_image_t* label_image = &image->label_image;
 		if (macro_image->is_valid) {
@@ -744,128 +791,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				label_image->pixels = NULL;
 			}
 		}
-
-#if 1
-		if (!finalize_textures_immediately) {
-			// Finalize textures that were uploaded via PBO the previous frame
-			for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
-				pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
-				if (transfer_state->need_finalization) {
-					finalize_texture_upload_using_pbo(transfer_state);
-					tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
-					tile->texture = transfer_state->texture;
-				}
-				float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-				if (time_elapsed > max_texture_load_time) {
-//			    	console_print("Warning: texture finalization is taking too much time\n");
-					break;
-				}
-			}
-		}
-
-		/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
-		if (time_elapsed > 0.005f) {
-			console_print("Warning: texture finalization took %g ms\n", time_elapsed * 1000.0f);
-		}*/
-
-//		last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
-
-
-#endif
-
-		// TODO: take into account priorities here as well
-
-		// Retrieve completed tasks from the worker threads
-		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
-		while (is_queue_work_in_progress(&global_completion_queue)) {
-			work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
-			if (entry.is_valid) {
-				if (!entry.callback) panic();
-				mark_queue_entry_completed(&global_completion_queue);
-
-				if (entry.callback == viewer_notify_load_tile_completed) {
-					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
-					if (!is_resource_valid(app_state, task->resource_id)) {
-						// Image doesn't exist anymore (was unloaded?)
-						if (task->pixel_memory) free(task->pixel_memory);
-					} else {
-						tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-						ASSERT(tile);
-						tile->is_submitted_for_loading = false;
-
-						if (task->pixel_memory) {
-							bool need_free_pixel_memory = true;
-							if (task->want_gpu_residency) {
-								pixel_transfer_state_t* transfer_state =
-										submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
-										                              4, task->pixel_memory, finalize_textures_immediately);
-								if (finalize_textures_immediately) {
-									tile->texture = transfer_state->texture;
-								} else {
-									transfer_state->userdata = (void*) tile;
-									tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
-								}
-
-							}
-							if (tile->need_keep_in_cache) {
-								need_free_pixel_memory = false;
-								tile->pixels = task->pixel_memory;
-								tile->is_cached = true;
-							}
-							if (need_free_pixel_memory) {
-								free(task->pixel_memory);
-							}
-						} else {
-							tile->is_empty = true; // failed; don't resubmit!
-						}
-					}
-
-
-				} else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
-					load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
-					if (!is_resource_valid(app_state, task->resource_id)) {
-						// Image no longer exists
-					} else {
-						tile_t* tile = task->tile;
-						ASSERT(tile);
-						tile->is_submitted_for_loading = false;
-						if (tile->is_cached && tile->pixels) {
-							if (tile->need_gpu_residency) {
-								pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state, task->image->tile_width,
-								                                                                       task->image->tile_height, 4,
-								                                                                       tile->pixels, finalize_textures_immediately);
-								tile->texture = transfer_state->texture;
-							} else {
-								ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
-							}
-
-							if (!task->need_keep_in_cache) {
-								tile_release_cache(tile);
-							}
-						} else {
-							console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
-						}
-					}
-
-				}
-			}
-
-			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
-			if (time_elapsed > max_texture_load_time) {
-//				console_print("Warning: texture submission is taking too much time\n");
-				break;
-			}
-
-			if (pixel_transfer_index_start == app_state->next_pixel_transfer_to_submit) {
-//				console_print("Warning: not enough PBO's to do all the pixel transfers\n");
-				break;
-			}
-		}
-
-		/*time_elapsed = get_seconds_elapsed(last_section, get_clock());
-		if (time_elapsed > 0.005f) {
-			console_print("Warning: texture submission took %g ms\n", time_elapsed * 1000.0f);
-		}*/
 
 		// Determine the highest and lowest levels with image data that need to be loaded and rendered.
 		// The lowest needed level might be lower than the actual current downsampling level,
@@ -900,7 +825,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				tile_streamer.crop_bounds = scene->crop_bounds;
 				tile_streamer.is_cropped = scene->is_cropped;
 				tile_streamer.zoom = scene->zoom;
-				stream_image_tiles(&tile_streamer);
+				isyntax_begin_stream_image_tiles(&tile_streamer);
 			}
 		} else if (image->backend == IMAGE_BACKEND_STBI) {
 			simple_image_t* simple = &image->simple;
@@ -915,7 +840,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			}
 
 		} else {
-
 
 			// Create a 'wishlist' of tiles to request
 			load_tile_task_t tile_wishlist[32];
@@ -1098,7 +1022,8 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		}
 
-		// Draw tiles
+		// If a background image has already been rendered, we need to blend the tiles on top
+		// while taking into account transparency.
 		if (draw_macro_image_in_background) {
 			glEnable(GL_BLEND);
 			glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
@@ -1107,6 +1032,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			glDisable(GL_BLEND);
 		}
 
+		// Draw tiles
 		// Draw all levels within the viewport, up to the current zoom factor
 		for (i32 level = lowest_visible_scale; level <= highest_visible_scale; ++level) {
 			level_image_t *drawn_level = image->level_images + level;
@@ -1169,7 +1095,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 
 void viewer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 client_height) {
-	// TODO: check if framebuffer needs to be resized?
 //	glDrawBuffer(GL_BACK);
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
@@ -1265,7 +1190,6 @@ static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f c
 	}
 }
 
-
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 	switch(tool) {
 		default: case TOOL_NONE: {
@@ -1290,8 +1214,6 @@ void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 
 #define CLICK_DRAG_TOLERANCE 6.0f
 
-// TODO: refactor delta_t
-// TODO: think about having access to both current and old input. (for comparing); is transition count necessary?
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
 
 	i64 last_section = get_clock(); // start profiler section
@@ -1343,6 +1265,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	ASSERT(image_count >= 0);
 	app_state->is_any_image_loaded = (image_count > 0);
 
+	viewer_process_completion_queue(app_state);
+
 	if (image_count == 0) {
 		if (app_state->is_window_title_set_for_image) {
 			reset_window_title(app_state->main_window);
@@ -1354,8 +1278,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 	image_t* displayed_image = app_state->loaded_images + app_state->displayed_image;
+	ASSERT(displayed_image->type == IMAGE_TYPE_WSI);
 
-
+	// Do actions that need to performed only once, when a new image has been loaded
 	if (displayed_image->is_freshly_loaded) {
 		set_window_title(app_state->main_window, displayed_image->name);
 		app_state->is_window_title_set_for_image = true;
@@ -1364,11 +1289,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		input->mouse_buttons[0].transition_count = 0;
 		displayed_image->is_freshly_loaded = false;
 	}
-
-
-	// TODO: mutate state here
-
-	// todo: process even more of the mouse/keyboard input here?
 
 	if (input) {
 		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;

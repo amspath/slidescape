@@ -290,18 +290,18 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 static const char* get_image_type_name(image_t* image) {
 	const char* result = "--";
-	if (image->type == IMAGE_TYPE_SIMPLE) {
-		result = "Simple";
-	} else if (image->type == IMAGE_TYPE_WSI) {
+	if (image->type == IMAGE_TYPE_WSI) {
 		if (image->backend == IMAGE_BACKEND_TIFF) {
-			result = "TIFF";
+			result = "WSI (TIFF)";
 		} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
-			result = "OpenSlide";
+			result = "WSI (OpenSlide)";
 		} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
-			result = "iSyntax";
-		} else {
-			result = "WSI (?)";
+			result = "WSI (iSyntax)";
+		} else if (image->backend == IMAGE_BACKEND_STBI) {
+			result = "Simple image";
 		}
+	} else {
+		result = "Unknown";
 	}
 	return result;
 }

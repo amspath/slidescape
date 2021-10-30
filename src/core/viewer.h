@@ -84,7 +84,7 @@ typedef struct wsi_t {
 
 typedef enum {
 	IMAGE_TYPE_NONE,
-	IMAGE_TYPE_SIMPLE,
+//	IMAGE_TYPE_SIMPLE,
 //	IMAGE_TYPE_TIFF,
 	IMAGE_TYPE_WSI,
 } image_type_enum;
@@ -434,7 +434,7 @@ void viewer_init_options(app_state_t* app_state);
 
 // isyntax_streamer.cpp
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);
-void stream_image_tiles(tile_streamer_t* tile_streamer);
+void isyntax_begin_stream_image_tiles(tile_streamer_t* tile_streamer);
 
 // scene.cpp
 void zoom_update_pos(zoom_state_t* zoom, float pos);

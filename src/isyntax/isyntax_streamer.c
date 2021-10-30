@@ -1056,10 +1056,9 @@ void isyntax_stream_image_tiles_func(i32 logical_thread_index, void* userdata) {
 	} while (need_repeat);
 	is_tile_stream_task_in_progress = false;
 	atomic_decrement(&tile_streamer->image->isyntax.refcount); // release
-
 }
 
-void stream_image_tiles(tile_streamer_t* tile_streamer) {
+void isyntax_begin_stream_image_tiles(tile_streamer_t* tile_streamer) {
 
 	if (!is_tile_stream_task_in_progress) {
 		atomic_increment(&tile_streamer->image->isyntax.refcount); // retain; don't destroy isyntax while busy
