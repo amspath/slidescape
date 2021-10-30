@@ -340,7 +340,7 @@ void ini_save(ini_t* ini, const char* filename) {
 		} else if (entry->type == INI_ENTRY_SECTION) {
 			memrw_printf(&out, "[%s]\n", entry->name);
 		} else if (entry->type == INI_ENTRY_OPTION) {
-			ini_option_get_value_string(entry);
+//			ini_option_get_value_string(entry);
 			memrw_printf(&out, "%s=%s\n", entry->name, entry->value);
 		}
 	}

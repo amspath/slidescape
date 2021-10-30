@@ -1076,10 +1076,9 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 			glEnable(GL_STENCIL_TEST);
 			glStencilFunc(GL_ALWAYS, 1, 0xFF);
 			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-			glStencilMask(0xFF);
+//			glStencilMask(0xFF);
 			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
 			glDepthMask(GL_FALSE); // don't write to depth buffer
-//*/
 			{
 				mat4x4 model_matrix;
 				mat4x4_translate(model_matrix, stencil_bounds.left, stencil_bounds.top, 0.0f);
@@ -1091,20 +1090,11 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				draw_rect(dummy_texture);
 			}
 
-			/*
-			glEnable(GL_STENCIL_TEST);
-			glStencilFunc(GL_ALWAYS, 1, 0xFF);
-			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-			glStencilMask(0xFF);
-			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
-			glDepthMask(GL_FALSE); // don't write to depth buffer
-	//*/
-
 			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 			glDepthMask(GL_TRUE);
-			glStencilMask(0x00);
+//			glStencilMask(0xFF);
 			glStencilFunc(GL_EQUAL, 1, 0xFF);
-			glDisable(GL_STENCIL_TEST);
+//			glDisable(GL_STENCIL_TEST);
 
 		}
 
@@ -1184,6 +1174,9 @@ void viewer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_STENCIL_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
 	glStencilMask(0xFF);
 	glViewport(0, 0, client_width, client_height);
 	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
