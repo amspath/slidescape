@@ -109,11 +109,13 @@ void ini_apply(ini_t* ini) {
 		ini_section_t* section = ini->sections + section_index;
 		for (i32 i = 0; i < section->option_count; ++i) {
 			ini_option_t* option = section->options + i;
-			ini_entry_t* entry = ini->entries + option->entry_index;
-			const char* value_string = entry->value;
-			bool value_changed = ini_apply_option(option, value_string);
-			if (value_changed) {
-				console_print_verbose("Applied option '%s = %s'\n", option->name, value_string);
+			if (option->has_entry) {
+				ini_entry_t* entry = ini->entries + option->entry_index;
+				const char* value_string = entry->value;
+				bool value_changed = ini_apply_option(option, value_string);
+				if (value_changed) {
+					console_print_verbose("Applied option '%s = %s'\n", option->name, value_string);
+				}
 			}
 		}
 	}
@@ -149,6 +151,7 @@ void ini_register_option(ini_t* ini, const char* name, u32 link_type, u32 link_s
 			option->link_type = link_type;
 			option->link_size = link_size;
 			option->link = link;
+			option->has_entry = true;
 			break;
 		}
 	}
@@ -158,6 +161,7 @@ void ini_register_option(ini_t* ini, const char* name, u32 link_type, u32 link_s
 		option.link_type = link_type;
 		option.link_size = link_size;
 		option.link = link;
+		option.has_entry = false;
 		arrput(section->options, option);
 		++section->option_count;
 	}

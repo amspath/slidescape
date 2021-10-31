@@ -1,2 +1,60 @@
 #define IDI_ICON1 101
+#define IDS_FRIENDLYAPPNAME 201
+#define IDS_FRIENDLYTYPENAME 202
+
 IDI_ICON1   ICON  DISCARDABLE  "icon.ico"
+
+STRINGTABLE
+{
+    IDS_FRIENDLYAPPNAME, "Slideviewer"
+    IDS_FRIENDLYTYPENAME, "Whole slide image"
+}
+
+#include <winver.h>
+
+#ifndef DEBUG
+#define VER_DEBUG                   0
+#else
+#define VER_DEBUG                   VS_FF_DEBUG
+#endif
+
+#define VER_COMPANYNAME_STR         "Ectopic"
+#define VER_FILEDESCRIPTION_STR     "Slideviewer"
+#define VER_FILEVERSION             0,38,0,0
+#define VER_FILEVERSION_STR         "0.38"
+#define VER_INTERNALNAME_STR        "slideviewer.exe"
+#define VER_LEGALCOPYRIGHT_STR      "(c) 2019-2021 Pieter Valkema"
+#define VER_ORIGINALFILENAME_STR    "slideviewer.exe"
+#define VER_PRODUCTNAME_STR         "slideviewer"
+#define VER_PRODUCTVERSION          0,38,0,0
+#define VER_PRODUCTVERSION_STR      "0.38"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     VER_FILEVERSION
+PRODUCTVERSION  VER_PRODUCTVERSION
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       VER_DEBUG
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      VER_COMPANYNAME_STR
+            VALUE "FileDescription",  VER_FILEDESCRIPTION_STR
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "InternalName",     VER_INTERNALNAME_STR
+            VALUE "LegalCopyright",   VER_LEGALCOPYRIGHT_STR
+            VALUE "OriginalFilename", VER_ORIGINALFILENAME_STR
+            VALUE "ProductName",      VER_PRODUCTNAME_STR
+            VALUE "ProductVersion",   VER_PRODUCTVERSION_STR
+        END
+    END
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END

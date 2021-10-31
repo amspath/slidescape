@@ -49,6 +49,7 @@ typedef struct ini_option_t {
 	char name[INI_MAX_NAME];
 	u32 entry_index;
 	u32 sparse_index;
+	bool has_entry;
 } ini_option_t;
 
 typedef struct ini_section_t {

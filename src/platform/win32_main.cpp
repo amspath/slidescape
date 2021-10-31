@@ -274,8 +274,216 @@ void file_stream_close(file_stream_t file_stream) {
 	}
 }
 
+HKEY win32_registry_create_empty_key(const char* key) {
+	HKEY hkey = NULL;
+	DWORD disposition = 0;
+	DWORD ret = RegCreateKeyExA(HKEY_CURRENT_USER, key, 0, NULL,
+	                            REG_OPTION_NON_VOLATILE, KEY_ALL_ACCESS, NULL, &hkey, &disposition);
+	if (ret != ERROR_SUCCESS) {
+		printf("Error opening or creating new key\n");
+		return NULL;
+	}
+	return hkey;
+}
+
+bool win32_registry_set_value(HKEY hkey, const char* key, DWORD type, const char* value, DWORD size) {
+	if (RegSetValueExA(hkey, key, 0, type, (const BYTE*)value, size) != ERROR_SUCCESS) {
+		win32_diagnostic("RegSetValueExA");
+		return false;
+	}
+	return true;
+}
+
+bool win32_registry_add_to_open_with_list(const char* ext) {
+	char key_string[256];
+	snprintf(key_string, sizeof(key_string)-1, "Software\\Classes\\.%s\\OpenWithProgids", ext);
+	key_string[sizeof(key_string)-1] = '\0';
+	{
+		HKEY hkey = win32_registry_create_empty_key(key_string);
+		if (hkey) {
+			if (RegSetValueExA(hkey, "Slideviewer.Image", 0, REG_SZ, NULL, 0) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(hkey);
+				return false;
+			}
+			RegCloseKey(hkey);
+		} else {
+			return false;
+		}
+	}
+	return true;
+}
+
+void win32_set_file_type_associations() {
+
+	char exe_name[512];
+	GetModuleFileNameA(NULL, exe_name, sizeof(exe_name));
+	exe_name[sizeof(exe_name)-1] = '\0';
+
+	// "C:\path\to\slideviewer.exe" "%1"
+	BYTE open_command[512];
+	snprintf((char*)open_command, sizeof(open_command) - 1, "\"%s\" \"%%1\"", exe_name);
+	open_command[sizeof(open_command) - 1] = '\0';
+	size_t open_command_length = strlen((char*)open_command) + 1;
+
+
+
+	// Register the application
+
+	// HKEY_CURRENT_USER\Software\Classes
+	//   Applications
+	//     slideviewer.exe
+	//       FriendlyAppName = @"C:\path\to\slideviewer.exe"-201
+	//       DefaultIcon
+	//         (Default) = %SystemRoot%\System32\imageres.dll,-122
+	//       shell
+	//         open
+	//           command = "C:\path\to\slideviewer.exe" "%1"
+	//       SupportedTypes
+	//         .isyntax
+	//         (...)
+	{
+		HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe");
+		if (key) {
+			char friendly_app_name[512];
+			snprintf((char*)friendly_app_name, sizeof(friendly_app_name) - 1, "@\"%s\",-201", exe_name);
+			friendly_app_name[sizeof(friendly_app_name) - 1] = '\0';
+			if (RegSetValueExA(key, "FriendlyAppName", 0, REG_SZ, (BYTE*)friendly_app_name, strlen(friendly_app_name) + 1) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(key);
+				return;
+			}
+			RegCloseKey(key);
+		} else {
+			return;
+		}
+	}
+	{
+		HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe\\DefaultIcon");
+		if (key) {
+			static const BYTE value[] = "%SystemRoot%\\System32\\imageres.dll,-122";
+			if (RegSetValueExA(key, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(key);
+				return;
+			}
+			RegCloseKey(key);
+		} else {
+			return;
+		}
+	}
+	{
+		HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe\\shell\\open\\command");
+		if (hkey) {
+			if (!win32_registry_set_value(hkey, NULL, REG_SZ, (char*)open_command, open_command_length)) {
+				RegCloseKey(hkey);
+				return;
+			}
+			RegCloseKey(hkey);
+		} else {
+			return;
+		}
+	}
+	{
+		HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe\\SupportedTypes");
+		if (hkey) {
+			if (!win32_registry_set_value(hkey, ".isyntax", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".tif", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".tiff", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".svs", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".ndpi", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".vms", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".scn", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".mrxs", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			if (!win32_registry_set_value(hkey, ".bif", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+			RegCloseKey(hkey);
+		} else {
+			fail_SupportedTypes:
+			if (hkey) RegCloseKey(hkey);
+			return;
+		}
+	}
+
+
+	// Create the ProgID
+	{
+		HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slideviewer.Image");
+		if (hkey) {
+			static const BYTE value[] = "Slideviewer";
+			if (RegSetValueExA(hkey, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(hkey);
+				return;
+			}
+
+			char friendly_type_name[512];
+			snprintf((char*)friendly_type_name, sizeof(friendly_type_name)-1, "@\"%s\",-202", exe_name);
+			friendly_type_name[sizeof(friendly_type_name)-1] = '\0';
+			if (RegSetValueExA(hkey, "FriendlyTypeName", 0, REG_SZ, (BYTE*)friendly_type_name, strlen(friendly_type_name) + 1) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(hkey);
+				return;
+			}
+
+			RegCloseKey(hkey);
+		} else {
+			return;
+		}
+	}
+
+	{
+		HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slideviewer.Image\\DefaultIcon");
+		if (hkey) {
+			static const BYTE value[] = "%SystemRoot%\\System32\\imageres.dll,-122";
+			if (RegSetValueExA(hkey, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(hkey);
+				return;
+			}
+			RegCloseKey(hkey);
+		} else {
+			return;
+		}
+	}
+	{
+		HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slideviewer.Image\\shell\\open\\command");
+		if (hkey) {
+			if (RegSetValueExA(hkey, NULL, 0, REG_SZ, open_command, open_command_length) != ERROR_SUCCESS) {
+				win32_diagnostic("RegSetValueExA");
+				RegCloseKey(hkey);
+				return;
+			}
+			RegCloseKey(hkey);
+		} else {
+			return;
+		}
+	}
+
+	// Create the filetype associations
+	if (!win32_registry_add_to_open_with_list("isyntax")) return;
+	if (!win32_registry_add_to_open_with_list("tiff")) return;
+	if (!win32_registry_add_to_open_with_list("tif")) return;
+	if (!win32_registry_add_to_open_with_list("ptif")) return;
+
+	// Let the system know that file associations have been changed
+	SHChangeNotify(SHCNE_ASSOCCHANGED, 0, 0, 0);
+}
+
+
 void load_openslide_task(int logical_thread_index, void* userdata) {
 	is_openslide_available = init_openslide();
+	if (is_openslide_available) {
+		// Add the OpenSlide formats to the "Open With..." window
+		if (!win32_registry_add_to_open_with_list("svs")) return;
+		if (!win32_registry_add_to_open_with_list("ndpi")) return;
+		if (!win32_registry_add_to_open_with_list("vms")) return;
+		if (!win32_registry_add_to_open_with_list("scn")) return;
+		if (!win32_registry_add_to_open_with_list("mrxs")) return;
+		if (!win32_registry_add_to_open_with_list("bif")) return;
+
+		// Let the system know that file associations have been changed
+		SHChangeNotify(SHCNE_ASSOCCHANGED, 0, 0, 0);
+	}
 	is_openslide_loading_done = true;
 }
 
@@ -293,7 +501,7 @@ static char appdata_path[MAX_PATH];
 void win32_setup_appdata() {
 	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appdata_path))) {
 		i32 appdata_path_len = strlen(appdata_path);
-		strncpy(appdata_path + appdata_path_len, "\\Slidescape", sizeof(appdata_path) - appdata_path_len);
+		strncpy(appdata_path + appdata_path_len, "\\Slideviewer", sizeof(appdata_path) - appdata_path_len);
 //		console_print("%s\n", path_buf);
 		if (!file_exists(appdata_path)) {
 			if (!CreateDirectoryA(appdata_path, 0)) {
@@ -1810,6 +2018,7 @@ int main(int argc, const char** argv) {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
 	win32_setup_appdata();
+	win32_set_file_type_associations();
 
 	get_system_info();
 
