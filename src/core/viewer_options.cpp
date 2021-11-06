@@ -1,5 +1,5 @@
 /*
-  Slideviewer, a whole-slide image viewer for digital pathology.
+  Slidescape, a whole-slide image viewer for digital pathology.
   Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
@@ -20,9 +20,9 @@ static char options_ini_filename[512];
 
 void viewer_init_options(app_state_t* app_state) {
 	if (global_settings_dir) {
-		snprintf(options_ini_filename, sizeof(options_ini_filename), "%s" PATH_SEP "%s", global_settings_dir, "slideviewer.ini");
+		snprintf(options_ini_filename, sizeof(options_ini_filename), "%s" PATH_SEP "%s", global_settings_dir, "slidescape.ini");
 	} else {
-		strncpy(options_ini_filename, "slideviewer.ini", sizeof(options_ini_filename));
+		strncpy(options_ini_filename, "slidescape.ini", sizeof(options_ini_filename));
 	}
 
 	ini_t* ini = ini_load_from_file(options_ini_filename);

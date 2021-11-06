@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.12)
-project(slideviewer)
+project(slidescape)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -221,41 +221,43 @@ set(LIBRARY_SOURCE_FILES
 
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
-    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
-    target_link_libraries(slideviewer user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi)
+    add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
+    target_link_libraries(slidescape user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi)
     # Hide the console window on release builds
-    target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
+    target_link_options(slidescape PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
 elseif(APPLE)
     set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -headerpad_max_install_names")
     find_package(SDL2 REQUIRED)
     include_directories(${SDL2_INCLUDE_DIRS})
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-    add_executable(slideviewer MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
-    set_target_properties(slideviewer PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
-    target_link_libraries(slideviewer "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
-    target_link_libraries(slideviewer ${SDL2_LIBRARIES})
+    add_executable(slidescape MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
+    set_target_properties(slidescape PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
+    target_link_libraries(slidescape "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
+    target_link_libraries(slidescape ${SDL2_LIBRARIES})
+    set_target_properties(slidescape PROPERTIES OUTPUT_NAME Slidescape)
 
-    # Copy the .dylib file for SDL2 into the slideviewer.app/Contents/MacOS folder.
+
+    # Copy the .dylib file for SDL2 into the slidescape.app/Contents/MacOS folder.
     # And modify the executable, so that the packaged .dylib files are loaded at runtime.
-    set(BUNDLE_BINARY_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slideviewer.app/Contents/MacOS")
+    set(BUNDLE_BINARY_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Slidescape.app/Contents/MacOS")
     execute_process(COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE)
     execute_process(COMMAND sdl2-config --prefix COMMAND tr -d '\n' OUTPUT_VARIABLE SDL2_PREFIX)
-    set(FIND_LINKED_DYLIB_COMMAND otool -L ${BUNDLE_BINARY_DIR}/slideviewer | grep SDL2- | cut -d' ' -f1)
-    add_custom_command(TARGET slideviewer POST_BUILD
+    set(FIND_LINKED_DYLIB_COMMAND otool -L ${BUNDLE_BINARY_DIR}/slidescape | grep SDL2- | cut -d' ' -f1)
+    add_custom_command(TARGET slidescape POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}"
             COMMAND cp -f "${SDL2_PREFIX}/lib/libSDL2.dylib" "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}/libSDL2.dylib"
             COMMAND install_name_tool -change `${FIND_LINKED_DYLIB_COMMAND}`
-            @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/slideviewer")
+            @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/slidescape")
     if (WITH_CODESIGN)
-        add_custom_command(TARGET slideviewer POST_BUILD
-                COMMAND codesign --deep -s "Developer ID Application" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slideviewer.app)
+        add_custom_command(TARGET slidescape POST_BUILD
+                COMMAND codesign --deep -s "Developer ID Application" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Slidescape.app)
     endif()
 else()
-    add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
-    target_link_libraries(slideviewer pthread dl m GL GLEW SDL2)
+    add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
+    target_link_libraries(slidescape pthread dl m GL GLEW SDL2)
 endif()
-target_compile_definitions(slideviewer PRIVATE IS_SERVER=0)
+target_compile_definitions(slidescape PRIVATE IS_SERVER=0)
 
 set(SERVER_SOURCE_FILES
         platform/platform.c

@@ -11,6 +11,6 @@
 
 #define REMOTE_CLIENT_VERBOSE 0
 
-#define APP_TITLE "Slideviewer"
-#define APP_VERSION "0.37"
+#define APP_TITLE "Slidescape"
+#define APP_VERSION "0.38"
 

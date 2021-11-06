@@ -5,27 +5,27 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>slideviewer</string>
+	<string>slidescape</string>
 	<key>CFBundleGetInfoString</key>
-	<string>Slideviewer</string>
+	<string>Slidescape</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.ectopiclabs.slideviewer</string>
+	<string>com.ectopiclabs.slidescape</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleLongVersionString</key>
-	<string>0.37</string>
+	<string>0.38</string>
 	<key>CFBundleName</key>
-	<string>Slideviewer</string>
+	<string>Slidescape</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.37</string>
+	<string>0.38</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>0.37</string>
+	<string>0.38</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>NSSupportsSuddenTermination</key>
@@ -46,6 +46,12 @@
 				<string>ptif</string>
 				<string>tif</string>
 				<string>isyntax</string>
+				<string>svs</string>
+				<string>ndpi</string>
+				<string>vms</string>
+				<string>scn</string>
+				<string>mrxs</string>
+				<string>bif</string>
 			</array>
 			<key>CFBundleTypeIconFile</key>
 			<string></string>

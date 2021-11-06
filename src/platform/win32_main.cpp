@@ -1,5 +1,5 @@
 /*
-  Slideviewer, a whole-slide image viewer for digital pathology.
+  Slidescape, a whole-slide image viewer for digital pathology.
   Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
@@ -302,7 +302,7 @@ bool win32_registry_add_to_open_with_list(const char* ext) {
 	{
 		HKEY hkey = win32_registry_create_empty_key(key_string);
 		if (hkey) {
-			if (RegSetValueExA(hkey, "Slideviewer.Image", 0, REG_SZ, NULL, 0) != ERROR_SUCCESS) {
+			if (RegSetValueExA(hkey, "Slidescape.Image", 0, REG_SZ, NULL, 0) != ERROR_SUCCESS) {
 				win32_diagnostic("RegSetValueExA");
 				RegCloseKey(hkey);
 				return false;
@@ -331,7 +331,7 @@ void win32_set_file_type_associations() {
 	UINT drive_type = GetDriveTypeA(root_dir);
 
 	if (drive_type == DRIVE_FIXED || drive_type == DRIVE_REMOTE) {
-		// "C:\path\to\slideviewer.exe" "%1"
+		// "C:\path\to\slidescape.exe" "%1"
 		BYTE open_command[512];
 		snprintf((char*)open_command, sizeof(open_command) - 1, "\"%s\" \"%%1\"", exe_name);
 		open_command[sizeof(open_command) - 1] = '\0';
@@ -343,18 +343,18 @@ void win32_set_file_type_associations() {
 
 		// HKEY_CURRENT_USER\Software\Classes
 		//   Applications
-		//     slideviewer.exe
-		//       FriendlyAppName = @"C:\path\to\slideviewer.exe"-201
+		//     slidescape.exe
+		//       FriendlyAppName = @"C:\path\to\slidescape.exe"-201
 		//       DefaultIcon
 		//         (Default) = %SystemRoot%\System32\imageres.dll,-122
 		//       shell
 		//         open
-		//           command = "C:\path\to\slideviewer.exe" "%1"
+		//           command = "C:\path\to\slidescape.exe" "%1"
 		//       SupportedTypes
 		//         .isyntax
 		//         (...)
 		{
-			HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe");
+			HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slidescape.exe");
 			if (key) {
 				char friendly_app_name[512];
 				snprintf((char*)friendly_app_name, sizeof(friendly_app_name) - 1, "@\"%s\",-201", exe_name);
@@ -370,7 +370,7 @@ void win32_set_file_type_associations() {
 			}
 		}
 		{
-			HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe\\DefaultIcon");
+			HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slidescape.exe\\DefaultIcon");
 			if (key) {
 				static const BYTE value[] = "%SystemRoot%\\System32\\imageres.dll,-122";
 				if (RegSetValueExA(key, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
@@ -384,7 +384,7 @@ void win32_set_file_type_associations() {
 			}
 		}
 		{
-			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe\\shell\\open\\command");
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slidescape.exe\\shell\\open\\command");
 			if (hkey) {
 				if (!win32_registry_set_value(hkey, NULL, REG_SZ, (char*)open_command, open_command_length)) {
 					RegCloseKey(hkey);
@@ -396,7 +396,7 @@ void win32_set_file_type_associations() {
 			}
 		}
 		{
-			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slideviewer.exe\\SupportedTypes");
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slidescape.exe\\SupportedTypes");
 			if (hkey) {
 				if (!win32_registry_set_value(hkey, ".isyntax", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
 				if (!win32_registry_set_value(hkey, ".tif", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
@@ -418,9 +418,9 @@ void win32_set_file_type_associations() {
 
 		// Create the ProgID
 		{
-			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slideviewer.Image");
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slidescape.Image");
 			if (hkey) {
-				static const BYTE value[] = "Slideviewer";
+				static const BYTE value[] = "Slidescape";
 				if (RegSetValueExA(hkey, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
 					win32_diagnostic("RegSetValueExA");
 					RegCloseKey(hkey);
@@ -443,7 +443,7 @@ void win32_set_file_type_associations() {
 		}
 
 		{
-			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slideviewer.Image\\DefaultIcon");
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slidescape.Image\\DefaultIcon");
 			if (hkey) {
 				static const BYTE value[] = "%SystemRoot%\\System32\\imageres.dll,-122";
 				if (RegSetValueExA(hkey, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
@@ -457,7 +457,7 @@ void win32_set_file_type_associations() {
 			}
 		}
 		{
-			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slideviewer.Image\\shell\\open\\command");
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Slidescape.Image\\shell\\open\\command");
 			if (hkey) {
 				if (RegSetValueExA(hkey, NULL, 0, REG_SZ, open_command, open_command_length) != ERROR_SUCCESS) {
 					win32_diagnostic("RegSetValueExA");
@@ -513,7 +513,7 @@ static char appdata_path[MAX_PATH];
 void win32_setup_appdata() {
 	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appdata_path))) {
 		i32 appdata_path_len = strlen(appdata_path);
-		strncpy(appdata_path + appdata_path_len, "\\Slideviewer", sizeof(appdata_path) - appdata_path_len);
+		strncpy(appdata_path + appdata_path_len, "\\Slidescape", sizeof(appdata_path) - appdata_path_len);
 //		console_print("%s\n", path_buf);
 		if (!file_exists(appdata_path)) {
 			if (!CreateDirectoryA(appdata_path, 0)) {
@@ -551,7 +551,7 @@ void platform_sleep(u32 ms) {
 }
 
 void message_box(app_state_t* app_state, const char* message) {
-	MessageBoxA(app_state->main_window, message, "Slideviewer", MB_ICONERROR);
+	MessageBoxA(app_state->main_window, message, "Slidescape", MB_ICONERROR);
 }
 
 
@@ -562,7 +562,7 @@ void set_window_title(window_handle_t window, const char* title) {
 }
 
 void reset_window_title(window_handle_t window) {
-	SetWindowTextA(window, "Slideviewer");
+	SetWindowTextA(window, "Slidescape");
 }
 
 void win32_init_cursor() {
@@ -1849,7 +1849,7 @@ void win32_init_main_window(app_state_t* app_state) {
 	main_window_class.hInstance = g_instance;
 	main_window_class.hCursor = the_cursor;
 	main_window_class.hIcon = LoadIconA(g_instance, MAKEINTRESOURCE(101));
-	main_window_class.lpszClassName = "SlideviewerMainWindow";
+	main_window_class.lpszClassName = "SlidescapeMainWindow";
 	main_window_class.hbrBackground = NULL;
 
 	if (!RegisterClassA(&main_window_class)) {

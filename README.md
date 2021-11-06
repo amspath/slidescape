@@ -1,6 +1,6 @@
-# Slideviewer
+# Slidescape
 
-Slideviewer is a whole-slide image viewer for digital pathology.
+Slidescape is a whole-slide image viewer for digital pathology.
 
 ## How to build
 
@@ -20,8 +20,8 @@ The following libraries are required: SDL2 (on Linux and macOS), GLEW (Linux onl
 mkdir build && cd build
 cmake ..
 cd ..
-cmake --build build --target slideviewer -- -j
-./slideviewer
+cmake --build build --target slidescape -- -j
+./slidescape
 ```
 
 
@@ -31,11 +31,11 @@ The viewer has built-in support for:
 * Tiled TIFF and BigTIFF (including generic and Philips TIFF variants).
 * Philips iSyntax.
 
-The program can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime. 
+Slidescape can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime. 
 If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana formats can additionally be loaded.
 
 To enable OpenSlide support on Windows, download (or compile) the [64-bit binaries](https://openslide.org/download/) 
-and put all of the DLL files together in an `openslide/` folder, and put that folder in the same location as `slideviewer.exe`.
+and put all of the DLL files together in an `openslide/` folder, and put that folder in the same location as `slidescape.exe`.
 
 To enable OpenSlide support on Linux, install the `openslide` library, either using a package manager or 
 by building and installing it manually. The program will try to locate `libopenslide.so`, either in the 
@@ -47,7 +47,7 @@ Homebrew, or `/opt/local/lib/` for MacPorts.
 
 ## Credits
 
-Slideviewer embeds code from the following projects, under their respective licenses:
+Slidescape embeds code from the following projects, under their respective licenses:
 * [Dear ImGui](https://github.com/ocornut/imgui) (graphical interface library)
 * [FreeType](https://www.freetype.org/index.html) (font renderer)
 * [libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo) (JPEG image codec)

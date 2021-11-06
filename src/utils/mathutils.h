@@ -1,5 +1,5 @@
 /*
-  Slideviewer, a whole-slide image viewer for digital pathology.
+  Slidescape, a whole-slide image viewer for digital pathology.
   Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify

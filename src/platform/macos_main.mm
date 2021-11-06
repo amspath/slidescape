@@ -45,15 +45,15 @@ float window_scale_factor = 1.0f;
 // ImGuiExampleView
 //-----------------------------------------------------------------------------------
 
-@interface SlideviewerView : NSOpenGLView
+@interface SlidescapeView : NSOpenGLView
 {
     NSTimer*    animationTimer;
 }
 @end
 
-SlideviewerView* g_view;
+SlidescapeView* g_view;
 
-@implementation SlideviewerView
+@implementation SlidescapeView
 
 -(void)animationTimerFired:(NSTimer*)timer
 {
@@ -237,11 +237,11 @@ SlideviewerView* g_view;
 // ImGuiExampleAppDelegate
 //-----------------------------------------------------------------------------------
 
-@interface SlideviewerAppDelegate : NSObject <NSApplicationDelegate>
+@interface SlidescapeAppDelegate : NSObject <NSApplicationDelegate>
 @property (nonatomic, readonly) NSWindow* window;
 @end
 
-@implementation SlideviewerAppDelegate
+@implementation SlidescapeAppDelegate
 @synthesize window = _window;
 
 -(BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)theApplication
@@ -257,7 +257,7 @@ SlideviewerView* g_view;
     NSRect viewRect = NSMakeRect(0.0, 0.0, 1440.0, 100 + 720.0);
 
     _window = [[NSWindow alloc] initWithContentRect:viewRect styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:YES];
-    [_window setTitle:@"Slideviewer"];
+    [_window setTitle:@"Slidescape"];
     [_window setAcceptsMouseMovedEvents:YES];
     [_window setOpaque:YES];
     [_window makeKeyAndOrderFront:self];
@@ -295,7 +295,7 @@ SlideviewerView* g_view;
 	NSMenu *appMenu = current_menu = [[NSMenu alloc] init];
 	[appMenuItem setSubmenu:appMenu];
 
-	[appMenu addItemWithTitle:@"About Slideviewer"
+	[appMenu addItemWithTitle:@"About Slidescape"
 	                    action:@selector(menu_item_clicked_about)
 	             keyEquivalent:@""];
 	[appMenu addItem:[NSMenuItem separatorItem]];
@@ -303,7 +303,7 @@ SlideviewerView* g_view;
 	                   action:@selector(menu_item_clicked_preferences)
 	            keyEquivalent:@","] setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
 	[appMenu addItem:[NSMenuItem separatorItem]];
-    menuItem = [appMenu addItemWithTitle:@"Quit Slideviewer" action:@selector(terminate:) keyEquivalent:@"q"];
+    menuItem = [appMenu addItemWithTitle:@"Quit Slidescape" action:@selector(terminate:) keyEquivalent:@"q"];
     [menuItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
 
 //    menuItem = [[NSMenuItem alloc] init];
@@ -446,7 +446,7 @@ SlideviewerView* g_view;
 		}
 	}
 
-    SlideviewerView* view = [[SlideviewerView alloc] initWithFrame:self.window.frame pixelFormat:format];
+    SlidescapeView* view = [[SlidescapeView alloc] initWithFrame:self.window.frame pixelFormat:format];
 	g_view = view;
     format = nil;
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1070
@@ -506,7 +506,7 @@ SlideviewerView* g_view;
 
 @end
 
-SlideviewerAppDelegate* g_delegate;
+SlidescapeAppDelegate* g_delegate;
 
 extern "C"
 void gui_new_frame() {
@@ -759,7 +759,7 @@ int main(int argc, const char* argv[])
 	@autoreleasepool
 	{
 		NSApp = [NSApplication sharedApplication];
-		SlideviewerAppDelegate* delegate = [[SlideviewerAppDelegate alloc] init];
+		SlidescapeAppDelegate* delegate = [[SlidescapeAppDelegate alloc] init];
 		g_delegate = delegate;
 		[[NSApplication sharedApplication] setDelegate:delegate];
 		[NSApp run];

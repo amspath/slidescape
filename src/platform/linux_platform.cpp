@@ -1,5 +1,5 @@
 /*
-  Slideviewer, a whole-slide image viewer for digital pathology.
+  Slidescape, a whole-slide image viewer for digital pathology.
   Copyright (C) 2019-2021  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
@@ -68,7 +68,7 @@ void set_window_title(window_handle_t window, const char* title) {
 }
 
 void reset_window_title(window_handle_t window) {
-	SDL_SetWindowTitle(window, "Slideviewer");
+	SDL_SetWindowTitle(window, APP_TITLE);
 }
 
 void set_swap_interval(int interval) {
