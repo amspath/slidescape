@@ -25,7 +25,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include "win32_main.h" // for win32_diagnostic()
+#include "win32_platform.h" // for win32_diagnostic()
 #else
 #include <dlfcn.h>
 #endif

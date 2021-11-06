@@ -32,7 +32,7 @@ extern "C" {
 #endif
 #if !IS_SERVER
 #if WINDOWS
-#include "win32_main.h"
+#include "win32_platform.h"
 #elif APPLE
 
 #endif

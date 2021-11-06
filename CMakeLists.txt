@@ -204,11 +204,20 @@ set(VIEWER_SOURCE_FILES
         )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            platform/win32_main.cpp  platform/win32_gui.cpp   imgui/imgui_impl_win32.cpp     platform/glad.c )
+            platform/win32_main.cpp
+            platform/win32_platform.cpp
+            platform/win32_gui.cpp
+            platform/glad.c
+            imgui/imgui_impl_win32.cpp
+            )
 else()
     # Note: SDL2 is used for both Linux and macOS
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
-            platform/linux_main.cpp   platform/linux_platform.cpp imgui/imgui_impl_sdl.cpp imgui/ImGuiFileDialog.cpp)
+            platform/linux_main.cpp
+            platform/linux_platform.cpp
+            imgui/imgui_impl_sdl.cpp
+            imgui/ImGuiFileDialog.cpp
+            )
 endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 

@@ -20,7 +20,7 @@
 
 #include <windows.h>
 #include "platform.h"
-#include "win32_main.h"
+#include "win32_platform.h"
 
 #include <glad/glad.h>
 

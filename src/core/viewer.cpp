@@ -19,7 +19,7 @@
 #include "common.h"
 
 #if WINDOWS
-#include "win32_main.h"
+#include "win32_platform.h"
 #include <io.h>
 #else
 #include <sys/mman.h>

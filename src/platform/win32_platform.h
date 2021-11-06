@@ -19,7 +19,6 @@
 #ifndef WIN32_MAIN
 #define WIN32_MAIN
 
-// todo: fix this (make opaque structure?)
 #include <windows.h>
 #include "platform.h"
 
@@ -30,28 +29,18 @@ extern "C" {
 #define BYTES_PER_PIXEL 4
 
 typedef struct {
-	union {
-		struct {
-			BITMAPINFO bitmapinfo;
-		} win32;
-	};
-	void* memory;
-	size_t memory_size;
-	int width;
-	int height;
-	int pitch;
-} surface_t;
-
-typedef struct {
 	int width;
 	int height;
 } win32_window_dimension_t;
 
-
+wchar_t* win32_string_widen(const char* s, size_t len, wchar_t* buffer);
+char* win32_string_narrow(wchar_t* s, char* buffer, size_t buffer_size);
 void win32_diagnostic(const char* prefix);
 void win32_diagnostic_verbose(const char* prefix);
 HANDLE win32_open_overlapped_file_handle(const char* filename);
 size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset);
+
+LPSTR* WINAPI CommandLineToArgvA(LPSTR lpCmdline, int* numargs);
 
 // globals
 #if defined(WIN32_MAIN_IMPL)
