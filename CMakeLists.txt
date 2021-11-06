@@ -222,7 +222,7 @@ set(LIBRARY_SOURCE_FILES
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
     add_executable(slideviewer ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
-    target_link_libraries(slideviewer user32 gdi32 winmm imm32 dwmapi ws2_32 psapi)
+    target_link_libraries(slideviewer user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi)
     # Hide the console window on release builds
     target_link_options(slideviewer PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
 elseif(APPLE)
