@@ -1790,13 +1790,28 @@ void win32_check_already_running() {
 
 
 void win32_init_cmdline() {
-	g_instance = GetModuleHandle(NULL);
-	g_cmdline = GetCommandLine();
+
+	// Ideally, the codepage should be 65001 (UTF-1), which should make special characters 'just work'.
+	// However, there may still be corner cases.
+	// Specifically, debugging does not seem to work predictably.
+	// TODO: Fix codepage being incorrect while debugging (maybe due to parent process codepage not being UTF-8)
+	// TODO: Check if workarounds for Unicode also work on Windows 7.
+//	UINT acp = GetACP();
+//	UINT console_output_cp = GetConsoleOutputCP();
+//	UINT console_cp = GetConsoleCP();
+//	console_print("Active codepage = %d\n", acp);
+//	console_print("console_output_cp = %d\n", console_output_cp);
+//	console_print("console_cp = %d\n", console_cp);
+
+	g_instance = GetModuleHandleA(NULL);
+	g_cmdline = GetCommandLineA();
+//	console_print("cmdline = %s\n", g_cmdline);
 
 	// Convert UTF-16 characters from the command-line to UTF-8
 	wchar_t* wcmdline = GetCommandLineW();
 	size_t cmdline_len = wcslen(wcmdline);
 	char* cmdline = win32_string_narrow(wcmdline, (char*) malloc(cmdline_len * 4), cmdline_len * 4);
+//	console_print("cmdline = %s\n", cmdline);
 
 	int argc = 0;
 	char** argv = CommandLineToArgvA(cmdline, &argc);
@@ -1856,6 +1871,7 @@ int main() {
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
 		const char* filename = g_argv[1];
+//		console_print("filename = %s\n", filename);
 		load_generic_file(app_state, filename, 0);
 	}
 

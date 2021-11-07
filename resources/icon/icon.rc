@@ -2,6 +2,13 @@
 #define IDS_FRIENDLYAPPNAME 201
 #define IDS_FRIENDLYTYPENAME 202
 
+#define CREATEPROCESS_MANIFEST_RESOURCE_ID 1 /*Defined manifest file*/
+#define RT_MANIFEST                       24
+
+#include <winver.h>
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "../slidescape.exe.manifest"
+
 IDI_ICON1   ICON  DISCARDABLE  "icon.ico"
 
 STRINGTABLE
@@ -9,8 +16,6 @@ STRINGTABLE
     IDS_FRIENDLYAPPNAME, "Slidescape"
     IDS_FRIENDLYTYPENAME, "Whole slide image"
 }
-
-#include <winver.h>
 
 #ifndef DEBUG
 #define VER_DEBUG                   0
