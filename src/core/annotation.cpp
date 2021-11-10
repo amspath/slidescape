@@ -1078,17 +1078,21 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	scene_t* scene = &app_state->scene;
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 
-	const char** group_item_previews = (const char**) alloca(annotation_set->active_group_count * sizeof(char*));
+	// NOTE: We need to allocate one extra (placeholder) preview, to prevent going out of bounds when the user clicks
+	// the button to create a new group/feature.
+	const char** group_item_previews = (const char**) alloca((annotation_set->active_group_count + 1) * sizeof(char*));
 	for (i32 i = 0; i < annotation_set->active_group_count; ++i) {
 		annotation_group_t* group = get_active_annotation_group(annotation_set, i);
 		group_item_previews[i] = group->name;
 	}
+	group_item_previews[annotation_set->active_group_count] = "";
 
-	const char** feature_item_previews = (const char**) alloca(annotation_set->active_feature_count * sizeof(char*));
+	const char** feature_item_previews = (const char**) alloca((annotation_set->active_feature_count + 1) * sizeof(char*));
 	for (i32 i = 0; i < annotation_set->active_feature_count; ++i) {
 		annotation_feature_t* feature = get_active_annotation_feature(annotation_set, i);
 		feature_item_previews[i] = feature->name;
 	}
+	feature_item_previews[annotation_set->active_feature_count] = "";
 
 	// find group corresponding to the currently selected annotations
 	i32 annotation_group_index = -1;
