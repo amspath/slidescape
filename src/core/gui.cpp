@@ -831,11 +831,11 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		            "  (at your option) any later version.\n\n");
 		if (ImGui::Button("View releases on GitHub")) {
 #if WINDOWS
-			ShellExecuteW(0, 0, L"https://github.com/amspath/slideviewer/releases", 0, 0 , SW_SHOW );
+			ShellExecuteW(0, 0, L"https://github.com/amspath/slidescape/releases", 0, 0 , SW_SHOW );
 #elif APPLE
-			system("open https://github.com/amspath/slideviewer/releases");
+			system("open https://github.com/amspath/slidescape/releases");
 #elif LINUX
-			system("gio open https://github.com/amspath/slideviewer/releases");
+			system("gio open https://github.com/amspath/slidescape/releases");
 #endif
 		};
 
