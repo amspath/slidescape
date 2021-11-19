@@ -219,7 +219,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		if (menu_items_clicked.exit_program) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
-			open_file_dialog(app_state, 0);
+			u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+			open_file_dialog(app_state, filetype_hint);
 		} else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.open_remote) {
@@ -353,7 +354,7 @@ void draw_layers_window(app_state_t* app_state) {
 		open_file_dialog(app_state, FILETYPE_HINT_OVERLAY);
 	}
 	ImGui::SameLine();
-	ImGui::Checkbox("Load next dragged image as overlay (F6)", &load_next_image_as_overlay);
+	ImGui::Checkbox("Load next image as overlay (F6)", &load_next_image_as_overlay);
 
 	if (disable_gui) {
 		ImGui::EndDisabled();

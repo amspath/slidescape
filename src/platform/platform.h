@@ -27,7 +27,7 @@
 
 
 #if WINDOWS
-#include "windows.h"
+#include <windows.h>
 #else
 #include <semaphore.h>
 #include <unistd.h>

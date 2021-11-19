@@ -578,7 +578,8 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			if (cds->dwData == SV_COPYDATA_TYPE) {
 				win32_copydata_message_t* message_data = (win32_copydata_message_t*) cds->lpData;
 				if (message_data->argc > 1 && message_data->need_open) {
-					load_generic_file(&global_app_state, message_data->filename, 0);
+					u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+					load_generic_file(&global_app_state, message_data->filename, filetype_hint);
 				}
 			}
 		} break;

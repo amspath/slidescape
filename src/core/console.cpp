@@ -107,7 +107,8 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 		} else if (strcmp(cmd, "open") == 0) {
 			// TODO: queue up file loads, load them at an appropriate time
 			if (arg) {
-				load_generic_file(app_state, arg, FILETYPE_HINT_NONE);
+				u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+				load_generic_file(app_state, arg, filetype_hint);
 			}
 		} else if (strcmp(cmd, "close") == 0) {
 			menu_close_file(app_state);
