@@ -47,6 +47,8 @@ Homebrew, or `/opt/local/lib/` for MacPorts.
 
 ## Credits
 
+Author: Pieter Valkema.
+
 Slidescape embeds code from the following projects, under their respective licenses:
 * [Dear ImGui](https://github.com/ocornut/imgui) (graphical interface library)
 * [FreeType](https://www.freetype.org/index.html) (font renderer)
@@ -72,9 +74,11 @@ The application icon was made by [Freepik](https://www.flaticon.com/authors/free
 
 ## License
 
+Copyright (C) 2019-2021 Pieter Valkema. 
+
 This program is free software: you can redistribute it and/or modify 
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-See [LICENSE.txt](https://github.com/Falcury/slideviewer/blob/master/LICENSE.txt) for more information.
+See [LICENSE.txt](https://github.com/amspath/slideviewer/blob/master/LICENSE.txt) for more information.
