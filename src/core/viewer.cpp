@@ -1850,7 +1850,8 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	if (was_key_pressed(input, KEY_F3) || was_key_pressed(input, KEY_Grave)) {
 		show_console_window = !show_console_window;
 	}
-	if (was_key_pressed(input, KEY_F11) && input->keyboard.key_alt.down) {
+	// TODO: fix 'sticky' Alt key after Alt+Enter
+	if (was_key_pressed(input, KEY_F12) && input->keyboard.key_alt.down) {
 		show_menu_bar = !show_menu_bar;
 	}
 	if (was_key_pressed(input, KEY_F6)) {

@@ -194,7 +194,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
 				ImGui::Separator();
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
-				if (ImGui::MenuItem("Show menu bar", "Alt+F11", &show_menu_bar)) {}
+				if (ImGui::MenuItem("Show menu bar", "Alt+F12", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
 				if (enable_load_debug_coco_file) {
 					if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
