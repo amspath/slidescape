@@ -1860,9 +1860,15 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 			load_next_image_as_overlay = true;
 		}
 	}
-	if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_L)) {
-		show_layers_window = !show_layers_window;
+	if (!gui_want_capture_keyboard) {
+		if (was_key_pressed(input, KEY_L)) {
+			show_layers_window = !show_layers_window;
+		}
+		if (was_key_pressed(input, KEY_H)) {
+			app_state->scene.enable_annotations = !app_state->scene.enable_annotations;
+		}
 	}
+
 
 	gui_draw(app_state, curr_input, app_state->client_viewport.w, app_state->client_viewport.h);
 //	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
