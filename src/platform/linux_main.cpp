@@ -393,18 +393,30 @@ int main(int argc, const char** argv)
 			0,
 	};
 #if LINUX
-	global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoSans-Regular.ttf", 17.0f, NULL, ranges);
-	if (!global_main_font) {
-		global_main_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16.0f, NULL, ranges);
-	}
-	global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf/NotoMono-Regular.ttf", 15.0f, NULL, ranges);
-	if (!global_fixed_width_font) {
-		global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/noto/NotoMono-Regular.ttf", 15.0f, NULL, ranges);
-		if (!global_fixed_width_font) {
-			global_fixed_width_font = io.Fonts->AddFontFromFileTTF("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 15.0f, NULL, ranges);
+	const char* main_ui_font_filename = "/usr/share/fonts/noto/NotoSans-Regular.ttf";
+	if (file_exists(main_ui_font_filename)) {
+		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, 17.0f, NULL, ranges);
+	} else {
+		main_ui_font_filename = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+		if (file_exists(main_ui_font_filename)) {
+			global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, 16.0f, NULL, ranges);
 		}
 	}
-	io.Fonts->AddFontDefault();
+
+	const char* fixed_width_font_filename = "/usr/share/fonts/noto/NotoMono-Regular.ttf/NotoMono-Regular.ttf";
+	if (file_exists(fixed_width_font_filename)) {
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f, NULL, ranges);
+	} else {
+		fixed_width_font_filename = "/usr/share/fonts/noto/NotoMono-Regular.ttf";
+		if (file_exists(fixed_width_font_filename)) {
+			global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f, NULL, ranges);
+		} else {
+			fixed_width_font_filename = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
+			if (file_exists(fixed_width_font_filename)) {
+				global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f, NULL, ranges);
+			}
+		}
+	}
 #elif APPLE
 	float font_size = 16.0f * app_state->display_scale_factor;
 	const char* main_ui_font_filename = "/System/Library/Fonts/SFNSText.ttf";
@@ -424,6 +436,7 @@ int main(int argc, const char** argv)
 			global_fixed_width_font->Scale = app_state->display_points_per_pixel;
 		}
 	}
+#endif
 
     ImFont* font_default = io.Fonts->AddFontDefault();
     if (!global_main_font) {
@@ -434,20 +447,9 @@ int main(int argc, const char** argv)
 		global_fixed_width_font = font_default;
 	}
 
+	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 	io.Fonts->Build();
 	global_main_font->Scale = app_state->display_points_per_pixel;
-#endif
-    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
-    //IM_ASSERT(font != NULL);
-
-
-
-	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
-
-    // Our state
-//    bool show_demo_window = true;
-//    bool show_another_window = false;
-//    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
     init_opengl_stuff(app_state);
 
