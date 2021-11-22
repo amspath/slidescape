@@ -25,7 +25,7 @@ typedef struct arena_t {
 	i32 temp_count;
 } arena_t;
 
-typedef struct temporary_memory_t {
+typedef struct temp_memory_t {
 	arena_t* arena;
 	size_t used;
 	i32 temp_index;

@@ -634,12 +634,14 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 		if (annotation->coordinate_count <= 1) {
 			// TODO: try to delete the annotation instead
 		} else {
+			temp_memory_t temp_memory = begin_temp_memory(&local_thread_memory->temp_arena);
+
 			i32 one_past_last_coordinate = annotation->first_coordinate + annotation->coordinate_count;
 			i32 trailing_coordinate_count = one_past_last_coordinate - (coordinate_index + 1);
 			if (trailing_coordinate_count > 0) {
 				// move the trailing coordinates one place forward
 				size_t temp_size = trailing_coordinate_count * sizeof(v2f);
-				void* temp_copy = alloca(temp_size);
+				void* temp_copy = arena_push_size(temp_memory.arena, temp_size);
 				memcpy(temp_copy, annotation_set->coordinates + (coordinate_index + 1), temp_size);
 				memcpy(annotation_set->coordinates + coordinate_index, temp_copy, temp_size);
 
@@ -660,6 +662,8 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 			annotation->has_valid_bounds = false;
 			annotations_modified(annotation_set);
 			annotation_set->selected_coordinate_index = -1;
+
+			end_temp_memory(&temp_memory);
 		}
 
 
@@ -720,8 +724,9 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 	}
 	if (has_selected) {
 		// rebuild the annotations, leaving out the deleted ones
+		temp_memory_t temp_memory = begin_temp_memory(&local_thread_memory->temp_arena);
 		size_t copy_size = annotation_set->active_annotation_count * sizeof(i32);
-		i32* temp_copy = (i32*) alloca(copy_size);
+		i32* temp_copy = (i32*) arena_push_size(temp_memory.arena, copy_size);
 		memcpy(temp_copy, annotation_set->active_annotation_indices, copy_size);
 
 		arrsetlen(annotation_set->active_annotation_indices, 0);
@@ -737,6 +742,7 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 		}
 		annotation_set->active_annotation_count = arrlen(annotation_set->active_annotation_indices);
 		annotations_modified(annotation_set);
+		end_temp_memory(&temp_memory);
 	}
 
 
@@ -892,6 +898,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	bool did_popup = false;
 
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
+		temp_memory_t temp_memory = begin_temp_memory(&local_thread_memory->temp_arena);
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
 		annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };
@@ -908,8 +915,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		u32 annotation_color = *(u32*)(&base_color);
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 		if (annotation->has_coordinates) {
-			// TODO: don't abuse the stack here
-			v2f* points = (v2f*) alloca(sizeof(v2f) * annotation->coordinate_count);
+			v2f* points = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 				i32 coordinate_index = annotation->first_coordinate + i;
 				v2f* coordinate = annotation_set->coordinates + coordinate_index;
@@ -1044,6 +1050,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				draw_list->AddPolyline((const ImVec2*)(p_ellipse), segment_count, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 2.0f);
 			}
 		}
+		end_temp_memory(&temp_memory);
 	}
 
 	if (!did_popup) {
