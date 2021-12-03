@@ -204,6 +204,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
+				ImGui::Separator();
+				if (ImGui::MenuItem("Show mouse position", NULL, &show_mouse_pos_overlay)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -499,6 +501,60 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 		ImGui::EndPopup();
 	}
+}
+
+static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
+	scene_t* scene = &app_state->scene;
+
+	static int corner = 0;
+	ImGuiIO& io = ImGui::GetIO();
+	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+	if (corner != -1)
+	{
+		const float PAD = 10.0f;
+		const ImGuiViewport* viewport = ImGui::GetMainViewport();
+		ImVec2 work_pos = viewport->WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
+		ImVec2 work_size = viewport->WorkSize;
+		ImVec2 window_pos, window_pos_pivot;
+		window_pos.x = (corner & 1) ? (work_pos.x + work_size.x - PAD) : (work_pos.x + PAD);
+		window_pos.y = (corner & 2) ? (work_pos.y + work_size.y - PAD) : (work_pos.y + PAD);
+		window_pos_pivot.x = (corner & 1) ? 1.0f : 0.0f;
+		window_pos_pivot.y = (corner & 2) ? 1.0f : 0.0f;
+		ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+		window_flags |= ImGuiWindowFlags_NoMove;
+	}
+	ImGui::SetNextWindowBgAlpha(0.65f); // Transparent background
+	if (ImGui::Begin("Mouse pos overlay", p_open, window_flags))
+	{
+		if (ImGui::IsMousePosValid()) {
+			ImGui::Text("Mouse Position: (%.1f,%.1f)", io.MousePos.x, io.MousePos.y);
+		} else {
+			ImGui::Text("Mouse Position: <invalid>");
+		}
+		// TODO: how to check if a scene is enabled?
+		if (arrlen(app_state->loaded_images) > 0) {
+			ImGui::Text("Scene Position: (%.1f,%.1f)", scene->mouse.x, scene->mouse.y);
+		} else {
+			ImGui::Text("Scene Position: <invalid>");
+		}
+
+		if (ImGui::BeginPopupContextWindow())
+		{
+			if (ImGui::MenuItem("Custom",       NULL, corner == -1)) corner = -1;
+			if (ImGui::MenuItem("Top-left",     NULL, corner == 0)) corner = 0;
+			if (ImGui::MenuItem("Top-right",    NULL, corner == 1)) corner = 1;
+			if (ImGui::MenuItem("Bottom-left",  NULL, corner == 2)) corner = 2;
+			if (ImGui::MenuItem("Bottom-right", NULL, corner == 3)) corner = 3;
+			if (p_open && ImGui::MenuItem("Close")) *p_open = false;
+			ImGui::EndPopup();
+		}
+
+		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+		v2f transformed_pos = world_pos_to_screen_pos(scene->mouse, scene->camera_bounds.min, scene->zoom.pixel_width);
+		draw_list->AddCircle(transformed_pos, 20.0f, ImGui::GetColorU32(IM_COL32(70, 70, 70, 255)), 24, 2.0f);
+
+	}
+	ImGui::End();
 }
 
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
@@ -840,6 +896,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		};
 
 		ImGui::End();
+	}
+
+	if (show_mouse_pos_overlay) {
+		draw_mouse_pos_overlay(app_state, &show_mouse_pos_overlay);
 	}
 
 	if (show_console_window) {
