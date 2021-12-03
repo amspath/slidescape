@@ -84,18 +84,30 @@ u8* platform_alloc(size_t size) {
     return result;
 }
 
+// On Linux, hiding/showing the cursor is buggy and unpredictable.
+// SDL_ShowCursor() doesn't work at all.
+// SDL_SetRelativeMouseMode() MIGHT work, but might also cause buggy behavior, see:
+// https://stackoverflow.com/questions/25576438/sdl-getrelativemousestate-strange-behaviour
+// This seems to occur at least under Ubuntu + SDL 2.0.10
+// Manjaro + SDL 2.0.16 seems to be fine.
+// TODO: how to detect if SDL_SetRelativeMouseMode will work properly or not?
+// Do we simply disable by default, and add an option to re-enable cursor hiding?
 
 void mouse_show() {
     if (cursor_hidden) {
         cursor_hidden = false;
+#if !LINUX
 	    SDL_SetRelativeMouseMode(SDL_FALSE);
+#endif
     }
 }
 
 void mouse_hide() {
     if (!cursor_hidden) {
         cursor_hidden = true;
+#if !LINUX
 	    SDL_SetRelativeMouseMode(SDL_TRUE);
+#endif
     }
 }
 
