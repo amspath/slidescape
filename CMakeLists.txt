@@ -55,8 +55,9 @@ elseif(CPU_TYPE STREQUAL "arm64" OR CPU_TYPE STREQUAL "arm")
         set(GCC_CPU_OPTIONS "-march=native -mcpu=native")
     endif()
 endif()
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -Wno-class-memaccess -Wno-conversion-null")
+set(COMMON_COMPILER_FLAGS "${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -fvisibility=hidden")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_COMPILER_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILER_FLAGS} -Wno-class-memaccess -Wno-conversion-null")
 
 if (NOT(APPLE))
     # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
