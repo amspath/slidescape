@@ -35,7 +35,7 @@ rect2i clip_rect(rect2i* first, rect2i* second) {
 }
 
 bounds2i clip_bounds2i(bounds2i a, bounds2i b) {
-	bounds2i result = {};
+	bounds2i result = {0};
 	result.left = MIN(b.right, MAX(a.left, b.left));
 	result.top = MIN(b.bottom, MAX(a.top, b.top));
 	result.right = MAX(b.left, MIN(a.right, b.right));
@@ -44,7 +44,7 @@ bounds2i clip_bounds2i(bounds2i a, bounds2i b) {
 }
 
 bounds2f clip_bounds2f(bounds2f a, bounds2f b) {
-	bounds2f result = {};
+	bounds2f result = {0};
 	result.left = MIN(b.right, MAX(a.left, b.left));
 	result.top = MIN(b.bottom, MAX(a.top, b.top));
 	result.right = MAX(b.left, MIN(a.right, b.right));
@@ -78,7 +78,7 @@ v2f rect2f_center_point(rect2f rect) {
 
 // reorient a rect with possible negative width and/or height
 rect2f rect2f_recanonicalize(rect2f* rect) {
-	rect2f result = {};
+	rect2f result = {0};
 	if (rect->w >= 0.0f) {
 		result.x = rect->x;
 		result.w = rect->w;
@@ -97,7 +97,7 @@ rect2f rect2f_recanonicalize(rect2f* rect) {
 }
 
 bounds2f rect2f_to_bounds(rect2f* rect) {
-	bounds2f result = {};
+	bounds2f result = {0};
 	result.left = rect->x;
 	result.top = rect->y;
 	result.right = rect->x + rect->w;
@@ -122,7 +122,7 @@ i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
 }
 
 bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height, v2f image_pos) {
-	bounds2i result = {};
+	bounds2i result = {0};
 	result.left = tile_pos_from_world_pos(world_bounds->left - image_pos.x, tile_width);
 	result.top = tile_pos_from_world_pos(world_bounds->top - image_pos.y, tile_height);
 	result.right = tile_pos_from_world_pos(world_bounds->right - image_pos.x, tile_width) + 1;
@@ -131,7 +131,7 @@ bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, f
 }
 
 bounds2f tile_bounds_to_world_bounds(bounds2i tile_bounds, float tile_width, float tile_height, v2f image_pos) {
-	bounds2f result = {};
+	bounds2f result = {0};
 	result.left = tile_bounds.left * tile_width + image_pos.x;
 	result.right = (tile_bounds.right) * tile_width + image_pos.x;
 	result.top = tile_bounds.top * tile_height + image_pos.y;
@@ -160,7 +160,7 @@ bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minu
 }
 
 bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y) {
-	bounds2i pixel_bounds = {};
+	bounds2i pixel_bounds = {0};
 	pixel_bounds.left = (i32) floorf(world_bounds->left / mpp_x);
 	pixel_bounds.right = (i32) ceilf(world_bounds->right / mpp_x);
 	pixel_bounds.top = (i32) floorf(world_bounds->top / mpp_y);
@@ -169,7 +169,7 @@ bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float
 }
 
 rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y) {
-	rect2f world_rect = {};
+	rect2f world_rect = {0};
 	world_rect.x = pixel_rect.x * mpp_x;
 	world_rect.y = pixel_rect.y * mpp_y;
 	world_rect.w = pixel_rect.w * mpp_x;

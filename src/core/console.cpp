@@ -21,6 +21,10 @@
 #include "stringutils.h"
 #include "gui.h"
 
+#if COMPILER_MSVC
+#include <direct.h>
+#endif
+
 struct console_log_item_t {
 	char* text;
 	bool has_color;
@@ -320,7 +324,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, (ImVec2){0, 0});
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2());
 	if (!ImGui::Begin(window_title, p_open, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse)) {
 		ImGui::End();
 		return;
@@ -381,7 +385,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 //	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, (ImVec2){0, 0});
 //	ImGui::PushClipRect(ImVec2(0, ImGui::GetCursorPosY()), )
 //	ImGui::SetCursorPosY(ImGui::GetWindowHeight() - footer_height_to_reserve);
-	ImGui::BeginChild("CommandRegion", (ImVec2){0, 0}, false, ImGuiWindowFlags_NoScrollbar);
+	ImGui::BeginChild("CommandRegion", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar);
 	if (ImGui::BeginPopupContextWindow()) {
 		if (ImGui::Selectable("Clear")) console_clear_log();
 		if (ImGui::MenuItem("Verbose mode", NULL, &is_verbose_mode)) {}
@@ -390,9 +394,9 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	}
 //	ImGui::PopStyleVar(1);
 
-	ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4) {0,0,0,0.3f});
-	ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, (ImVec4) {0,0,0,1.0f});
-	ImGui::PushStyleColor(ImGuiCol_FrameBgActive, (ImVec4) {0,0,0,1.0f});
+	ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0.3f));
+	ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0,0,0,1.0f));
+	ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0,0,0,1.0f));
 	ImGui::PushFont(global_fixed_width_font);
 
 

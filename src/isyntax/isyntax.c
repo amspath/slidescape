@@ -326,7 +326,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x2009: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATES*/           {} break;
 				case 0x200A: /*UFS_IMAGE_DIMENSION_RANGES*/                 {} break;
 				case 0x200B: /*UFS_IMAGE_DIMENSION_RANGE*/                  {
-					isyntax_image_dimension_range_t range = {};
+					isyntax_image_dimension_range_t range = {0};
 					parse_three_integers(value, &range.start, &range.step, &range.end);
 					i32 step_nonzero = (range.step != 0) ? range.step : 1;
 					range.numsteps = ((range.end + range.step) - range.start) / step_nonzero;
@@ -1059,7 +1059,7 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 	}
 
 	// Horizontal pass
-	opj_dwt_t h = {};
+	opj_dwt_t h = {0};
 	size_t dwt_mem_size = (MAX(quadrant_width, quadrant_height)*2) * PARALLEL_COLS_53 * sizeof(icoeff_t);
 
 	h.mem = (icoeff_t*)alloca(dwt_mem_size); // TODO: need aligned memory?
@@ -1079,7 +1079,7 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 	}
 
 	// Vertical pass
-	opj_dwt_t v = {};
+	opj_dwt_t v = {0};
 	v.mem = h.mem;
 	v.sn = quadrant_height; // number of elements in low pass band
 	v.dn = quadrant_height; // number of elements in high pass band
@@ -1281,12 +1281,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 
 	i32 block_stride = block_width * block_height;
 	i32 quadrant_offsets[4] = {0, quadrant_width, full_width * quadrant_height, full_width * quadrant_height + quadrant_width};
-	icoeff_t* quadrants[4] = {};
+	icoeff_t* quadrants[4] = {0};
 	for (i32 i = 0; i < 4; ++i) {
 		quadrants[i] = idwt + quadrant_offsets[i];
 	}
 
-	icoeff_t* ll_hl_lh_hh[4] = {};
+	icoeff_t* ll_hl_lh_hh[4] = {0};
 
 	u32 invalid_neighbors_ll = 0;
 	u32 invalid_neighbors_h = 0;
@@ -1801,7 +1801,7 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	}
 
 	// Read Huffman table
-	huffman_t huffman = {};
+	huffman_t huffman = {0};
 	memset(huffman.fast, 0x80, sizeof(huffman.fast));
 	memset(huffman.nonfast_size_masks, 0xFF, sizeof(huffman.nonfast_size_masks));
 	u32 fast_mask = (1 << HUFFMAN_FAST_BITS) - 1;
@@ -2415,7 +2415,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				file_stream_set_pos(fp, isyntax_data_offset);
 				if (wsi_image->header_codeblocks_are_partial) {
 					// The seektable is required to be present, because the block header table did not contain all information.
-					dicom_tag_header_t seektable_header_tag = {};
+					dicom_tag_header_t seektable_header_tag = {0};
 					file_stream_read(&seektable_header_tag, sizeof(dicom_tag_header_t), fp);
 
 					io_ticks_elapsed += (get_clock() - io_begin);

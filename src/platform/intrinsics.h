@@ -221,6 +221,10 @@ static inline i32 popcount(u32 x) {
         c++;
     return c;
 }
+#elif COMPILER_MSVC
+static inline i32 popcount(u32 x) {
+	return __popcnt(x);
+}
 #else
 static inline i32 popcount(u32 x) {
     return _popcnt32(x);

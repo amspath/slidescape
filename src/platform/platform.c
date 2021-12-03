@@ -106,13 +106,13 @@ u64 memrw_push_back(memrw_t* buffer, void* data, u64 size) {
 }
 
 void memrw_init(memrw_t* buffer, u64 capacity) {
-	memset(buffer, 0, sizeof(*memset));
+	memset(buffer, 0, sizeof(*buffer));
 	buffer->data = (u8*) malloc(capacity);
 	buffer->capacity = capacity;
 }
 
 memrw_t memrw_create(u64 capacity) {
-	memrw_t result = {};
+	memrw_t result = {0};
 	memrw_init(&result, capacity);
 	return result;
 }
@@ -229,7 +229,7 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 
 
 benaphore_t benaphore_create(void) {
-	benaphore_t result = {};
+	benaphore_t result = {0};
 #if WINDOWS
 	result.semaphore = CreateSemaphore(NULL, 0, 1, NULL);
 #elif (APPLE || LINUX)
@@ -328,7 +328,7 @@ block_allocator_t block_allocator_create(size_t block_size, size_t max_capacity_
 	size_t total_capacity = block_size * max_capacity_in_blocks;
 	size_t chunk_count = total_capacity / chunk_size;
 	size_t chunk_capacity_in_blocks = max_capacity_in_blocks / chunk_count;
-	block_allocator_t result = {};
+	block_allocator_t result = {0};
 	result.block_size = block_size;
 	result.chunk_capacity_in_blocks = chunk_capacity_in_blocks;
 	result.chunk_size = chunk_size;
@@ -392,7 +392,7 @@ void* block_alloc(block_allocator_t* allocator) {
 
 void block_free(block_allocator_t* allocator, void* ptr_to_free) {
 	benaphore_lock(&allocator->lock);
-	block_allocator_item_t free_item = {};
+	block_allocator_item_t free_item = {0};
 	// Find the right chunk
 	i32 chunk_index = -1;
 	for (i32 i = 0; i < allocator->used_chunks; ++i) {

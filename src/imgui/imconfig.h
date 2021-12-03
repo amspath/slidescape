@@ -17,7 +17,11 @@
 //---- Define assertion handler. Defaults to calling assert().
 // If your macro uses multiple statements, make sure is enclosed in a 'do { .. } while (0)' block so it can be used as a single statement.
 #ifndef NDEBUG
+#ifdef _MSC_VER
+#define IM_ASSERT(_EXPR)  do {if (!(_EXPR)) { __debugbreak();}} while(0)
+#else
 #define IM_ASSERT(_EXPR)  do {if (!(_EXPR)) { __builtin_trap();}} while(0)
+#endif
 #else
 #define IM_ASSERT(_EXPR)      // Disable asserts
 #endif
@@ -103,11 +107,11 @@ typedef struct v4f {
 
 #define IM_VEC2_CLASS_EXTRA                                              \
         ImVec2(const v2f& f) { x = f.x; y = f.y; }                       \
-        operator v2f() const { return (v2f){x,y}; }
+        operator v2f() const { v2f v = {x,y}; return v; }
 
 #define IM_VEC4_CLASS_EXTRA                                              \
         ImVec4(const v4f& f) { x = f.x; y = f.y; z = f.z; w = f.w; }     \
-        operator v4f() const { return (v4f){x,y,z,w}; }
+        operator v4f() const { v4f v = {x,y,z,w}; return v; }
 
 
 //---- Use 32-bit vertex indices (default is 16-bit) is one way to allow large meshes with more than 64K vertices.

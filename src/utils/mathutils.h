@@ -32,14 +32,18 @@ extern "C" {
 typedef struct rect2i {
 	i32 x, y, w, h;
 } rect2i;
+static inline rect2i RECT2I(i32 x, i32 y, i32 w, i32 h) {rect2i r = {x, y, w, h}; return r;}
+
 
 typedef struct rect2f {
 	float x, y, w, h;
 } rect2f;
+static inline rect2f RECT2F(float x, float y, float w, float h) {rect2f r = {x, y, w, h}; return r;}
 
 typedef struct v2i {
 	i32 x, y;
 } v2i;
+static inline v2i V2I(i32 x, i32 y) {v2i v = {x, y}; return v; }
 
 typedef struct rgba_t {
 	union {
@@ -47,6 +51,7 @@ typedef struct rgba_t {
 		u8 values[4];
 	};
 } rgba_t;
+static inline rgba_t RGBA(u8 r, u8 g, u8 b, u8 a) {rgba_t rgba = {r, g, b, a}; return rgba; }
 
 #ifndef V2F_DEFINED
 #define V2F_DEFINED
@@ -54,6 +59,7 @@ typedef struct v2f {
 	float x, y;
 } v2f;
 #endif
+static inline v2f V2F(float x, float y) {v2f v = {x, y}; return v; }
 
 typedef struct v3f {
 	union {
@@ -62,6 +68,7 @@ typedef struct v3f {
 		float values[3];
 	};
 } v3f;
+static inline v3f V3F(float x, float y, float z) {v3f v = {x, y, z}; return v; }
 
 #ifndef V4F_DEFINED
 #define V4F_DEFINED
@@ -73,6 +80,7 @@ typedef struct v4f {
 	};
 } v4f;
 #endif
+static inline v4f V4F(float x, float y, float z, float w) {v4f v = {x, y, z, w}; return v; }
 
 typedef struct bounds2i {
 	union {
@@ -80,6 +88,8 @@ typedef struct bounds2i {
 		struct { v2i min, max; };
 	};
 } bounds2i;
+static inline bounds2i BOUNDS2I(i32 left, i32 top, i32 right, i32 bottom) {bounds2i b = {left, top, right, bottom}; return b;}
+
 
 typedef struct bounds2f {
 	union {
@@ -87,6 +97,7 @@ typedef struct bounds2f {
 		struct { v2f min, max; };
 	};
 } bounds2f;
+static inline bounds2f BOUNDS2F(float left, float top, float right, float bottom) {bounds2f b = {left, top, right, bottom}; return b;}
 
 
 typedef enum corner_enum {
@@ -100,15 +111,15 @@ typedef enum corner_enum {
 
 #pragma pack(pop)
 
-static inline float v2i_length(v2i v)                       { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
+static inline float v2i_length(v2i v)                       { return sqrtf((float)SQUARE(v.x) + (float)SQUARE(v.y)); }
 static inline float v2f_length(v2f v)                       { return sqrtf(SQUARE(v.x) + SQUARE(v.y)); }
 static inline float v2f_length_squared(v2f v)               { return SQUARE(v.x) + SQUARE(v.y); }
 
-static inline v2f v2f_add(v2f a, v2f b)                     { return (v2f){ a.x + b.x, a.y + b.y }; }
-static inline v2f v2f_subtract(v2f a, v2f b)                { return (v2f){ a.x - b.x, a.y - b.y }; }
+static inline v2f v2f_add(v2f a, v2f b)                     { v2f result = { a.x + b.x, a.y + b.y }; return result; }
+static inline v2f v2f_subtract(v2f a, v2f b)                { v2f result = { a.x - b.x, a.y - b.y }; return result; }
 static inline float v2f_dot(v2f a, v2f b)                   { return a.x * b.x + a.y * b.y; }
-static inline v2f v2f_scale(float scalar, v2f v)            { return (v2f){ v.x * scalar, v.y * scalar }; }
-static inline v2f v2f_lerp(v2f a, v2f b_minus_a, float t)   { return v2f_add(a, v2f_scale(t, b_minus_a)); }
+static inline v2f v2f_scale(float scalar, v2f v)            { v2f result = { v.x * scalar, v.y * scalar }; return result; }
+static inline v2f v2f_lerp(v2f a, v2f b_minus_a, float t)   { v2f result = v2f_add(a, v2f_scale(t, b_minus_a)); return result; }
 
 // prototypes
 rect2i clip_rect(rect2i* first, rect2i* second);

@@ -447,7 +447,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 		// Maybe a placeholder value, which gets updated based on the scale of the scene image?
 		annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 		unload_and_reinit_annotations(annotation_set);
-		annotation_set->mpp = (v2f){0.25f, 0.25f};
+		annotation_set->mpp = V2F(0.25f, 0.25f);
 		return load_asap_xml_annotations(app_state, filename);
 	} else {
 		// assume it is an image file?
@@ -465,7 +465,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 
 			annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 			unload_and_reinit_annotations(annotation_set);
-			annotation_set->mpp = (v2f){image.mpp_x, image.mpp_y};
+			annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
 
 			// Check if there is an associated ASAP XML or COCO JSON annotations file
 			size_t filename_len = strlen(filename);
@@ -527,7 +527,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 
 image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 
-	image_t image = (image_t){};
+	image_t image = {};
 	image.resource_id = global_next_resource_id++;
 
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);

@@ -343,7 +343,6 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 	// offset in the file where we want to do the read operation
 	LARGE_INTEGER offset_ = {.QuadPart = (i64)aligned_offset};
 	OVERLAPPED overlapped = {};
-	overlapped = (OVERLAPPED) {};
 	overlapped.Offset = offset_.LowPart;
 	overlapped.OffsetHigh = (DWORD)offset_.HighPart;
 	overlapped.hEvent = thread_memory->async_io_events[0];
@@ -444,7 +443,8 @@ i64 file_stream_get_filesize(file_stream_t file_stream) {
 
 i64 file_stream_get_pos(file_stream_t file_stream) {
 	LARGE_INTEGER file_position = {};
-	if (!SetFilePointerEx(file_stream, (LARGE_INTEGER){0}, &file_position, FILE_CURRENT)) {
+	LARGE_INTEGER distance_to_move = {};
+	if (!SetFilePointerEx(file_stream, distance_to_move, &file_position, FILE_CURRENT)) {
 		win32_diagnostic("SetFilePointerEx");
 	}
 	return file_position.QuadPart;

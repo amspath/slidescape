@@ -73,7 +73,7 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 }
 
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
-	work_queue_entry_t result = {};
+	work_queue_entry_t result = {0};
 
 	i32 entry_to_execute = queue->next_entry_to_execute;
 	i32 new_next_entry_to_execute = (entry_to_execute + 1) % COUNT(queue->entries);

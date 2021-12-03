@@ -343,8 +343,8 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 //				ASSERT(end_tile_x + extra_tiles_x < level_task->source_bounds_width_in_tiles);
 //				ASSERT(end_tile_y + extra_tiles_y < level_task->source_bounds_height_in_tiles);
 
-		u32 jpeg_compressed_sizes[MAX_THREAD_COUNT] = {};
-		u8* jpeg_compressed_buffers[MAX_THREAD_COUNT] = {};
+		u32 jpeg_compressed_sizes[MAX_THREAD_COUNT] = {0};
+		u8* jpeg_compressed_buffers[MAX_THREAD_COUNT] = {0};
 
 		i32 first_source_tile_needed = start_tile_y * source_tile_pitch + start_tile_x;
 		i32 last_source_tile_needed = (end_tile_y + extra_tiles_y) * source_tile_pitch + end_tile_x + extra_tiles_x;
@@ -557,7 +557,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	bool need_reuse_tiles = is_tile_aligned && (desired_photometric_interpretation == source_level0_ifd->color_space)
 	                        && (export_tile_width == tile_width) && (tile_width == tile_height); // only allow square tiles for re-use
 
-	export_task_data_t export_task = {};
+	export_task_data_t export_task = {0};
 	export_task.source_tile_width = tile_width;
 	export_task.export_tile_width = export_tile_width;
 	export_task.quality = quality;
@@ -582,7 +582,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		memrw_t fixups_buffer = memrw_create(1024);
 
 		// Write the TIFF header (except the offset to the first IFD, which we will push when iterating over the IFDs)
-		tiff_header_t header = {};
+		tiff_header_t header = {0};
 		header.byte_order_indication = 0x4949; // little-endian
 		header.filetype = 0x002B; // BigTIFF
 		header.bigtiff.offset_size = 0x0008;
@@ -900,7 +900,7 @@ void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 
 void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
                                   u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
-	export_region_task_t task = {};
+	export_region_task_t task = {0};
 	task.app_state = app_state;
 	task.image = image;
 	task.tiff = tiff;

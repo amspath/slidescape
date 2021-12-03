@@ -25,10 +25,16 @@
 #define VERSION  "2.0.90"
 
 /* The size of `size_t', as computed by sizeof. */
+#ifdef _MSC_VER
+#define SIZEOF_SIZE_T 8 // TODO: what is the equivalent for MSVC?
+#else
 #define SIZEOF_SIZE_T __SIZEOF_POINTER__
+#endif
 
 /* Define if your compiler has __builtin_ctzl() and sizeof(unsigned long) == sizeof(size_t). */
+#ifndef _MSC_VER
 #define HAVE_BUILTIN_CTZL
+#endif
 
 /* Define to 1 if you have the <intrin.h> header file. */
 #if !defined(__APPLE__) && defined(__has_include)
@@ -39,8 +45,8 @@
 
 #if defined(_MSC_VER) && defined(HAVE_INTRIN_H)
 #if (SIZEOF_SIZE_T == 8)
-#define HAVE_BITSCANFORWARD64
+//#define HAVE_BITSCANFORWARD64
 #elif (SIZEOF_SIZE_T == 4)
-#define HAVE_BITSCANFORWARD
+//#define HAVE_BITSCANFORWARD
 #endif
 #endif

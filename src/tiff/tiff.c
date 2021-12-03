@@ -194,7 +194,7 @@ tiff_rational_t* tiff_read_field_rationals(tiff_t* tiff, tiff_tag_t* tag) {
 
 // read only one rational
 tiff_rational_t tiff_read_field_rational(tiff_t* tiff, tiff_tag_t* tag) {
-	tiff_rational_t result = {};
+	tiff_rational_t result = {0};
 	if (tag->data_is_offset) {
 		tiff_rational_t* rational = tiff_read_field_rationals(tiff, tag);
 		ASSERT(rational);
@@ -544,7 +544,7 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 		tiff->filesize = file_stream_get_filesize(fp);
 		if (tiff->filesize > 8) {
 			// read the 8-byte TIFF header / 16-byte BigTIFF header
-			tiff_header_t tiff_header = {};
+			tiff_header_t tiff_header = {0};
 			ret = file_stream_read(&tiff_header, sizeof(tiff_header_t) /*16*/, fp);
 			if (ret != sizeof(tiff_header_t)) goto fail;
 			bool32 is_big_endian;
@@ -845,9 +845,9 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 
 	POP_DATA(sizeof(tiff_serial_header_t));
 	tiff_serial_header_t* serial_header = (tiff_serial_header_t*) data;
-	*tiff = (tiff_t) {};
+	*tiff = (tiff_t) {0};
 	tiff->is_remote = 0; // set later
-	tiff->location = (network_location_t){}; // set later
+	tiff->location = (network_location_t){0}; // set later
 	tiff->fp = NULL;
 #if !IS_SERVER
 	tiff->file_handle = 0;
@@ -886,7 +886,7 @@ bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size) {
 	for (i32 i = 0; i < tiff->ifd_count; ++i) {
 		tiff_ifd_t* ifd = tiff->ifds + i;
 		tiff_serial_ifd_t* serial_ifd = serial_ifds + i;
-		*ifd = (tiff_ifd_t) {};
+		*ifd = (tiff_ifd_t) {0};
 		ifd->ifd_index = i;
 		ifd->image_width = serial_ifd->image_width;
 		ifd->image_height = serial_ifd->image_height;

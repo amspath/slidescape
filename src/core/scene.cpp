@@ -43,11 +43,11 @@ void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, 
 void init_scene(app_state_t *app_state, scene_t *scene) {
 	memset(scene, 0, sizeof(scene_t));
 	scene->clear_color = app_state->clear_color;
-	scene->transparent_color = (v3f){1.0f, 1.0f, 1.0f};
+	scene->transparent_color = V3F(1.0f, 1.0f, 1.0f);
 	scene->transparent_tolerance = 0.01f;
 	scene->use_transparent_filter = false;
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
-	scene->camera = (v2f){0.0f, 0.0f}; // center camera at origin
+	scene->camera = V2F(0.0f, 0.0f); // center camera at origin
 	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
 	scene->is_mpp_known = false;
 	scene->enable_grid = false;
@@ -60,7 +60,7 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 		scale_bar->max_width = 200.0f;
 		scale_bar->width = scale_bar->max_width;
 		scale_bar->height = ImGui::GetFrameHeight();
-		scale_bar->pos = (v2f) {50.0f, scene->viewport.h - 50.0f};
+		scale_bar->pos = V2F(50.0f, scene->viewport.h - 50.0f);
 		scale_bar->pos_relative_to_corner = scale_bar->pos;
 		scale_bar->corner = CORNER_TOP_LEFT;
 		scale_bar->enabled = false;
@@ -90,7 +90,7 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 		float adjusted_width = floorf(first_digit) / factor;
 
 		scale_bar->width = adjusted_width / um_per_pixel;
-		scale_bar->pos_max = (v2f){scale_bar->pos.x + scale_bar->width, scale_bar->pos.y + scale_bar->height};
+		scale_bar->pos_max = V2F(scale_bar->pos.x + scale_bar->width, scale_bar->pos.y + scale_bar->height);
 		scale_bar->pos_center = v2f_average(scale_bar->pos, scale_bar->pos_max);
 
 		corner_enum closest_corner = get_closest_corner(rect2f_center_point(scene->viewport), scale_bar->pos);

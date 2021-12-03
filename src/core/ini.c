@@ -133,7 +133,7 @@ void ini_begin_section(ini_t* ini, const char* section_name) {
 		}
 	}
 	if (!match) {
-		ini_section_t section = {};
+		ini_section_t section = {0};
 		strncpy(section.name, section_name, INI_MAX_NAME);
 		arrput(ini->sections, section);
 		ini->current_section_index = ini->section_count++;
@@ -156,7 +156,7 @@ void ini_register_option(ini_t* ini, const char* name, u32 link_type, u32 link_s
 		}
 	}
 	if (!match) {
-		ini_option_t option = {};
+		ini_option_t option = {0};
 		strncpy(option.name, name, INI_MAX_NAME);
 		option.link_type = link_type;
 		option.link_size = link_size;
@@ -176,7 +176,7 @@ void ini_register_bool(ini_t* ini, const char* name, bool* link) {
 }
 
 ini_entry_t ini_parse_line(char* line_string) {
-	ini_entry_t result = {};
+	ini_entry_t result = {0};
 	result.type = INI_ENTRY_EMPTY_OR_COMMENT; // default behavior: ignore line
 	size_t len = strlen(line_string);
 	if (len == 0 || line_string[0] == ';') {
@@ -229,7 +229,7 @@ ini_t* ini_load(char* ini_string, size_t len) {
 	size_t line_count = 0;
 	char** lines = split_into_lines(ini_string, &line_count);
 
-	ini_section_t null_section = {}; // entries are placed here until the first 'real' section is defined
+	ini_section_t null_section = {0}; // entries are placed here until the first 'real' section is defined
 	arrput(ini->sections, null_section);
 	++ini->section_count;
 	ini_section_t* current_section = ini->sections;
@@ -239,7 +239,7 @@ ini_t* ini_load(char* ini_string, size_t len) {
 		ini_entry_t entry = ini_parse_line(lines[line_index]);
 		entry.sparse_index = (line_index+1) * 10000; // ordering of entries with 'spaced out' indices, to allow for easy insertion later
 		if (entry.type == INI_ENTRY_SECTION) {
-			ini_section_t section = {};
+			ini_section_t section = {0};
 			section.highest_sparse_index = line_index * 10000;
 			memcpy(section.name, entry.name, INI_MAX_NAME);
 			arrput(ini->sections, section);
@@ -247,7 +247,7 @@ ini_t* ini_load(char* ini_string, size_t len) {
 			++running_section_index;
 			current_section = ini->sections + running_section_index;
 		} else if (entry.type == INI_ENTRY_OPTION) {
-			ini_option_t option = {};
+			ini_option_t option = {0};
 			memcpy(option.name, entry.name, INI_MAX_NAME);
 			option.entry_index = line_index;
 			option.sparse_index = entry.sparse_index;
@@ -329,7 +329,7 @@ void ini_save(ini_t* ini, const char* filename) {
 
 	FILE* fp = fopen(filename, "w");
 
-	memrw_t out = {};
+	memrw_t out = {0};
 	memrw_init(&out, KILOBYTES(32));
 
 

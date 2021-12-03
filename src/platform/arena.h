@@ -32,12 +32,13 @@ typedef struct temp_memory_t {
 } temp_memory_t;
 
 static inline void init_arena(arena_t* arena, size_t size, void* base) {
-	*arena = (arena_t) {
+	arena_t new_arena = {
 			.size = size,
 			.base = (u8*) base,
 			.used = 0,
 			.temp_count = 0,
 	};
+	*arena = new_arena;
 }
 
 static inline void* arena_current_pos(arena_t* arena) {
@@ -57,7 +58,7 @@ static inline void arena_align(arena_t* arena, u32 alignment) {
 	ASSERT(alignment > 0);
 	i64 pos = (i64)arena->base + arena->used;
 	i64 new_pos = ((pos + alignment - 1) / alignment) * alignment;
-	arena->used += (new_pos - pos);
+	arena->used += (size_t)(new_pos - pos);
 }
 
 static inline temp_memory_t begin_temp_memory(arena_t* arena) {

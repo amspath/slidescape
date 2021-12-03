@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.8.12)
 project(slidescape)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
@@ -41,30 +41,36 @@ endif()
 message(STATUS "${BITS}-bit build (${CPU_TYPE})")
 
 # Set up compiler and linker flags
-set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-shift-negative-value -Wno-sign-compare")
-if (APPLE)
-    set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations -Wno-unknown-warning-option")
-endif()
-
-if (CPU_TYPE STREQUAL "x86_64" OR CPU_TYPE STREQUAL "i386")
-    set(GCC_CPU_OPTIONS "-mmmx -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mavx") # Sandy Bridge CPU or later
-elseif(CPU_TYPE STREQUAL "arm64" OR CPU_TYPE STREQUAL "arm")
+if (MSVC)
+    set(COMMON_COMPILER_FLAGS "${MSVC_CPU_OPTIONS} ${MSVC_WARN_OPTIONS}")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_COMPILER_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILER_FLAGS}")
+else()
+    set(GCC_WARN_OPTIONS "-Wall -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable -Wno-missing-braces -Wno-format -Wno-strict-aliasing -Wno-shift-negative-value -Wno-sign-compare")
     if (APPLE)
-        set(GCC_CPU_OPTIONS "-mcpu=native")
-    else()
-        set(GCC_CPU_OPTIONS "-march=native -mcpu=native")
+        set(GCC_WARN_OPTIONS "${GCC_WARN_OPTIONS} -Wno-deprecated-declarations -Wno-unknown-warning-option")
     endif()
-endif()
-set(COMMON_COMPILER_FLAGS "${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -fvisibility=hidden")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_COMPILER_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILER_FLAGS} -Wno-class-memaccess -Wno-conversion-null")
 
-if (NOT(APPLE))
-    # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
-    set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
-    set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
+    if (CPU_TYPE STREQUAL "x86_64" OR CPU_TYPE STREQUAL "i386")
+        set(GCC_CPU_OPTIONS "-mmmx -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mavx") # Sandy Bridge CPU or later
+    elseif(CPU_TYPE STREQUAL "arm64" OR CPU_TYPE STREQUAL "arm")
+        if (APPLE)
+            set(GCC_CPU_OPTIONS "-mcpu=native")
+        else()
+            set(GCC_CPU_OPTIONS "-march=native -mcpu=native")
+        endif()
+    endif()
+    set(COMMON_COMPILER_FLAGS "${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -fvisibility=hidden")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_COMPILER_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILER_FLAGS} -Wno-class-memaccess -Wno-conversion-null")
 
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -no-pie")
+    if (NOT(APPLE))
+        # In MinSizeRel builds, further reduce file size by removing symbol table and relocation information from the executable
+        set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
+        set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
+
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -no-pie")
+    endif()
 endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")

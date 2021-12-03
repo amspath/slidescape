@@ -112,6 +112,17 @@
 #include <stdlib.h>
 #include <math.h>
 
+#if COMPILER_MSVC
+#include <io.h>
+#define access _access
+#define F_OK 0 // check for file existence
+#define strncasecmp _strnicmp
+#define strcasecmp _stricmp
+#define alloca _alloca
+#define fseeko64 _fseeki64
+#define fopen64 fopen
+#endif
+
 #ifndef THREAD_LOCAL
 #ifdef _MSC_VER
 #define THREAD_LOCAL __declspec(thread)

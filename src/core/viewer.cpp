@@ -550,7 +550,7 @@ void init_app_state(app_state_t* app_state) {
 	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
 	init_arena(&app_state->temp_arena, temp_storage_size, app_state->temp_storage_memory);
 
-	app_state->clear_color = (v4f){1.0f, 1.0f, 1.0f, 1.00f};
+	app_state->clear_color = V4F(1.0f, 1.0f, 1.0f, 1.00f);
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
@@ -772,8 +772,6 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		// IO
 
-		float time_elapsed;
-
 		// Upload macro and label images (just-in-time)
 		simple_image_t* macro_image = &image->macro_image;
 		simple_image_t* label_image = &image->label_image;
@@ -853,7 +851,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 					continue; // no image data
 				}
 
-				bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
+				bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles);
 
 				bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
 				                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
@@ -891,7 +889,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 						if (num_tasks_on_wishlist >= COUNT(tile_wishlist)) {
 							break;
 						}
-						tile_wishlist[num_tasks_on_wishlist++] = (load_tile_task_t){
+						load_tile_task_t task = {
 								.resource_id = image->resource_id,
 								.image = image, .tile = tile, .level = scale, .tile_x = tile_x, .tile_y = tile_y,
 								.priority = tile_priority,
@@ -899,6 +897,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 								.need_keep_in_cache = tile->need_keep_in_cache,
 								.completion_callback = viewer_notify_load_tile_completed,
 						};
+						tile_wishlist[num_tasks_on_wishlist++] = task;
 					}
 				}
 			}
@@ -1035,7 +1034,7 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				continue;
 			}
 
-			bounds2i level_tiles_bounds = {{ 0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles }};
+			bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles);
 
 			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
 			                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
@@ -1218,7 +1217,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 //	if (!app_state->initialized) init_app_state(app_state);
 	// Note: the window might get resized, so need to update this every frame
-	app_state->client_viewport = (rect2i){0, 0, client_width, client_height};
+	app_state->client_viewport = RECT2I(0, 0, client_width, client_height);
 
 	scene_t* scene = &app_state->scene;
 	ASSERT(app_state->initialized);
@@ -1228,12 +1227,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	// Note: could be changed to allow e.g. multiple scenes side by side
 	{
 		rect2f old_viewport = scene->viewport;
-		rect2f new_viewport = (rect2f) {
+		rect2f new_viewport = RECT2F(
 				(float)app_state->client_viewport.x * app_state->display_points_per_pixel,
 				(float)app_state->client_viewport.y * app_state->display_points_per_pixel,
 				(float)app_state->client_viewport.w * app_state->display_points_per_pixel,
-				(float)app_state->client_viewport.h * app_state->display_points_per_pixel,
-		};
+				(float)app_state->client_viewport.h * app_state->display_points_per_pixel
+		);
 		if (new_viewport.x != old_viewport.x || old_viewport.y != new_viewport.y || old_viewport.w != new_viewport.w || old_viewport.h != new_viewport.h) {
 			scene->viewport_changed = true;
 		} else {
@@ -1324,10 +1323,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				rect2i valid_drag_start_rect = {0, 0, (i32)(client_width * app_state->display_scale_factor), (i32)(client_height * app_state->display_scale_factor)};
 				if (input->mouse_buttons[0].transition_count != 0) {
 					// Don't start dragging if clicked outside the window
-					if (is_point_inside_rect2i(valid_drag_start_rect, (v2i){(i32)input->mouse_xy.x, (i32)input->mouse_xy.y})) {
+					if (is_point_inside_rect2i(valid_drag_start_rect, V2I((i32)input->mouse_xy.x, (i32)input->mouse_xy.y))) {
 						scene->is_dragging = true; // drag start
 						scene->drag_started = true;
-						scene->cumulative_drag_vector = (v2f){};
+						scene->cumulative_drag_vector = v2f();
 						mouse_hide();
 //					    console_print("Drag started: x=%d y=%d\n", input->mouse_xy.x, input->mouse_xy.y);
 					}
@@ -1337,7 +1336,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->cumulative_drag_vector.x += scene->drag_vector.x;
 					scene->cumulative_drag_vector.y += scene->drag_vector.y;
 				}
-				input->drag_vector = (v2f){};
+				input->drag_vector = v2f();
 			} else {
 				if (input->mouse_buttons[0].transition_count != 0) {
 					mouse_show();
@@ -1402,7 +1401,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			float key_repeat_interval = 0.15f; // in seconds
 
-			scene->control = (v2f){};
+			scene->control = v2f();
 
 			if (!gui_want_capture_keyboard) {
 
@@ -1581,7 +1580,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			}
 			if (scene->restrict_load_bounds) {
-				gui_draw_bounds_in_scene(scene->tile_load_bounds, (rgba_t){0,0,0,128}, 2.0f, scene);
+				gui_draw_bounds_in_scene(scene->tile_load_bounds, RGBA(0,0,0,128), 2.0f, scene);
 			}
 #endif
 
@@ -1593,8 +1592,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (app_state->mouse_mode == MODE_VIEW) {
 				v2f mouse = input->mouse_xy;
 				if (scene->drag_started && v2f_between_points(mouse, scene->scale_bar.pos, scene->scale_bar.pos_max)) {
-					scene->scale_bar.drag_start_offset = (v2f){mouse.x - scene->scale_bar.pos.x,
-					                                           mouse.y - scene->scale_bar.pos.y};
+					scene->scale_bar.drag_start_offset = V2F(mouse.x - scene->scale_bar.pos.x,
+															 mouse.y - scene->scale_bar.pos.y);
 					app_state->mouse_mode = MODE_DRAG_SCALE_BAR;
 				}
 			}
@@ -1622,7 +1621,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			} else if (app_state->mouse_mode == MODE_CREATE_SELECTION_BOX) {
 				if (!gui_want_capture_mouse) {
 					if (scene->drag_started) {
-						scene->selection_box = (rect2f){ scene->mouse.x, scene->mouse.y, 0.0f, 0.0f };
+						scene->selection_box = RECT2F(scene->mouse.x, scene->mouse.y, 0.0f, 0.0f);
 						scene->has_selection_box = true;
 					} else if (scene->is_dragging) {
 						scene->selection_box.w = scene->mouse.x - scene->selection_box.x;
@@ -1750,10 +1749,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				rect2f final_selection_rect = rect2f_recanonicalize(&scene->selection_box);
 				bounds2f bounds = rect2f_to_bounds(&final_selection_rect);
 				v2f points[4];
-				points[0] = (v2f) { bounds.left, bounds.top };
-				points[1] = (v2f) { bounds.left, bounds.bottom };
-				points[2] = (v2f) { bounds.right, bounds.bottom };
-				points[3] = (v2f) { bounds.right, bounds.top };
+				points[0] = V2F(bounds.left, bounds.top);
+				points[1] = V2F(bounds.left, bounds.bottom);
+				points[2] = V2F(bounds.right, bounds.bottom);
+				points[3] = V2F(bounds.right, bounds.top);
 				for (i32 i = 0; i < 4; ++i) {
 					points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.pixel_width);
 				}

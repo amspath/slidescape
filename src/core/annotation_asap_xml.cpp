@@ -168,7 +168,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 
 							current_element_type = ASAP_XML_ELEMENT_NONE;
 							if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Annotation") == 0) {
-								annotation_t new_annotation = (annotation_t){};
+								annotation_t new_annotation = {};
 								arrput(annotation_set->stored_annotations, new_annotation);
 								++annotation_set->stored_annotation_count;
 								current_element_type = ASAP_XML_ELEMENT_ANNOTATION;
@@ -176,7 +176,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 								ASSERT(annotation_set->stored_annotation_count == arrlen(annotation_set->stored_annotations));
 								ASSERT(annotation_set->stored_annotation_count > 0);
 								if (annotation_set->stored_annotations != NULL && annotation_set->stored_annotation_count > 0) {
-									v2f new_coordinate = (v2f){};
+									v2f new_coordinate = {};
 									arrput(annotation_set->coordinates, new_coordinate);
 									current_element_type = ASAP_XML_ELEMENT_COORDINATE;
 
@@ -192,7 +192,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							} else if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
 								current_element_type = ASAP_XML_ELEMENT_GROUP;
 								// reset the state (start parsing a new group)
-								current_group = (annotation_group_t){};
+								memset(&current_group, 0, sizeof(current_group));
 								current_group.is_explicitly_defined = true; // (because this group has an XML tag)
 							}
 						} break;

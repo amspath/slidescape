@@ -27,7 +27,7 @@ void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 ti
 		upload_tile_on_worker_thread(image, tile_pixels, scale, tile_index, tile_width, tile_height);
 	}
 #else
-	viewer_notify_tile_completed_task_t completion_task = {};
+	viewer_notify_tile_completed_task_t completion_task = {0};
 	completion_task.pixel_memory = (u8*)tile_pixels;
 	completion_task.tile_width = tile_width;
 	completion_task.tile_height = tile_height;
@@ -348,7 +348,7 @@ void isyntax_begin_load_tile(i32 resource_id, isyntax_t* isyntax, isyntax_image_
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
 	isyntax_tile_t* tile = level->tiles + tile_index;
 	if (!tile->is_submitted_for_loading) {
-		isyntax_load_tile_task_t task = {};
+		isyntax_load_tile_task_t task = {0};
 		task.resource_id = resource_id;
 		task.isyntax = isyntax;
 		task.wsi = wsi;
@@ -380,7 +380,7 @@ void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
 }
 
 void isyntax_begin_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_image_t* wsi_image) {
-	isyntax_first_load_task_t task = {};
+	isyntax_first_load_task_t task = {0};
 	task.resource_id = resource_id;
 	task.isyntax = isyntax;
 	task.wsi = wsi_image;
@@ -447,7 +447,7 @@ void isyntax_decompress_h_coeff_for_tile_task_func(i32 logical_thread_index, voi
 }
 
 void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, isyntax_tile_t* tile, i32 tile_x, i32 tile_y) {
-	isyntax_decompress_h_coeff_for_tile_task_t task = {};
+	isyntax_decompress_h_coeff_for_tile_task_t task = {0};
 	task.isyntax = isyntax;
 	task.wsi = wsi;
 	task.scale = scale;
@@ -635,7 +635,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			memset(regions, 0, scales_to_load_count * sizeof(isyntax_load_region_t));
 
 			u32 chunks_to_load_count = 0;
-			isyntax_chunk_load_task_t chunks_to_load[MAX_CHUNKS_TO_LOAD] = {};
+			isyntax_chunk_load_task_t chunks_to_load[MAX_CHUNKS_TO_LOAD] = {0};
 			u32 max_chunks_to_load = 64;
 			u32 max_chunks_to_check = COUNT(chunks_to_load);
 

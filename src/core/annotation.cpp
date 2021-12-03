@@ -73,7 +73,7 @@ void select_annotation(annotation_set_t* annotation_set, annotation_t* annotatio
 }
 
 void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos) {
-	annotation_t new_annotation = (annotation_t){};
+	annotation_t new_annotation = {};
 	new_annotation.type = ANNOTATION_ELLIPSE;
 	new_annotation.p0 = pos;
 	new_annotation.p1 = pos;
@@ -114,7 +114,7 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	i32 first_coordinate = annotation_set->coordinate_count;
 	annotation_set->coordinate_count += 2;
 
-	annotation_t new_annotation = (annotation_t){};
+	annotation_t new_annotation = {};
 	new_annotation.type = ANNOTATION_LINE;
 	new_annotation.p0 = pos;
 	new_annotation.p1 = pos;
@@ -152,7 +152,7 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	arrput(annotation_set->coordinates, pos);
 	i32 coordinate_index = annotation_set->coordinate_count++;
 
-	annotation_t new_annotation = (annotation_t){};
+	annotation_t new_annotation = {};
 	new_annotation.type = ANNOTATION_POINT;
 	new_annotation.p0 = pos;
 	new_annotation.bounds = {};
@@ -1144,8 +1144,8 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	if (show_annotations_window) {
 
-		ImGui::SetNextWindowPos((ImVec2){830,43}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-		ImGui::SetNextWindowSize((ImVec2){525,673}, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(830,43), ImGuiCond_FirstUseEver, ImVec2());
+		ImGui::SetNextWindowSize(ImVec2(525,673), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
 
@@ -1229,7 +1229,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			if (ImGui::BeginCombo("Type##annotation_debug_select_type", type_preview_string, ImGuiComboFlags_HeightLargest)) {
 				for (i32 type_index = 0; type_index < COUNT(annotation_types); ++type_index) {
 
-					if (ImGui::Selectable(annotation_types[type_index], (annotation_type_index == type_index), 0, (ImVec2){})) {
+					if (ImGui::Selectable(annotation_types[type_index], (annotation_type_index == type_index), 0, ImVec2())) {
 						set_type_for_selected_annotations(annotation_set, type_index);
 					}
 				}
@@ -1243,7 +1243,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
 					annotation_group_t* group = annotation_set->stored_groups + group_index;
 
-					if (ImGui::Selectable(group_item_previews[group_index], (annotation_group_index == group_index), 0, (ImVec2){})
+					if (ImGui::Selectable(group_item_previews[group_index], (annotation_group_index == group_index), 0, ImVec2())
 					|| ((!nothing_selected) && hotkey_pressed[group_index])) {
 						set_group_for_selected_annotations(annotation_set, group_index);
 					}
@@ -1464,7 +1464,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					for (i32 group_index = 0; group_index < annotation_set->stored_group_count; ++group_index) {
 						annotation_group_t* group = annotation_set->stored_groups + group_index;
 
-						if (ImGui::Selectable(group_item_previews[group_index], (feature->group_id == group_index), 0, (ImVec2){})) {
+						if (ImGui::Selectable(group_item_previews[group_index], (feature->group_id == group_index), 0, ImVec2())) {
 							feature->group_id = group_index;
 							annotations_modified(annotation_set);
 						}
@@ -1548,8 +1548,8 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	if (show_annotation_group_assignment_window) {
 
-		ImGui::SetNextWindowPos((ImVec2){1288,42}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-		ImGui::SetNextWindowSize((ImVec2){285,572}, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(1288,42), ImGuiCond_FirstUseEver, ImVec2());
+		ImGui::SetNextWindowSize(ImVec2(285,572), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Assign", &show_annotation_group_assignment_window);
 
@@ -1765,8 +1765,8 @@ void draw_annotation_palette_window() {
 	if (show_annotation_palette_window) {
 
 
-		ImGui::SetNextWindowPos((ImVec2){1288,42}, ImGuiCond_FirstUseEver, (ImVec2){0, 0});
-		ImGui::SetNextWindowSize((ImVec2){285,572}, ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowPos(ImVec2(1288,42), ImGuiCond_FirstUseEver, ImVec2());
+		ImGui::SetNextWindowSize(ImVec2(285,572), ImGuiCond_FirstUseEver);
 
 		ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
 		if (ImGui::Begin("##annotation_palette_window", &show_annotation_palette_window, window_flags)) {
@@ -1818,7 +1818,7 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	memset(annotation_set, 0, sizeof(*annotation_set));
 
 	// initialize new state
-	annotation_set->mpp = (v2f){1.0f, 1.0f}; // default value shouldn't be zero (has danger of divide-by-zero errors)
+	annotation_set->mpp = V2F(1.0f, 1.0f); // default value shouldn't be zero (has danger of divide-by-zero errors)
 
 	// TODO: check is this still needed?
 	// reserve annotation group 0 for the "None" category

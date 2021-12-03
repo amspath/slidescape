@@ -409,7 +409,8 @@ void win32_init_input() {
 win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	RECT rect;
 	GetClientRect(window, &rect);
-	return (win32_window_dimension_t){rect.right - rect.left, rect.bottom - rect.top};
+	win32_window_dimension_t result = {rect.right - rect.left, rect.bottom - rect.top};
+	return result;
 }
 
 bool check_fullscreen(window_handle_t window) {
@@ -647,13 +648,13 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 	}
 
 	bool did_idle = false;
-	WINBOOL has_message = PeekMessageA(&message, NULL, 0, 0, PM_REMOVE);
+	BOOL has_message = PeekMessageA(&message, NULL, 0, 0, PM_REMOVE);
 	if (!has_message) {
 		if (!allow_idling) {
 			return false; // don't idle waiting for messages if there e.g. animations on screen
 		} else {
 			did_idle = true;
-			WINBOOL ret = GetMessageA(&message, NULL, 0, 0); // blocks until there is a message
+			BOOL ret = GetMessageA(&message, NULL, 0, 0); // blocks until there is a message
 			if (ret == -1) {
 				win32_diagnostic("GetMessageA");
 				panic();
@@ -703,7 +704,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 								  raw->data.mouse.lLastX,
 								  raw->data.mouse.lLastY);*/
 					if (raw->data.mouse.usButtonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-						curr_input->drag_vector = (v2f){};
+						curr_input->drag_vector = v2f();
 						curr_input->drag_start_xy = curr_input->mouse_xy;
 					}
 
@@ -939,7 +940,7 @@ void win32_process_xinput_controllers() {
 			                           XINPUT_GAMEPAD_DPAD_LEFT|XINPUT_GAMEPAD_DPAD_RIGHT)
 					) {
 				new_controller_input->is_analog = false;
-				new_controller_input->stick_end = (v2f){0};
+				new_controller_input->stick_end = v2f();
 				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_UP) new_controller_input->stick_end.y += 1.0f;
 				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_DOWN) new_controller_input->stick_end.y -= 1.0f;
 				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_LEFT) new_controller_input->stick_end.x += 1.0f;
@@ -1167,7 +1168,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 			                            0/*WS_DISABLED*/, 0, 0, 640, 480, NULL, NULL, g_instance, 0);
 	HDC dummy_dc = GetDC(dummy_window);
 
-	PIXELFORMATDESCRIPTOR desired_pixel_format = (PIXELFORMATDESCRIPTOR){};
+	PIXELFORMATDESCRIPTOR desired_pixel_format = {};
 	desired_pixel_format.nSize = sizeof(desired_pixel_format);
 	desired_pixel_format.nVersion = 1;
 	desired_pixel_format.iPixelType = PFD_TYPE_RGBA;
@@ -1482,7 +1483,7 @@ bool win32_process_input(app_state_t* app_state) {
 	POINT cursor_pos;
 	GetCursorPos(&cursor_pos);
 	ScreenToClient(app_state->main_window, &cursor_pos);
-	curr_input->mouse_xy = (v2f){ (float)cursor_pos.x, (float)cursor_pos.y };
+	curr_input->mouse_xy = V2F((float)cursor_pos.x, (float)cursor_pos.y);
 	curr_input->mouse_z = 0;
 
 	// NOTE: should we call GetAsyncKeyState or GetKeyState?
@@ -1611,7 +1612,8 @@ void win32_init_multithreading() {
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
-		thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue};
+		platform_thread_info_t thread_info = { .logical_thread_index = i, .queue = &global_work_queue};
+		thread_infos[i] = thread_info;
 
 		DWORD thread_id;
 		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
@@ -1624,7 +1626,6 @@ void win32_init_multithreading() {
 }
 
 void win32_init_main_window(app_state_t* app_state) {
-	main_window_class = (WNDCLASSA){};
 	main_window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	main_window_class.lpfnWndProc = main_window_callback;
 	main_window_class.hInstance = g_instance;
@@ -1730,7 +1731,7 @@ void create_ico() {
 
 #endif
 
-WINBOOL CALLBACK win32_enum_windows_proc_func(HWND hwnd, LPARAM lparam) {
+BOOL CALLBACK win32_enum_windows_proc_func(HWND hwnd, LPARAM lparam) {
 	DWORD process_id;
 	GetWindowThreadProcessId(hwnd, &process_id);
 //	console_print("process_id=%d lparam=%d\n", process_id, lparam);

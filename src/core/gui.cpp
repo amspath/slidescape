@@ -73,10 +73,10 @@ void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, flo
 
 void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene) {
 	v2f points[4];
-	points[0] = (v2f) { bounds.left, bounds.top };
-	points[1] = (v2f) { bounds.left, bounds.bottom };
-	points[2] = (v2f) { bounds.right, bounds.bottom };
-	points[3] = (v2f) { bounds.right, bounds.top };
+	points[0] = V2F(bounds.left, bounds.top);
+	points[1] = V2F(bounds.left, bounds.bottom);
+	points[2] = V2F(bounds.right, bounds.bottom);
+	points[3] = V2F(bounds.right, bounds.top);
 	gui_draw_polygon_outline_in_scene(points, 4, color, thickness, scene);
 }
 
@@ -408,7 +408,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 					if (changed) {
 						scene->selection_box = pixel_rect_to_world_rect(export_rect, image->mpp_x, image->mpp_y);
-						scene->selection_pixel_bounds = (bounds2i){export_rect.x, export_rect.y, export_rect.x + export_rect.w, export_rect.y + export_rect.h};
+						scene->selection_pixel_bounds = BOUNDS2I(export_rect.x, export_rect.y, export_rect.x + export_rect.w, export_rect.y + export_rect.h);
 //						pixel_bounds = scene->selection_pixel_bounds;
 					}
 				}

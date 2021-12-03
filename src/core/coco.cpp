@@ -189,7 +189,7 @@ static void coco_parse_annotations(coco_t* coco, json_array_s* info) {
 										new_coord.y = number;
 										arrput(coordinates, new_coord);
 										++coordinate_count;
-										new_coord = (v2f){}; // reset for next iteration
+										new_coord = v2f(); // reset for next iteration
 									}
 									coordinate_array_element = coordinate_array_element->next;
 									++number_index;
@@ -702,12 +702,12 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 			v2f mpp = annotation_set->mpp;
 			if (!(mpp.x > 0.0f && mpp.y > 0.0f)) {
 				ASSERT(!"mpp invalid or not initialized");
-				mpp = (v2f){1.0f, 1.0f}; // prevent divide by zero
+				mpp = V2F(1.0f, 1.0f); // prevent divide by zero
 			}
 			for (i32 j = 0; j < annotation->coordinate_count; ++j) {
 				v2f* coordinate = coordinates + j;
 				v2f* coco_coordinate = coco_annotation->segmentation.coordinates + j;
-				*coco_coordinate = (v2f) {coordinate->x / mpp.x, coordinate->y / mpp.y};
+				*coco_coordinate = V2F(coordinate->x / mpp.x, coordinate->y / mpp.y);
 			}
 		}
 		ASSERT(MAX_ANNOTATION_FEATURES == COCO_MAX_ANNOTATION_FEATURES);
@@ -821,7 +821,7 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 		v2f* annotation_coordinates = annotation_set->coordinates + annotation->first_coordinate;
 		for (i32 j = 0; j < annotation->coordinate_count; ++j) {
 			v2f c = coco_annotation->segmentation.coordinates[j];
-			annotation_coordinates[j] = (v2f){annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y};
+			annotation_coordinates[j] = V2F(annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y);
 		}
 		running_coordinate_index += coco_annotation->segmentation.coordinate_count;
 	}
