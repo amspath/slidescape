@@ -499,7 +499,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 			tile_bytecounts[tile_index] = compressed_size;
 
 			fwrite(compressed_buffer, compressed_size, 1, export_task->fp);
-			free(compressed_buffer);
+			libc_free(compressed_buffer);
 			jpeg_compressed_buffers[work_index] = NULL;
 			export_task->current_image_data_write_offset += compressed_size;
 
@@ -801,7 +801,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
 			                      TIFF_TAG_JPEG_TABLES, TIFF_UNDEFINED, tables_size, tables_buffer);
 			++tag_count_for_ifd;
-			if (tables_buffer) free(tables_buffer);
+			if (tables_buffer) libc_free(tables_buffer);
 
 			if (desired_photometric_interpretation == TIFF_PHOTOMETRIC_YCBCR) {
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_chroma_subsampling);

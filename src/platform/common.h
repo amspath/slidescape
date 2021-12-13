@@ -135,6 +135,18 @@
 #include <fcntl.h>
 #endif
 
+// Wrappers for using libc versions of malloc(), realloc() and free(), if you really need to.
+// Otherwise, they get replaced by ltmalloc (for better performance).
+static inline void* libc_malloc(size_t size) {
+	return malloc(size);
+}
+static inline void* libc_realloc(void* memory, size_t new_size) {
+	return realloc(memory, new_size);
+}
+static inline void libc_free(void* memory) {
+	free(memory);
+}
+
 // Faster malloc(), realloc(), free()
 #include <ltalloc.h>
 #if WINDOWS

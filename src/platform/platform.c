@@ -325,9 +325,9 @@ void* block_allocator_proc(allocator_t* this_allocator, size_t size_to_allocate,
 */
 
 block_allocator_t block_allocator_create(size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size) {
-	size_t total_capacity = block_size * max_capacity_in_blocks;
-	size_t chunk_count = total_capacity / chunk_size;
-	size_t chunk_capacity_in_blocks = max_capacity_in_blocks / chunk_count;
+	u64 total_capacity = (u64)block_size * (u64)max_capacity_in_blocks;
+	u64 chunk_count = total_capacity / chunk_size;
+	u64 chunk_capacity_in_blocks = max_capacity_in_blocks / chunk_count;
 	block_allocator_t result = {0};
 	result.block_size = block_size;
 	result.chunk_capacity_in_blocks = chunk_capacity_in_blocks;

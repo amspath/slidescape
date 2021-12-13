@@ -139,17 +139,14 @@ u8* jpeg_decode_image(u8* input_ptr, u32 input_length, i32* width, i32* height, 
 	jpeg_start_decompress(&cinfo);
 
 	int row_width = cinfo.output_width;
-	int target_row_stride = row_width * 4;
-	int source_row_stride = row_width * cinfo.output_components;
+	int target_row_stride = row_width * cinfo.output_components;
 	size_t output_size = target_row_stride * cinfo.output_height;
 	u8* output_buffer = malloc(output_size);
-	u8* output_pos = output_buffer;
-	JSAMPARRAY buffer = (*cinfo.mem->alloc_sarray)
-			((j_common_ptr) &cinfo, JPOOL_IMAGE, source_row_stride, 1);
 
 	while (cinfo.output_scanline < cinfo.output_height) {
-		i32 ret = jpeg_read_scanlines(&cinfo, buffer, 1);
-		memcpy(output_pos, buffer[0], target_row_stride);
+		u8* output_pos = output_buffer + (cinfo.output_scanline) * target_row_stride;
+		u8* buffer_array[1] = { output_pos };
+		i32 ret = jpeg_read_scanlines(&cinfo, buffer_array, 1);
 		output_pos += target_row_stride;
 	}
 
@@ -169,7 +166,7 @@ u8* jpeg_decode_image(u8* input_ptr, u32 input_length, i32* width, i32* height, 
 
 EMSCRIPTEN_KEEPALIVE
 uint8_t *create_buffer(int size) {
-	return malloc(size * sizeof(uint8_t));
+	return libc_malloc(size * sizeof(uint8_t));
 }
 
 EMSCRIPTEN_KEEPALIVE
