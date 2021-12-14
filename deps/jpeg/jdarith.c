@@ -672,6 +672,8 @@ bad:
       for (coefi = MIN(cinfo->Ss, 1); coefi <= MAX(cinfo->Se, 9); coefi++) {
         if (cinfo->input_scan_number > 1)
           prev_coef_bit_ptr[coefi] = coef_bit_ptr[coefi];
+        else
+          prev_coef_bit_ptr[coefi] = 0;
       }
       for (coefi = cinfo->Ss; coefi <= cinfo->Se; coefi++) {
         int expected = (coef_bit_ptr[coefi] < 0) ? 0 : coef_bit_ptr[coefi];
@@ -696,8 +698,8 @@ bad:
     /* Check that the scan parameters Ss, Se, Ah/Al are OK for sequential JPEG.
      * This ought to be an error condition, but we make it a warning.
      */
-    if (cinfo->Ss != 0 || cinfo->Ah != 0 || cinfo->Al != 0 ||
-        (cinfo->Se < DCTSIZE2 && cinfo->Se != DCTSIZE2 - 1))
+    if (cinfo->Ss != 0 || cinfo->Se != DCTSIZE2 - 1 ||
+        cinfo->Ah != 0 || cinfo->Al != 0)
       WARNMS(cinfo, JWRN_NOT_SEQUENTIAL);
     /* Select MCU decoding routine */
     entropy->pub.decode_mcu = decode_mcu;
