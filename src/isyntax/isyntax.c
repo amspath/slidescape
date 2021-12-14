@@ -285,8 +285,15 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
 					if (decoded) {
 						i32 channels_in_file = 0;
-#if 0
+#if 1
 						// TODO: Why does this crash?
+						// Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
+						// jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
+						// This causes the program to crash eventually when trying to free memory in free_pool().
+						// When using a hardware watchpoint on the corrupted memory, the overwiting occurs in x86_64/jdsample-avx2.asm at line 358:
+						//     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymm6
+						// WORKAROUND: disabled SIMD in jsimd_can_h2v2_fancy_upsample().
+
 						image->pixels = jpeg_decode_image(decoded, decoded_len, &image->width, &image->height, &channels_in_file);
 #else
 						// stb_image.h
@@ -1673,6 +1680,9 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i16* out_buffer) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
+//	if (chunk_base_offset == 274934056 && offset_in_chunk == 26964) {
+//		DUMMY_STATEMENT;
+//	}
 	isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
 							   block_width, block_height, codeblock->coefficient, 1, out_buffer);
 }

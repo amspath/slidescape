@@ -433,6 +433,15 @@ jsimd_h2v1_upsample(j_decompress_ptr cinfo, jpeg_component_info *compptr,
 GLOBAL(int)
 jsimd_can_h2v2_fancy_upsample(void)
 {
+	//
+	//
+	//
+	// NOTE(Falcury): disabling this because the SIMD code is giving me crashes!
+    return 0;
+    //
+	//
+	//
+
   init_simd();
 
   /* The code is optimised for these values only */

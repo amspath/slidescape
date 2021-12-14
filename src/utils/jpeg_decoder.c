@@ -147,19 +147,14 @@ u8* jpeg_decode_image(u8* input_ptr, u32 input_length, i32* width, i32* height, 
 		u8* output_pos = output_buffer + (cinfo.output_scanline) * target_row_stride;
 		u8* buffer_array[1] = { output_pos };
 		i32 ret = jpeg_read_scanlines(&cinfo, buffer_array, 1);
-		output_pos += target_row_stride;
 	}
 
 	if (width) *width = cinfo.output_width;
 	if (height) *height = cinfo.output_height;
 	if (channels_in_file) *channels_in_file = cinfo.output_components;
 
-
-
 	(void) jpeg_finish_decompress(&cinfo);
-
 	jpeg_destroy_decompress(&cinfo);
-
 
 	return output_buffer;
 }
