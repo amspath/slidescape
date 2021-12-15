@@ -1727,10 +1727,7 @@ void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotatio
 		ImGui::OpenPopup("Delete annotation?");
 		show_delete_annotation_prompt = false;
 	}
-	// Always center this window when appearing
-	ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
+	gui_make_next_window_appear_in_center_of_screen();
 	if (ImGui::BeginPopupModal("Delete annotation?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
 	{
 		ImGui::Text("The annotation will be deleted.\nThis operation cannot be undone.\n\n");

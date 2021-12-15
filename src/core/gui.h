@@ -34,6 +34,7 @@ LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPAR
 #endif
 
 void imgui_create_context();
+void gui_make_next_window_appear_in_center_of_screen();
 void gui_draw_open_file_dialog(app_state_t* app_state);
 void menu_close_file(app_state_t* app_state);
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness);
@@ -42,8 +43,10 @@ void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, sc
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
 void gui_do_modal_popups();
 void gui_add_modal_popup(const char* title, const char* message, ...);
-void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open);
+void gui_display_progress_bar(app_state_t* app_state);
 
+// console.cpp
+void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open);
 
 
 
@@ -73,6 +76,7 @@ extern bool show_menu_bar INIT(= true);
 extern bool load_next_image_as_overlay;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
+extern bool need_show_progress_bar_test_popup;
 extern char remote_hostname[64] INIT(= "localhost");
 extern char remote_port[64] INIT(= "2000");
 extern char remote_filename[128] INIT(= "sample.tiff");

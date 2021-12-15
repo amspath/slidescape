@@ -52,6 +52,11 @@ void imgui_create_context() {
 	}
 }
 
+void gui_make_next_window_appear_in_center_of_screen() {
+	ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+}
+
 void menu_close_file(app_state_t* app_state) {
 	unload_all_images(app_state);
 	reset_global_caselist(app_state);
@@ -383,10 +388,8 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		ImGui::OpenPopup("Export region");
 		show_export_region_dialog = false;
 	}
-	// Always center this window when appearing
-	ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
+	gui_make_next_window_appear_in_center_of_screen();
 	ImGui::SetNextWindowSize(ImVec2(600.0f, 400.0f), ImGuiCond_Appearing);
-	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
 	if (ImGui::BeginPopupModal("Export region", NULL, 0/*ImGuiWindowFlags_AlwaysAutoResize*/)) {
 		scene_t* scene = &app_state->scene;
@@ -486,13 +489,11 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					console_print_error("Error: image backend not supported for exporting a region\n");
 				}
 			}
-			show_export_region_dialog = false;
 			ImGui::CloseCurrentPopup();
 		}
 		ImGui::SameLine();
 		ImGui::SetItemDefaultFocus();
 		if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-			show_export_region_dialog = false;
 			ImGui::CloseCurrentPopup();
 		}
 
@@ -864,10 +865,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		draw_annotations_window(app_state, input);
 	}
 //	draw_annotation_palette_window();
-	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
-	draw_export_region_dialog(app_state);
 
-	gui_do_modal_popups();
+
 
 	if (show_layers_window) {
 		draw_layers_window(app_state);
@@ -905,6 +904,12 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	if (show_console_window) {
 		draw_console_window(app_state, "Console", &show_console_window);
 	}
+
+	// Draw modal popups last
+	draw_export_region_dialog(app_state);
+	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
+	gui_do_modal_popups();
+	gui_display_progress_bar(app_state);
 
 #if (LINUX || APPLE)
 	gui_draw_open_file_dialog(app_state);
@@ -944,9 +949,7 @@ void gui_do_modal_popups() {
 					popup->need_open = false;
 				}
 			}
-			// Always center this window when appearing
-			ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
-			ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+			gui_make_next_window_appear_in_center_of_screen();
 			bool open = true;
 			if (ImGui::BeginPopupModal(popup->title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
 				ImGui::TextUnformatted(popup->message);
@@ -977,6 +980,35 @@ void gui_add_modal_popup(const char* title, const char* message, ...) {
 
 	popup.need_open = true;
 	arrpush(gui_popup_stack, popup);
+}
+
+void gui_display_progress_bar(app_state_t* app_state) {
+	if (need_show_progress_bar_test_popup) {
+		ImGui::OpenPopup("Progress bar test");
+		need_show_progress_bar_test_popup = false;
+	}
+
+	gui_make_next_window_appear_in_center_of_screen();
+	if (ImGui::BeginPopupModal("Progress bar test", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+		// Animate a simple progress bar
+		static float progress = 0.0f, progress_dir = 1.0f;
+		bool animate = true;
+		if (animate) {
+			progress += progress_dir * 0.4f * ImGui::GetIO().DeltaTime;
+			if (progress >= +1.1f) { progress = +1.1f; progress_dir *= -1.0f; }
+			if (progress <= -0.1f) { progress = -0.1f; progress_dir *= -1.0f; }
+		}
+
+		// Typically we would use ImVec2(-1.0f,0.0f) or ImVec2(-FLT_MIN,0.0f) to use all available width,
+		// or ImVec2(width,0.0f) for a specified width. ImVec2(0.0f,0.0f) uses ItemWidth.
+		ImGui::ProgressBar(progress, ImVec2(0.0f, 0.0f));
+		ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+		ImGui::Text("Progress Bar");
+		if (ImGui::Button("OK", ImVec2(120, 0))) {
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
 }
 
 
