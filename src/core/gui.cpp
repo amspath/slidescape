@@ -406,10 +406,10 @@ void draw_export_region_dialog(app_state_t* app_state) {
 				if (ImGui::TreeNodeEx("Adjust region", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
 					rect2i export_rect = {pixel_bounds.left, pixel_bounds.top, pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top};
 					bool changed = false;
-					changed = changed || ImGui::InputInt("Offset X##export_pixel_bounds", &export_rect.x);
-					changed = changed || ImGui::InputInt("Offset Y##export_pixel_bounds", &export_rect.y);
-					changed = changed || ImGui::InputInt("Width##export_pixel_bounds", &export_rect.w);
-					changed = changed || ImGui::InputInt("Height##export_pixel_bounds", &export_rect.h);
+					changed |= ImGui::InputInt("Offset X##export_pixel_bounds", &export_rect.x);
+					changed |= ImGui::InputInt("Offset Y##export_pixel_bounds", &export_rect.y);
+					changed |= ImGui::InputInt("Width##export_pixel_bounds", &export_rect.w);
+					changed |= ImGui::InputInt("Height##export_pixel_bounds", &export_rect.h);
 
 					if (changed) {
 						scene->selection_box = pixel_rect_to_world_rect(export_rect, image->mpp_x, image->mpp_y);
