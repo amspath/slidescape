@@ -485,7 +485,8 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
 				} break;
 				default: {
-					gui_add_modal_popup("Error##draw_export_region_dialog", "This image backend is currently not supported for exporting a region.\n");
+					gui_add_modal_message_popup("Error##draw_export_region_dialog",
+					                            "This image backend is currently not supported for exporting a region.\n");
 					console_print_error("Error: image backend not supported for exporting a region\n");
 				}
 			}
@@ -909,21 +910,27 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	draw_export_region_dialog(app_state);
 	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
 	gui_do_modal_popups();
-	gui_display_progress_bar(app_state);
 
 #if (LINUX || APPLE)
 	gui_draw_open_file_dialog(app_state);
 #endif
-
-
 }
 
+enum gui_modal_type_enum {
+	GUI_MODAL_NONE = 0,
+	GUI_MODAL_MESSAGE = 1,
+	GUI_MODAL_PROGRESS_BAR = 2,
+};
 
 typedef struct gui_modal_popup_t gui_modal_popup_t;
 struct gui_modal_popup_t {
+	gui_modal_type_enum type;
 	char message[4096];
 	const char* title;
 	bool need_open;
+	bool allow_cancel;
+	float* progress; // for progress bars
+	float visual_progress; // value that 'lags behind' for smooth visual updates
 };
 
 static gui_modal_popup_t* gui_popup_stack;
@@ -950,26 +957,43 @@ void gui_do_modal_popups() {
 				}
 			}
 			gui_make_next_window_appear_in_center_of_screen();
-			bool open = true;
-			if (ImGui::BeginPopupModal(popup->title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::TextUnformatted(popup->message);
-				if (ImGui::Button("OK", ImVec2(120, 0))) {
-					popup->need_open = false;
-					ImGui::CloseCurrentPopup();
-					// destroy
-					arrdel(gui_popup_stack, 0);
+			if (popup->type == GUI_MODAL_MESSAGE) {
+				if (ImGui::BeginPopupModal(popup->title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+					ImGui::TextUnformatted(popup->message);
+					if (ImGui::Button("OK", ImVec2(120, 0))) {
+						popup->need_open = false;
+						ImGui::CloseCurrentPopup();
+						arrdel(gui_popup_stack, 0);
+					}
+					ImGui::EndPopup();
 				}
-				ImGui::EndPopup();
+			} else if (popup->type == GUI_MODAL_PROGRESS_BAR) {
+				if (ImGui::BeginPopupModal(popup->title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+					float progress = (popup->progress) ? *popup->progress : 0.0f;
+					float difference = progress - popup->visual_progress;
+					if (difference > 0.0f) {
+						popup->visual_progress += ATLEAST(MIN(difference, 0.002f), difference * 0.1f);
+						if (popup->visual_progress > progress) popup->visual_progress = progress;
+					} else if (difference < 0.0f) {
+						difference = -difference;
+						popup->visual_progress -= ATLEAST(MIN(difference, 0.002f), difference * 0.1f);
+						if (popup->visual_progress < progress) popup->visual_progress = progress;
+					}
+					ImGui::ProgressBar(popup->visual_progress, ImVec2(0.0f, 0.0f), "");
+					if (progress >= 1.0f || (popup->allow_cancel && ImGui::Button("Cancel", ImVec2(120, 0)))) {
+						ImGui::CloseCurrentPopup();
+						arrdel(gui_popup_stack, 0);
+					}
+					ImGui::EndPopup();
+				}
 			}
-
 		}
 	}
-
-
 }
 
-void gui_add_modal_popup(const char* title, const char* message, ...) {
+void gui_add_modal_message_popup(const char* title, const char* message, ...) {
 	gui_modal_popup_t popup = {};
+	popup.type = GUI_MODAL_MESSAGE;
 	popup.title = title;
 
 	va_list args;
@@ -982,34 +1006,27 @@ void gui_add_modal_popup(const char* title, const char* message, ...) {
 	arrpush(gui_popup_stack, popup);
 }
 
-void gui_display_progress_bar(app_state_t* app_state) {
-	if (need_show_progress_bar_test_popup) {
-		ImGui::OpenPopup("Progress bar test");
-		need_show_progress_bar_test_popup = false;
-	}
+void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool allow_cancel) {
+	gui_modal_popup_t popup = {};
+	popup.type = GUI_MODAL_PROGRESS_BAR;
+	popup.title = title;
+	popup.progress = progress;
+	popup.allow_cancel = allow_cancel;
+	popup.need_open = true;
+	arrpush(gui_popup_stack, popup);
+}
 
-	gui_make_next_window_appear_in_center_of_screen();
-	if (ImGui::BeginPopupModal("Progress bar test", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-		// Animate a simple progress bar
-		static float progress = 0.0f, progress_dir = 1.0f;
-		bool animate = true;
-		if (animate) {
-			progress += progress_dir * 0.4f * ImGui::GetIO().DeltaTime;
-			if (progress >= +1.1f) { progress = +1.1f; progress_dir *= -1.0f; }
-			if (progress <= -0.1f) { progress = -0.1f; progress_dir *= -1.0f; }
-		}
-
-		// Typically we would use ImVec2(-1.0f,0.0f) or ImVec2(-FLT_MIN,0.0f) to use all available width,
-		// or ImVec2(width,0.0f) for a specified width. ImVec2(0.0f,0.0f) uses ItemWidth.
-		ImGui::ProgressBar(progress, ImVec2(0.0f, 0.0f));
-		ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-		ImGui::Text("Progress Bar");
-		if (ImGui::Button("OK", ImVec2(120, 0))) {
-			ImGui::CloseCurrentPopup();
-		}
-		ImGui::EndPopup();
+void a_very_long_task(i32 logical_thread_index, void* userdata) {
+	for (i32 i = 0; i < 10; ++i) {
+		platform_sleep(1000);
+		global_progress_bar_test_progress = (i + 1) * 0.1f;
 	}
 }
+
+void begin_a_very_long_task() {
+	add_work_queue_entry(&global_work_queue, a_very_long_task, NULL, 0);
+}
+
 
 
 

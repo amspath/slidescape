@@ -42,8 +42,8 @@ void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, flo
 void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene);
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
 void gui_do_modal_popups();
-void gui_add_modal_popup(const char* title, const char* message, ...);
-void gui_display_progress_bar(app_state_t* app_state);
+void gui_add_modal_message_popup(const char* title, const char* message, ...);
+void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool allow_cancel);
 
 // console.cpp
 void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open);
@@ -76,7 +76,7 @@ extern bool show_menu_bar INIT(= true);
 extern bool load_next_image_as_overlay;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
-extern bool need_show_progress_bar_test_popup;
+extern float global_progress_bar_test_progress;
 extern char remote_hostname[64] INIT(= "localhost");
 extern char remote_port[64] INIT(= "2000");
 extern char remote_filename[128] INIT(= "sample.tiff");

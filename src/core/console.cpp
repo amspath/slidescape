@@ -166,9 +166,13 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 				console_print("vsync: %d\n", is_vsync_enabled);
 			}
 		} else if (strcmp(cmd, "progress_bar") == 0) {
-			need_show_progress_bar_test_popup = true;
+			global_progress_bar_test_progress = 0.0f;
+			gui_add_modal_progress_bar_popup("Testing progress bar...", &global_progress_bar_test_progress, false);
+			gui_add_modal_message_popup("Success", "All done!");
+			extern void begin_a_very_long_task();
+			begin_a_very_long_task();
 		} else if (strcmp(cmd, "modal") == 0) {
-			gui_add_modal_popup("Modal test", "This is a modal message test.");
+			gui_add_modal_message_popup("Modal test", "This is a modal message test.");
 		} else {
 			console_print("Unknown command: %s\n", cmd);
 		}
