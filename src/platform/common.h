@@ -169,11 +169,11 @@ static inline void libc_free(void* memory) {
 #undef sprintf
 #undef snprintf
 #undef vsprintf
-#undef vnsprintf
+#undef vsnprintf
 #define sprintf   stbsp_sprintf
 #define snprintf  stbsp_snprintf
 #define vsprintf  stbsp_vsprintf
-#define vnsprintf stbsp_vnsprintf
+#define vsnprintf stbsp_vsnprintf
 
 // Typedef choices for numerical types
 typedef int8_t i8;
