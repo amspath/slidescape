@@ -287,6 +287,7 @@ typedef struct zoom_state_t {
 	float notch_size;
 	float pixel_width;
 	float pixel_height;
+	float screen_point_width;
 	float downsample_factor;
 	float base_pixel_width;
 	float base_pixel_height;
@@ -446,6 +447,7 @@ void isyntax_begin_stream_image_tiles(tile_streamer_t* tile_streamer);
 void zoom_update_pos(zoom_state_t* zoom, float pos);
 void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, float base_pixel_width, float base_pixel_height);
 void init_scene(app_state_t *app_state, scene_t *scene);
+v2f scene_mouse_pos(scene_t* scene);
 void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
 void draw_scale_bar(scale_bar_t* scale_bar);
 void draw_grid(scene_t* scene);

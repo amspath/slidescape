@@ -27,6 +27,8 @@ void zoom_update_pos(zoom_state_t* zoom, float pos) {
 	zoom->downsample_factor = exp2f(zoom->pos);
 	zoom->pixel_width = zoom->downsample_factor * zoom->base_pixel_width;
 	zoom->pixel_height = zoom->downsample_factor * zoom->base_pixel_height;
+	// TODO: refactor
+	zoom->screen_point_width = zoom->pixel_width * global_app_state.display_scale_factor;
 	zoom->level  = (i32)floorf(pos);
 	ASSERT(zoom->notch_size != 0.0f);
 	zoom->notches = (i32) floorf((pos / zoom->notch_size));
@@ -55,6 +57,11 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->initialized = true;
 }
 
+v2f scene_mouse_pos(scene_t* scene) {
+	v2f transformed_pos = world_pos_to_screen_pos(scene->mouse, scene->camera_bounds.min, scene->zoom.screen_point_width);
+	return transformed_pos;
+}
+
 void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 	if (!scale_bar->initialized) {
 		scale_bar->max_width = 200.0f;
@@ -75,7 +82,7 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar) {
 	if (scale_bar->enabled) {
 		// Update the scale bar width.
 		// The scale bar should fill as much as possible of the available max_width, while keeping to factors 1, 2 and 5.
-		float um_per_pixel = scene->zoom.pixel_width;
+		float um_per_pixel = scene->zoom.screen_point_width;
 		float width_in_um = scale_bar->max_width * um_per_pixel;
 		float scale = log10(width_in_um);
 		float factor = powf(10.0f, -floorf(scale));
@@ -147,7 +154,7 @@ void draw_grid(scene_t* scene) {
 
 		draw_list->PushClipRect(p0, p1, true);
 		{
-			float pixel_width = scene->zoom.pixel_width * global_app_state.display_scale_factor;
+			float pixel_width = scene->zoom.screen_point_width;
 			const float world_step = 1000.0f;
 			const float grid_step = world_step / pixel_width;
 			v2f scrolling;

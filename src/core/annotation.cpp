@@ -210,11 +210,11 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	// Possible solution: retrieve multiple hit results, one for only the selected annotation(s), and one
 	// for the 'actually' closest annotation. Then we decide later what to do, based on the difference between those results.
 
-	annotation_hit_result_t hit_result = get_annotation_hit_result(annotation_set, scene->mouse, 300.0f * scene->zoom.pixel_width, 5.0f * scene->zoom.pixel_width);
+	annotation_hit_result_t hit_result = get_annotation_hit_result(annotation_set, scene->mouse, 300.0f * scene->zoom.screen_point_width, 5.0f * scene->zoom.pixel_width);
 	if (hit_result.is_valid) {
-		ASSERT(scene->zoom.pixel_width > 0.0f);
-		float line_segment_pixel_distance = hit_result.line_segment_distance / scene->zoom.pixel_width;
-		float coordinate_pixel_distance = hit_result.coordinate_distance / scene->zoom.pixel_width;
+		ASSERT(scene->zoom.screen_point_width > 0.0f);
+		float line_segment_pixel_distance = hit_result.line_segment_distance / scene->zoom.screen_point_width;
+		float coordinate_pixel_distance = hit_result.coordinate_distance / scene->zoom.screen_point_width;
 
 		annotation_t* hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
 		v2f* hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
@@ -252,7 +252,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 					                                                    app_state->scene.mouse, &t_clamped,
 					                                                    &projected_point, &distance_to_edge);
 					if (insert_at_index >= 0) {
-						float pixel_distance_to_edge = distance_to_edge / scene->zoom.pixel_width;
+						float pixel_distance_to_edge = distance_to_edge / scene->zoom.screen_point_width;
 						if (pixel_distance_to_edge < annotation_insert_hover_distance) {
 							// try to insert a new coordinate, and start dragging that
 							insert_coordinate(app_state, annotation_set, hit_annotation, insert_at_index, projected_point);
@@ -920,7 +920,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				i32 coordinate_index = annotation->first_coordinate + i;
 				v2f* coordinate = annotation_set->coordinates + coordinate_index;
 				v2f world_pos = {(float)coordinate->x, (float)coordinate->y};
-				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
+				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.screen_point_width);
 				points[i] = transformed_pos;
 			}
 
@@ -991,10 +991,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					                                                        app_state->scene.mouse, NULL,
 					                                                        &projected_point, &distance);
 					if (insert_before_index >= 0) {
-						float transformed_distance = distance / scene->zoom.pixel_width;
+						float transformed_distance = distance / scene->zoom.screen_point_width;
 						if (transformed_distance < annotation_insert_hover_distance) {
 							// Draw a partially transparent, slightly larger ('hovering' size) node circle at the projected point
-							v2f transformed_pos = world_pos_to_screen_pos(projected_point, camera_min, scene->zoom.pixel_width);
+							v2f transformed_pos = world_pos_to_screen_pos(projected_point, camera_min, scene->zoom.screen_point_width);
 							rgba_t hover_color = group->color;
 							hover_color.a = alpha / 2;
 							draw_list->AddCircleFilled(transformed_pos, annotation_node_size * 1.4f, *(u32*)(&hover_color), 12);
@@ -1006,10 +1006,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					if (annotation_set->selected_coordinate_index >= annotation->first_coordinate && annotation_set->selected_coordinate_index < annotation->first_coordinate + annotation->coordinate_count) {
 						v2f* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
 						v2f world_pos = {(float)split_coordinate->x, (float)split_coordinate->y};
-						v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.pixel_width);
+						v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.screen_point_width);
 						v2f split_line_points[2] = {};
 						split_line_points[0] = transformed_pos;
-						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.pixel_width);
+						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.screen_point_width);
 						draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, 0, thickness);
 					} else {
 #if DO_DEBUG
@@ -1023,8 +1023,8 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		} else {
 			// Annotation does NOT have coordinates
 			if (annotation->type == ANNOTATION_ELLIPSE) {
-				v2f p0 = world_pos_to_screen_pos(annotation->p0, camera_min, scene->zoom.pixel_width);
-				v2f p1 = world_pos_to_screen_pos(annotation->p1, camera_min, scene->zoom.pixel_width);
+				v2f p0 = world_pos_to_screen_pos(annotation->p0, camera_min, scene->zoom.screen_point_width);
+				v2f p1 = world_pos_to_screen_pos(annotation->p1, camera_min, scene->zoom.screen_point_width);
 				v2f center = v2f_average(p0, p1);
 				v2f v = v2f_subtract(p1, p0);
 				float len = v2f_length(v);

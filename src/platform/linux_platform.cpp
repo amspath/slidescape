@@ -96,7 +96,7 @@ u8* platform_alloc(size_t size) {
 void mouse_show() {
     if (cursor_hidden) {
         cursor_hidden = false;
-#if !LINUX
+#if 0
 	    SDL_SetRelativeMouseMode(SDL_FALSE);
 #endif
     }
@@ -105,7 +105,8 @@ void mouse_show() {
 void mouse_hide() {
     if (!cursor_hidden) {
         cursor_hidden = true;
-#if !LINUX
+		// TODO: fix mouse hiding on macOS while panning
+#if 0
 	    SDL_SetRelativeMouseMode(SDL_TRUE);
 #endif
     }

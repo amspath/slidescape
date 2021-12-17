@@ -1177,8 +1177,8 @@ void scene_update_camera_pos(scene_t* scene, v2f pos) {
 static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f client_mouse_xy) {
 	if (client_mouse_xy.x >= 0 && client_mouse_xy.y < app_state->client_viewport.w * app_state->display_scale_factor &&
 			client_mouse_xy.y >= 0 && client_mouse_xy.y < app_state->client_viewport.h * app_state->display_scale_factor) {
-		scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.pixel_width * app_state->display_scale_factor;
-		scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.pixel_height * app_state->display_scale_factor;
+		scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.screen_point_width;
+		scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.screen_point_width;
 	} else {
 		scene->mouse = scene->camera;
 	}
@@ -1756,7 +1756,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				points[2] = V2F(bounds.right, bounds.bottom);
 				points[3] = V2F(bounds.right, bounds.top);
 				for (i32 i = 0; i < 4; ++i) {
-					points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.pixel_width);
+					points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.screen_point_width);
 				}
 				rgba_t rgba = {0, 0, 0, 128};
 				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
