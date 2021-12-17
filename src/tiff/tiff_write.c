@@ -151,6 +151,7 @@ typedef struct export_task_data_t {
 	u64 current_image_data_write_offset;
 	u64 total_tiles_to_export;
 	float progress_per_exported_tile; // for progress bar
+	volatile i32 tiles_left_to_compress_in_batch;
 	FILE* fp;
 	bool use_rgb;
 	bool is_valid;
@@ -296,6 +297,35 @@ void construct_new_tile_from_source_tiles(export_task_data_t* export_task, expor
 	}
 
 	free(dest);
+}
+
+typedef struct construct_tile_task_t {
+	export_task_data_t* export_task;
+	export_level_task_data_t* level_task;
+	i32 export_tile_x;
+	i32 export_tile_y;
+	u8** jpeg_buffer;
+	u32* jpeg_size;
+} construct_tile_task_t;
+
+void construct_new_tile_from_source_tiles_func(i32 logical_thread_id, void* userdata) {
+	construct_tile_task_t* task = (construct_tile_task_t*) userdata;
+	construct_new_tile_from_source_tiles(task->export_task, task->level_task, task->export_tile_x, task->export_tile_y, task->jpeg_buffer, task->jpeg_size);
+	atomic_decrement(&task->export_task->tiles_left_to_compress_in_batch);
+}
+
+void begin_construct_new_tile_from_source_tiles(export_task_data_t* export_task, export_level_task_data_t* level_task, i32 export_tile_x, i32 export_tile_y, u8** jpeg_buffer, u32* jpeg_size) {
+	construct_tile_task_t task = {0};
+	task.export_task = export_task;
+	task.level_task = level_task;
+	task.export_tile_x = export_tile_x;
+	task.export_tile_y = export_tile_y;
+	task.jpeg_buffer = jpeg_buffer;
+	task.jpeg_size = jpeg_size;
+
+	if (!add_work_queue_entry(&global_work_queue, construct_new_tile_from_source_tiles_func, &task, sizeof(task))) {
+		panic();
+	}
 }
 
 void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_task_data_t* export_task, i32 level) {
@@ -475,17 +505,14 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 			}
 
 		}
-
 		seconds_taken_reading += get_seconds_elapsed(read_time_start, get_clock());
 
 
-
-		// Now we can proceed with constructing the new tiles from the source tiles,
-		// and writing them to disk.
-		// TODO: make this a multi-threaded task.
-
+		// Now we can proceed with constructing the new tiles from the source tiles, and writing them to disk.
 		i64 compress_time_start = get_clock();
+		export_task->tiles_left_to_compress_in_batch = current_batch_size;
 
+		// Begin JPEG compression tasks for each tile.
 		for (i32 tile_index = start_tile_index; tile_index <= end_tile_index; ++tile_index) {
 			i32 export_tile_x = tile_index % level_task->export_width_in_tiles;
 			i32 export_tile_y = tile_index / level_task->export_width_in_tiles;
@@ -494,10 +521,26 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 			u8** jpeg_buffer = &jpeg_compressed_buffers[work_index];
 			u32* jpeg_size = &jpeg_compressed_sizes[work_index];
 
-			construct_new_tile_from_source_tiles(export_task, level_task, export_tile_x, export_tile_y, jpeg_buffer, jpeg_size);
-
-			global_tiff_export_progress += export_task->progress_per_exported_tile;
+			begin_construct_new_tile_from_source_tiles(export_task, level_task, export_tile_x, export_tile_y, jpeg_buffer, jpeg_size);
 		}
+
+		// Wait for all compression tasks in the batch to finish.
+		float saved_tiff_export_progress = global_tiff_export_progress;
+		for(;;) {
+			i32 tiles_left_to_compress_in_batch = export_task->tiles_left_to_compress_in_batch;
+			global_tiff_export_progress = saved_tiff_export_progress + (current_batch_size - export_task->tiles_left_to_compress_in_batch) * export_task->progress_per_exported_tile;
+			if (!(tiles_left_to_compress_in_batch > 0)) {
+				break;
+			} else {
+				if (is_queue_work_waiting_to_start(&global_work_queue)) {
+					do_worker_work(&global_work_queue, 0);
+				}
+			}
+//			if (tiles_left_to_compress_in_batch > 0) {
+//				console_print_verbose("tiles left to compress: %d\n", tiles_left_to_compress_in_batch);
+//			}
+		}
+		global_tiff_export_progress = saved_tiff_export_progress + current_batch_size* export_task->progress_per_exported_tile;
 
 		// batch completed.
 
@@ -517,10 +560,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 			export_task->current_image_data_write_offset += compressed_size;
 
 		}
-
 		seconds_taken_compressing += get_seconds_elapsed(compress_time_start, get_clock());
-
-
 	}
 	// level export completed
 
