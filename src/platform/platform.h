@@ -441,6 +441,8 @@ extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
 extern bool cursor_hidden;
 extern const char* global_settings_dir;
+extern char global_export_save_as_filename[512];
+extern bool save_file_dialog_open;
 
 extern float total_rgb_transform_time;
 

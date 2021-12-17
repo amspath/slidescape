@@ -153,7 +153,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Select region", NULL, &menu_items_clicked.select_region)) {}
 			if (ImGui::MenuItem("Deselect region", NULL, &menu_items_clicked.deselect, app_state->scene.has_selection_box)) {}
 			ImGui::Separator();
-			if (ImGui::MenuItem("Crop view to region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
+			if (ImGui::MenuItem("Restrict view to region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
 				menu_items_clicked.crop_region = true;
 			}
 			ImGui::Separator();
@@ -459,18 +459,20 @@ void draw_export_region_dialog(app_state_t* app_state) {
 			filename_hint = "output.png";
 		}
 
-		static char filename[4096];
-		ImGui::InputTextWithHint("##export_region_output_filename", filename_hint, filename, sizeof(filename));
+		char* filename_buffer = global_export_save_as_filename;
+		size_t filename_buffer_size = sizeof(global_export_save_as_filename);
+
+		ImGui::InputTextWithHint("##export_region_output_filename", filename_hint, filename_buffer, filename_buffer_size);
 		ImGui::SameLine();
-		if (ImGui::Button("Browse...")) {
-			if (save_file_dialog(app_state, filename, sizeof(filename), "BigTIFF (*.tiff)\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
-				size_t filename_len = strlen(filename);
+		if (save_file_dialog_open || ImGui::Button("Browse...")) {
+			if (save_file_dialog(app_state, filename_buffer, filename_buffer_size, "BigTIFF (*.tiff)\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
+				size_t filename_len = strlen(filename_buffer);
 				if (filename_len > 0) {
-					const char* extension = get_file_extension(filename);
+					const char* extension = get_file_extension(filename_buffer);
 					if (!(strcasecmp(extension, "tiff") == 0 || strcasecmp(extension, "tif") == 0 || strcasecmp(extension, "ptif") == 0)) {
 						// if extension incorrect, append it at the end
-						i64 remaining_len = sizeof(filename) - filename_len;
-						strncpy(filename + filename_len, ".tiff", remaining_len-1);
+						i64 remaining_len = filename_buffer_size - filename_len;
+						strncpy(filename_buffer + filename_len, ".tiff", remaining_len-1);
 					}
 				} else {
 //					console_print_verbose("Export region: save file dialog returned 0\n");
@@ -478,20 +480,61 @@ void draw_export_region_dialog(app_state_t* app_state) {
 			}
 		}
 
+		static bool is_overwrite_confirm_dialog_open;
+		if (ImGui::Button("Export", ImVec2(120, 0)) || is_overwrite_confirm_dialog_open) {
+			if (filename_buffer[0] == '\0') {
+				strncpy(filename_buffer, filename_hint, filename_buffer_size-1);
+			}
+			bool proceed_with_export = true;
 
-		if (ImGui::Button("Export", ImVec2(120, 0))) {
-			switch(image->backend) {
-				case IMAGE_BACKEND_TIFF: {
-					begin_export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
-					gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
-				} break;
-				default: {
-					gui_add_modal_message_popup("Error##draw_export_region_dialog",
-					                            "This image backend is currently not supported for exporting a region.\n");
-					console_print_error("Error: image backend not supported for exporting a region\n");
+			static bool need_overwrite_confirm_dialog;
+			if (!is_overwrite_confirm_dialog_open) {
+				if (file_exists(filename_buffer)) {
+					need_overwrite_confirm_dialog = true;
 				}
 			}
-			ImGui::CloseCurrentPopup();
+			if (need_overwrite_confirm_dialog) {
+				ImGui::OpenPopup("Overwrite existing file?##export_region");
+				is_overwrite_confirm_dialog_open = true;
+				need_overwrite_confirm_dialog = false;
+			}
+			if (is_overwrite_confirm_dialog_open) {
+				proceed_with_export = false;
+				if (ImGui::BeginPopupModal("Overwrite existing file?##export_region", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					ImGui::Text("Overwrite existing file '%s'?\n\n", filename_buffer);
+
+					if (ImGui::Button("Overwrite", ImVec2(120, 0))) {
+						is_overwrite_confirm_dialog_open = false;
+						proceed_with_export = true;
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::SetItemDefaultFocus();
+					ImGui::SameLine();
+					if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+						is_overwrite_confirm_dialog_open = false;
+						ImGui::CloseCurrentPopup();
+					}
+					ImGui::EndPopup();
+				}
+			}
+
+			if (proceed_with_export) {
+				switch(image->backend) {
+					case IMAGE_BACKEND_TIFF: {
+						begin_export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds,
+						                             filename_buffer, 512,
+						                             tiff_export_desired_color_space, tiff_export_jpeg_quality);
+						gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
+					} break;
+					default: {
+						gui_add_modal_message_popup("Error##draw_export_region_dialog",
+						                            "This image backend is currently not supported for exporting a region.\n");
+						console_print_error("Error: image backend not supported for exporting a region\n");
+					}
+				}
+				ImGui::CloseCurrentPopup();
+			}
 		}
 		ImGui::SameLine();
 		ImGui::SetItemDefaultFocus();

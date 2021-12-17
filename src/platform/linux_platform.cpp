@@ -133,7 +133,8 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 	min_size.y *= 0.5f;
 
 	if (need_open_file_dialog) {
-		IGFD::FileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*", "");
+		const char* filters = ".*,WSI files (*.tiff *.ptif){.tiff,.ptif}";
+		IGFD::FileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", filters, "");
 		need_open_file_dialog = false;
 		open_file_dialog_open = true;
 	}
@@ -144,9 +145,13 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 		// action if OK
 		if (IGFD::FileDialog::Instance()->IsOk() == true)
 		{
-			std::string file_path_name = IGFD::FileDialog::Instance()->GetFilePathName();
-//			std::string filePath = igfd::ImGuiFileDialog::Instance()->GetCurrentPath();
-			load_generic_file(app_state, file_path_name.c_str(), open_file_filetype_hint);
+			auto selection = IGFD::FileDialog::Instance()->GetSelection();
+			auto it = selection.begin();
+			for (auto element : selection) {
+				std::string first = element.first;
+				load_generic_file(app_state, first.c_str(), open_file_filetype_hint);
+				break;
+			}
 		}
 		// close
 		IGFD::FileDialog::Instance()->Close();
@@ -155,14 +160,41 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 }
 
 bool need_save_file_dialog = false;
-bool save_file_dialog_open = false;
 
 bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
 	if (!save_file_dialog_open) {
 		need_save_file_dialog = true;
 	}
-	console_print_error("Not implemented: save_file_dialog\n");
-    return false;
+//	console_print_error("Not implemented: save_file_dialog\n");
+	ImVec2 max_size = ImVec2(app_state->client_viewport.w, (float)app_state->client_viewport.h);
+	max_size.x *= app_state->display_points_per_pixel * 0.9f;
+	max_size.y *= app_state->display_points_per_pixel * 0.9f;
+	ImVec2 min_size = max_size;
+	min_size.x *= 0.5f;
+	min_size.y *= 0.5f;
+
+	if (need_save_file_dialog) {
+		IGFD::FileDialog::Instance()->OpenModal("SaveFileDlgKey", "Save as...", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*", ".", "", 1, nullptr, ImGuiFileDialogFlags_ConfirmOverwrite);
+		need_save_file_dialog = false;
+		save_file_dialog_open = true;
+	}
+
+	// display
+	if (IGFD::FileDialog::Instance()->Display("SaveFileDlgKey", ImGuiWindowFlags_NoCollapse, min_size, max_size))
+	{
+		// action if OK
+		if (IGFD::FileDialog::Instance()->IsOk() == true)
+		{
+			std::string file_path_name = IGFD::FileDialog::Instance()->GetFilePathName();
+			const char* filename_c = file_path_name.c_str();
+			strncpy(global_export_save_as_filename, filename_c, sizeof(global_export_save_as_filename)-1);
+		}
+		// close
+		IGFD::FileDialog::Instance()->Close();
+		save_file_dialog_open = false;
+		return true;
+	}
+	return false;
 }
 
 void toggle_fullscreen(window_handle_t window) {
