@@ -169,8 +169,8 @@ void destroy_buffer(uint8_t *p) {
 	free(p);
 }
 
-void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** tables_buffer, u32* tables_size_ptr,
-                      u8** jpeg_buffer, u32* jpeg_size_ptr, bool use_rgb) {
+void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** tables_buffer, u64* tables_size_ptr,
+                      u8** jpeg_buffer, u64* jpeg_size_ptr, bool use_rgb) {
 	struct jpeg_compress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 
@@ -214,7 +214,7 @@ void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** table
 
 }
 
-void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg_buffer, u32* jpeg_size_ptr) {
+void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg_buffer, u64* jpeg_size_ptr) {
 	struct jpeg_compress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 

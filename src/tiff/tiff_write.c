@@ -287,7 +287,7 @@ void construct_new_tile_from_source_tiles(export_task_data_t* export_task, expor
 	bool skip = (contributing_source_tiles_count == 0); // empty tiles would only waste space, so skip them
 	if (!skip) {
 		u8* compressed_buffer = NULL;
-		u32 compressed_size = 0;
+		u64 compressed_size = 0;
 		jpeg_encode_tile(dest, export_tile_width, export_tile_width, export_task->quality, NULL, NULL,
 		                 &compressed_buffer, &compressed_size, export_task->use_rgb);
 
@@ -812,7 +812,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			// unused tag: SMaxSampleValue
 
 			u8* tables_buffer = NULL;
-			u32 tables_size = 0;
+			u64 tables_size = 0;
 			jpeg_encode_tile(NULL, export_tile_width, export_tile_width, quality, &tables_buffer, &tables_size, NULL,
 			                 NULL, 0);
 			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
