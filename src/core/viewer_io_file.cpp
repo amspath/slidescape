@@ -20,12 +20,13 @@
 
 // TODO: refactor
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
-	ASSERT(!"viewer_upload_already_cached_tile_to_gpu() is a dummy, it should not be called");
+	DUMMY_STATEMENT;
 }
 
 
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
-	ASSERT(!"viewer_notify_load_tile_completed() is a dummy, it should not be called");
+	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*)userdata;
+	add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, task, sizeof(*task));
 }
 
 // Adapted from ASAP: see core/PathologyEnums.cpp
@@ -300,7 +301,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	ASSERT(task->completion_callback);
-	add_work_queue_entry(&global_completion_queue, task->completion_callback, &completion_task, sizeof(completion_task));
+	if (task->completion_callback) {
+		task->completion_callback(logical_thread_index, &completion_task);
+	}
 
 #endif
 //	console_print_verbose("[thread %d] tile load done\n", logical_thread_index);

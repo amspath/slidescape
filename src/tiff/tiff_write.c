@@ -149,6 +149,8 @@ typedef struct export_task_data_t {
 	i32 quality;
 	u64 image_data_base_offset;
 	u64 current_image_data_write_offset;
+	u64 total_tiles_to_export;
+	float progress_per_exported_tile; // for progress bar
 	FILE* fp;
 	bool use_rgb;
 	bool is_valid;
@@ -156,7 +158,8 @@ typedef struct export_task_data_t {
 } export_task_data_t;
 
 void export_notify_load_tile_completed(int logical_thread_index, void* userdata) {
-	ASSERT(!"export_notify_load_tile_completed() is a dummy, it should not be called");
+	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*)userdata;
+	add_work_queue_entry(&global_export_completion_queue, export_notify_load_tile_completed, userdata, sizeof(viewer_notify_tile_completed_task_t));
 }
 
 void construct_new_tile_from_source_tiles(export_task_data_t* export_task, export_level_task_data_t* level_task, i32 export_tile_x, i32 export_tile_y, u8** jpeg_buffer, u32* jpeg_size) {
@@ -299,6 +302,9 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 	export_level_task_data_t* level_task = export_task->level_task_datas + level;
 	if (!level_task->is_represented) return;
 
+	float seconds_taken_reading = 0.0f;
+	float seconds_taken_compressing = 0.0f;
+
 	u64* tile_offsets = calloc(level_task->export_tile_count, sizeof(u64));
 	u64* tile_bytecounts = calloc(level_task->export_tile_count, sizeof(u64));
 
@@ -354,8 +360,9 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 		load_tile_task_t* wishlist = calloc(source_tiles_needed, sizeof(load_tile_task_t));
 		i32 tiles_to_load = 0;
 
+		i64 read_time_start = get_clock();
+
 		for (i32 tile_index = 0; tile_index <= last_source_tile_needed; ++tile_index) {
-			console_print_verbose("   tile %d out of %d\n", tile_index, last_source_tile_needed);
 			tile_t* tile = level_task->source_tiles[tile_index];
 			if (tile_index < first_source_tile_needed) {
 				// Release tiles that are no longer needed.
@@ -363,6 +370,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 					tile_release_cache(tile);
 				}
 			} else {
+//				console_print_verbose("   tile %d out of %d\n", tile_index, level_task->export_tile_count);
 				// Load needed tiles into system cache.
 				if (tile) {
 					if (tile->is_empty) continue; // no need to load empty tiles
@@ -390,11 +398,11 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 
 		// TODO: fix the copy-pasta
 		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
-		while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress(&global_completion_queue)) {
-			work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
+		while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress(&global_export_completion_queue)) {
+			work_queue_entry_t entry = get_next_work_queue_entry(&global_export_completion_queue);
 			if (entry.is_valid) {
 				if (!entry.callback) panic();
-				mark_queue_entry_completed(&global_completion_queue);
+				mark_queue_entry_completed(&global_export_completion_queue);
 
 				if (entry.callback == export_notify_load_tile_completed) {
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
@@ -468,11 +476,15 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 
 		}
 
+		seconds_taken_reading += get_seconds_elapsed(read_time_start, get_clock());
+
 
 
 		// Now we can proceed with constructing the new tiles from the source tiles,
 		// and writing them to disk.
 		// TODO: make this a multi-threaded task.
+
+		i64 compress_time_start = get_clock();
 
 		for (i32 tile_index = start_tile_index; tile_index <= end_tile_index; ++tile_index) {
 			i32 export_tile_x = tile_index % level_task->export_width_in_tiles;
@@ -484,6 +496,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 
 			construct_new_tile_from_source_tiles(export_task, level_task, export_tile_x, export_tile_y, jpeg_buffer, jpeg_size);
 
+			global_tiff_export_progress += export_task->progress_per_exported_tile;
 		}
 
 		// batch completed.
@@ -505,9 +518,14 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 
 		}
 
+		seconds_taken_compressing += get_seconds_elapsed(compress_time_start, get_clock());
+
 
 	}
 	// level export completed
+
+	console_print_verbose("Export level %d: tile count = %d, read time = %g, compress time = %g\n",
+						  level, level_task->export_tile_count, seconds_taken_reading, seconds_taken_compressing);
 
 	// Rewrite the tile offsets and tile bytecounts
 	fseeko64(export_task->fp, level_task->offset_of_tile_offsets, SEEK_SET);
@@ -562,6 +580,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	export_task.export_tile_width = export_tile_width;
 	export_task.quality = quality;
 	export_task.use_rgb = (desired_photometric_interpretation == TIFF_PHOTOMETRIC_RGB);
+	export_task.total_tiles_to_export = 0;
 
 	FILE* fp = fopen64(filename, "wb");
 	bool32 success = false;
@@ -665,6 +684,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			if (export_tile_count <= 1) {
 				reached_level_with_only_one_tile_in_it = true; // should be the last level, no point in further downsampling
 			}
+			export_task.total_tiles_to_export += export_tile_count;
 
 			level_task_data->is_represented = true;
 			level_task_data->pixel_bounds = pixel_bounds;
@@ -773,9 +793,6 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_width); ++tag_count_for_ifd;
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_length); ++tag_count_for_ifd;
 
-			// TODO: actually write the tiles...
-
-
 			u64 tag_tile_offsets_write_offset = add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer,
 			                      TIFF_TAG_TILE_OFFSETS, TIFF_UINT64, export_tile_count, NULL);
 			level_task_data->offset_of_tile_offsets = tag_tile_offsets_write_offset + offsetof(raw_bigtiff_tag_t, offset);
@@ -817,6 +834,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			}*/
 
 		}
+		global_tiff_export_progress = 0.05f;
 
 		u64 next_ifd_offset_terminator = 0;
 		memrw_push_back(&tag_buffer, &next_ifd_offset_terminator, sizeof(u64));
@@ -866,11 +884,16 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 		export_task.current_image_data_write_offset = export_task.image_data_base_offset;
 
+		float progress_left = 0.99f - global_tiff_export_progress;
+		export_task.progress_per_exported_tile = progress_left / (float)(ATLEAST(1, export_task.total_tiles_to_export));
+
+		console_print_verbose("Starting TIFF export, total tiles to export = %d\n", export_task.total_tiles_to_export);
 		for (i32 level = 0; level <= export_task.max_level; ++level) {
-			console_print_verbose("TIFF export region: encoding level %d\n", level);
 			export_bigtiff_encode_level(app_state, image, &export_task, level);
 		}
 		fclose(export_task.fp);
+
+		console_print("Exported region to '%s'\n", filename);
 
 	}
 
@@ -878,7 +901,6 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	return success;
 }
 
-//TODO: This currently doesn't work properly. What is
 typedef struct export_region_task_t {
 	app_state_t* app_state;
 	image_t* image;
@@ -895,6 +917,9 @@ void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 	bool success = export_cropped_bigtiff(task->app_state, task->image, task->tiff, task->level0_bounds,
 	                                      task->filename, task->export_tile_width,
 	                                      task->desired_photometric_interpretation, task->quality);
+	global_tiff_export_progress = 1.0f;
+	task->app_state->is_export_in_progress = false;
+
 //	atomic_decrement(&task->isyntax->refcount); // TODO: release
 }
 
@@ -910,9 +935,13 @@ void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t
 	task.desired_photometric_interpretation = desired_photometric_interpretation;
 	task.quality = quality;
 
+	global_tiff_export_progress = 0.0f;
+	app_state->is_export_in_progress = true;
+
 //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
 	if (!add_work_queue_entry(&global_work_queue, export_cropped_bigtiff_func, &task, sizeof(task))) {
 //		tile->is_submitted_for_loading = false; // chicken out
 //		atomic_decrement(&isyntax->refcount);
+		app_state->is_export_in_progress = false;
 	};
 }

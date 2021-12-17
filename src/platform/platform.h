@@ -434,6 +434,7 @@ extern bool is_nvidia_gpu;
 extern bool is_macos;
 extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
+extern work_queue_t global_export_completion_queue;
 extern i32 global_worker_thread_idle_count;
 extern THREAD_LOCAL i32 work_queue_call_depth;
 extern bool is_verbose_mode INIT(= false);

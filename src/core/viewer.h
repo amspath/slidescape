@@ -105,6 +105,11 @@ typedef enum filetype_hint_enum {
 	FILETYPE_HINT_OVERLAY,
 } filetype_hint_enum;
 
+typedef enum task_type_enum {
+	TASK_NONE = 0,
+	TASK_LOAD_TILE = 0,
+} task_type_enum;
+
 typedef struct tile_t {
 	u32 tile_index;
 	i32 tile_x;
@@ -388,6 +393,7 @@ typedef struct app_state_t {
 	bool is_window_title_set_for_image;
 	input_t* input;
 	i32* active_resources; // array
+	bool is_export_in_progress;
 } app_state_t;
 
 
@@ -472,6 +478,8 @@ extern bool32 is_tile_stream_task_in_progress;
 extern bool32 is_tile_streamer_frame_boundary_passed;
 
 extern i32 global_next_resource_id INIT(= 1000);
+
+extern float global_tiff_export_progress; // TODO: change to task-local variable?
 
 #undef INIT
 #undef extern

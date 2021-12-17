@@ -122,14 +122,20 @@ void* worker_thread(void* parameter) {
     return 0;
 }
 
+void init_work_queue(work_queue_t* queue, const char* name) {
+	i32 semaphore_initial_count = 0;
+	queue->semaphore = sem_open(name, O_CREAT, 0644, semaphore_initial_count);
+}
+
 platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 
 void linux_init_multithreading() {
 	init_thread_memory(0);
-    i32 semaphore_initial_count = 0;
     worker_thread_count = total_thread_count - 1;
-    global_work_queue.semaphore = sem_open("/worksem", O_CREAT, 0644, semaphore_initial_count);
-    global_completion_queue.semaphore = sem_open("/completionsem", O_CREAT, 0644, semaphore_initial_count);
+
+	init_work_queue(&global_work_queue, "/worksem"); // Queue for newly submitted tasks
+	init_work_queue(&global_completion_queue, "/completionsem"); // Message queue for completed tasks
+	init_work_queue(&global_export_completion_queue, "/completionsem"); // Message queue for export task
 
     pthread_t threads[MAX_THREAD_COUNT] = {};
 

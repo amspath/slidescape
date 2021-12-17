@@ -1259,7 +1259,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	ASSERT(image_count >= 0);
 	app_state->is_any_image_loaded = (image_count > 0);
 
-	viewer_process_completion_queue(app_state);
+	if (!app_state->is_export_in_progress) {
+		viewer_process_completion_queue(app_state);
+	}
 
 	if (image_count == 0) {
 		if (app_state->is_window_title_set_for_image) {

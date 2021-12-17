@@ -114,6 +114,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_task.want_gpu_residency = true;
 
 						ASSERT(task->completion_callback);
+						if (task->completion_callback) {
+							task->completion_callback(logical_thread_index, &completion_task);
+						}
 						add_work_queue_entry(&global_completion_queue, task->completion_callback, &completion_task, sizeof(completion_task));
 
 						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM, GL_BGRA);

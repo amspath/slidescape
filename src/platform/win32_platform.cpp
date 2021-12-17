@@ -380,7 +380,7 @@ size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 off
 
 
 file_stream_t file_stream_open_for_reading(const char* filename) {
-	console_print_verbose("Attempting CreateFile() for reading...\n");
+//	console_print_verbose("Attempting CreateFile() for reading...\n");
 
 	size_t filename_len = strlen(filename) + 1;
 	wchar_t* wide_filename = win32_string_widen(filename, filename_len, (wchar_t*) alloca(2 * filename_len));
@@ -397,7 +397,7 @@ file_stream_t file_stream_open_for_reading(const char* filename) {
 }
 
 file_stream_t file_stream_open_for_writing(const char* filename) {
-	console_print_verbose("Attempting CreateFile()...\n");
+//	console_print_verbose("Attempting CreateFile()...\n");
 
 	size_t filename_len = strlen(filename) + 1;
 	wchar_t* wide_filename = win32_string_widen(filename, filename_len, (wchar_t*) alloca(2 * filename_len));
@@ -415,13 +415,13 @@ file_stream_t file_stream_open_for_writing(const char* filename) {
 
 i64 file_stream_read(void* dest, size_t bytes_to_read, file_stream_t file_stream) {
 	DWORD bytes_read;
-	console_print_verbose("Attempting ReadFile()...\n");
+//	console_print_verbose("Attempting ReadFile()...\n");
 //	OVERLAPPED overlapped = {};
 	if (!ReadFile(file_stream, dest, bytes_to_read, &bytes_read, NULL)) {
 		win32_diagnostic("ReadFile");
 		return 0;
 	} else {
-		console_print_verbose("ReadFile(): %d bytes read\n", bytes_read);
+//		console_print_verbose("ReadFile(): %d bytes read\n", bytes_read);
 		return (i64)bytes_read;
 	}
 }

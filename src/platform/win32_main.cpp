@@ -1596,19 +1596,19 @@ DWORD WINAPI thread_proc(void* parameter) {
 	}
 }
 
-void init_work_queue(work_queue_t* queue) {
+void init_work_queue(work_queue_t* queue, const char* name) {
 	i32 semaphore_initial_count = 0;
-	queue->semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, 0, 0, SEMAPHORE_ALL_ACCESS);
+	queue->semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, name, 0, SEMAPHORE_ALL_ACCESS);
 }
 
 void win32_init_multithreading() {
 	init_thread_memory(0);
 
-	i32 semaphore_initial_count = 0;
 	worker_thread_count = total_thread_count - 1;
 
-	init_work_queue(&global_work_queue); // Queue for newly submitted tasks
-	init_work_queue(&global_completion_queue); // Message queue for completed tasks
+	init_work_queue(&global_work_queue, "/worksem"); // Queue for newly submitted tasks
+	init_work_queue(&global_completion_queue, "/completionsem"); // Message queue for completed tasks
+	init_work_queue(&global_export_completion_queue, "/exportcompletionsem"); // Message queue for export task
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {
@@ -1804,6 +1804,8 @@ void win32_init_cmdline() {
 //	console_print("Active codepage = %d\n", acp);
 //	console_print("console_output_cp = %d\n", console_output_cp);
 //	console_print("console_cp = %d\n", console_cp);
+
+//	setlocale(LC_ALL, ".UTF8"); // Is this needed?
 
 	g_instance = GetModuleHandleA(NULL);
 	g_cmdline = GetCommandLineA();

@@ -482,7 +482,8 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		if (ImGui::Button("Export", ImVec2(120, 0))) {
 			switch(image->backend) {
 				case IMAGE_BACKEND_TIFF: {
-					export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
+					begin_export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds, filename, 512, tiff_export_desired_color_space, tiff_export_jpeg_quality);
+					gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
 				} break;
 				default: {
 					gui_add_modal_message_popup("Error##draw_export_region_dialog",

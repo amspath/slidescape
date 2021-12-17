@@ -128,7 +128,10 @@ bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 
 
 bool is_queue_work_in_progress(work_queue_t* queue) {
-	bool result = (queue->completion_goal - work_queue_call_depth > queue->completion_count);
+	// If we are checking the global work queue while running a task from that same queue, then we only want to know
+	// whether any OTHER tasks are running. So in that case we need to subtract the call depth.
+	i32 call_depth = (queue == &global_work_queue) ? work_queue_call_depth : 0;
+	bool result = (queue->completion_goal - call_depth > queue->completion_count);
 	return result;
 }
 
