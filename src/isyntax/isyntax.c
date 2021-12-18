@@ -1680,9 +1680,6 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i16* out_buffer) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
-//	if (chunk_base_offset == 274934056 && offset_in_chunk == 26964) {
-//		DUMMY_STATEMENT;
-//	}
 	isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
 							   block_width, block_height, codeblock->coefficient, 1, out_buffer);
 }
@@ -1728,10 +1725,10 @@ void save_code_in_huffman_fast_lookup_table(huffman_t* h, u32 code, u32 code_wid
 	}
 }
 
-u32 max_code_size;
-u32 symbol_counts[256];
-u64 fast_count;
-u64 nonfast_count;
+static u32 max_code_size;
+static u32 symbol_counts[256];
+static u64 fast_count;
+static u64 nonfast_count;
 
 void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
 								i32 coefficient, i32 compressor_version, i16* out_buffer) {
