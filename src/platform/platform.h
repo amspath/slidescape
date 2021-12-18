@@ -330,7 +330,7 @@ void mouse_hide();
 
 const char* get_default_save_directory();
 void open_file_dialog(app_state_t* app_state, u32 filetype_hint);
-bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string);
+bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string, const char* filename_hint);
 void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
 void set_window_title(window_handle_t window, const char* title);

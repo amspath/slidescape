@@ -450,20 +450,46 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		}
 		ImGui::EndChild(); // end of top area -- now start drawing bottom area
 
-		const char* filename_hint = "";
+		const char* name_hint = "output";
+		if (arrlen(app_state->loaded_images) > 0) {
+			for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
+				image_t* image = app_state->loaded_images + i;
+				if (image->name[0] != '\0') {
+					size_t buffer_size = sizeof(image->name);
+					char* new_name_hint = (char*)alloca(buffer_size);
+					strncpy(new_name_hint, image->name, buffer_size);
+					// Strip filename extension
+					size_t len = strlen(new_name_hint);
+					for (i32 pos = len-1; pos >= 1; --pos) {
+						if (new_name_hint[pos] == '.') {
+							new_name_hint[pos] = '\0';
+							// add '_region'
+							strncpy(new_name_hint + pos, "_region", buffer_size - pos);
+							name_hint = new_name_hint;
+							break;
+						}
+					}
+				}
+			}
+		}
+
+		const char* filename_extension_hint = "";
 		if (desired_region_export_format == 0) {
 #if APPLE
 			// macOS does not seem to like tile TIFF files in the Finder (will sometimes stop responding,
 			// at least on my system). So choose the .ptif file extension by default as an alternative.
-			filename_hint = "output.ptif";
+			filename_extension_hint = ".ptif";
 #else
-			filename_hint = "output.tiff";
+			filename_extension_hint = ".tiff";
 #endif
 		} else if (desired_region_export_format == 1) {
-			filename_hint = "output.jpeg";
+			filename_extension_hint = ".jpeg";
 		} else if (desired_region_export_format == 2) {
-			filename_hint = "output.png";
+			filename_extension_hint = ".png";
 		}
+
+		char filename_hint[512];
+		snprintf(filename_hint, sizeof(filename_hint)-1, "%s%s", name_hint, filename_extension_hint);
 
 		char* filename_buffer = global_export_save_as_filename;
 		size_t filename_buffer_size = sizeof(global_export_save_as_filename);
@@ -471,7 +497,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		ImGui::InputTextWithHint("##export_region_output_filename", filename_hint, filename_buffer, filename_buffer_size);
 		ImGui::SameLine();
 		if (save_file_dialog_open || ImGui::Button("Browse...")) {
-			if (save_file_dialog(app_state, filename_buffer, filename_buffer_size, "BigTIFF (*.tiff)\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0")) {
+			if (save_file_dialog(app_state, filename_buffer, filename_buffer_size, "BigTIFF (*.tiff)\0*.tiff;*.tif;*.ptif\0All\0*.*\0Text\0*.TXT\0", filename_hint)) {
 				size_t filename_len = strlen(filename_buffer);
 				if (filename_len > 0) {
 					const char* extension = get_file_extension(filename_buffer);

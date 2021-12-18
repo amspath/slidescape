@@ -471,12 +471,12 @@ void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
 	}
 }
 
-bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string) {
+bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string, const char* filename_hint) {
 	OPENFILENAMEW ofn = {};       // common dialog box structure
 	path_buffer[0] = '\0';
 	ASSERT(path_buffer_size > 1);
 
-	wchar_t* path_buffer_wide = (wchar_t*)alloca(path_buffer_size * 2);
+	wchar_t* path_buffer_wide = win32_string_widen(filename_hint, path_buffer_size, (wchar_t*)alloca(path_buffer_size * 2));
 
 	size_t filter_string_len = strlen(filter_string) + 1;
 	wchar_t* filter_string_wide = win32_string_widen(filter_string, filter_string_len, (wchar_t*)alloca(filter_string_len * 2));
