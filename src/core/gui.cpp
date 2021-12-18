@@ -452,7 +452,13 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 		const char* filename_hint = "";
 		if (desired_region_export_format == 0) {
+#if APPLE
+			// macOS does not seem to like tile TIFF files in the Finder (will sometimes stop responding,
+			// at least on my system). So choose the .ptif file extension by default as an alternative.
+			filename_hint = "output.ptif";
+#else
 			filename_hint = "output.tiff";
+#endif
 		} else if (desired_region_export_format == 1) {
 			filename_hint = "output.jpeg";
 		} else if (desired_region_export_format == 2) {
@@ -483,7 +489,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		static bool is_overwrite_confirm_dialog_open;
 		if (ImGui::Button("Export", ImVec2(120, 0)) || is_overwrite_confirm_dialog_open) {
 			if (filename_buffer[0] == '\0') {
-				strncpy(filename_buffer, filename_hint, filename_buffer_size-1);
+				snprintf(filename_buffer, filename_buffer_size-1, "%s%s", get_active_directory(app_state), filename_hint);
 			}
 			bool proceed_with_export = true;
 

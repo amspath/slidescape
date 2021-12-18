@@ -528,9 +528,22 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 	}
 }
 
+const char* get_active_directory(app_state_t* app_state) {
+	if (arrlen(app_state->loaded_images) > 0) {
+		for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
+			image_t* image = app_state->loaded_images + i;
+			if (image->is_local) {
+				return image->directory;
+			}
+		}
+	}
+	return get_default_save_directory();
+}
+
 image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 
 	image_t image = {};
+	image.is_local = true;
 	image.resource_id = global_next_resource_id++;
 
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
@@ -538,6 +551,12 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 	size_t filename_len = strlen(filename);
 	const char* name = one_past_last_slash(filename, filename_len);
 	strncpy(image.name, name, sizeof(image.name)-1);
+
+	if (name > filename) {
+		size_t directory_len = (u64)name - (u64)filename;
+		memcpy(image.directory, filename, ATMOST(directory_len, sizeof(image.directory)));
+	}
+
 	const char* ext = get_file_extension(filename);
 
 	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {

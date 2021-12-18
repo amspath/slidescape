@@ -514,3 +514,8 @@ void mouse_show() {
 		cursor_hidden = false;
 	}
 }
+
+const char* get_default_save_directory() {
+	return "";
+};
+

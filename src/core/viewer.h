@@ -160,6 +160,8 @@ typedef struct simple_image_t {
 
 typedef struct image_t {
 	char name[512];
+	char directory[512];
+	bool is_local; // i.e. not remote (accessed over network using client/server interface)
 	image_type_enum type;
 	image_backend_enum backend;
 	bool32 is_freshly_loaded; // TODO: remove or refactor, is this still needed?
@@ -430,6 +432,7 @@ void init_opengl_stuff(app_state_t* app_state);
 void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height);
 
 // viewer_io_file.cpp
+const char* get_active_directory(app_state_t* app_state);
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
 
