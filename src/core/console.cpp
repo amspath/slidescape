@@ -292,6 +292,19 @@ int     TextEditCallback(ImGuiInputTextCallbackData* data)
 
 void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open) {
 
+	// Workaround for modal popups being dismissed if the console is (re)activated while the modal dialog is visible.
+	// (Problem: modal dialogs disappear if ImGui::Begin() is called while they are still visible, ONLY if the window wasn't active the previous frame.)
+	// Solution/workaround: if there are modals, we only allow the console to be drawn if it was active already.
+	bool is_any_modal_open = ImGui::GetTopMostPopupModal() != NULL || arrlen(gui_modal_stack) > 0;
+	if (is_any_modal_open) {
+		ImGuiWindow* window =ImGui::FindWindowByName(window_title);
+		if (window) {
+			if (!window->WasActive) {
+				return;
+			}
+		}
+	}
+
 	float desired_fraction_of_height = console_fraction_of_height;
 	if (console_fill_screen) {
 		desired_fraction_of_height = 1.0f;
@@ -407,7 +420,6 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0,0,0,1.0f));
 	ImGui::PushFont(global_fixed_width_font);
 
-
 	bool reclaim_focus = false;
 	if (ImGui::IsWindowAppearing()) {
 		reclaim_focus = true;
@@ -442,8 +454,6 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	ImGui::PopStyleColor(3);
 
 	ImGui::EndChild();
-
-
 
 	ImGui::End();
 

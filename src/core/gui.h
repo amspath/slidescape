@@ -27,6 +27,23 @@
 extern "C" {
 #endif
 
+enum gui_modal_type_enum {
+	GUI_MODAL_NONE = 0,
+	GUI_MODAL_MESSAGE = 1,
+	GUI_MODAL_PROGRESS_BAR = 2,
+};
+
+typedef struct gui_modal_popup_t gui_modal_popup_t;
+struct gui_modal_popup_t {
+	gui_modal_type_enum type;
+	char message[4096];
+	const char* title;
+	bool need_open;
+	bool allow_cancel;
+	float* progress; // for progress bars
+	float visual_progress; // value that 'lags behind' for smooth visual updates
+};
+
 #if WINDOWS
 void win32_init_gui(app_state_t* app_state);
 // from imgui_impl_win32.cpp
@@ -44,6 +61,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 void gui_do_modal_popups();
 void gui_add_modal_message_popup(const char* title, const char* message, ...);
 void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool allow_cancel);
+void draw_export_region_dialog(app_state_t* app_state);
 
 // console.cpp
 void draw_console_window(app_state_t* app_state, const char* window_title, bool* p_open);
@@ -76,6 +94,7 @@ extern bool show_menu_bar INIT(= true);
 extern bool load_next_image_as_overlay;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
+extern gui_modal_popup_t* gui_modal_stack;
 extern float global_progress_bar_test_progress;
 extern char remote_hostname[64] INIT(= "localhost");
 extern char remote_port[64] INIT(= "2000");

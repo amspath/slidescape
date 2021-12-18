@@ -960,24 +960,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 #endif
 }
 
-enum gui_modal_type_enum {
-	GUI_MODAL_NONE = 0,
-	GUI_MODAL_MESSAGE = 1,
-	GUI_MODAL_PROGRESS_BAR = 2,
-};
-
-typedef struct gui_modal_popup_t gui_modal_popup_t;
-struct gui_modal_popup_t {
-	gui_modal_type_enum type;
-	char message[4096];
-	const char* title;
-	bool need_open;
-	bool allow_cancel;
-	float* progress; // for progress bars
-	float visual_progress; // value that 'lags behind' for smooth visual updates
-};
-
-static gui_modal_popup_t* gui_popup_stack;
 static i32 ticks_to_delay_before_first_dialog = 1;
 
 void gui_do_modal_popups() {
@@ -987,8 +969,8 @@ void gui_do_modal_popups() {
 		// So, display the first dialog (e.g. "Could not load file") only after a short delay.
 		--ticks_to_delay_before_first_dialog;
 	} else {
-		if (arrlen(gui_popup_stack) > 0) {
-			gui_modal_popup_t* popup = gui_popup_stack;
+		if (arrlen(gui_modal_stack) > 0) {
+			gui_modal_popup_t* popup = gui_modal_stack;
 			if (popup->need_open) {
 				ImGui::OpenPopup(popup->title);
 
@@ -1007,7 +989,7 @@ void gui_do_modal_popups() {
 					if (ImGui::Button("OK", ImVec2(120, 0))) {
 						popup->need_open = false;
 						ImGui::CloseCurrentPopup();
-						arrdel(gui_popup_stack, 0);
+						arrdel(gui_modal_stack, 0);
 					}
 					ImGui::EndPopup();
 				}
@@ -1026,7 +1008,7 @@ void gui_do_modal_popups() {
 					ImGui::ProgressBar(popup->visual_progress, ImVec2(0.0f, 0.0f), "");
 					if (progress >= 1.0f || (popup->allow_cancel && ImGui::Button("Cancel", ImVec2(120, 0)))) {
 						ImGui::CloseCurrentPopup();
-						arrdel(gui_popup_stack, 0);
+						arrdel(gui_modal_stack, 0);
 					}
 					ImGui::EndPopup();
 				}
@@ -1047,7 +1029,7 @@ void gui_add_modal_message_popup(const char* title, const char* message, ...) {
 	va_end(args);
 
 	popup.need_open = true;
-	arrpush(gui_popup_stack, popup);
+	arrpush(gui_modal_stack, popup);
 }
 
 void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool allow_cancel) {
@@ -1057,7 +1039,7 @@ void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool a
 	popup.progress = progress;
 	popup.allow_cancel = allow_cancel;
 	popup.need_open = true;
-	arrpush(gui_popup_stack, popup);
+	arrpush(gui_modal_stack, popup);
 }
 
 void a_very_long_task(i32 logical_thread_index, void* userdata) {
