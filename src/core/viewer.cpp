@@ -56,6 +56,7 @@
 #include "viewer_io_file.cpp"
 #include "viewer_io_remote.cpp"
 #include "viewer_options.cpp"
+#include "commandline.cpp"
 
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
 	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;

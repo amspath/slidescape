@@ -399,6 +399,11 @@ typedef struct app_state_t {
 	bool is_export_in_progress;
 } app_state_t;
 
+typedef struct app_command_t {
+	bool headless;
+	bool print_version;
+} app_command_t;
+
 
 //  prototypes
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
@@ -441,6 +446,10 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 
 // viewer_options.cpp
 void viewer_init_options(app_state_t* app_state);
+
+// viewer_commandline.cpp
+app_command_t app_parse_commandline(app_state_t* app_state, int argc, const char** argv);
+void app_command_execute(app_state_t* app_state, app_command_t* app_command);
 
 // isyntax_streamer.cpp
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);

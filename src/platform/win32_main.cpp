@@ -1824,6 +1824,26 @@ void win32_init_cmdline() {
 	g_argv = (const char**)argv;
 }
 
+void win32_init_headless_console() {
+	// When compiling with -mwindows or /subsytem:windows (which we do in release mode),
+	// stdout and stderr aren't displayed, even if you run the program from the command-line.
+	// It is possible to get console output back, but we have to jump through some hoops.
+#if !DO_DEBUG
+	WINBOOL ret = AttachConsole(ATTACH_PARENT_PROCESS);
+	HANDLE stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+	if (stdout_handle != INVALID_HANDLE_VALUE) {
+		freopen("CONOUT$", "w", stdout);
+		setvbuf(stdout, NULL, _IONBF, 0);
+	}
+	HANDLE stderr_handle = GetStdHandle(STD_ERROR_HANDLE);
+	if (stderr_handle != INVALID_HANDLE_VALUE) {
+		freopen("CONOUT$", "w", stderr);
+		setvbuf(stderr, NULL, _IONBF, 0);
+	}
+	putc('\n', stdout);
+	putc('\n', stdout);
+#endif //DO_DEBUG
+}
 
 int main() {
 	win32_init_cmdline();
@@ -1843,13 +1863,27 @@ int main() {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-	win32_setup_appdata();
-	win32_set_file_type_associations();
-
 	get_system_info();
 
 	app_state_t* app_state = &global_app_state;
 	init_app_state(app_state);
+
+	app_command_t app_command = app_parse_commandline(app_state, g_argc, g_argv);
+	if (app_command.headless) {
+		win32_init_headless_console();
+
+		app_command_execute(app_state, &app_command);
+
+		// Hack: send an enter so that the regular command prompt is displayed again
+		// NOTE: This doesn't work on Windows Terminal, see:
+		// https://github.com/microsoft/terminal/issues/6887
+		HWND console_window = GetConsoleWindow();
+		SendMessageA(console_window, WM_CHAR, VK_RETURN, 0);
+		exit(0);
+	}
+
+	win32_setup_appdata();
+	win32_set_file_type_associations();
 
 	viewer_init_options(app_state);
 
