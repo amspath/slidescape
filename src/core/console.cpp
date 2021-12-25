@@ -302,6 +302,8 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 			if (!window->WasActive) {
 				return;
 			}
+		} else {
+			return;
 		}
 	}
 
