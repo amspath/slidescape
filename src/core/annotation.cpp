@@ -415,11 +415,15 @@ bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* a
 	return result;
 }
 
-bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin) {
+void annotation_recalculate_bounds_if_necessary(annotation_set_t* annotation_set, annotation_t* annotation) {
 	if (!annotation->has_valid_bounds) {
 		annotation->bounds = bounds_for_annotation(annotation_set, annotation);
 		annotation->has_valid_bounds = true;
 	}
+}
+
+bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin) {
+	annotation_recalculate_bounds_if_necessary(annotation_set, annotation);
 	bounds2f bounds = annotation->bounds;
 	// TODO: Maybe make the tolerance depend on the size of the annotation?
 	if (tolerance_margin != 0.0f) {
@@ -1061,6 +1065,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				create_point_annotation(annotation_set, scene->right_clicked_pos);
 			}
 			if (annotation_set->selection_count > 0) {
+
 				if (ImGui::MenuItem("Delete selected annotations", "Del")) {
 					if (dont_ask_to_delete_annotations) {
 						delete_selected_annotations(app_state, annotation_set);
@@ -1068,6 +1073,36 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						show_delete_annotation_prompt = true;
 					}
 				};
+
+				ImGui::Separator();
+
+				// Option for setting the selection box around the selected annotation(s)
+				if (annotation_set->selection_count == 1) {
+					annotation_t* selected_annotation = annotation_set->selected_annotations[0];
+					if (selected_annotation->coordinate_count >= 2) {
+						if (ImGui::MenuItem("Set region selection")) {
+							annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+							scene->selection_box = bounds2f_to_rect(selected_annotation->bounds);
+							scene->crop_bounds = selected_annotation->bounds;
+							scene->has_selection_box = true;
+						}
+					}
+				} else if (annotation_set->selection_count > 1) {
+					if (ImGui::MenuItem("Set crop area")) {
+						annotation_t* selected_annotation = annotation_set->selected_annotations[0];
+						annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+						bounds2f bounds = selected_annotation->bounds;
+						for (i32 i = 1; i < annotation_set->selection_count; ++i) {
+							selected_annotation = annotation_set->selected_annotations[i];
+							annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+							bounds = bounds2f_encompassing(bounds, selected_annotation->bounds);
+						}
+						scene->selection_box = bounds2f_to_rect(bounds);
+						scene->crop_bounds = bounds;
+						scene->has_selection_box = true;
+					}
+				}
+
 			}
 			ImGui::EndPopup();
 		}

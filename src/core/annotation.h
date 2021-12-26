@@ -175,6 +175,7 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos);
 void create_point_annotation(annotation_set_t* annotation_set, v2f pos);
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
 bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
+void annotation_recalculate_bounds_if_necessary(annotation_set_t* annotation_set, annotation_t* annotation);
 bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin);
 annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected);
 i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);

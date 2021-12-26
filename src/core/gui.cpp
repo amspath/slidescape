@@ -246,7 +246,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		} else if (menu_items_clicked.crop_region) {
 			if (!scene->is_cropped) {
 				rect2f final_crop_rect = rect2f_recanonicalize(&scene->selection_box);
-				bounds2f bounds = rect2f_to_bounds(&final_crop_rect);
+				bounds2f bounds = rect2f_to_bounds(final_crop_rect);
 				scene->crop_bounds = bounds;
 				scene->is_cropped = true;
 				scene->has_selection_box = false;

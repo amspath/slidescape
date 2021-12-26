@@ -463,6 +463,7 @@ v2f scene_mouse_pos(scene_t* scene);
 void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
 void draw_scale_bar(scale_bar_t* scale_bar);
 void draw_grid(scene_t* scene);
+void draw_selection_box(scene_t* scene);
 
 // globals
 #if defined(VIEWER_IMPL)

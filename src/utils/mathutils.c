@@ -96,12 +96,33 @@ rect2f rect2f_recanonicalize(rect2f* rect) {
 	return result;
 }
 
-bounds2f rect2f_to_bounds(rect2f* rect) {
-	bounds2f result = {0};
-	result.left = rect->x;
-	result.top = rect->y;
-	result.right = rect->x + rect->w;
-	result.bottom = rect->y + rect->h;
+bounds2f rect2f_to_bounds(rect2f rect) {
+	bounds2f result = {
+			.left = rect.x,
+			.top = rect.y,
+			.right = rect.x + rect.w,
+			.bottom = rect.y + rect.h
+	};
+	return result;
+}
+
+rect2f bounds2f_to_rect(bounds2f bounds) {
+	rect2f result = {
+			.x = bounds.left,
+			.y = bounds.top,
+			.w = bounds.right - bounds.left,
+			.h = bounds.bottom - bounds.top
+	};
+	return result;
+}
+
+bounds2f bounds2f_encompassing(bounds2f a, bounds2f b) {
+	bounds2f result = {
+			.left = MIN(a.left, b.left),
+			.top = MIN(a.top, b.top),
+			.right = MAX(a.right, b.right),
+			.bottom = MAX(a.bottom, b.bottom)
+	};
 	return result;
 }
 

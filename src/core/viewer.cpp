@@ -1692,7 +1692,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (displayed_image->backend == IMAGE_BACKEND_TIFF) {
 				if (scene->has_selection_box) {
 					rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
-					bounds2f selection_bounds = rect2f_to_bounds(&recanonicalized_selection_box);
+					bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);
 					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, displayed_image->mpp_x, displayed_image->mpp_y);
 					scene->can_export_region = true;
 				} else if (scene->is_cropped) {
@@ -1747,26 +1747,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				scene->has_selection_box = false; // deselect selection box
 			}*/
 
-			// draw selection box
-			if (scene->has_selection_box){
-				rect2f final_selection_rect = rect2f_recanonicalize(&scene->selection_box);
-				bounds2f bounds = rect2f_to_bounds(&final_selection_rect);
-				v2f points[4];
-				points[0] = V2F(bounds.left, bounds.top);
-				points[1] = V2F(bounds.left, bounds.bottom);
-				points[2] = V2F(bounds.right, bounds.bottom);
-				points[3] = V2F(bounds.right, bounds.top);
-				for (i32 i = 0; i < 4; ++i) {
-					points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.screen_point_width);
-				}
-				rgba_t rgba = {0, 0, 0, 128};
-				gui_draw_polygon_outline(points, 4, rgba, 3.0f);
-			}
-
 		}
 
 		draw_grid(scene);
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
+		draw_selection_box(scene);
 		draw_scale_bar(&scene->scale_bar);
 	}
 
