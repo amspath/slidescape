@@ -53,10 +53,9 @@ typedef struct annotation_t {
 	bounds2f bounds;
 	rgba_t color;
 	i32 group_id;
-	i32 first_coordinate;
+	v2f* coordinates;
 	i32 coordinate_count;
-	i32 coordinate_capacity;
-	bool8 has_coordinates;
+	// TODO: use flags here?
 	bool8 selected;
 	bool8 has_valid_bounds;
 	bool8 has_properties;
@@ -106,9 +105,6 @@ typedef struct annotation_set_t {
 	i32* active_annotation_indices; // array
 	i32 active_annotation_count;
 
-	v2f* coordinates; // array
-	i32 coordinate_count;
-
 	annotation_group_t* stored_groups; // array
 	i32 stored_group_count;
 	i32* active_group_indices; // array
@@ -124,6 +120,7 @@ typedef struct annotation_set_t {
 	char base_filename[512];
 	bool modified;
 	i64 last_modification_time;
+	i32 hovered_annotation;
 	i32 hovered_coordinate;
 	float hovered_coordinate_pixel_distance;
 	bool is_edit_mode;
@@ -132,6 +129,7 @@ typedef struct annotation_set_t {
 	bool is_split_mode;
 	i32 selection_count;
 	annotation_t** selected_annotations; // recreated every frame
+	i32 selected_coordinate_annotation_index;
 	i32 selected_coordinate_index;
 	//annotation_t* annotation_belonging_to_selected_coordinate; // TODO: implement; recalculate together with active_annotations?
 	annotation_hit_result_t hit_result;
@@ -147,7 +145,7 @@ typedef struct annotation_set_t {
 
 
 static inline bool coordinate_index_valid_for_annotation(i32 coordinate_index, annotation_t* annotation) {
-	bool result = (coordinate_index >= annotation->first_coordinate && coordinate_index < annotation->first_coordinate + annotation->coordinate_count);
+	bool result = (coordinate_index >= 0 && coordinate_index < annotation->coordinate_count);
 	return result;
 }
 
@@ -179,6 +177,7 @@ void annotation_recalculate_bounds_if_necessary(annotation_set_t* annotation_set
 bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin);
 annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected);
 i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);
+void deselect_annotation_coordinates(annotation_set_t* annotation_set);
 void annotations_modified(annotation_set_t* annotation_set);
 void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, v2f new_coordinate);
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index);
@@ -191,6 +190,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
 void draw_annotation_palette_window();
+void destroy_annotation(annotation_t* annotation);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);

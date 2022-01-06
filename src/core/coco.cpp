@@ -696,7 +696,6 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 		arrsetlen(coco_annotation->segmentation.coordinates, annotation->coordinate_count);
 		if (annotation->coordinate_count > 0) {
 			ASSERT(coco_annotation->segmentation.coordinates != NULL);
-			v2f* coordinates = annotation_set->coordinates + annotation->first_coordinate;
 			coco_annotation->segmentation.coordinate_count = annotation->coordinate_count;
 
 			v2f mpp = annotation_set->mpp;
@@ -705,9 +704,9 @@ void coco_transfer_annotations_from_annotation_set(coco_t* coco, annotation_set_
 				mpp = V2F(1.0f, 1.0f); // prevent divide by zero
 			}
 			for (i32 j = 0; j < annotation->coordinate_count; ++j) {
-				v2f* coordinate = coordinates + j;
+				v2f coordinate = annotation->coordinates[j];
 				v2f* coco_coordinate = coco_annotation->segmentation.coordinates + j;
-				*coco_coordinate = V2F(coordinate->x / mpp.x, coordinate->y / mpp.y);
+				*coco_coordinate = V2F(coordinate.x / mpp.x, coordinate.y / mpp.y);
 			}
 		}
 		ASSERT(MAX_ANNOTATION_FEATURES == COCO_MAX_ANNOTATION_FEATURES);
@@ -784,17 +783,14 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 	annotation_set->stored_annotation_count = annotation_count;
 	arrsetlen(annotation_set->active_annotation_indices, annotation_count);
 	annotation_set->active_annotation_count = annotation_count;
-	i32 total_coordinate_count = 0; // count/accumulate while iterating over annotations below
 	for (i32 i = 0; i < annotation_count; ++i) {
 		annotation_set->active_annotation_indices[i] = i;
 		coco_annotation_t* coco_annotation = coco->annotations + i;
 		annotation_t* annotation = annotation_set->stored_annotations + i;
 		annotation->group_id = coco_annotation->category_id;
-		annotation->first_coordinate = total_coordinate_count;
-		annotation->coordinate_count = coco_annotation->segmentation.coordinate_count;
-		annotation->coordinate_capacity = annotation->coordinate_count;
+		i32 coordinate_count = coco_annotation->segmentation.coordinate_count;
+		annotation->coordinate_count = coordinate_count;
 		if (annotation->coordinate_count > 0) {
-			annotation->has_coordinates = true;
 			if (annotation->coordinate_count == 1) {
 				annotation->type = ANNOTATION_POINT;
 			} else if (annotation->coordinate_count == 2) {
@@ -802,28 +798,16 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 			} else {
 				annotation->type = ANNOTATION_POLYGON;
 			}
+			arrsetlen(annotation->coordinates, coordinate_count);
+			memset(annotation->coordinates, 0, coordinate_count * sizeof(v2f));
+			for (i32 j = 0; j < annotation->coordinate_count; ++j) {
+				v2f c = coco_annotation->segmentation.coordinates[j];
+				annotation->coordinates[j] = V2F(annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y);
+			}
 		}
 		ASSERT(MAX_ANNOTATION_FEATURES == COCO_MAX_ANNOTATION_FEATURES);
 		ASSERT(sizeof(coco_annotation->features) == sizeof(annotation->features));
 		memcpy(annotation->features, coco_annotation->features, sizeof(annotation->features));
-
-		total_coordinate_count += coco_annotation->segmentation.coordinate_count;
-	}
-
-	// Transfer coordinates
-	arrsetlen(annotation_set->coordinates, total_coordinate_count); // allocate coordinates in bulk
-	memset(annotation_set->coordinates, 0, total_coordinate_count * sizeof(v2f));
-	annotation_set->coordinate_count = total_coordinate_count;
-	i32 running_coordinate_index = 0;
-	for (i32 i = 0; i < annotation_count; ++i) {
-		coco_annotation_t* coco_annotation = coco->annotations + i;
-		annotation_t* annotation = annotation_set->stored_annotations + i;
-		v2f* annotation_coordinates = annotation_set->coordinates + annotation->first_coordinate;
-		for (i32 j = 0; j < annotation->coordinate_count; ++j) {
-			v2f c = coco_annotation->segmentation.coordinates[j];
-			annotation_coordinates[j] = V2F(annotation_set->mpp.x * c.x, annotation_set->mpp.y * c.y);
-		}
-		running_coordinate_index += coco_annotation->segmentation.coordinate_count;
 	}
 }
 

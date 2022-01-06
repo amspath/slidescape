@@ -1709,14 +1709,19 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			// Update dragging of objects
 			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE){
 				if (scene->is_dragging) {
-					i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
-					if (coordinate_index >= 0 && coordinate_index < scene->annotation_set.coordinate_count) {
-						v2f* coordinate = scene->annotation_set.coordinates + coordinate_index;
-						coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
-						coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
-						// TODO: invalidate annotation bounds
-						annotations_modified(&scene->annotation_set);
+					i32 annotation_with_selected_coordinate = scene->annotation_set.selected_coordinate_annotation_index;
+					if (annotation_with_selected_coordinate >= 0) {
+						annotation_t* annotation = get_active_annotation(&scene->annotation_set, scene->annotation_set.selected_coordinate_annotation_index);
+						i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
+						if (coordinate_index >= 0 && coordinate_index < annotation->coordinate_count) {
+							v2f* coordinate = annotation->coordinates + coordinate_index;
+							coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
+							coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
+							annotation->has_valid_bounds = false;
+							annotations_modified(&scene->annotation_set);
+						}
 					}
+
 				} else if (scene->drag_ended) {
 					app_state->mouse_mode = MODE_VIEW;
 //					scene->annotation_set.is_edit_mode = false;

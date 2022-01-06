@@ -99,7 +99,7 @@ void finalize_ellipse_annotation(annotation_set_t* annotation_set, annotation_t*
 	annotation->p1 = pos;
 	// TODO: recalculate bounds
 
-	if (annotation->has_coordinates) {
+	if (annotation->coordinate_count > 0) {
 		// ?
 	} else {
 		// TODO
@@ -108,12 +108,6 @@ void finalize_ellipse_annotation(annotation_set_t* annotation_set, annotation_t*
 }
 
 void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
-	arrput(annotation_set->coordinates, pos);
-	arrput(annotation_set->coordinates, pos);
-
-	i32 first_coordinate = annotation_set->coordinate_count;
-	annotation_set->coordinate_count += 2;
-
 	annotation_t new_annotation = {};
 	new_annotation.type = ANNOTATION_LINE;
 	new_annotation.p0 = pos;
@@ -123,10 +117,10 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	new_annotation.bounds.max = pos;
 
 	new_annotation.group_id = annotation_set->last_assigned_annotation_group;
-	new_annotation.coordinate_capacity = 2;
 	new_annotation.coordinate_count = 2;
-	new_annotation.first_coordinate = first_coordinate;
-	new_annotation.has_coordinates = true;
+	arrsetlen(new_annotation.coordinates, 2);
+	new_annotation.coordinates[0] = pos;
+	new_annotation.coordinates[1] = pos;
 
 	// unselect all other annotations, only select the new one
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
@@ -139,18 +133,16 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
 
 	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
-	annotation_set->active_annotation_count++;
+	i32 annotation_active_index = annotation_set->active_annotation_count++;
 
 	// Select the second point for dragging
-	annotation_set->selected_coordinate_index = annotation_set->coordinate_count - 1;
+	annotation_set->selected_coordinate_index = new_annotation.coordinate_count - 1;
+	annotation_set->selected_coordinate_annotation_index = annotation_active_index;
 
 	annotations_modified(annotation_set);
-
 }
 
 void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
-	arrput(annotation_set->coordinates, pos);
-	i32 coordinate_index = annotation_set->coordinate_count++;
 
 	annotation_t new_annotation = {};
 	new_annotation.type = ANNOTATION_POINT;
@@ -160,10 +152,8 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	new_annotation.bounds.max = pos;
 //		new_annotation.name;
 	new_annotation.group_id = annotation_set->last_assigned_annotation_group;
-	new_annotation.coordinate_capacity = 1;
 	new_annotation.coordinate_count = 1;
-	new_annotation.first_coordinate = coordinate_index;
-	new_annotation.has_coordinates = true;
+	arrput(new_annotation.coordinates, pos);
 	// unselect all other annotations, only select the new one
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 		annotation_t* annotation = get_active_annotation(annotation_set, i);
@@ -196,12 +186,6 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
 	}
 
-	// TODO: Handle mouse clicks/drag starts differently.
-	// Right now, if you move the mouse only a little after pressing LMB down, it immediately registers as a dragging start.
-	// A 'click' gets registered when the dragging operation is within certain limits. However, this is still annoying.
-	// Maybe there should be a 'dead zone' where the screen doesn't start panning until you move outside the 'dead zone'.
-	// If you end the drag inside the dead zone, it will be registered as a click. If outside, it becomes a drag.
-
 	// TODO: Instead of a bias, we should handle the situation differently depending on what is actually happening.
 	// E.g.: if clicking to select another annotation, but within the tolerance/bias, we should not unselect but rather switch
 	// over to the other annotation.
@@ -217,8 +201,8 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 		float coordinate_pixel_distance = hit_result.coordinate_distance / scene->zoom.screen_point_width;
 
 		annotation_t* hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
-		v2f* hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
-
+		v2f* hit_coordinate = hit_annotation->coordinates + hit_result.coordinate_index;
+		annotation_set->hovered_annotation = hit_result.annotation_index;
 		annotation_set->hovered_coordinate = hit_result.coordinate_index;
 		annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
 
@@ -260,12 +244,12 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 							annotation_set->is_insert_coordinate_mode = false;
 							annotation_set->force_insert_mode = false;
 							hit_result.coordinate_distance = coordinate_pixel_distance = 0.0f;
-							hit_result.coordinate_index = hit_annotation->first_coordinate + insert_at_index;
+							hit_result.coordinate_index = insert_at_index;
 							hit_result.line_segment_coordinate_index = insert_at_index;
 							hit_result.line_segment_distance = distance_to_edge;
 							hit_result.line_segment_t_clamped = t_clamped;
 							hit_result.line_segment_projected_point = projected_point;
-							hit_coordinate = annotation_set->coordinates + hit_result.coordinate_index;
+							hit_coordinate = hit_annotation->coordinates + hit_result.coordinate_index;
 							annotation_set->hovered_coordinate = hit_result.coordinate_index;
 							annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
 							select_annotation(annotation_set, hit_annotation);
@@ -278,18 +262,17 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 //				    console_print("Grabbed coordinate %d\n", nearest_coordinate_index);
 					app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
 					annotation_set->selected_coordinate_index = hit_result.coordinate_index;
+					annotation_set->selected_coordinate_annotation_index = hit_result.annotation_index;
 					annotation_set->coordinate_drag_start_offset.x = scene->mouse.x - hit_coordinate->x;
 					annotation_set->coordinate_drag_start_offset.y = scene->mouse.y - hit_coordinate->y;
 				}
 			}
-
 
 			// Actions when scene is clicked (LMB release without dragging):
 			// - Select a previously unselected annotation
 			// - Unselect an annotation
 			// - Special: when in splitting mode and clicking on a coordinate, split that annotation in two.
 			if (scene->clicked) {
-
 
 				// Annotation splitting: if we are in split mode, then another coordinate was selected earlier;
 				// in this case we should try to finish the splitting operation by connecting up the newly selected coordinate
@@ -302,6 +285,9 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 						    coordinate_index_valid_for_annotation(hit_result.coordinate_index, hit_annotation))
 						{
 							split_annotation(app_state, annotation_set, hit_annotation, annotation_set->selected_coordinate_index, hit_result.coordinate_index);
+							// TODO: pointer might have changed! better solution?
+							// Refresh pointer (might have relocated if the array was realloced due adding a new annotation)
+							hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
 							split_ok = true;
 						}
 					}
@@ -314,14 +300,13 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 				// Have we clicked on a coordinate?
 				if (hit_annotation->selected && coordinate_pixel_distance < annotation_hover_distance) {
 					annotation_set->selected_coordinate_index = hit_result.coordinate_index;
+					annotation_set->selected_coordinate_annotation_index = hit_result.annotation_index;
 				}
 
-
 			}
-
 		} else {
 			// We are not in editing mode.
-			annotation_set->selected_coordinate_index = -1;
+			deselect_annotation_coordinates(annotation_set);
 			annotation_set->is_insert_coordinate_mode = false;
 			annotation_set->force_insert_mode = false;
 			annotation_set->is_split_mode = false;
@@ -337,7 +322,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 				} else {
 					hit_annotation->selected = false;
 				}
-				annotation_set->selected_coordinate_index = -1;
+				deselect_annotation_coordinates(annotation_set);
 				click_action_handled = true;
 			}
 
@@ -402,8 +387,8 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
 	bounds2f result = { +FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX };
 	if (annotation->coordinate_count >=1) {
-		for (i32 coordinate_index = annotation->first_coordinate; coordinate_index < annotation->first_coordinate + annotation->coordinate_count; ++coordinate_index) {
-			v2f* coordinate = annotation_set->coordinates + coordinate_index;
+		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+			v2f* coordinate = annotation->coordinates + i;
 			float x = (float)coordinate->x;
 			float y = (float)coordinate->y;
 			result.left = MIN(result.left, x);
@@ -455,7 +440,8 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 	// Step 3: choose the annotation that has the closest distance.
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
-		if (annotation->has_coordinates) {
+		// TODO: think about what to do for annotations that are not polygons (e.g., circles) / i.e. have no coordinates
+		if (annotation->coordinate_count > 0) {
 			if (is_point_within_annotation_bounds(annotation_set, annotation, point, bounds_check_tolerance)) {
 				float bias = annotation->selected ? bias_for_selected : 0.0f;
 				float line_segment_distance = FLT_MAX; // distance to line segment
@@ -484,16 +470,16 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 	float nearest_coordinate_distance_sq = FLT_MAX;
 	if (hit_result.annotation_index >= 0) {
 		annotation_t* annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
-		ASSERT(annotation->has_coordinates);
+		// TODO: what about annotations that don't have coordinates?
+		ASSERT(annotation->coordinate_count > 0);
 		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-			i32 global_coordinate_index = annotation->first_coordinate + i;
-			v2f* coordinate = annotation_set->coordinates + global_coordinate_index;
+			v2f* coordinate = annotation->coordinates + i;
 			float delta_x = point.x - coordinate->x;
 			float delta_y = point.y - coordinate->y;
 			float sq_distance = SQUARE(delta_x) + SQUARE(delta_y);
 			if (sq_distance < nearest_coordinate_distance_sq) {
 				nearest_coordinate_distance_sq = sq_distance;
-				hit_result.coordinate_index = annotation->first_coordinate + i;
+				hit_result.coordinate_index = i;
 				hit_result.coordinate_distance = sqrtf(nearest_coordinate_distance_sq);
 				hit_result.is_valid = true;
 			}
@@ -509,8 +495,7 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 	ASSERT(annotation->coordinate_count > 0);
 	if (annotation->coordinate_count == 1) {
 		// trivial case
-		v2f* coordinate = annotation_set->coordinates + annotation->first_coordinate;
-		v2f line_point = *coordinate;
+		v2f line_point = annotation->coordinates[0];
 		if (t_ptr) *t_ptr = 0.0f;
 		if (projected_point_ptr) *projected_point_ptr = line_point;
 		if (distance_ptr) {
@@ -525,9 +510,9 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 		float t_closest = 0.0f;
 		bool found_closest = false;
 		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-			v2f* coordinate_current = annotation_set->coordinates + annotation->first_coordinate + i;
+			v2f* coordinate_current = annotation->coordinates + i;
 			i32 coordinate_index_after = (i + 1) % annotation->coordinate_count;
-			v2f* coordinate_after = annotation_set->coordinates + annotation->first_coordinate + coordinate_index_after;
+			v2f* coordinate_after = annotation->coordinates + coordinate_index_after;
 			v2f line_start = *coordinate_current;
 			v2f line_end = *coordinate_after;
 			float t = 0.0f;
@@ -552,6 +537,11 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 		}
 	}
 	return insert_before_index;
+}
+
+void deselect_annotation_coordinates(annotation_set_t* annotation_set) {
+	annotation_set->selected_coordinate_index = -1;
+	annotation_set->selected_coordinate_annotation_index = -1;
 }
 
 void annotations_modified(annotation_set_t* annotation_set) {
@@ -601,22 +591,8 @@ bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annota
 
 void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, v2f new_coordinate) {
 	if (insert_at_index >= 0 && insert_at_index <= annotation->coordinate_count) {
-		if (annotation->coordinate_count == annotation->coordinate_capacity) {
-			// Make room by expanding annotation_set->coordinates and copying the coordinates to the end
-			i32 new_capacity = annotation->coordinate_capacity * 2;
-			i32 old_first_coordinate = annotation->first_coordinate;
-			annotation->first_coordinate = annotation_set->coordinate_count;
-			v2f* new_coordinates = arraddnptr(annotation_set->coordinates, new_capacity);
-			annotation_set->coordinate_count += new_capacity;
-			annotation->coordinate_capacity = new_capacity;
-			v2f* old_coordinates = annotation_set->coordinates + old_first_coordinate;
-			memcpy(new_coordinates, old_coordinates, sizeof(v2f) * annotation->coordinate_count);
-		}
-		v2f* coordinates_at_insertion_point = annotation_set->coordinates + annotation->first_coordinate + insert_at_index;
-		i32 num_coordinates_to_move = annotation->coordinate_count - insert_at_index;
-		memmove(coordinates_at_insertion_point + 1, coordinates_at_insertion_point, num_coordinates_to_move * sizeof(v2f));
+		arrins(annotation->coordinates, insert_at_index, new_coordinate);
 		++annotation->coordinate_count;
-		*coordinates_at_insertion_point = new_coordinate;
 
 		// The coordinate count has changed, maybe the type needs to change?
 		maybe_change_annotation_type_based_on_coordinate_count(annotation);
@@ -633,28 +609,15 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 }
 
 void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index) {
-	// TODO: What happens if there is only one coordinate left?
-	if (coordinate_index_valid_for_annotation(coordinate_index, annotation)) {
-		if (annotation->coordinate_count <= 1) {
-			// TODO: try to delete the annotation instead
+	if (coordinate_index >= 0 && coordinate_index < annotation->coordinate_count) {
+		if (annotation->coordinate_count == 1) {
+			// TODO: delete annotation instead?
 		} else {
-			temp_memory_t temp_memory = begin_temp_memory(&local_thread_memory->temp_arena);
-
-			i32 one_past_last_coordinate = annotation->first_coordinate + annotation->coordinate_count;
-			i32 trailing_coordinate_count = one_past_last_coordinate - (coordinate_index + 1);
-			if (trailing_coordinate_count > 0) {
-				// move the trailing coordinates one place forward
-				size_t temp_size = trailing_coordinate_count * sizeof(v2f);
-				void* temp_copy = arena_push_size(temp_memory.arena, temp_size);
-				memcpy(temp_copy, annotation_set->coordinates + (coordinate_index + 1), temp_size);
-				memcpy(annotation_set->coordinates + coordinate_index, temp_copy, temp_size);
-
-			}
-
+			arrdel(annotation->coordinates, coordinate_index);
 			annotation->coordinate_count--;
-
 			// The coordinate count has changed, maybe the type needs to change?
 			maybe_change_annotation_type_based_on_coordinate_count(annotation);
+
 #if 0
 			// fixing the order field seems unneeded, the order field is ignored in the XML file anyway.
 			for (i32 i = coordinate_index - annotation->first_coordinate; i < annotation->coordinate_count ; ++i) {
@@ -662,20 +625,12 @@ void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotatio
 				coordinate->order = i;
 			}
 #endif
-
 			annotation->has_valid_bounds = false;
 			annotations_modified(annotation_set);
-			annotation_set->selected_coordinate_index = -1;
-
-			end_temp_memory(&temp_memory);
+			deselect_annotation_coordinates(annotation_set);
 		}
-
-
 	} else {
-#if DO_DEBUG
-		console_print_error("Error: tried to delete an out of bounds index (coordinate %d, valid range for annotation %d-%d)\n",
-					  coordinate_index, annotation->first_coordinate, annotation->first_coordinate + annotation->coordinate_count);
-#endif
+		panic("coordinate index out of bounds");
 	}
 }
 
@@ -768,46 +723,38 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 		return;
 	}
 
-	// work with 'local' coordinate indices
-	lower_coordinate_index -= annotation->first_coordinate;
-	upper_coordinate_index -= annotation->first_coordinate;
-
 	// step 1: create a new annotation leaving out the section between the lower and upper bounds of the split section
 	// Note: the coordinates at the lower and upper bounds themselves are included (duplicated)!
-	{
-		i32 new_first_coordinate = annotation_set->coordinate_count;
-		i32 new_coordinate_count_lower_part = lower_coordinate_index + 1;
-		i32 new_coordinate_count_upper_part = annotation->coordinate_count - upper_coordinate_index;
-		i32 new_coordinate_count = new_coordinate_count_lower_part + new_coordinate_count_upper_part;
-		v2f* new_coordinates = arraddnptr(annotation_set->coordinates, new_coordinate_count);
-		annotation_set->coordinate_count += new_coordinate_count;
-		v2f* original_coordinates = annotation_set->coordinates + annotation->first_coordinate;
-		memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(v2f));
-		memcpy(&new_coordinates[lower_coordinate_index + 1], &original_coordinates[upper_coordinate_index], new_coordinate_count_upper_part * sizeof(v2f));
+	// e.g.: XX<lower>_____<upper>XXXXX
 
-		annotation_t new_annotation = *annotation;
-		new_annotation.first_coordinate = new_first_coordinate;
-		new_annotation.coordinate_count = new_coordinate_count;
-		new_annotation.coordinate_capacity = new_coordinate_count;
-		new_annotation.has_valid_bounds = false;
-
-		i32 new_stored_annotation_index = annotation_set->stored_annotation_count;
-		arrput(annotation_set->stored_annotations, new_annotation);
-		annotation_set->stored_annotation_count++;
-		arrput(annotation_set->active_annotation_indices, new_stored_annotation_index);
-		annotation_set->active_annotation_count++;
-	}
+	// Reserve space for new coord
+	annotation_t new_annotation = *annotation;
+	i32 new_coordinate_count_lower_part = lower_coordinate_index + 1;
+	i32 new_coordinate_count_upper_part = annotation->coordinate_count - upper_coordinate_index;
+	new_annotation.coordinate_count = new_coordinate_count_lower_part + new_coordinate_count_upper_part;
+	new_annotation.coordinates = NULL;
+	arrsetlen(new_annotation.coordinates, new_annotation.coordinate_count);
+	v2f* new_coordinates = new_annotation.coordinates;
+	v2f* original_coordinates = annotation->coordinates;
+	memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(v2f));
+	memcpy(&new_coordinates[lower_coordinate_index + 1], &original_coordinates[upper_coordinate_index], new_coordinate_count_upper_part * sizeof(v2f));
+	new_annotation.has_valid_bounds = false;
 
 	// step 2: compactify the original annotation, leaving only the extracted section between the bounds (inclusive)
-	{
-		i32 num_annotations_removed_front = lower_coordinate_index;
-		i32 new_coordinate_count = upper_coordinate_index - lower_coordinate_index + 1;
-		ASSERT(new_coordinate_count >= 3);
-		annotation->first_coordinate += num_annotations_removed_front;
-		annotation->coordinate_capacity -= num_annotations_removed_front;
-		annotation->coordinate_count = new_coordinate_count;
-		annotation->has_valid_bounds = false;
-	}
+	// e.g.: __<lower>XXXXX<upper>_____
+	i32 new_coordinate_count = upper_coordinate_index - lower_coordinate_index + 1;
+	ASSERT(new_coordinate_count >= 3);
+	memmove(annotation->coordinates, annotation->coordinates + lower_coordinate_index, new_coordinate_count * sizeof(v2f));
+	annotation->coordinate_count = new_coordinate_count;
+	annotation->has_valid_bounds = false;
+	arrsetlen(annotation->coordinates, new_coordinate_count);
+
+	// Add the new annotation
+	i32 new_stored_annotation_index = annotation_set->stored_annotation_count;
+	arrput(annotation_set->stored_annotations, new_annotation);
+	annotation_set->stored_annotation_count++;
+	arrput(annotation_set->active_annotation_indices, new_stored_annotation_index);
+	annotation_set->active_annotation_count++;
 
 	annotation_set->is_split_mode = false;
 	recount_selected_annotations(app_state, annotation_set);
@@ -918,14 +865,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		}
 		u32 annotation_color = *(u32*)(&base_color);
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-		if (annotation->has_coordinates) {
+		if (annotation->coordinate_count > 0) {
 			v2f* points = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-				i32 coordinate_index = annotation->first_coordinate + i;
-				v2f* coordinate = annotation_set->coordinates + coordinate_index;
-				v2f world_pos = {(float)coordinate->x, (float)coordinate->y};
-				v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.screen_point_width);
-				points[i] = transformed_pos;
+				points[i] = world_pos_to_screen_pos(annotation->coordinates[i], camera_min, scene->zoom.screen_point_width);
 			}
 
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
@@ -947,10 +890,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					) {
 				bool need_hover = false;
 				v2f hovered_node_point = {};
-				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-					i32 coordinate_index = annotation->first_coordinate + i;
-					v2f point = points[i];
+				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
+					v2f point = points[coordinate_index];
 					if (annotation_set->is_edit_mode && !annotation_set->is_insert_coordinate_mode &&
+					    annotation_index == annotation_set->hovered_annotation &&
 					    coordinate_index == annotation_set->hovered_coordinate &&
 					    annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance)
 					{
@@ -980,6 +923,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						};
 						if (ImGui::MenuItem("Split annotation here")) {
 							annotation_set->selected_coordinate_index = annotation_set->hovered_coordinate;
+							annotation_set->selected_coordinate_annotation_index = annotation_set->hovered_annotation;
 							annotation_set->is_split_mode = true;
 							annotation_set->is_insert_coordinate_mode = false;
 							annotation_set->force_insert_mode = false;
@@ -1006,11 +950,11 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					}
 				}
 
-				if (annotation_set->is_edit_mode && annotation_set->is_split_mode) {
-					if (annotation_set->selected_coordinate_index >= annotation->first_coordinate && annotation_set->selected_coordinate_index < annotation->first_coordinate + annotation->coordinate_count) {
-						v2f* split_coordinate = annotation_set->coordinates + annotation_set->selected_coordinate_index;
-						v2f world_pos = {(float)split_coordinate->x, (float)split_coordinate->y};
-						v2f transformed_pos = world_pos_to_screen_pos(world_pos, camera_min, scene->zoom.screen_point_width);
+				// Draw the 'preview' line displayed just before you split an annotation
+				if (annotation_set->is_edit_mode && annotation_set->is_split_mode && annotation_index == annotation_set->selected_coordinate_annotation_index) {
+					if (annotation_set->selected_coordinate_index >= 0 && annotation_set->selected_coordinate_index < annotation->coordinate_count) {
+						v2f split_coordinate = annotation->coordinates[annotation_set->selected_coordinate_index];
+						v2f transformed_pos = world_pos_to_screen_pos(split_coordinate, camera_min, scene->zoom.screen_point_width);
 						v2f split_line_points[2] = {};
 						split_line_points[0] = transformed_pos;
 						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.screen_point_width);
@@ -1832,11 +1776,21 @@ void draw_annotation_palette_window() {
 	}
 }
 
+void destroy_annotation(annotation_t* annotation) {
+	if (annotation) {
+		if (annotation->coordinates) {
+			arrfree(annotation->coordinates);
+			annotation->coordinates = NULL;
+		}
+	}
+}
 
 void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	// destroy old state
+	for (i32 i = 0; i < annotation_set->stored_annotation_count; ++i) {
+		destroy_annotation(annotation_set->stored_annotations + i);
+	}
 	arrfree(annotation_set->stored_annotations);
-	arrfree(annotation_set->coordinates);
 	arrfree(annotation_set->active_annotation_indices);
 	arrfree(annotation_set->stored_groups);
 	arrfree(annotation_set->active_group_indices);
@@ -1877,12 +1831,12 @@ void geojson_print_feature(FILE* fp, annotation_set_t* annotation_set, annotatio
 	            "    \"geometry\": {\n"
 			    "      \"type\": \"%s\","
 	            "      \"coordinates\": ", geometry_type);
-	if (annotation->has_coordinates) {
+	if (annotation->coordinate_count > 0) {
 		for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
 			if (coordinate_index != 0) {
 				fprintf(fp, ", ");
 			}
-			v2f* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
+			v2f* coordinate = annotation->coordinates + coordinate_index;
 			fprintf(fp, "[%g, %g]", coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
 		}
 	}

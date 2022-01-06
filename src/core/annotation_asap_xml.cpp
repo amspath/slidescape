@@ -91,7 +91,7 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 	}
 }
 
-void coordinate_set_attribute(annotation_set_t* annotation_set, v2f* coordinate, const char* attr,
+void coordinate_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, v2f* coordinate, const char* attr,
                               const char* value) {
 	if (strcmp(attr, "Order") == 0) {
 		// ignored
@@ -176,18 +176,12 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 								ASSERT(annotation_set->stored_annotation_count == arrlen(annotation_set->stored_annotations));
 								ASSERT(annotation_set->stored_annotation_count > 0);
 								if (annotation_set->stored_annotations != NULL && annotation_set->stored_annotation_count > 0) {
-									v2f new_coordinate = {};
-									arrput(annotation_set->coordinates, new_coordinate);
 									current_element_type = ASAP_XML_ELEMENT_COORDINATE;
-
 									annotation_t* current_annotation = arrlastptr(annotation_set->stored_annotations);
-									if (!current_annotation->has_coordinates) {
-										current_annotation->first_coordinate = annotation_set->coordinate_count;
-										current_annotation->has_coordinates = true;
-									}
-									current_annotation->coordinate_count++;
-									current_annotation->coordinate_capacity++; // used for delete/insert operations
-									++annotation_set->coordinate_count;
+									v2f new_coordinate = {};
+									ASSERT(current_annotation);
+									arrput(current_annotation->coordinates, new_coordinate);
+									++current_annotation->coordinate_count;
 								}
 							} else if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
 								current_element_type = ASAP_XML_ELEMENT_GROUP;
@@ -259,7 +253,15 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 								if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
 									annotation_set_attribute(annotation_set, arrlastptr(annotation_set->stored_annotations), x->attr, attrbuf);
 								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_COORDINATE) {
-									coordinate_set_attribute(annotation_set, arrlastptr(annotation_set->coordinates), x->attr, attrbuf);
+									annotation_t* annotation = arrlastptr(annotation_set->stored_annotations);
+									ASSERT(annotation);
+									if (annotation) {
+										v2f* coordinate = arrlastptr(annotation->coordinates);
+										ASSERT(coordinate);
+										if (coordinate) {
+											coordinate_set_attribute(annotation_set, annotation, coordinate, x->attr, attrbuf);
+										}
+									}
 								} else if (pass == ASAP_XML_PARSE_GROUPS && current_element_type == ASAP_XML_ELEMENT_GROUP) {
 									group_set_attribute(&current_group, x->attr, attrbuf);
 								}
@@ -354,10 +356,11 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">",
 			        color_buf, annotation->name, part_of_group, type_name);
 
-			if (annotation->has_coordinates) {
+			ASSERT(annotation->coordinate_count == arrlen(annotation->coordinates));
+			if (annotation->coordinate_count > 0 && annotation->coordinates != NULL) {
 				fprintf(fp, "<Coordinates>");
 				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
-					v2f* coordinate = annotation_set->coordinates + annotation->first_coordinate + coordinate_index;
+					v2f* coordinate = annotation->coordinates + coordinate_index;
 					fprintf(fp, "<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />", coordinate_index,
 					        coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
 				}
