@@ -395,8 +395,14 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		scene_t* scene = &app_state->scene;
 		image_t* image = app_state->loaded_images + 0;
 
+		bool display_export_annotations_checkbox = (scene->annotation_set.active_annotation_count > 0);
+		i32 lines_at_bottom = 2;
+		if (display_export_annotations_checkbox) {
+			++lines_at_bottom;
+		}
+
 		ImGui::BeginGroup();
-		ImGui::BeginChild("item view", ImVec2(0, -2.0f * ImGui::GetFrameHeightWithSpacing())); // Leave room for 2 lines below us
+		ImGui::BeginChild("item view", ImVec2(0, -lines_at_bottom * ImGui::GetFrameHeightWithSpacing())); // Leave room for 2 lines below us
 
 
 		if (scene->can_export_region) {
@@ -449,6 +455,11 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 		}
 		ImGui::EndChild(); // end of top area -- now start drawing bottom area
+
+		static bool also_export_annotations = true;
+		if (display_export_annotations_checkbox) {
+			ImGui::Checkbox("Also export annotations", &also_export_annotations);
+		}
 
 		const char* name_hint = "output";
 		if (arrlen(app_state->loaded_images) > 0) {
@@ -556,7 +567,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					case IMAGE_BACKEND_TIFF: {
 						begin_export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds,
 						                             filename_buffer, 512,
-						                             tiff_export_desired_color_space, tiff_export_jpeg_quality);
+						                             tiff_export_desired_color_space, tiff_export_jpeg_quality, also_export_annotations);
 						gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
 					} break;
 					default: {

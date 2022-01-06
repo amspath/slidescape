@@ -1693,6 +1693,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (scene->has_selection_box) {
 					rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
 					bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);
+					scene->crop_bounds = selection_bounds;
 					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, displayed_image->mpp_x, displayed_image->mpp_y);
 					scene->can_export_region = true;
 				} else if (scene->is_cropped) {

@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "mathutils.h"
+#include "stringutils.h"
 
 #include "tiff.h"
 #include "viewer.h"
@@ -592,7 +593,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 }
 
 bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
+                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, bool also_export_annotations) {
 	if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
 		return false;
 	}
@@ -937,6 +938,18 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 	}
 
+	if (also_export_annotations) {
+		annotation_set_t derived_set = create_offsetted_annotation_set_for_area(&app_state->scene.annotation_set, app_state->scene.crop_bounds);
+
+		size_t filename_len = strlen(filename);
+		char* xml_filename = (char*)alloca(filename_len + 4);
+		memcpy(xml_filename, filename, filename_len + 1);
+		replace_file_extension(xml_filename, filename_len + 4, "xml");
+		save_asap_xml_annotations(&derived_set, xml_filename);
+
+		destroy_annotation_set(&derived_set);
+	}
+
 
 	return success;
 }
@@ -950,13 +963,14 @@ typedef struct export_region_task_t {
 	u32 export_tile_width;
 	u16 desired_photometric_interpretation;
 	i32 quality;
+	bool also_export_annotations;
 } export_region_task_t;
 
 void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 	export_region_task_t* task = (export_region_task_t*) userdata;
 	bool success = export_cropped_bigtiff(task->app_state, task->image, task->tiff, task->level0_bounds,
 	                                      task->filename, task->export_tile_width,
-	                                      task->desired_photometric_interpretation, task->quality);
+	                                      task->desired_photometric_interpretation, task->quality, task->also_export_annotations);
 	global_tiff_export_progress = 1.0f;
 	task->app_state->is_export_in_progress = false;
 
@@ -964,7 +978,7 @@ void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 }
 
 void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality) {
+                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, bool also_export_annotations) {
 	export_region_task_t task = {0};
 	task.app_state = app_state;
 	task.image = image;
@@ -974,6 +988,7 @@ void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t
 	task.export_tile_width = export_tile_width;
 	task.desired_photometric_interpretation = desired_photometric_interpretation;
 	task.quality = quality;
+	task.also_export_annotations = also_export_annotations;
 
 	global_tiff_export_progress = 0.0f;
 	app_state->is_export_in_progress = true;

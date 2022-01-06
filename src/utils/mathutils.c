@@ -126,6 +126,11 @@ bounds2f bounds2f_encompassing(bounds2f a, bounds2f b) {
 	return result;
 }
 
+bool are_bounds2f_overlapping(bounds2f a, bounds2f b) {
+	bool result = (a.min.x <= b.max.x && a.max.x >= b.min.x) && (a.min.y <= b.max.y && a.max.y >= b.min.y);
+	return result;
+}
+
 v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel) {
 	v2f transformed_pos = {
 			.x = (world_pos.x - camera_min.x) / screen_um_per_pixel,

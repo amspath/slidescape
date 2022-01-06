@@ -132,6 +132,7 @@ rect2f rect2f_recanonicalize(rect2f* rect);
 bounds2f rect2f_to_bounds(rect2f rect);
 rect2f bounds2f_to_rect(bounds2f bounds);
 bounds2f bounds2f_encompassing(bounds2f a, bounds2f b);
+bool are_bounds2f_overlapping(bounds2f a, bounds2f b);
 v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
 i32 tile_pos_from_world_pos(float world_pos, float tile_side);
 bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height, v2f image_pos);

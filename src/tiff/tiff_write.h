@@ -27,9 +27,9 @@ extern "C" {
 #include "viewer.h"
 
 bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality);
+                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, bool also_export_annotations);
 void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality);
+                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, bool also_export_annotations);
 
 #ifdef __cplusplus
 }

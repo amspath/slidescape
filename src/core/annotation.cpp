@@ -1032,7 +1032,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						}
 					}
 				} else if (annotation_set->selection_count > 1) {
-					if (ImGui::MenuItem("Set crop area")) {
+					if (ImGui::MenuItem("Set region selection")) {
 						annotation_t* selected_annotation = annotation_set->selected_annotations[0];
 						annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
 						bounds2f bounds = selected_annotation->bounds;
@@ -1776,6 +1776,14 @@ void draw_annotation_palette_window() {
 	}
 }
 
+annotation_t duplicate_annotation(annotation_t* annotation) {
+	annotation_t result = *annotation;
+	result.coordinates = NULL;
+	arrsetlen(result.coordinates, annotation->coordinate_count);
+	memcpy(result.coordinates, annotation->coordinates, annotation->coordinate_count * sizeof(v2f));
+	return result;
+}
+
 void destroy_annotation(annotation_t* annotation) {
 	if (annotation) {
 		if (annotation->coordinates) {
@@ -1785,7 +1793,7 @@ void destroy_annotation(annotation_t* annotation) {
 	}
 }
 
-void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
+void destroy_annotation_set(annotation_set_t* annotation_set) {
 	// destroy old state
 	for (i32 i = 0; i < annotation_set->stored_annotation_count; ++i) {
 		destroy_annotation(annotation_set->stored_annotations + i);
@@ -1801,6 +1809,11 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 //		free(annotation_set->asap_xml_filename);
 	}
 	if (annotation_set->coco.is_valid) coco_destroy(&annotation_set->coco);
+
+}
+
+void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
+	destroy_annotation_set(annotation_set);
 	memset(annotation_set, 0, sizeof(*annotation_set));
 
 	// initialize new state
@@ -1922,6 +1935,55 @@ void recount_selected_annotations(app_state_t* app_state, annotation_set_t* anno
 		}
 	}
 	annotation_set->selection_count = selection_count;
+}
+
+
+annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area) {
+	// Create a duplicate annotation set
+	annotation_set_t result_set = {};
+	result_set.mpp = annotation_set->mpp;
+
+	// Copy groups
+	arrsetlen(result_set.stored_groups, annotation_set->stored_group_count);
+	memcpy(result_set.stored_groups, annotation_set->stored_groups, annotation_set->stored_group_count * sizeof(annotation_group_t));
+	result_set.stored_group_count = annotation_set->stored_group_count;
+	arrsetlen(result_set.active_group_indices, annotation_set->active_group_count);
+	memcpy(result_set.active_group_indices, annotation_set->active_group_indices, annotation_set->active_group_count * sizeof(i32));
+	result_set.active_group_count = annotation_set->active_group_count;
+
+	// Copy features
+	arrsetlen(result_set.stored_features, annotation_set->stored_feature_count);
+	memcpy(result_set.stored_features, annotation_set->stored_features, annotation_set->stored_feature_count * sizeof(annotation_feature_t));
+	result_set.stored_feature_count = annotation_set->stored_feature_count;
+	arrsetlen(result_set.active_feature_indices, annotation_set->active_feature_count);
+	memcpy(result_set.active_feature_indices, annotation_set->active_feature_indices, annotation_set->active_feature_count * sizeof(i32));
+	result_set.active_feature_count = annotation_set->active_feature_count;
+
+	// Copy annotations
+	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
+		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
+
+		// check bounds
+		annotation_recalculate_bounds_if_necessary(annotation_set, annotation);
+		if (are_bounds2f_overlapping(annotation->bounds, area)) {
+
+			annotation_t offsetted = duplicate_annotation(annotation);
+			for (i32 i = 0; i < offsetted.coordinate_count; ++i) {
+				v2f* coordinate = offsetted.coordinates + i;
+				coordinate->x -= area.min.x;
+				coordinate->y -= area.min.y;
+			}
+
+			i32 new_stored_annotation_index = result_set.stored_annotation_count;
+			arrput(result_set.stored_annotations, offsetted);
+			result_set.stored_annotation_count++;
+			arrput(result_set.active_annotation_indices, new_stored_annotation_index);
+			result_set.active_annotation_count++;
+
+		}
+	}
+
+	return result_set;
 }
 
 
