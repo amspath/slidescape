@@ -61,7 +61,7 @@ SOFTWARE.
 	#ifndef PATH_MAX
 		#define PATH_MAX 260
 	#endif // PATH_MAX
-#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__) || defined (__EMSCRIPTEN__)
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__APPLE__) || defined (__EMSCRIPTEN__)
 	#define UNIX
 	#define stricmp strcasecmp
 	#include <sys/types.h>
@@ -70,7 +70,7 @@ SOFTWARE.
 		#include <dirent.h> 
 	#endif // USE_STD_FILESYSTEM
 	#define PATH_SEP '/'
-#endif // defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__)
+#endif // defined(__linux__) || defined(__FreeBSD__) || defined(__DragonFly__) || defined(__NetBSD__) || defined(__APPLE__) || defined (__EMSCRIPTEN__)
 
 #include "imgui.h"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
@@ -706,18 +706,18 @@ namespace IGFD
 	//// FILTER INFOS ///////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////
 
-	void IGFD::FilterManager::FilterInfosStruct::clear()
+	void IGFD::FilterManager::FilterInfos::clear()
 	{
 		filter.clear(); 
 		collectionfilters.clear();
 	}
 
-	bool IGFD::FilterManager::FilterInfosStruct::empty() const
+	bool IGFD::FilterManager::FilterInfos::empty() const
 	{
 		return filter.empty() && collectionfilters.empty();
 	}
 
-	bool IGFD::FilterManager::FilterInfosStruct::exist(const std::string& vFilter) const
+	bool IGFD::FilterManager::FilterInfos::exist(const std::string& vFilter) const
 	{
 		return filter == vFilter || (collectionfilters.find(vFilter) != collectionfilters.end());
 	}
@@ -746,7 +746,7 @@ namespace IGFD
 			size_t p = 0, lp = 0;
 			while ((p = puDLGFilters.find_first_of("{,", p)) != nan)
 			{
-				FilterInfosStruct infos;
+				FilterInfos infos;
 
 				if (puDLGFilters[p] == '{') // {
 				{
@@ -784,7 +784,7 @@ namespace IGFD
 			std::string token = puDLGFilters.substr(lp);
 			if (!token.empty())
 			{
-				FilterInfosStruct infos;
+				FilterInfos infos;
 				infos.filter = std::move(token);
 				prParsedFilters.emplace_back(infos);
 			}
@@ -801,7 +801,7 @@ namespace IGFD
 		{
 			if (!vFilter.empty())
 			{
-				// std::map<std::string, FilterInfosStruct>
+				// std::map<std::string, FilterInfos>
 				for (const auto& infos : prParsedFilters)
 				{
 					if (vFilter == infos.filter)
@@ -1136,7 +1136,7 @@ namespace IGFD
 		return false;
 	}
 
-	IGFD::FilterManager::FilterInfosStruct IGFD::FilterManager::GetSelectedFilter()
+	IGFD::FilterManager::FilterInfos IGFD::FilterManager::GetSelectedFilter()
 	{
 		return prSelectedFilter;
 	}
@@ -2932,7 +2932,7 @@ namespace IGFD
 
 			if (g.NavId && g.NavId == vListViewID)
 			{
-				if (ImGui::IsKeyPressedMap(IGFD_KEY_ENTER) ||
+				if (ImGui::IsKeyPressedMap(ImGuiKey_Enter) ||
 					ImGui::IsKeyPressedMap(ImGuiKey_KeyPadEnter) ||
 					ImGui::IsKeyPressedMap(ImGuiKey_Space))
 				{
@@ -3870,7 +3870,7 @@ namespace IGFD
 		{
 			if (vInfos->fileType == 'd')
 			{
-				// nav system, selectebale cause open directory or select directory
+				// nav system, selectable cause open directory or select directory
 				if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard)
 				{
 					if (fdi.puDLGDirectoryMode) // directory chooser
@@ -3894,7 +3894,7 @@ namespace IGFD
 					}
 				}
 
-				return true; // needToBreakTheloop
+				//return true; // needToBreakTheloop
 			}
 			else
 			{
