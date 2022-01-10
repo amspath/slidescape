@@ -23,7 +23,7 @@
  */
 
 // LZW decompression code, modified to work outside liftiff.
-// 2021 Pieter Valkema
+// 2021-2022 Pieter Valkema
 
 #include "common.h"
 #include "platform.h" // for console_print_error

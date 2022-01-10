@@ -74,7 +74,7 @@ The application icon was made by [Freepik](https://www.flaticon.com/authors/free
 
 ## License
 
-Copyright (C) 2019-2021 Pieter Valkema. 
+Copyright (C) 2019-2022 Pieter Valkema. 
 
 This program is free software: you can redistribute it and/or modify 
 it under the terms of the GNU General Public License as published by
