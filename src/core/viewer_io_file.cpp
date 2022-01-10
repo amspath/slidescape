@@ -200,21 +200,94 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					free(temp_memory);
 					temp_memory = decompressed;
 				} else if (level_ifd->samples_per_pixel == 3) {
-					// TODO: vectorize: https://stackoverflow.com/questions/7194452/fast-vectorized-conversion-from-rgb-to-bgra
+
+					// NOTE: Some TIFFs should actually be treated as palettized, but still set PhotometricInterpretation to TIFF_PHOTOMETRIC_RGB.
+					// (as an example, the TIFF masks from the Kaggle challenge do this)
+					// However, in that case they will still probably have set SMaxSampleValue to a low value (the number of colors/categories used).
+					// We can use this fact to guess that we still want to treat the image as palettized / using a color lookup table.
+					bool palettized = level_ifd->color_space == TIFF_PHOTOMETRIC_PALETTE || level_ifd->max_sample_value < 64;
+
 					u64 pixel_count = level_image->tile_width * level_image->tile_height;
 					i32 source_pos = 0;
 					u32* pixels = (u32*) temp_memory;
-					for (u64 i = 0; i < pixel_count; ++i) {
-						u8 r = decompressed[source_pos];
-//						u8 g = decompressed[source_pos+1];
-//						u8 b = decompressed[source_pos+2];
-//						pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
-						u32 color = lookup_color_from_lut(r);
-						color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
-						pixels[i] = color;
-						source_pos+=3;
+
+					// TODO: vectorize: https://stackoverflow.com/questions/7194452/fast-vectorized-conversion-from-rgb-to-bgra
+					if (palettized) {
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u8 r = decompressed[source_pos]; // only the red channel is being used
+//						    u8 g = decompressed[source_pos+1];
+//					    	u8 b = decompressed[source_pos+2];
+//					    	pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
+							u32 color = lookup_color_from_lut(r);
+							color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
+							pixels[i] = color;
+							source_pos+=3;
+						}
+					} else {
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u8 r = decompressed[source_pos]; // only the red channel is being used
+						    u8 g = decompressed[source_pos+1];
+					    	u8 b = decompressed[source_pos+2];
+					    	pixels[i] = MAKE_BGRA(r, g, b, 255);
+							source_pos+=3;
+						}
 					}
+
 					free(decompressed);
+				} else if (level_ifd->samples_per_pixel == 1) {
+					// Grayscale image
+					u64 pixel_count = level_image->tile_width * level_image->tile_height;
+					i32 source_pos = 0;
+					u32* pixels = (u32*) temp_memory;
+
+					u8 output_for_min_value = 0;
+					u8 output_for_max_value = 255;
+					if (level_ifd->color_space == TIFF_PHOTOMETRIC_MINISBLACK) {
+						// no action
+					} else if (level_ifd->color_space == TIFF_PHOTOMETRIC_MINISWHITE) {
+						output_for_min_value = 255;
+						output_for_max_value = 0;
+					} else {
+						// Issue warning? PhotometricInterpretation missing
+					}
+
+					bool is_bilevel = level_ifd->max_sample_value == 1 && level_ifd->min_sample_value == 0;
+
+					if (is_bilevel) {
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u8 r = decompressed[source_pos];
+							r = r ? output_for_max_value : output_for_min_value;
+							u32 color = MAKE_BGRA(r, r, r, 255);
+							pixels[i] = color;
+							source_pos+=1;
+						}
+					} else {
+						if (level_ifd->max_sample_value == 0 /*assume not set*/ || level_ifd->max_sample_value == 255) {
+							// output raw value as RGB value
+							for (u64 i = 0; i < pixel_count; ++i) {
+								u8 r = decompressed[source_pos];
+								u32 color = MAKE_BGRA(r, r, r, 255);
+								pixels[i] = color;
+								source_pos+=1;
+							}
+						} else {
+							// resample
+							float convert_factor = (1.0f / (float)level_ifd->max_sample_value) * 255.0f;
+							for (u64 i = 0; i < pixel_count; ++i) {
+								u8 r = decompressed[source_pos];
+								r = (u8)((float)r * convert_factor);
+								u32 color = MAKE_BGRA(r, r, r, 255);
+								pixels[i] = color;
+								source_pos+=1;
+							}
+						}
+
+					}
+
+					free(decompressed);
+				} else {
+					console_print_error("LZW decompression: unexpected number of samples per pixel (%d)\n", level_ifd->samples_per_pixel);
+					failed = true;
 				}
 
 

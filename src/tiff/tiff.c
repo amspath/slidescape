@@ -162,9 +162,60 @@ u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 		// all done!
 
 	} else {
+		// TODO: Fix: data not expanded to u64!
 		// data is inlined
 		integers = (u64*) malloc(sizeof(u64));
 		integers[0] = tag->data_u64;
+	}
+
+	return integers;
+}
+
+u16* tiff_read_field_u16(tiff_t* tiff, tiff_tag_t* tag) {
+	u16* integers = NULL;
+
+	u64 bytesize = get_tiff_field_size(tag->data_type);
+	if (bytesize == sizeof(u16)) {
+		integers = (u16*)calloc(bytesize, tag->data_count);
+
+		u64 read_size = tag->data_count * bytesize;
+		if (tag->data_is_offset) {
+			if (file_read_at_offset(integers, tiff->fp, tag->offset, read_size) != read_size) {
+				free(integers);
+				return NULL; // failed
+			}
+		} else {
+			// data is inlined
+			memcpy(integers, (u16*)tag->data, read_size);
+		}
+		// Endian-swap if necessary
+		if (tiff->is_big_endian) {
+			for (i32 i = 0; i < tag->data_count; ++i) {
+				integers[i] = bswap_16((integers)[i]);
+			}
+		}
+	}
+
+	return integers;
+}
+
+u8* tiff_read_field_u8(tiff_t* tiff, tiff_tag_t* tag) {
+	u8* integers = NULL;
+
+	u64 bytesize = get_tiff_field_size(tag->data_type);
+	if (bytesize == sizeof(u8)) {
+		integers = (u8*)calloc(bytesize, tag->data_count);
+
+		u64 read_size = tag->data_count * bytesize;
+		if (tag->data_is_offset) {
+			if (file_read_at_offset(integers, tiff->fp, tag->offset, read_size) != read_size) {
+				free(integers);
+				return NULL; // failed
+			}
+		} else {
+			// data is inlined
+			memcpy(integers, (u8*)tag->data, read_size);
+		}
 	}
 
 	return integers;
@@ -368,6 +419,53 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				if (ifd->tile_byte_counts == NULL) {
 					free(tags);
 					return false; // failed
+				}
+			} break;
+			case TIFF_TAG_SAMPLE_FORMAT: {
+				u16* formats = tiff_read_field_u16(tiff, tag);
+				if (formats) {
+					ifd->sample_format = (u16)formats[0];
+					if (is_verbose_mode) {
+						for (i32 i = 0; i < tag->data_count; ++i) {
+							console_print_verbose("   channel %d: SampleFormat=%d\n", i, formats[i]);
+						}
+					}
+					free(formats);
+				}
+			} break;
+			case TIFF_TAG_S_MIN_SAMPLE_VALUE: {
+				// NOTE: SampleFormat: SAMPLEFORMAT_UINT = 1; SAMPLEFORMAT_INT = 2; SAMPLEFORMAT_IEEEFP = 3; ...
+				if (ifd->sample_format <= 2) {
+					u64 bytesize = get_tiff_field_size(tag->data_type);
+					if (bytesize == 1) {
+						u8* values = tiff_read_field_u8(tiff, tag);
+						if (values) {
+							i64 lowest = values[0];
+							for (i32 i = 0; i < tag->data_count; ++i) {
+								if (values[i] < lowest) lowest = values[i];
+								console_print_verbose("   channel %d: SMinSampleValue=%d\n", i, values[i]);
+							}
+							ifd->min_sample_value = lowest;
+							free(values);
+						}
+					}
+				}
+			} break;
+			case TIFF_TAG_S_MAX_SAMPLE_VALUE: {
+				if (ifd->sample_format <= 2) {
+					u64 bytesize = get_tiff_field_size(tag->data_type);
+					if (bytesize == 1) {
+						u8* values = tiff_read_field_u8(tiff, tag);
+						if (values) {
+							i64 highest = values[0];
+							for (i32 i = 0; i < tag->data_count; ++i) {
+								if (values[i] > highest) highest = values[i];
+								console_print_verbose("   channel %d: SMaxSampleValue=%d\n", i, values[i]);
+							}
+							ifd->max_sample_value = highest;
+							free(values);
+						}
+					}
 				}
 			} break;
 			case TIFF_TAG_JPEG_TABLES: {
@@ -577,12 +675,19 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 			tiff->bytesize_of_offsets = bytesize_of_offsets;
 
 			// Read and process the IFDs
+			tiff_ifd_t last_ifd = {0};
 			while (next_ifd_offset != 0) {
 				console_print_verbose("Reading IFD #%llu\n", tiff->ifd_count);
 				tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
+
+				// Apply some values from the last IFD that might not be repeated.
+				ifd.min_sample_value = last_ifd.min_sample_value;
+				ifd.max_sample_value = last_ifd.max_sample_value;
+
 				if (!tiff_read_ifd(tiff, &ifd, &next_ifd_offset)) goto fail;
 				arrput(tiff->ifds, ifd);
 				tiff->ifd_count += 1;
+				last_ifd = ifd;
 			}
 
 			tiff_post_init(tiff);

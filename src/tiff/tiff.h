@@ -234,6 +234,9 @@ typedef struct tiff_ifd_t {
 	u64* tile_byte_counts;
 	char* image_description;
 	u16 samples_per_pixel;
+	u16 sample_format;
+	i64 min_sample_value;
+	i64 max_sample_value;
 	u64 image_description_length;
 	u8* jpeg_tables;
 	u64 jpeg_tables_length;
