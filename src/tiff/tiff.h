@@ -50,6 +50,7 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_BITS_PER_SAMPLE = 258,
 	TIFF_TAG_COMPRESSION = 259,
 	TIFF_TAG_PHOTOMETRIC_INTERPRETATION = 262,
+	TIFF_TAG_FILL_ORDER = 266,
 	TIFF_TAG_IMAGE_DESCRIPTION = 270,
 	TIFF_TAG_STRIP_OFFSETS = 273,
 	TIFF_TAG_ORIENTATION = 274,
@@ -60,7 +61,10 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_Y_RESOLUTION = 283,
 	TIFF_TAG_PLANAR_CONFIGURATION = 284,
 	TIFF_TAG_RESOLUTION_UNIT = 296,
+	TIFF_TAG_PAGE_NUMBER = 297,
 	TIFF_TAG_SOFTWARE = 305,
+	TIFF_TAG_WHITE_POINT = 318,
+	TIFF_TAG_PRIMARY_CHROMACITIES = 319,
 	TIFF_TAG_TILE_WIDTH = 322,
 	TIFF_TAG_TILE_LENGTH = 323,
 	TIFF_TAG_TILE_OFFSETS = 324,
@@ -227,6 +231,11 @@ typedef struct tiff_ifd_t {
 	u64 ifd_index;
 	u32 image_width;
 	u32 image_height;
+	bool is_tiled;
+	u32 rows_per_strip;
+	u64 strip_count;
+	u64* strip_offsets;
+	u64* strip_byte_counts;
 	u32 tile_width;
 	u32 tile_height;
 	u64 tile_count;

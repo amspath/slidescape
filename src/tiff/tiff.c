@@ -70,6 +70,7 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_BITS_PER_SAMPLE: result = "BitsPerSample"; break;
 		case TIFF_TAG_COMPRESSION: result = "Compression"; break;
 		case TIFF_TAG_PHOTOMETRIC_INTERPRETATION: result = "PhotometricInterpretation"; break;
+		case TIFF_TAG_FILL_ORDER: result = "FillOrder"; break;
 		case TIFF_TAG_IMAGE_DESCRIPTION: result = "ImageDescription"; break;
 		case TIFF_TAG_STRIP_OFFSETS: result = "StripOffsets"; break;
 		case TIFF_TAG_ORIENTATION: result = "Orientation"; break;
@@ -80,7 +81,10 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_Y_RESOLUTION: result = "YResolution"; break;
 		case TIFF_TAG_PLANAR_CONFIGURATION: result = "PlanarConfiguration"; break;
 		case TIFF_TAG_RESOLUTION_UNIT: result = "ResolutionUnit"; break;
+		case TIFF_TAG_PAGE_NUMBER: result = "PageNumber"; break;
 		case TIFF_TAG_SOFTWARE: result = "Software"; break;
+		case TIFF_TAG_WHITE_POINT: result = "WhitePoint"; break;
+		case TIFF_TAG_PRIMARY_CHROMACITIES: result = "PrimaryChromacities"; break;
 		case TIFF_TAG_TILE_WIDTH: result = "TileWidth"; break;
 		case TIFF_TAG_TILE_LENGTH: result = "TileLength"; break;
 		case TIFF_TAG_TILE_OFFSETS: result = "TileOffsets"; break;
@@ -115,10 +119,10 @@ static inline void* tiff_read_field_undefined(tiff_t* tiff, tiff_tag_t* tag) {
 u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 	u64* integers = NULL;
 
+	u64 bytesize = get_tiff_field_size(tag->data_type);
+	u64 read_size = tag->data_count * bytesize;
 	if (tag->data_is_offset) {
-		u64 bytesize = get_tiff_field_size(tag->data_type);
 		void* temp_integers = calloc(bytesize, tag->data_count);
-		u64 read_size = tag->data_count * bytesize;
 		if (file_read_at_offset(temp_integers, tiff->fp, tag->offset, read_size) != read_size) {
 			free(temp_integers);
 			return NULL; // failed
@@ -162,10 +166,11 @@ u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 		// all done!
 
 	} else {
-		// TODO: Fix: data not expanded to u64!
 		// data is inlined
-		integers = (u64*) malloc(sizeof(u64));
-		integers[0] = tag->data_u64;
+		integers = (u64*) calloc(1, sizeof(u64) * tag->data_count);
+		for (i32 i = 0; i < tag->data_count; ++i) {
+			memcpy(integers + i, tag->data + (i * bytesize), bytesize);
+		}
 	}
 
 	return integers;
@@ -184,15 +189,15 @@ u16* tiff_read_field_u16(tiff_t* tiff, tiff_tag_t* tag) {
 				free(integers);
 				return NULL; // failed
 			}
-		} else {
-			// data is inlined
-			memcpy(integers, (u16*)tag->data, read_size);
-		}
-		// Endian-swap if necessary
-		if (tiff->is_big_endian) {
-			for (i32 i = 0; i < tag->data_count; ++i) {
-				integers[i] = bswap_16((integers)[i]);
+			// Endian-swap if necessary
+			if (tiff->is_big_endian) {
+				for (i32 i = 0; i < tag->data_count; ++i) {
+					integers[i] = bswap_16((integers)[i]);
+				}
 			}
+		} else {
+			// data is inlined, and already in the right endian order
+			memcpy(integers, (u16*)tag->data, read_size);
 		}
 	}
 
@@ -351,10 +356,18 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			// but because we already converted the byte order to native (=little-endian) with enough
 			// padding in the tag struct, we can get away with treating them as if they are always LONG.
 			case TIFF_TAG_IMAGE_WIDTH: {
-				ifd->image_width = tag->data_u32;
+				if (tag->data_type == TIFF_UINT16) {
+					ifd->image_width = tag->data_u16;
+				} else {
+					ifd->image_width = tag->data_u32;
+				}
 			} break;
 			case TIFF_TAG_IMAGE_LENGTH: {
-				ifd->image_height = tag->data_u32;
+				if (tag->data_type == TIFF_UINT16) {
+					ifd->image_height = tag->data_u16;
+				} else {
+					ifd->image_height = tag->data_u32;
+				}
 			} break;
 			case TIFF_TAG_BITS_PER_SAMPLE: {
 				// TODO: Fix this for regular TIFF
@@ -376,9 +389,32 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->image_description_length = tag->data_count;
 				console_print_verbose("%.500s\n", ifd->image_description);
 			} break;
+			case TIFF_TAG_STRIP_OFFSETS: {
+				ifd->strip_count = tag->data_count;
+				ifd->strip_offsets = tiff_read_field_integers(tiff, tag);
+				if (ifd->strip_offsets == NULL) {
+					free(tags);
+					return false; // failed
+				}
+			} break;
 			case TIFF_TAG_SAMPLES_PER_PIXEL: {
 				ifd->samples_per_pixel = tag->data_u16;
 			} break;
+			case TIFF_TAG_ROWS_PER_STRIP: {
+				if (tag->data_type == TIFF_UINT16) {
+					ifd->rows_per_strip = tag->data_u16;
+				} else if (tag->data_type == TIFF_UINT32) {
+					ifd->rows_per_strip = tag->data_u32;
+				}
+			} break;
+			case TIFF_TAG_STRIP_BYTE_COUNTS: {
+				ifd->strip_count = tag->data_count;
+				ifd->strip_byte_counts = tiff_read_field_integers(tiff, tag);
+				if (ifd->strip_byte_counts == NULL) {
+					free(tags);
+					return false; // failed
+				}
+			}
 			case TIFF_TAG_X_RESOLUTION: {
 				tiff_rational_t resolution = tiff_read_field_rational(tiff, tag);
 				ifd->x_resolution = resolution;
@@ -500,6 +536,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 	free(tags);
 
+	if (ifd->tile_count > 0) {
+		ifd->is_tiled = true;
+	}
+
 	if (ifd->tile_width > 0) {
 		ifd->width_in_tiles = (ifd->image_width + ifd->tile_width - 1) / ifd->tile_width;
 	}
@@ -564,71 +604,87 @@ void tiff_post_init(tiff_t* tiff) {
 
 	float main_image_width = (float) main_image->image_width;
 	float main_image_height = (float) main_image->image_height;
-	tiff->max_downsample_level = 0;
-	i32 last_downsample_level = 0;
-	tiff->level_image_ifd_count = 0;
-	for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
-		tiff_ifd_t* ifd = tiff->ifds + ifd_index;
-		if (ifd->tile_count == 0) {
-			break; // not a tiled image, so cannot be part of the pyramid (could be macro or label image)
-		}
-		if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
-			++tiff->level_image_ifd_count;
-		}
 
-		float level_width = (float)ifd->image_width;
-		float raw_downsample_factor = main_image_width / level_width;
-		float raw_downsample_level = log2f(raw_downsample_factor);
-		i32 downsample_level = (i32) roundf(raw_downsample_level);
-
-		// Some TIFF files have the width/height set to an integer multiple of the tile size.
-		// For the most zoomed out levels, this makes it harder to calculate the actual downsampling level
-		// (because we might underestimate it). So we need to do extra work to deduce the downsampling
-		// level in these corner cases.
-		if (ifd->image_width % ifd->tile_width == 0) {
-			if (ifd->width_in_tiles >= 1 && ifd->height_in_tiles >= 1) {
-				u32 min_possible_width = ifd->tile_width * (ifd->width_in_tiles-1) + 1;
-				u32 max_possible_width = ifd->tile_width * (ifd->width_in_tiles) ;
-				float downsample_factor_upper_bound = main_image_width / (float)min_possible_width;
-				float downsample_factor_lower_bound = main_image_width / (float)max_possible_width;
-
-				if (ifd->image_height % ifd->tile_height == 0) {
-					// constrain further based on the vertical tile count
-					u32 min_possible_height = ifd->tile_height * (ifd->height_in_tiles-1) + 1;
-					u32 max_possible_height = ifd->tile_height * (ifd->height_in_tiles);
-
-					float downsample_factor_y_upper_bound = main_image_height / (float)min_possible_height;
-					float downsample_factor_y_lower_bound = main_image_height / (float)max_possible_height;
-
-					downsample_factor_upper_bound = MIN(downsample_factor_upper_bound, downsample_factor_y_upper_bound);
-					downsample_factor_lower_bound = MAX(downsample_factor_lower_bound, downsample_factor_y_lower_bound);
-				}
-
-				float level_lower_bound = log2f(downsample_factor_lower_bound);
-				float level_upper_bound = log2f(downsample_factor_upper_bound);
-
-				i32 discrete_level_lower_bound = (i32) ceilf(level_lower_bound);
-				i32 discrete_level_upper_bound = (i32) floorf(level_upper_bound);
-
-				if (discrete_level_lower_bound == discrete_level_upper_bound) {
-					downsample_level = discrete_level_lower_bound;
-				} else {
-					// ambiguity could not be resolved. Use last resort.
-					downsample_level = MIN(discrete_level_lower_bound, last_downsample_level + 1);
-				}
-				DUMMY_STATEMENT;
+	if (main_image->is_tiled) {
+		tiff->max_downsample_level = 0;
+		i32 last_downsample_level = 0;
+		tiff->level_image_ifd_count = 0;
+		for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+			tiff_ifd_t* ifd = tiff->ifds + ifd_index;
+			if (ifd->tile_count == 0) {
+				break; // not a tiled image, so cannot be part of the pyramid (could be macro or label image)
 			}
-		}
+			if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
+				++tiff->level_image_ifd_count;
+			}
 
-		ifd->downsample_level = last_downsample_level = downsample_level;
-		ifd->downsample_factor = exp2f((float)ifd->downsample_level);
-		tiff->max_downsample_level = MAX(ifd->downsample_level, tiff->max_downsample_level);
-		ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
-		ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
-		ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
-		ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
-		DUMMY_STATEMENT;
+			float level_width = (float)ifd->image_width;
+			float raw_downsample_factor = main_image_width / level_width;
+			float raw_downsample_level = log2f(raw_downsample_factor);
+			i32 downsample_level = (i32) roundf(raw_downsample_level);
+
+			// Some TIFF files have the width/height set to an integer multiple of the tile size.
+			// For the most zoomed out levels, this makes it harder to calculate the actual downsampling level
+			// (because we might underestimate it). So we need to do extra work to deduce the downsampling
+			// level in these corner cases.
+			if (ifd->image_width % ifd->tile_width == 0) {
+				if (ifd->width_in_tiles >= 1 && ifd->height_in_tiles >= 1) {
+					u32 min_possible_width = ifd->tile_width * (ifd->width_in_tiles-1) + 1;
+					u32 max_possible_width = ifd->tile_width * (ifd->width_in_tiles) ;
+					float downsample_factor_upper_bound = main_image_width / (float)min_possible_width;
+					float downsample_factor_lower_bound = main_image_width / (float)max_possible_width;
+
+					if (ifd->image_height % ifd->tile_height == 0) {
+						// constrain further based on the vertical tile count
+						u32 min_possible_height = ifd->tile_height * (ifd->height_in_tiles-1) + 1;
+						u32 max_possible_height = ifd->tile_height * (ifd->height_in_tiles);
+
+						float downsample_factor_y_upper_bound = main_image_height / (float)min_possible_height;
+						float downsample_factor_y_lower_bound = main_image_height / (float)max_possible_height;
+
+						downsample_factor_upper_bound = MIN(downsample_factor_upper_bound, downsample_factor_y_upper_bound);
+						downsample_factor_lower_bound = MAX(downsample_factor_lower_bound, downsample_factor_y_lower_bound);
+					}
+
+					float level_lower_bound = log2f(downsample_factor_lower_bound);
+					float level_upper_bound = log2f(downsample_factor_upper_bound);
+
+					i32 discrete_level_lower_bound = (i32) ceilf(level_lower_bound);
+					i32 discrete_level_upper_bound = (i32) floorf(level_upper_bound);
+
+					if (discrete_level_lower_bound == discrete_level_upper_bound) {
+						downsample_level = discrete_level_lower_bound;
+					} else {
+						// ambiguity could not be resolved. Use last resort.
+						downsample_level = MIN(discrete_level_lower_bound, last_downsample_level + 1);
+					}
+					DUMMY_STATEMENT;
+				}
+			}
+
+			ifd->downsample_level = last_downsample_level = downsample_level;
+			ifd->downsample_factor = exp2f((float)ifd->downsample_level);
+			tiff->max_downsample_level = MAX(ifd->downsample_level, tiff->max_downsample_level);
+			ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
+			ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
+			ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
+			ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
+			DUMMY_STATEMENT;
+		}
+	} else {
+		// In this case the main image is a regular image consisting of strips, not tiles.
+		tiff->level_image_ifd_count = 1;
+		tiff->max_downsample_level = 0;
+		main_image->downsample_level = 0;
+		main_image->downsample_factor = 1.0f;
+		main_image->um_per_pixel_x = tiff->mpp_x;
+		main_image->um_per_pixel_y = tiff->mpp_y;
+		main_image->tile_width = main_image->image_width;
+		main_image->tile_height = main_image->image_height;
+		main_image->x_tile_side_in_um = main_image->um_per_pixel_x * (float)main_image->tile_width;
+		main_image->y_tile_side_in_um = main_image->um_per_pixel_y * (float)main_image->tile_height;
 	}
+
 }
 
 bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
@@ -679,6 +735,10 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 			while (next_ifd_offset != 0) {
 				console_print_verbose("Reading IFD #%llu\n", tiff->ifd_count);
 				tiff_ifd_t ifd = { .ifd_index = tiff->ifd_count };
+
+				// Apply default values
+				ifd.compression = TIFF_COMPRESSION_NONE;
+				ifd.samples_per_pixel = 1; // usually 3 for RGB
 
 				// Apply some values from the last IFD that might not be repeated.
 				ifd.min_sample_value = last_ifd.min_sample_value;

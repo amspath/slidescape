@@ -80,7 +80,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	level_image_t* level_image = image->level_images + level;
 	ASSERT(level_image->exists);
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
-	ASSERT(level_image->x_tile_side_in_um > 0&& level_image->y_tile_side_in_um > 0);
+	ASSERT(level_image->x_tile_side_in_um > 0 && level_image->y_tile_side_in_um > 0);
 	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
 	float tile_world_pos_y_end = (tile_y + 1) * level_image->y_tile_side_in_um;
 	float tile_x_excess = tile_world_pos_x_end - image->width_in_um;
@@ -100,61 +100,94 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		tiff_t* tiff = &image->tiff;
 		tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 
-		u64 tile_offset = level_ifd->tile_offsets[tile_index];
-		u64 compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
-
 		u16 compression = level_ifd->compression;
-		// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
-		// We need to check for this situation and chicken out if this is the case.
-		if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
-#if DO_DEBUG
-			console_print("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-#endif
-			goto finish_up;
-		}
 		u8* jpeg_tables = level_ifd->jpeg_tables;
 		u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
 
-		if (tiff->is_remote) {
-			console_print_verbose("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+		u64 tile_offset = 0;
+		u64 compressed_tile_size_in_bytes = 0;
+		if (level_ifd->is_tiled) {
+			tile_offset = level_ifd->tile_offsets[tile_index];
+			compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
 
+			// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
+			// We need to check for this situation and chicken out if this is the case.
+			if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
+#if DO_DEBUG
+				console_print("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+#endif
+				goto finish_up;
+			}
 
-			i32 bytes_read = 0;
-			u8* read_buffer = download_remote_chunk(tiff->location.hostname, tiff->location.portno, tiff->location.filename,
-			                                        tile_offset, compressed_tile_size_in_bytes, &bytes_read, logical_thread_index);
-			if (read_buffer && bytes_read > 0) {
-				i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
-				i64 content_length = bytes_read - content_offset;
-				u8* content = read_buffer + content_offset;
+			if (!tiff->is_remote) {
+				file_handle_read_at_offset(compressed_tile_data, tiff->file_handle, tile_offset, compressed_tile_size_in_bytes);
+			} else {
+				console_print_verbose("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 
-				// TODO: better way to check the real content length?
-				if (content_length >= compressed_tile_size_in_bytes) {
-					if (content[0] == 0xFF && content[1] == 0xD9) {
-						// JPEG stream is empty
+				i32 bytes_read = 0;
+				u8* read_buffer = download_remote_chunk(tiff->location.hostname, tiff->location.portno, tiff->location.filename,
+				                                        tile_offset, compressed_tile_size_in_bytes, &bytes_read, logical_thread_index);
+				if (read_buffer && bytes_read > 0) {
+					i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
+					i64 content_length = bytes_read - content_offset;
+					u8* content = read_buffer + content_offset;
+
+					if (content_length >= compressed_tile_size_in_bytes) {
+						memcpy(compressed_tile_data, content, compressed_tile_size_in_bytes);
 					} else {
-						if (decode_tile(jpeg_tables, jpeg_tables_length, content, compressed_tile_size_in_bytes,
-						                temp_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
-//		                    console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-						} else {
-							console_print_error("[thread %d] failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-							failed = true;
-						}
+						failed = true;
 					}
 
+				} else {
+					failed = true;
+				}
+				if (failed) {
+					console_print_error("[thread %d] failed to read from remote level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+				}
+				if (read_buffer) {
+					free(read_buffer);
+				}
+			}
+
+		} else {
+			// image is not tiled
+			if (!tiff->is_remote) {
+
+				if (level_ifd->strip_count > 0) {
+					ASSERT(level_ifd->strip_offsets);
+					ASSERT(level_ifd->strip_byte_counts);
+					if (level_ifd->strip_count == 1) {
+						file_handle_read_at_offset(compressed_tile_data, tiff->file_handle, level_ifd->strip_offsets[0], level_ifd->strip_byte_counts[0]);
+					} else {
+						/*u8** strip_data = (u8**)alloca(level_ifd->strip_count * sizeof(u8**));
+						for (i32 i = 0; i < level_ifd->strip_count; ++i) {
+							u64 strip_offset = level_ifd->strip_offsets[i];
+							u64 strip_byte_count = level_ifd->strip_byte_counts[i];
+							strip_data[i] = (u8*)calloc(1, strip_byte_count);
+							file_handle_read_at_offset(strip_data[i], tiff->file_handle, strip_offset, strip_byte_count);
+						}
+						// TODO: stub
+
+						for (i32 i = 0; i < level_ifd->strip_count; ++i) {
+							free(strip_data[i]);
+						}*/
+						failed = true;
+						console_print_error("[thread %d] Cannot decode TIFF: multi-strip TIFFs not implemented.\n");
+					}
+
+				} else {
+					failed = true; // no tiles and no strips?
 				}
 
-
-
+			} else {
+				// TODO: stub
+				failed = true;
 			}
-			free(read_buffer);
-		} else {
+		}
+
+		// Now decompress
+		if (!failed) {
 //			console_print_verbose("[thread %d] loading tile: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
-#if WINDOWS
-			win32_overlapped_read(thread_memory, tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
-//			console_print_verbose("[thread %d] read succeeded\n", logical_thread_index);
-#else
-			size_t bytes_read = pread(tiff->file_handle, compressed_tile_data, compressed_tile_size_in_bytes, tile_offset);
-#endif
 
 			if (compression == TIFF_COMPRESSION_JPEG) {
 				if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
@@ -290,16 +323,29 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 					failed = true;
 				}
 
-
+			} else if (level_ifd->compression == TIFF_COMPRESSION_NONE) {
+				u8* decompressed = (u8*)compressed_tile_data;
+				u64 pixel_count = level_image->tile_width * level_image->tile_height;
+				i32 source_pos = 0;
+				u32* pixels = (u32*) temp_memory;
+				if (level_ifd->samples_per_pixel == 3) {
+					for (u64 i = 0; i < pixel_count; ++i) {
+						u8 r = decompressed[source_pos]; // only the red channel is being used
+						u8 g = decompressed[source_pos+1];
+						u8 b = decompressed[source_pos+2];
+						pixels[i] = MAKE_BGRA(r, g, b, 255);
+						source_pos+=3;
+					}
+				} else {
+					// TODO
+					failed = true;
+				}
 			} else {
 				console_print_error("\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
 				failed = true;
 			}
 
-
-
 		}
-
 
 		// Trim the tile (replace with transparent color) if it extends beyond the image size
 		// TODO: anti-alias edge?

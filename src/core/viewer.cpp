@@ -246,93 +246,129 @@ bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, b
 	// TODO: fix code duplication with tiff_deserialize()
 	if (tiff.level_image_ifd_count > 0 && tiff.main_image_ifd->tile_width) {
 
-		memset(image->level_images, 0, sizeof(image->level_images));
-		image->level_count = tiff.max_downsample_level + 1;
+		if (tiff.main_image_ifd->is_tiled) {
 
-		if (tiff.level_image_ifd_count > image->level_count) {
-			panic();
-		}
-		if (image->level_count > WSI_MAX_LEVELS) {
-			panic();
-		}
+			// This is a tiled image (as we expect most WSIs to be).
+			// We need to fill out the level_image_t structures to initialize the backend-agnostic image_t
 
-		i32 ifd_index = 0;
-		i32 next_ifd_index_to_check_for_match = 0;
-		tiff_ifd_t* ifd = tiff.level_images_ifd + ifd_index;
-		for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
-			level_image_t* level_image = image->level_images + level_index;
+			memset(image->level_images, 0, sizeof(image->level_images));
+			image->level_count = tiff.max_downsample_level + 1;
 
-			i32 wanted_downsample_level = level_index;
-			bool found_ifd = false;
-			for (ifd_index = next_ifd_index_to_check_for_match; ifd_index < tiff.level_image_ifd_count; ++ifd_index) {
-				ifd = tiff.level_images_ifd + ifd_index;
-				if (ifd->downsample_level == wanted_downsample_level) {
-					// match!
-					found_ifd = true;
-					next_ifd_index_to_check_for_match = ifd_index + 1; // next iteration, don't reuse the same IFD!
-					break;
-				}
+			if (tiff.level_image_ifd_count > image->level_count) {
+				panic();
+			}
+			if (image->level_count > WSI_MAX_LEVELS) {
+				panic();
 			}
 
-			if (found_ifd) {
-				// The current downsampling level is backed by a corresponding IFD level image in the TIFF.
-				level_image->exists = true;
-				level_image->pyramid_image_index = ifd_index;
-				level_image->downsample_factor = ifd->downsample_factor;
-				level_image->tile_count = ifd->tile_count;
-				level_image->width_in_tiles = ifd->width_in_tiles;
-				ASSERT(level_image->width_in_tiles > 0);
-				level_image->height_in_tiles = ifd->height_in_tiles;
-				level_image->tile_width = ifd->tile_width;
-				level_image->tile_height = ifd->tile_height;
-#if DO_DEBUG
-				if (level_image->tile_width != image->tile_width) {
-					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image->tile_width);
-				}
-				if (level_image->tile_height != image->tile_height) {
-					console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image->tile_width);
-				}
-#endif
-				level_image->um_per_pixel_x = ifd->um_per_pixel_x;
-				level_image->um_per_pixel_y = ifd->um_per_pixel_y;
-				level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
-				level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
-				ASSERT(level_image->x_tile_side_in_um > 0);
-				ASSERT(level_image->y_tile_side_in_um > 0);
-				level_image->tiles = (tile_t*) calloc(1, ifd->tile_count * sizeof(tile_t));
-				ASSERT(ifd->tile_byte_counts != NULL);
-				ASSERT(ifd->tile_offsets != NULL);
-				// mark the empty tiles, so that we can skip loading them later on
-				for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
-					tile_t* tile = level_image->tiles + tile_index;
-					u64 tile_byte_count = ifd->tile_byte_counts[tile_index];
-					if (tile_byte_count == 0) {
-						tile->is_empty = true;
+			i32 ifd_index = 0;
+			i32 next_ifd_index_to_check_for_match = 0;
+			tiff_ifd_t* ifd = tiff.level_images_ifd + ifd_index;
+			for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
+				level_image_t* level_image = image->level_images + level_index;
+
+				i32 wanted_downsample_level = level_index;
+				bool found_ifd = false;
+				for (ifd_index = next_ifd_index_to_check_for_match; ifd_index < tiff.level_image_ifd_count; ++ifd_index) {
+					ifd = tiff.level_images_ifd + ifd_index;
+					if (ifd->downsample_level == wanted_downsample_level) {
+						// match!
+						found_ifd = true;
+						next_ifd_index_to_check_for_match = ifd_index + 1; // next iteration, don't reuse the same IFD!
+						break;
 					}
-					// Facilitate some introspection by storing self-referential information
-					// in the tile_t struct. This is needed for some specific cases where we
-					// pass around pointers to tile_t structs without caring exactly where they
-					// came from.
-					// (Specific example: we use this when exporting a selected region as BigTIFF)
-					tile->tile_index = tile_index;
-					tile->tile_x = tile_index % level_image->width_in_tiles;
-					tile->tile_y = tile_index / level_image->width_in_tiles;
 				}
-			} else {
-				// The current downsampling level has no corresponding IFD level image :(
-				// So we need only some placeholder information.
-				level_image->exists = false;
-				level_image->downsample_factor = exp2f((float)wanted_downsample_level);
-				// Just in case anyone tries to divide by zero:
-				level_image->tile_width = image->tile_width;
-				level_image->tile_height = image->tile_height;
-				level_image->um_per_pixel_x = image->mpp_x * level_image->downsample_factor;
-				level_image->um_per_pixel_y = image->mpp_y * level_image->downsample_factor;
-				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
-				level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
+
+				if (found_ifd) {
+					// The current downsampling level is backed by a corresponding IFD level image in the TIFF.
+					level_image->exists = true;
+					level_image->pyramid_image_index = ifd_index;
+					level_image->downsample_factor = ifd->downsample_factor;
+					level_image->tile_count = ifd->tile_count;
+					level_image->width_in_tiles = ifd->width_in_tiles;
+					ASSERT(level_image->width_in_tiles > 0);
+					level_image->height_in_tiles = ifd->height_in_tiles;
+					level_image->tile_width = ifd->tile_width;
+					level_image->tile_height = ifd->tile_height;
+#if DO_DEBUG
+					if (level_image->tile_width != image->tile_width) {
+						console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image->tile_width);
+					}
+					if (level_image->tile_height != image->tile_height) {
+						console_print("Warning: level image %d (ifd #%d) tile width (%d) does not match base level (%d)\n", level_index, ifd_index, level_image->tile_width, image->tile_width);
+					}
+#endif
+					level_image->um_per_pixel_x = ifd->um_per_pixel_x;
+					level_image->um_per_pixel_y = ifd->um_per_pixel_y;
+					level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
+					level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
+					ASSERT(level_image->x_tile_side_in_um > 0);
+					ASSERT(level_image->y_tile_side_in_um > 0);
+					level_image->tiles = (tile_t*) calloc(1, ifd->tile_count * sizeof(tile_t));
+					ASSERT(ifd->tile_byte_counts != NULL);
+					ASSERT(ifd->tile_offsets != NULL);
+					// mark the empty tiles, so that we can skip loading them later on
+					for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+						tile_t* tile = level_image->tiles + tile_index;
+						u64 tile_byte_count = ifd->tile_byte_counts[tile_index];
+						if (tile_byte_count == 0) {
+							tile->is_empty = true;
+						}
+						// Facilitate some introspection by storing self-referential information
+						// in the tile_t struct. This is needed for some specific cases where we
+						// pass around pointers to tile_t structs without caring exactly where they
+						// came from.
+						// (Specific example: we use this when exporting a selected region as BigTIFF)
+						tile->tile_index = tile_index;
+						tile->tile_x = tile_index % level_image->width_in_tiles;
+						tile->tile_y = tile_index / level_image->width_in_tiles;
+					}
+				} else {
+					// The current downsampling level has no corresponding IFD level image :(
+					// So we need only some placeholder information.
+					level_image->exists = false;
+					level_image->downsample_factor = exp2f((float)wanted_downsample_level);
+					// Just in case anyone tries to divide by zero:
+					level_image->tile_width = image->tile_width;
+					level_image->tile_height = image->tile_height;
+					level_image->um_per_pixel_x = image->mpp_x * level_image->downsample_factor;
+					level_image->um_per_pixel_y = image->mpp_y * level_image->downsample_factor;
+					level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)tiff.main_image_ifd->tile_width;
+					level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)tiff.main_image_ifd->tile_height;
+				}
+				DUMMY_STATEMENT;
 			}
-			DUMMY_STATEMENT;
+		} else {
+			// The image is NOT tiled
+			memset(image->level_images, 0, sizeof(image->level_images));
+			image->level_count = 1;
+			level_image_t* level_image = image->level_images + 0;
+			tiff_ifd_t* ifd = tiff.main_image_ifd;
+			level_image->exists = true;
+			level_image->pyramid_image_index = 0;
+			level_image->downsample_factor = ifd->downsample_factor;
+			level_image->tile_count = 1;
+			level_image->width_in_tiles = 1;
+			ASSERT(level_image->width_in_tiles > 0);
+			level_image->height_in_tiles = 1;
+			level_image->tile_width = ifd->tile_width;
+			level_image->tile_height = ifd->tile_height;
+			level_image->um_per_pixel_x = ifd->um_per_pixel_x;
+			level_image->um_per_pixel_y = ifd->um_per_pixel_y;
+			level_image->x_tile_side_in_um = ifd->x_tile_side_in_um;
+			level_image->y_tile_side_in_um = ifd->y_tile_side_in_um;
+			ASSERT(level_image->x_tile_side_in_um > 0);
+			ASSERT(level_image->y_tile_side_in_um > 0);
+			level_image->tiles = (tile_t*) calloc(1, sizeof(tile_t)); // only 1 tile in this case
+			ASSERT(ifd->strip_byte_counts != NULL);
+			ASSERT(ifd->strip_offsets != NULL);
+			tile_t* tile = level_image->tiles + 0;
+			tile->tile_index = 0;
+			tile->tile_x = 0;
+			tile->tile_y = 0;
 		}
+
+
 	}
 
 	// TODO: establish the concept of a 'parent image' / fix dimensions not being exactly right
