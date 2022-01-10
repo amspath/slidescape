@@ -482,7 +482,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			annotation_set->export_as_coco = true;
 			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
 			if (file_exists(temp_filename)) {
-				console_print("Found JSON annotations: %s\n", temp_filename);
+				console_print("Found JSON annotations: '%s'\n", temp_filename);
 				coco_t coco = {};
 				load_coco_from_file(&coco, temp_filename);
 				coco_transfer_annotations_to_annotation_set(&coco, annotation_set);
@@ -501,7 +501,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			// TODO: use most recently updated annotations?
 			replace_file_extension(temp_filename, temp_size, "xml");
 			if (file_exists(temp_filename)) {
-				console_print("Found XML annotations: %s\n", temp_filename);
+				console_print("Found XML annotations: '%s'\n", temp_filename);
 				if (!were_annotations_loaded) {
 					load_asap_xml_annotations(app_state, temp_filename);
 				}

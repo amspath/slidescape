@@ -185,6 +185,8 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 first_coordinate_index, i32 second_coordinate_index);
 void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group);
 i32 annotation_cycle_selection_within_group(annotation_set_t* annotation_set, i32 delta);
+void set_region_for_whole_slide(scene_t* scene, image_t* image);
+void set_region_encompassing_selected_annotations(annotation_set_t* annotation_set, scene_t* scene);
 void center_scene_on_annotation(scene_t* scene, annotation_set_t* annotation_set, annotation_t* annotation);
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min);
 void draw_annotations_window(app_state_t* app_state, input_t* input);
@@ -198,7 +200,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
 void recount_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
-annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area);
+annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area, bool push_coordinates_inward);
 
 #ifdef __cplusplus
 }

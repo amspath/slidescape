@@ -25,6 +25,8 @@
 
 #include "jpeg_decoder.h"
 
+#include "tiff_write.h"
+
 
 enum export_region_format_enum {
 	EXPORT_REGION_FORMAT_BIGTIFF = 0,
@@ -593,7 +595,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 }
 
 bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, bool also_export_annotations) {
+                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, export_flags_enum export_flags) {
 	if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
 		return false;
 	}
@@ -938,8 +940,9 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 	}
 
-	if (also_export_annotations) {
-		annotation_set_t derived_set = create_offsetted_annotation_set_for_area(&app_state->scene.annotation_set, app_state->scene.crop_bounds);
+	if (export_flags & EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS) {
+		bool push_coordinates_inward = export_flags & EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
+		annotation_set_t derived_set = create_offsetted_annotation_set_for_area(&app_state->scene.annotation_set, app_state->scene.crop_bounds, push_coordinates_inward);
 
 		size_t filename_len = strlen(filename);
 		char* xml_filename = (char*)alloca(filename_len + 4);
@@ -963,14 +966,14 @@ typedef struct export_region_task_t {
 	u32 export_tile_width;
 	u16 desired_photometric_interpretation;
 	i32 quality;
-	bool also_export_annotations;
+	u32 export_flags;
 } export_region_task_t;
 
 void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 	export_region_task_t* task = (export_region_task_t*) userdata;
 	bool success = export_cropped_bigtiff(task->app_state, task->image, task->tiff, task->level0_bounds,
 	                                      task->filename, task->export_tile_width,
-	                                      task->desired_photometric_interpretation, task->quality, task->also_export_annotations);
+	                                      task->desired_photometric_interpretation, task->quality, task->export_flags);
 	global_tiff_export_progress = 1.0f;
 	task->app_state->is_export_in_progress = false;
 
@@ -978,7 +981,7 @@ void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 }
 
 void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, bool also_export_annotations) {
+                                  u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags) {
 	export_region_task_t task = {0};
 	task.app_state = app_state;
 	task.image = image;
@@ -988,7 +991,7 @@ void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t
 	task.export_tile_width = export_tile_width;
 	task.desired_photometric_interpretation = desired_photometric_interpretation;
 	task.quality = quality;
-	task.also_export_annotations = also_export_annotations;
+	task.export_flags = export_flags;
 
 	global_tiff_export_progress = 0.0f;
 	app_state->is_export_in_progress = true;

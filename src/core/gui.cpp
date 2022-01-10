@@ -117,7 +117,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool new_dataset_coco;
 			bool new_dataset_geojson;
 			bool save_annotations;
-			bool select_region;
+			bool select_region_create_box;
+			bool select_region_encompass_annotations;
+			bool select_region_whole_slide;
 			bool deselect;
 			bool crop_region;
 			bool export_region;
@@ -135,6 +137,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 		bool prev_is_vsync_enabled = is_vsync_enabled;
 		bool prev_fullscreen = is_fullscreen;
+		bool has_image_loaded = (arrlen(app_state->loaded_images) > 0);
 
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
@@ -150,7 +153,18 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Edit")) {
-			if (ImGui::MenuItem("Select region", NULL, &menu_items_clicked.select_region)) {}
+			if (ImGui::BeginMenu("Select region", has_image_loaded)) {
+				if (ImGui::MenuItem("Draw selection box...", NULL, &menu_items_clicked.select_region_create_box)) {}
+				ImGui::Separator();
+				if (ImGui::MenuItem("Set region to whole slide", NULL, &menu_items_clicked.select_region_whole_slide, has_image_loaded)) {}
+				bool encompass_option_enabled = scene->annotation_set.selection_count > 0;
+				if (scene->annotation_set.selection_count == 1) {
+					if (ImGui::MenuItem("Set region to selected annotation", NULL, &menu_items_clicked.select_region_encompass_annotations, encompass_option_enabled)) {}
+				} else {
+					if (ImGui::MenuItem("Set region to selected annotations", NULL, &menu_items_clicked.select_region_encompass_annotations, encompass_option_enabled)) {}
+				}
+				ImGui::EndMenu();
+			}
 			if (ImGui::MenuItem("Deselect region", NULL, &menu_items_clicked.deselect, app_state->scene.has_selection_box)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Restrict view to region", NULL, app_state->scene.is_cropped, app_state->scene.has_selection_box || app_state->scene.is_cropped)) {
@@ -178,7 +192,6 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
-			bool has_image_loaded = (arrlen(app_state->loaded_images) > 0);
 			prev_fullscreen = is_fullscreen = check_fullscreen(app_state->main_window); // double-check just in case...
 			if (ImGui::MenuItem("Reset zoom", NULL, &menu_items_clicked.reset_zoom)) {}
 			ImGui::Separator();
@@ -239,8 +252,17 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			}
 		} else if(menu_items_clicked.save_annotations) {
 			save_asap_xml_annotations(&app_state->scene.annotation_set, "test_out.xml");
-		} else if (menu_items_clicked.select_region) {
+		} else if (menu_items_clicked.select_region_create_box) {
 			app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
+		} else if (menu_items_clicked.select_region_encompass_annotations) {
+			set_region_encompassing_selected_annotations(&scene->annotation_set, scene);
+		} else if (menu_items_clicked.select_region_whole_slide) {
+			if (arrlen(app_state->loaded_images) > 0) {
+				image_t* image = app_state->loaded_images + 0;
+				// TODO: what to do if there are multiple layers?
+				set_region_for_whole_slide(scene, image);
+				scene->need_zoom_reset = true;
+			}
 		} else if (menu_items_clicked.deselect) {
 			scene->has_selection_box = false;
 		} else if (menu_items_clicked.crop_region) {
@@ -397,13 +419,15 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 		bool display_export_annotations_checkbox = (scene->annotation_set.active_annotation_count > 0);
 		i32 lines_at_bottom = 2;
-		if (display_export_annotations_checkbox) {
-			++lines_at_bottom;
-		}
+//		if (display_export_annotations_checkbox) {
+//			++lines_at_bottom;
+//		}
 
 		ImGui::BeginGroup();
 		ImGui::BeginChild("item view", ImVec2(0, -lines_at_bottom * ImGui::GetFrameHeightWithSpacing())); // Leave room for 2 lines below us
 
+		static bool also_export_annotations = true;
+		static bool allow_coordinates_outside_region = false;
 
 		if (scene->can_export_region) {
 			if (image->mpp_x > 0.0f && image->mpp_y > 0.0f) {
@@ -424,6 +448,29 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					}
 				}
 				ImGui::NewLine();
+
+				if (display_export_annotations_checkbox) {
+					ImGui::Checkbox("Also export annotations", &also_export_annotations);
+					if (also_export_annotations) {
+						if (ImGui::TreeNodeEx("Annotation export options", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+
+
+							bool dummy_checkbox_value = false;
+							bool* checkbox_value_ptr = &allow_coordinates_outside_region;
+							if (!also_export_annotations) {
+								ImGui::BeginDisabled();
+								checkbox_value_ptr = &dummy_checkbox_value;
+							}
+							ImGui::Checkbox("Allow coordinates to extend outside selected region", checkbox_value_ptr);
+
+							if (!also_export_annotations) {
+								ImGui::EndDisabled();
+							}
+						}
+					}
+					ImGui::NewLine();
+				}
+
 
 
 //				ImGui::Text("Selected region (pixel coordinates):\nx=%d\ny=%d\nwidth=%d\nheight=%d",
@@ -456,10 +503,6 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		}
 		ImGui::EndChild(); // end of top area -- now start drawing bottom area
 
-		static bool also_export_annotations = true;
-		if (display_export_annotations_checkbox) {
-			ImGui::Checkbox("Also export annotations", &also_export_annotations);
-		}
 
 		const char* name_hint = "output";
 		if (arrlen(app_state->loaded_images) > 0) {
@@ -565,9 +608,18 @@ void draw_export_region_dialog(app_state_t* app_state) {
 			if (proceed_with_export) {
 				switch(image->backend) {
 					case IMAGE_BACKEND_TIFF: {
+						u32 export_flags = 0;
+						if (display_export_annotations_checkbox) {
+							if (also_export_annotations) {
+								export_flags |= EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS;
+							}
+							if (!allow_coordinates_outside_region) {
+								export_flags |= EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
+							}
+						}
 						begin_export_cropped_bigtiff(app_state, image, &image->tiff, scene->selection_pixel_bounds,
 						                             filename_buffer, 512,
-						                             tiff_export_desired_color_space, tiff_export_jpeg_quality, also_export_annotations);
+						                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
 						gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
 					} break;
 					default: {

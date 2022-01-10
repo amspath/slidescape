@@ -371,7 +371,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 
 			// Delete a coordinate by pressing 'C' while hovering over the coordinate
 			if (was_key_pressed(input, KEY_C) && annotation_set->is_edit_mode) {
-				if (hit_result.annotation_index > 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
+				if (hit_result.annotation_index >= 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
 					delete_coordinate(annotation_set, get_active_annotation(annotation_set, hit_result.annotation_index), annotation_set->hovered_coordinate);
 				}
 			}
@@ -837,6 +837,34 @@ i32 annotation_cycle_selection_within_group(annotation_set_t* annotation_set, i3
 
 }
 
+void set_region_for_whole_slide(scene_t* scene, image_t* image) {
+	// TODO: what to to for offsetted images? (image->origin_offset)
+	bounds2f bounds = {0, 0, image->width_in_um, image->height_in_um};
+	scene->selection_box = bounds2f_to_rect(bounds);
+	scene->crop_bounds = bounds;
+	scene->has_selection_box = true;
+}
+
+void set_region_encompassing_selected_annotations(annotation_set_t* annotation_set, scene_t* scene) {
+	annotation_t* selected_annotation = annotation_set->selected_annotations[0];
+	annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+	if (annotation_set->selection_count == 1 && selected_annotation->coordinate_count >= 2) {
+		scene->selection_box = bounds2f_to_rect(selected_annotation->bounds);
+		scene->crop_bounds = selected_annotation->bounds;
+		scene->has_selection_box = true;
+	} else if (annotation_set->selection_count > 1) {
+		bounds2f bounds = selected_annotation->bounds;
+		for (i32 i = 1; i < annotation_set->selection_count; ++i) {
+			selected_annotation = annotation_set->selected_annotations[i];
+			annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+			bounds = bounds2f_encompassing(bounds, selected_annotation->bounds);
+		}
+		scene->selection_box = bounds2f_to_rect(bounds);
+		scene->crop_bounds = bounds;
+		scene->has_selection_box = true;
+	}
+};
+
 void annotation_draw_coordinate_dot(ImDrawList* draw_list, v2f point, float node_size, rgba_t node_color) {
 	draw_list->AddCircleFilled(point, node_size, *(u32*)(&node_color), 12);
 }
@@ -1021,31 +1049,13 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				ImGui::Separator();
 
 				// Option for setting the selection box around the selected annotation(s)
-				if (annotation_set->selection_count == 1) {
-					annotation_t* selected_annotation = annotation_set->selected_annotations[0];
-					if (selected_annotation->coordinate_count >= 2) {
-						if (ImGui::MenuItem("Set region selection")) {
-							annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
-							scene->selection_box = bounds2f_to_rect(selected_annotation->bounds);
-							scene->crop_bounds = selected_annotation->bounds;
-							scene->has_selection_box = true;
-						}
-					}
-				} else if (annotation_set->selection_count > 1) {
+				if (annotation_set->selection_count >= 1) {
 					if (ImGui::MenuItem("Set region selection")) {
-						annotation_t* selected_annotation = annotation_set->selected_annotations[0];
-						annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
-						bounds2f bounds = selected_annotation->bounds;
-						for (i32 i = 1; i < annotation_set->selection_count; ++i) {
-							selected_annotation = annotation_set->selected_annotations[i];
-							annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
-							bounds = bounds2f_encompassing(bounds, selected_annotation->bounds);
-						}
-						scene->selection_box = bounds2f_to_rect(bounds);
-						scene->crop_bounds = bounds;
-						scene->has_selection_box = true;
+						set_region_encompassing_selected_annotations(annotation_set, scene);
 					}
+
 				}
+
 
 			}
 			ImGui::EndPopup();
@@ -1938,7 +1948,7 @@ void recount_selected_annotations(app_state_t* app_state, annotation_set_t* anno
 }
 
 
-annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area) {
+annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area, bool push_coordinates_inward) {
 	// Create a duplicate annotation set
 	annotation_set_t result_set = {};
 	result_set.mpp = annotation_set->mpp;
@@ -1959,6 +1969,9 @@ annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* anno
 	memcpy(result_set.active_feature_indices, annotation_set->active_feature_indices, annotation_set->active_feature_count * sizeof(i32));
 	result_set.active_feature_count = annotation_set->active_feature_count;
 
+	float area_width = area.max.x - area.min.x;
+	float area_height = area.max.y - area.min.y;
+
 	// Copy annotations
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
@@ -1972,6 +1985,14 @@ annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* anno
 				v2f* coordinate = offsetted.coordinates + i;
 				coordinate->x -= area.min.x;
 				coordinate->y -= area.min.y;
+
+				if (push_coordinates_inward) {
+					// 'Push' coordinates within the cropped area
+					if (coordinate->x < 0.0f) coordinate->x = 0.0f;
+					else if (coordinate->x > area_width) coordinate->x = area_width;
+					if (coordinate->y < 0.0f) coordinate->y = 0.0f;
+					else if (coordinate->y > area_height) coordinate->y = area_height;
+				}
 			}
 
 			i32 new_stored_annotation_index = result_set.stored_annotation_count;
