@@ -117,8 +117,17 @@ endfunction()
 prepend_path(JPEG_SOURCE_FILES deps/jpeg)
 
 set(WITH_SIMD 1) # Set to 0 to disable the SIMD code for libjpeg-turbo
-add_subdirectory(deps/jpeg/simd)
 if (WITH_SIMD EQUAL 1)
+    # requirements for deps/jpeg/simd/CMakeLists.txt
+    include(CheckCSourceCompiles) # for check_c_source_compiles()
+    macro(boolean_number var)
+        if(${var})
+            set(${var} 1)
+        else()
+            set(${var} 0)
+        endif()
+    endmacro()
+    add_subdirectory(deps/jpeg/simd)
     set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} $<TARGET_OBJECTS:simd> ${SIMD_OBJS})
 else()
     set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} deps/jpeg/jsimd_none.c)
@@ -248,7 +257,7 @@ elseif(APPLE)
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slidescape MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
-    set_target_properties(slidescape PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/src/Info.plist)
+    set_target_properties(slidescape PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/Info.plist")
     target_link_libraries(slidescape "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
     target_link_libraries(slidescape ${SDL2_LIBRARIES})
     set_target_properties(slidescape PROPERTIES OUTPUT_NAME Slidescape)
@@ -259,10 +268,11 @@ elseif(APPLE)
     set(BUNDLE_BINARY_DIR "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Slidescape.app/Contents/MacOS")
     execute_process(COMMAND uname -m COMMAND tr -d '\n' OUTPUT_VARIABLE ARCHITECTURE)
     execute_process(COMMAND sdl2-config --prefix COMMAND tr -d '\n' OUTPUT_VARIABLE SDL2_PREFIX)
-    set(FIND_LINKED_DYLIB_COMMAND otool -L ${BUNDLE_BINARY_DIR}/slidescape | grep SDL2- | cut -d' ' -f1)
+    set(FIND_LINKED_DYLIB_COMMAND otool -L ${BUNDLE_BINARY_DIR}/slidescape | grep SDL2- -m 1 | cut -d' ' -f1)
     add_custom_command(TARGET slidescape POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}"
             COMMAND cp -f "${SDL2_PREFIX}/lib/libSDL2.dylib" "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}/libSDL2.dylib"
+            COMMAND cp -f "${CMAKE_SOURCE_DIR}/src/Info.plist" "${BUNDLE_BINARY_DIR}/../Info.plist"
             COMMAND install_name_tool -change `${FIND_LINKED_DYLIB_COMMAND}`
             @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/slidescape")
     if (WITH_CODESIGN)

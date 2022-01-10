@@ -1557,6 +1557,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Panning should be faster when zoomed in very far.
 			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
+            panning_multiplier *= app_state->display_scale_factor;
 
 			// Panning using the arrow or WASD keys.
 			float panning_speed = 1500.0f * delta_t * panning_multiplier;
