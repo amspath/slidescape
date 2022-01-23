@@ -241,11 +241,13 @@ typedef struct tiff_ifd_t {
 	u64 tile_count;
 	u64* tile_offsets;
 	u64* tile_byte_counts;
-	char* image_description;
 	u16 samples_per_pixel;
 	u16 sample_format;
 	i64 min_sample_value;
 	i64 max_sample_value;
+	char* software;
+	u64 software_length;
+	char* image_description;
 	u64 image_description_length;
 	u8* jpeg_tables;
 	u64 jpeg_tables_length;
@@ -269,6 +271,7 @@ typedef struct tiff_ifd_t {
 	tiff_rational_t x_resolution;
 	tiff_rational_t y_resolution;
 	tiff_resunit_enum resolution_unit;
+	bool is_philips;
 } tiff_ifd_t;
 
 
@@ -298,11 +301,12 @@ struct tiff_t {
 	u64 level_image_ifd_count;
 	tiff_ifd_t* level_images_ifd;
 	u64 level_images_ifd_index;
-	bool8 is_bigtiff;
-	bool8 is_big_endian;
+	bool is_bigtiff;
+	bool is_big_endian;
+	bool is_philips;
+	bool is_mpp_known;
 	float mpp_x;
 	float mpp_y;
-	bool is_mpp_known;
 	i32 max_downsample_level;
 };
 
@@ -374,6 +378,8 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer);
 i64 find_end_of_http_headers(u8* str, u64 len);
 bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size);
 void tiff_destroy(tiff_t* tiff);
+double tiff_rational_to_float(tiff_rational_t rational);
+tiff_rational_t float_to_tiff_rational(double x);
 
 #ifdef __cplusplus
 }

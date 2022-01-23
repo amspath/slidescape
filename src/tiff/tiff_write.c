@@ -595,7 +595,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 }
 
 bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
-                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, export_flags_enum export_flags) {
+                              u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags) {
 	if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
 		return false;
 	}
@@ -666,8 +666,9 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		raw_bigtiff_tag_t tag_photometric_interpretation = {TIFF_TAG_PHOTOMETRIC_INTERPRETATION, TIFF_UINT16, 1, .offset = desired_photometric_interpretation};
 		raw_bigtiff_tag_t tag_orientation = {TIFF_TAG_ORIENTATION, TIFF_UINT16, 1, .offset = TIFF_ORIENTATION_TOPLEFT};
 		raw_bigtiff_tag_t tag_samples_per_pixel = {TIFF_TAG_SAMPLES_PER_PIXEL, TIFF_UINT16, 1, .offset = 3};
-		raw_bigtiff_tag_t tag_tile_width = {TIFF_TAG_TILE_WIDTH, TIFF_UINT16, 1, .offset = export_tile_width};
 		raw_bigtiff_tag_t tag_tile_length = {TIFF_TAG_TILE_LENGTH, TIFF_UINT16, 1, .offset = export_tile_width};
+		raw_bigtiff_tag_t tag_tile_width = {TIFF_TAG_TILE_WIDTH, TIFF_UINT16, 1, .offset = export_tile_width};
+		raw_bigtiff_tag_t tag_resolution_unit = {TIFF_TAG_RESOLUTION_UNIT, TIFF_UINT16, 1, .data_u16 = 3 /*RESUNIT_CENTIMETER*/};
 		// NOTE: chroma subsampling is used for YCbCr-encoded images, but not for RGB
 		u16 chroma_subsampling[4] = {2, 2, 0, 0};
 		raw_bigtiff_tag_t tag_chroma_subsampling = {TIFF_TAG_YCBCRSUBSAMPLING, TIFF_UINT16, 2, .offset = *(u64*)(chroma_subsampling)};
@@ -772,27 +773,6 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 			}
 
-
-#if 0
-			for (i32 export_tile_y = 0; export_tile_y < export_height_in_tiles; ++export_tile_y) {
-				for (i32 export_tile_x = 0; export_tile_x < export_width_in_tiles; ++export_tile_x) {
-					encode_tile_task_t task = {
-							.image = image,
-							.tiff = tiff,
-							.ifd = source_ifd,
-							.level = level,
-							.export_tile_width = export_tile_width,
-							.export_tile_x = export_tile_x,
-							.export_tile_y = export_tile_y,
-							.pixel_bounds = pixel_bounds,
-					};
-					bool32 enqueued = add_work_queue_entry(&work_queue, encode_tile_func, &task);
-
-
-				}
-			}
-#endif
-
 			// Include the NewSubfileType tag in every IFD except the first one
 			if (level > 0) {
 				memrw_push_back(&tag_buffer, &tag_new_subfile_type, sizeof(raw_bigtiff_tag_t));
@@ -808,9 +788,11 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_photometric_interpretation); ++tag_count_for_ifd;
 
 			// Image description will be copied verbatim from the source
-			add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer, TIFF_TAG_IMAGE_DESCRIPTION,
-			                      TIFF_ASCII, source_ifd->image_description_length, source_ifd->image_description);
-			++tag_count_for_ifd;
+			if (source_ifd->image_description != NULL && source_ifd->image_description_length > 0) {
+				add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer, TIFF_TAG_IMAGE_DESCRIPTION,
+				                      TIFF_ASCII, source_ifd->image_description_length, source_ifd->image_description);
+				++tag_count_for_ifd;
+			}
 			// unused tag: strip offsets
 
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_orientation); ++tag_count_for_ifd;
@@ -818,20 +800,41 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 			// unused tag: rows per strip
 			// unused tag: strip byte counts
+			memrw_push_bigtiff_tag(&tag_buffer, &tag_resolution_unit);
+			++tag_count_for_ifd;
 
+			raw_bigtiff_tag_t tag_x_resolution = {TIFF_TAG_X_RESOLUTION, TIFF_RATIONAL, 1, 0};
 			if (source_ifd->x_resolution.b > 0) {
-				raw_bigtiff_tag_t tag_x_resolution = {TIFF_TAG_X_RESOLUTION, TIFF_RATIONAL, 1, .offset = *(u64*)(&source_ifd->x_resolution)};
+				tag_x_resolution.offset = *(u64*)(&source_ifd->x_resolution);
+				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
+				++tag_count_for_ifd;
+			} else if (image->is_mpp_known) {
+				tiff_rational_t resolution = float_to_tiff_rational(image->mpp_x * 10000.0f);
+				tag_x_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
 				++tag_count_for_ifd;
 			}
-			if (source_ifd->x_resolution.b > 0) {
-				raw_bigtiff_tag_t tag_y_resolution = {TIFF_TAG_Y_RESOLUTION, TIFF_RATIONAL, 1, .offset = *(u64*) (&source_ifd->y_resolution)};
+			raw_bigtiff_tag_t tag_y_resolution = {TIFF_TAG_Y_RESOLUTION, TIFF_RATIONAL, 1, 0};
+			if (source_ifd->y_resolution.b > 0) {
+				tag_x_resolution.offset = *(u64*)(&source_ifd->y_resolution);
+				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
+				++tag_count_for_ifd;
+			} else if (image->is_mpp_known) {
+				tiff_rational_t resolution = float_to_tiff_rational(image->mpp_y * 10000.0f);
+				tag_x_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
 				++tag_count_for_ifd;
 			}
-//			u64 software_offset = 0; // TODO
-//			u64 software_length = 0; // TODO
-//			raw_bigtiff_tag_t tag_software = {TIFF_TAG_SOFTWARE, TIFF_ASCII, software_length, software_offset};
+
+#if 0
+			// Copy Software tag verbatim from the source image.
+			// TODO: conform to Philips format by default to have mpp known in OpenSLide?
+			if (source_ifd->software != NULL && source_ifd->software_length > 0) {
+				add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer, TIFF_TAG_SOFTWARE,
+				                      TIFF_ASCII, source_ifd->software_length, source_ifd->software);
+				++tag_count_for_ifd;
+			}
+#endif
 
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_width); ++tag_count_for_ifd;
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_tile_length); ++tag_count_for_ifd;

@@ -202,6 +202,7 @@ set(VIEWER_SOURCE_FILES
         core/remote.c
         tiff/tiff.c
         tiff/tiff_write.c
+        tiff/tiff_xml.c
         tiff/tif_lzw.c
         isyntax/isyntax.c
         isyntax/isyntax_streamer.c

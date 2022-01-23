@@ -467,7 +467,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 	return success;
 }
 
-bool isyntax_validate_dicom_attr(const char* expected, const char* observed) {
+static bool validate_dicom_attr(const char* expected, const char* observed) {
 	bool ok = (strcmp(expected, observed) == 0);
 	if (!ok) {
 		console_print("iSyntax validation error: while reading DICOM metadata, expected '%s' but found '%s'\n", expected, observed);
@@ -475,8 +475,7 @@ bool isyntax_validate_dicom_attr(const char* expected, const char* observed) {
 	return ok;
 }
 
-void isyntax_parser_init(isyntax_t* isyntax) {
-	isyntax_parser_t* parser = &isyntax->parser;
+void isyntax_xml_parser_init(isyntax_xml_parser_t* parser) {
 
 	parser->initialized = true;
 
@@ -506,7 +505,7 @@ void isyntax_parser_init(isyntax_t* isyntax) {
 	yxml_init(parser->x, parser->x + 1, yxml_stack_buffer_size);
 }
 
-const char* get_spaces(i32 length) {
+static const char* get_spaces(i32 length) {
 	ASSERT(length >= 0);
 	static const char spaces[] = "                                  ";
 	i32 spaces_len = COUNT(spaces) - 1;
@@ -515,7 +514,7 @@ const char* get_spaces(i32 length) {
 	return spaces + offset;
 }
 
-void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_len, size_t* restrict dest_capacity, void* restrict src, size_t src_len) {
+static void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_len, size_t* restrict dest_capacity, void* restrict src, size_t src_len) {
 	ASSERT(dest && dest_len && dest_capacity && src);
 	size_t old_len = *dest_len;
 	size_t new_len = old_len + src_len;
@@ -538,10 +537,10 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 
 	static bool paranoid_mode = true;
 
-	isyntax_parser_t* parser = &isyntax->parser;
+	isyntax_xml_parser_t* parser = &isyntax->parser;
 
 	if (!parser->initialized) {
-		isyntax_parser_init(isyntax);
+		isyntax_xml_parser_init(parser);
 	}
 	x = parser->x;
 
@@ -598,8 +597,10 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						// push into the data object stack, to keep track of which type of DataObject we are parsing
 						// (we need this information to restore state when the XML element ends)
 						++parser->data_object_stack_index;
-						parser->data_object_stack[parser->data_object_stack_index] = parent_node->element;
+						parser->data_object_stack[parser->data_object_stack_index] = *parent_node;
 						// set relevant flag for which data object type we are now parsing
+						// NOTE: the data objects can have different DICOM groups, but currently there are no element
+						// ID collisions so we can switch on only the element ID. This may change in the future.
 						u32 flags = parser->data_object_flags;
 						switch(parent_node->element) {
 							default: break;
@@ -613,6 +614,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							case DP_IMAGE_POST_PROCESSING:                flags |= ISYNTAX_OBJECT_DPImagePostProcessing; break;
 							case DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor; break;
 							case DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel; break;
+							case PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE: flags |= ISYNTAX_OBJECT_PixelDataRepresentation; break;
 						}
 						parser->data_object_flags = flags;
 					} else if (strcmp(x->elem, "Array") == 0) {
@@ -720,11 +722,11 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						} else if (parser->current_node_type == ISYNTAX_NODE_BRANCH) {
 							elem_name = "DataObject";
 							// pop data object stack
-							u16 element = parser->data_object_stack[parser->data_object_stack_index];
+							isyntax_parser_node_t data_object = parser->data_object_stack[parser->data_object_stack_index];
 							--parser->data_object_stack_index;
 							// reset relevant data for the data object type we are now no longer parsing
 							u32 flags = parser->data_object_flags;
-							switch(element) {
+							switch(data_object.element) {
 								default: break;
 								case 0:                                       flags &= ~ISYNTAX_OBJECT_DPUfsImport; break;
 								case PIM_DP_SCANNED_IMAGES:                   flags &= ~ISYNTAX_OBJECT_DPScannedImage; break;
@@ -808,19 +810,19 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 
 						if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
 							if (parser->attribute_index == 0 /* Name="..." */) {
-								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Name");
+								if (paranoid_mode) validate_dicom_attr(x->attr, "Name");
 								size_t copy_size = MIN(parser->attrlen, sizeof(parser->current_dicom_attribute_name));
 								memcpy(parser->current_dicom_attribute_name, parser->attrbuf, copy_size);
 								i32 one_past_last_char = MIN(parser->attrlen, sizeof(parser->current_dicom_attribute_name)-1);
 								parser->current_dicom_attribute_name[one_past_last_char] = '\0';
 							} else if (parser->attribute_index == 1 /* Group="0x...." */) {
-								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Group");
+								if (paranoid_mode) validate_dicom_attr(x->attr, "Group");
 								parser->current_dicom_group_tag = strtoul(parser->attrbuf, NULL, 0);
 							} else if (parser->attribute_index == 2 /* Element="0x...." */) {
-								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "Element");
+								if (paranoid_mode) validate_dicom_attr(x->attr, "Element");
 								parser->current_dicom_element_tag = strtoul(parser->attrbuf, NULL, 0);
 							} else if (parser->attribute_index == 3 /* PMSVR="..." */) {
-								if (paranoid_mode) isyntax_validate_dicom_attr(x->attr, "PMSVR");
+								if (paranoid_mode) validate_dicom_attr(x->attr, "PMSVR");
 								if (strcmp(parser->attrbuf, "IDataObjectArray") == 0) {
 									// Leaf node WITH children.
 									// Don't wait until YXML_ELEMEND to parse the attributes (this is the only opportunity we have!)

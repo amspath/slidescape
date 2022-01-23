@@ -63,7 +63,9 @@ enum isyntax_node_type_enum {
 	ISYNTAX_NODE_ARRAY = 3, // <Array> (contains one or more similar type of leaf/branch nodes)
 };
 
-enum isyntax_group_0x301D_dicom_element_enum {
+// NOTE: Most of these have DICOM group 0x301D. Currently there seem to be no element ID collisions.
+enum isyntax_group_data_object_dicom_element_enum {
+	// Group 0x301D
 	PIM_DP_SCANNED_IMAGES                   = 0x1003, // DPScannedImage
 	UFS_IMAGE_GENERAL_HEADERS               = 0x2000, // UFSImageGeneralHeader
 	UFS_IMAGE_DIMENSIONS                    = 0x2003, // UFSImageDimension
@@ -73,6 +75,8 @@ enum isyntax_group_0x301D_dicom_element_enum {
 	DP_IMAGE_POST_PROCESSING                = 0x1014, // DPImagePostProcessing
 	DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR = 0x1019, // DPWaveletQuantizerSeetingsPerColor
 	DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL = 0x101a, // DPWaveletQuantizerSeetingsPerLevel
+	// Group 8B01
+	PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE = 0x1001, // PixelDataRepresentation
 };
 
 enum isyntax_data_object_flag_enum {
@@ -86,6 +90,7 @@ enum isyntax_data_object_flag_enum {
 	ISYNTAX_OBJECT_DPImagePostProcessing = 0x80,
 	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor = 0x100,
 	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel = 0x200,
+	ISYNTAX_OBJECT_PixelDataRepresentation = 0x400,
 };
 
 
@@ -95,6 +100,11 @@ typedef struct dicom_tag_header_t {
 	u16 element;
 	u32 size;
 } dicom_tag_header_t;
+
+typedef struct dicom_tag_id_t {
+	u16 group;
+	u16 element;
+} dicom_tag_id_t;
 
 typedef struct isyntax_partial_block_header_t {
 	dicom_tag_header_t sequence_element_header;
@@ -249,7 +259,7 @@ typedef struct isyntax_parser_node_t {
 
 #define ISYNTAX_MAX_NODE_DEPTH 16
 
-typedef struct isyntax_parser_t {
+typedef struct isyntax_xml_parser_t {
 	yxml_t* x;
 	isyntax_image_t* current_image;
 	i32 running_image_index;
@@ -272,13 +282,13 @@ typedef struct isyntax_parser_t {
 	bool current_node_has_children;
 	isyntax_parser_node_t node_stack[ISYNTAX_MAX_NODE_DEPTH];
 	i32 node_stack_index;
-	u16 data_object_stack[ISYNTAX_MAX_NODE_DEPTH];
+	isyntax_parser_node_t data_object_stack[ISYNTAX_MAX_NODE_DEPTH];
 	i32 data_object_stack_index;
 	u32 data_object_flags;
 	i32 header_template_index;
 	i32 dimension_index;
 	bool initialized;
-} isyntax_parser_t;
+} isyntax_xml_parser_t;
 
 typedef struct isyntax_t {
 	i64 filesize;
@@ -289,7 +299,7 @@ typedef struct isyntax_t {
 	i32 macro_image_index;
 	i32 label_image_index;
 	i32 wsi_image_index;
-	isyntax_parser_t parser;
+	isyntax_xml_parser_t parser;
 	float mpp_x;
 	float mpp_y;
 	bool is_mpp_known;
@@ -306,6 +316,7 @@ typedef struct isyntax_t {
 } isyntax_t;
 
 // function prototypes
+void isyntax_xml_parser_init(isyntax_xml_parser_t* parser);
 void isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);

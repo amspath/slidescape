@@ -173,6 +173,34 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 			begin_a_very_long_task();
 		} else if (strcmp(cmd, "modal") == 0) {
 			gui_add_modal_message_popup("Modal test", "This is a modal message test.");
+		} else if (strcmp(cmd, "tiff_save_description") == 0) {
+			if (arrlen(app_state->loaded_images) > 0) {
+				image_t* image = app_state->loaded_images + 0;
+				if (image->backend == IMAGE_BACKEND_TIFF) {
+					tiff_ifd_t* ifd = image->tiff.main_image_ifd;
+					if (ifd && ifd->image_description != NULL) {
+						const char* filename;
+						char filename_buf[512];
+						if (arg) {
+							filename = arg;
+						} else {
+							snprintf(filename_buf, sizeof(filename_buf), "%s%s.description.txt", get_active_directory(app_state), image->name);
+							filename_buf[sizeof(filename_buf)-1] = '\0';
+							filename = filename_buf;
+						}
+						FILE* out = fopen(filename, "wb");
+						fwrite(ifd->image_description, ifd->image_description_length, 1, out);
+						fclose(out);
+						console_print("Saved TIFF ImageDescription tag to '%s'\n", filename);
+					} else {
+						console_print("TIFF file has no ImageDescription to output\n");
+					}
+				} else {
+					console_print("No TIFF file loaded\n");
+				}
+			} else {
+					console_print("No image loaded\n");
+			}
 		} else {
 			console_print("Unknown command: %s\n", cmd);
 		}

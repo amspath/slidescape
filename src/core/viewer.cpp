@@ -1778,7 +1778,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scale_bar->pos.x += scene->drag_vector.x;
 					scale_bar->pos.y += scene->drag_vector.y;
 #endif
-					console_print_verbose("mouse = %d, %d\n", input->mouse_xy.x, input->mouse_xy.y);
+//					console_print_verbose("mouse = %d, %d\n", input->mouse_xy.x, input->mouse_xy.y);
 					update_scale_bar(scene, scale_bar);
 				} else if (scene->drag_ended) {
 					app_state->mouse_mode = MODE_VIEW;

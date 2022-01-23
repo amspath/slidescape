@@ -262,8 +262,51 @@ tiff_rational_t tiff_read_field_rational(tiff_t* tiff, tiff_tag_t* tag) {
 	return result;
 }
 
-float tiff_rational_to_float(tiff_rational_t rational) {
-	float result = (float)((double)(u32)rational.a) / ((double)(u32)rational.b);
+double tiff_rational_to_float(tiff_rational_t rational) {
+	float result = ((double)(u32)rational.a) / ((double)(u32)rational.b);
+	return result;
+}
+
+tiff_rational_t float_to_tiff_rational(double x) {
+
+	// Source: https://www.ics.uci.edu/~eppstein/numth/frap.c
+
+	i64 maxden = INT32_MAX / 4; // to be safe, don't use all bits
+	i64 startx = x;
+	i64 m[2][2];
+	i64 ai;
+
+	/* initialize matrix */
+	m[0][0] = m[1][1] = 1;
+	m[0][1] = m[1][0] = 0;
+
+	/* loop finding terms until denom gets too big */
+	while (m[1][0] *  ( ai = (i64)x ) + m[1][1] <= maxden) {
+		long t;
+		t = m[0][0] * ai + m[0][1];
+		m[0][1] = m[0][0];
+		m[0][0] = t;
+		t = m[1][0] * ai + m[1][1];
+		m[1][1] = m[1][0];
+		m[1][0] = t;
+		if(x==(double)ai) break;     // AF: division by zero
+		x = 1/(x - (double) ai);
+		if(x>(double)0x7FFFFFFF) break;  // AF: representation failure
+	}
+
+	/* now remaining x is between 0 and 1/ai */
+	/* approx as either 0 or 1/m where m is max that will fit in maxden */
+	/* first try zero */
+//	console_print_verbose("%ld/%ld, error = %e\n", m[0][0], m[1][0], startx - ((double) m[0][0] / (double) m[1][0]));
+
+	/* now try other possibility */
+	/*ai = (maxden - m[1][1]) / m[1][0];
+	m[0][0] = m[0][0] * ai + m[0][1];
+	m[1][0] = m[1][0] * ai + m[1][1];
+	console_print_verbose("%ld/%ld, error = %e\n", m[0][0], m[1][0],
+	       startx - ((double) m[0][0] / (double) m[1][0]));*/
+
+	tiff_rational_t result = {m[0][0], m[1][0]};
 	return result;
 }
 
@@ -428,6 +471,15 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_RESOLUTION_UNIT: {
 				ifd->resolution_unit = tag->data_u16; //
 			} break;
+			case TIFF_TAG_SOFTWARE: {
+				ifd->software = tiff_read_field_ascii(tiff, tag);
+				ifd->software_length = tag->data_count;
+				console_print_verbose("%.500s\n", ifd->software);
+				if (strncmp(ifd->software, "Philips", 7) == 0) {
+					ifd->is_philips = true;
+					tiff->is_philips = true;
+				}
+			}
 			case TIFF_TAG_TILE_WIDTH: {
 				ifd->tile_width = tag->data_u32;
 			} break;
@@ -1188,6 +1240,7 @@ void tiff_destroy(tiff_t* tiff) {
 		if (ifd->tile_offsets) free(ifd->tile_offsets);
 		if (ifd->tile_byte_counts) free(ifd->tile_byte_counts);
 		if (ifd->image_description) free(ifd->image_description);
+		if (ifd->software) free(ifd->software);
 		if (ifd->jpeg_tables) free(ifd->jpeg_tables);
 		if (ifd->reference_black_white) free(ifd->reference_black_white);
 	}
