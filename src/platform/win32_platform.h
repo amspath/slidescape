@@ -52,7 +52,9 @@ LPSTR* WINAPI CommandLineToArgvA(LPSTR lpCmdline, int* numargs);
 #endif
 
 //extern HWND global_main_window;
-
+extern HCURSOR global_cursor_arrow;
+extern HCURSOR global_cursor_crosshair;
+extern HCURSOR global_current_cursor;
 
 #undef INIT
 #undef extern

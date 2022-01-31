@@ -83,8 +83,6 @@ int g_cmdshow;
 i64 performance_counter_frequency;
 bool32 is_sleep_granular;
 
-bool32 show_cursor;
-HCURSOR the_cursor;
 WINDOWPLACEMENT window_position = { sizeof(window_position) };
 
 WNDCLASSA main_window_class;
@@ -355,8 +353,9 @@ float get_seconds_elapsed(i64 start, i64 end) {
 }
 
 void win32_init_cursor() {
-	the_cursor = LoadCursorA(NULL, IDC_ARROW);
-	show_cursor = true;
+	global_cursor_arrow = LoadCursorA(NULL, IDC_ARROW);
+	global_cursor_crosshair = LoadCursorA(NULL, IDC_CROSS);
+	global_current_cursor = global_cursor_arrow;
 }
 
 // XInputGetState support
@@ -809,6 +808,10 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 				win32_process_keyboard_event(&keyboard_input->keys[hid_code], is_down);
 
+				if (hid_code == KEY_LeftAlt || hid_code == KEY_RightAlt) {
+					win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
+				}
+
 				switch (vk_code) {
 					default:
 						break;
@@ -818,9 +821,9 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 					case VK_CONTROL:
 						win32_process_keyboard_event(&keyboard_input->key_ctrl, is_down);
 						break;
-					case VK_MENU:
-						win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
-						break;
+//					case VK_MENU:
+//						win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
+//						break;
 					case VK_LWIN:
 					case VK_RWIN:
 						win32_process_keyboard_event(&keyboard_input->key_super, is_down);
@@ -1629,7 +1632,7 @@ void win32_init_main_window(app_state_t* app_state) {
 	main_window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	main_window_class.lpfnWndProc = main_window_callback;
 	main_window_class.hInstance = g_instance;
-	main_window_class.hCursor = the_cursor;
+	main_window_class.hCursor = NULL;
 	main_window_class.hIcon = LoadIconA(g_instance, MAKEINTRESOURCE(101));
 	main_window_class.lpszClassName = "SlidescapeMainWindow";
 	main_window_class.hbrBackground = NULL;

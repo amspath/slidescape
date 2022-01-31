@@ -327,6 +327,9 @@ u64 file_read_at_offset(void* dest, file_stream_t fp, u64 offset, u64 num_bytes)
 
 void mouse_show();
 void mouse_hide();
+void update_cursor();
+void set_cursor_default();
+void set_cursor_crosshair();
 
 const char* get_default_save_directory();
 void open_file_dialog(app_state_t* app_state, u32 filetype_hint);

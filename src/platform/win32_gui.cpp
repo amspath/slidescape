@@ -117,6 +117,15 @@ void win32_init_gui(app_state_t* app_state) {
 	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
 	io.Fonts->Build();
 
+	// TODO: move to platform independent code
+	// Prevent acute angles in annotations being drawn incorrectly (at least until ImGui bug is fixed):
+	// https://github.com/ocornut/imgui/issues/3366
+	// https://github.com/ocornut/imgui/pull/2964
+	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+	draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
+
+	// TODO: Windows high DPI code
+
 	is_fullscreen = check_fullscreen(app_state->main_window);
 
 }

@@ -291,8 +291,9 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 		annotation_set->active_annotation_indices[i] = i;
 	}
 
-	annotation_set->asap_xml_filename = strdup(filename); // TODO: fix leak
+	strncpy(annotation_set->asap_xml_filename, filename, sizeof(annotation_set->asap_xml_filename)-1);
 	annotation_set->export_as_asap_xml = true;
+	annotation_set->annotations_were_loaded_from_file = true;
 	success = true;
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());
 	console_print("Loaded ASAP XML annotations in %g seconds.\n", seconds_elapsed);

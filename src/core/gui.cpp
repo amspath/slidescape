@@ -180,9 +180,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Point", "Q", &menu_items_clicked.insert_point)) {}
 				if (ImGui::MenuItem("Line", "M", &menu_items_clicked.insert_line)) {}
 				if (ImGui::MenuItem("Freeform", "F", &menu_items_clicked.insert_freeform)) {}
-				if (ImGui::MenuItem("Ellipse", "E", &menu_items_clicked.insert_ellipse)) {}
+//				if (ImGui::MenuItem("Ellipse", "E", &menu_items_clicked.insert_ellipse)) {}
 				if (ImGui::MenuItem("Rectangle", "R", &menu_items_clicked.insert_rectangle)) {}
-				if (ImGui::MenuItem("Text", "T", &menu_items_clicked.insert_text)) {}
+//				if (ImGui::MenuItem("Text", "T", &menu_items_clicked.insert_text)) {}
 				ImGui::EndMenu();
 			}
 			ImGui::Separator();
@@ -206,7 +206,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::Separator();
 
 			if (ImGui::BeginMenu("Debug")) {
-				if (ImGui::MenuItem("Show console", "F3", &show_console_window)) {}
+				if (ImGui::MenuItem("Show console", "F3 or `", &show_console_window)) {}
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
@@ -704,6 +704,16 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	gui_want_capture_mouse = io.WantCaptureMouse;
 	gui_want_capture_keyboard = io.WantCaptureKeyboard;
 
+	// TODO: check if cursor is in client area before taking over control of the cursor from ImGui
+	if (gui_want_capture_mouse) {
+		// Cursor is handled by ImGui
+		io.ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
+	} else {
+		// We are updating the cursor ourselves
+		io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+		update_cursor();
+	}
+
 	if (show_menu_bar) gui_draw_main_menu_bar(app_state);
 
 	if (show_open_remote_window) {
@@ -825,66 +835,91 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("General options", &show_general_options_window);
+		static ImGuiComboFlags combo_flags = 0;
+		ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
+		if (ImGui::BeginTabBar("General options tab bar", tab_bar_flags)) {
+			if (ImGui::BeginTabItem("Appearance")) {
+				ImGui::Text("Graphical user interface");
+				// General BeginCombo() API, you have full control over your selection data and display type.
+				// (your selection data could be an index, a pointer to the object, an id for the object, a flag stored in the object itself, etc.)
+				const char* items[] = {"Dark (default)", "Light", "Classic"};
+				static i32 style_color = 0;
+				int old_style_color = style_color;
 
-		ImGui::Text("User interface options");
-		ImGui::SliderFloat("Opacity##user interface", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.
-		// General BeginCombo() API, you have full control over your selection data and display type.
-		// (your selection data could be an index, a pointer to the object, an id for the object, a flag stored in the object itself, etc.)
-		const char* items[] = {"Dark", "Light", "Classic"};
-		static i32 style_color = 0;
-		int old_style_color = style_color;
-		static ImGuiComboFlags flags = 0;
-//		ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
-		if (ImGui::BeginCombo("Colors##user interface", items[style_color],
-		                      flags)) // The second parameter is the label previewed before opening the combo.
-		{
-			for (int n = 0; n < IM_ARRAYSIZE(items); n++) {
-				bool is_selected = (style_color == n);
-				if (ImGui::Selectable(items[n], is_selected))
-					style_color = n;
-				if (style_color)
-					ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
-			}
-			ImGui::EndCombo();
+//		        ImGui::Text("User interface colors");               // Display some text (you can use a format strings too)
+				if (ImGui::BeginCombo("Colors##user interface", items[style_color],
+				                      combo_flags)) // The second parameter is the label previewed before opening the combo.
+				{
+					for (int n = 0; n < IM_ARRAYSIZE(items); n++) {
+						bool is_selected = (style_color == n);
+						if (ImGui::Selectable(items[n], is_selected))
+							style_color = n;
+						if (style_color)
+							ImGui::SetItemDefaultFocus();   // Set the initial focus when opening the combo (scrolling + for keyboard navigation support in the upcoming navigation branch)
+					}
+					ImGui::EndCombo();
 
-			if (style_color != old_style_color) {
-				if (style_color == 0) {
-					ImGui::StyleColorsDark();
-				} else if (style_color == 1) {
-					ImGui::StyleColorsLight();
-				} else if (style_color == 2) {
-					ImGui::StyleColorsClassic();
+					if (style_color != old_style_color) {
+						if (style_color == 0) {
+							ImGui::StyleColorsDark();
+						} else if (style_color == 1) {
+							ImGui::StyleColorsLight();
+						} else if (style_color == 2) {
+							ImGui::StyleColorsClassic();
+						}
+					}
 				}
-			}
-		}
+				ImGui::SliderFloat("Opacity##user interface", &ImGui::GetStyle().Alpha, 0.20f, 1.0f, "%.2f"); // Not exposing zero here so user doesn't "lose" the UI (zero alpha clips all widgets). But application code could have a toggle to switch between zero and non-zero.
 
-
-		ImGui::Text("\nTIFF backend");
-//		ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
-		const char* tiff_backends[] = {"Built-in", "OpenSlide"};
-		if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1 - app_state->use_builtin_tiff_backend],
-		                      flags)) // The second parameter is the label previewed before opening the combo.
-		{
-			if (ImGui::Selectable(tiff_backends[0], app_state->use_builtin_tiff_backend)) {
-				app_state->use_builtin_tiff_backend = true;
+				ImGui::EndTabItem();
 			}
-			if (app_state->use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
-			if (is_openslide_available) {
-				if (ImGui::Selectable(tiff_backends[1], !app_state->use_builtin_tiff_backend)) {
-					app_state->use_builtin_tiff_backend = false;
+
+			if (ImGui::BeginTabItem("Controls")) {
+				ImGui::TextUnformatted("Panning speed");
+				ImGui::SliderInt("Mouse sensitivity", &app_state->mouse_sensitivity, 1, 50);
+				ImGui::SliderInt("Keyboard sensitivity", &app_state->keyboard_base_panning_speed, 1, 50);
+				ImGui::EndTabItem();
+			}
+
+			if (ImGui::BeginTabItem("Advanced")) {
+				ImGui::Text("\nTIFF backend");
+//		        ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
+				const char* tiff_backends[] = {"Built-in", "OpenSlide"};
+				if (ImGui::BeginCombo("##tiff_backend", tiff_backends[1 - app_state->use_builtin_tiff_backend],
+				                      combo_flags)) // The second parameter is the label previewed before opening the combo.
+				{
+					if (ImGui::Selectable(tiff_backends[0], app_state->use_builtin_tiff_backend)) {
+						app_state->use_builtin_tiff_backend = true;
+					}
+					if (app_state->use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+					if (is_openslide_available) {
+						if (ImGui::Selectable(tiff_backends[1], !app_state->use_builtin_tiff_backend)) {
+							app_state->use_builtin_tiff_backend = false;
+						}
+						if (!app_state->use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+					}
+					ImGui::EndCombo();
 				}
-				if (!app_state->use_builtin_tiff_backend) ImGui::SetItemDefaultFocus();
+
+				ImGui::NewLine();
+
+				bool prev_is_vsync_enabled = is_vsync_enabled;
+				ImGui::Checkbox("Enable Vsync", &is_vsync_enabled);
+				if (prev_is_vsync_enabled != is_vsync_enabled) {
+					set_swap_interval(is_vsync_enabled ? 1 : 0);
+				}
+				ImGui::EndTabItem();
 			}
-			ImGui::EndCombo();
+
+
+			ImGui::EndTabBar();
 		}
 
-		ImGui::NewLine();
 
-		bool prev_is_vsync_enabled = is_vsync_enabled;
-		ImGui::Checkbox("Enable Vsync", &is_vsync_enabled);
-		if (prev_is_vsync_enabled != is_vsync_enabled) {
-			set_swap_interval(is_vsync_enabled ? 1 : 0);
-		}
+
+
+
+
 
 		ImGui::End();
 	}

@@ -515,6 +515,20 @@ void mouse_show() {
 	}
 }
 
+void update_cursor() {
+	SetCursor(global_current_cursor);
+}
+
+void set_cursor_default() {
+	global_current_cursor = global_cursor_arrow;
+	update_cursor();
+}
+
+void set_cursor_crosshair() {
+	global_current_cursor = global_cursor_crosshair;
+	update_cursor();
+}
+
 const char* get_default_save_directory() {
 	return "";
 };

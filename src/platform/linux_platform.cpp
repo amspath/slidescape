@@ -113,6 +113,18 @@ void mouse_hide() {
     }
 }
 
+void update_cursor() {
+	// TODO:
+}
+
+void set_cursor_default() {
+	// TODO: SetCursor(global_cursor_arrow);
+}
+
+void set_cursor_crosshair() {
+	// TODO: SetCursor(global_cursor_arrow);
+}
+
 bool need_open_file_dialog = false;
 u32 open_file_filetype_hint;
 bool open_file_dialog_open = false;

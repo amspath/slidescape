@@ -46,7 +46,7 @@ typedef struct texture_t {
 #define WSI_TILE_DIM 512
 #define BYTES_PER_PIXEL 4
 
-#define ENABLE_INSERT_TOOLS 0
+#define ENABLE_INSERT_TOOLS 1
 
 typedef struct {
 	i64 width;
@@ -324,6 +324,7 @@ typedef struct scene_t {
 	bool8 drag_started;
 	bool8 drag_ended;
 	bool8 is_dragging; // if mouse down: is this scene being dragged?
+	bool8 suppress_next_click; // if mouse down: prevent release being counted as click
 	bool8 viewport_changed;
 	rect2f selection_box;
 	bool8 has_selection_box;
@@ -390,6 +391,8 @@ typedef struct app_state_t {
 	i64 last_frame_start;
 	i64 frame_counter;
 	float seconds_without_mouse_movement;
+	i32 mouse_sensitivity;
+	i32 keyboard_base_panning_speed;
 	pixel_transfer_state_t pixel_transfer_states[32];
 	u32 next_pixel_transfer_to_submit;
 	window_handle_t main_window;
@@ -397,6 +400,7 @@ typedef struct app_state_t {
 	input_t* input;
 	i32* active_resources; // array
 	bool is_export_in_progress;
+	bool export_as_coco;
 } app_state_t;
 
 typedef struct app_command_t {

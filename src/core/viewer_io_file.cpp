@@ -598,7 +598,6 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 
 			// Load JSON first
 			replace_file_extension(temp_filename, temp_size, "json");
-			annotation_set->export_as_coco = true;
 			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
 			if (file_exists(temp_filename)) {
 				console_print("Found JSON annotations: '%s'\n", temp_filename);
@@ -611,7 +610,8 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 				// Enable export as XML (make sure XML annotations do not get out of date!)
 				annotation_set->export_as_asap_xml = true;
 				replace_file_extension(temp_filename, temp_size, "xml");
-				annotation_set->asap_xml_filename = strdup(temp_filename); // TODO: fix leak
+				strncpy(annotation_set->asap_xml_filename, temp_filename, sizeof(annotation_set->asap_xml_filename)-1);
+
 
 			} else {
 				coco_init_main_image(&annotation_set->coco, &image);

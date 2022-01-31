@@ -390,6 +390,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 			if (ImGui::Selectable("Clear")) console_clear_log();
 			if (ImGui::MenuItem("Verbose mode", NULL, &is_verbose_mode)) {}
 			if (ImGui::MenuItem("Fill screen", NULL, &console_fill_screen)) {}
+			if (ImGui::MenuItem("Hide console")) { show_console_window = false; }
 			ImGui::EndPopup();
 		}
 		benaphore_lock(&console_printer_benaphore);

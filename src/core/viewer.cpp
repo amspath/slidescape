@@ -163,6 +163,7 @@ void unload_all_images(app_state_t *app_state) {
 	mouse_show();
 	app_state->scene.is_cropped = false;
 	app_state->scene.has_selection_box = false;
+	viewer_switch_tool(app_state, TOOL_NONE);
 }
 
 void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
@@ -592,6 +593,8 @@ void init_app_state(app_state_t* app_state) {
 	app_state->white_level = 0.95f;
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
 
+	app_state->keyboard_base_panning_speed = 10.0f;
+	app_state->mouse_sensitivity = 10.0f;
 
 	init_scene(app_state, &app_state->scene);
 
@@ -1222,10 +1225,18 @@ static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f c
 }
 
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
+	if (app_state->mouse_tool == tool) {
+		// no action needed
+		return;
+	}
+
+	// TODO: finalize in-progress annotations?
+
 	switch(tool) {
 		default: case TOOL_NONE: {
 			if (app_state->mouse_mode != MODE_VIEW) {
 				app_state->mouse_mode = MODE_VIEW;
+				set_cursor_default();
 				// TODO: reset edit functionality?
 			}
 		} break;
@@ -1238,12 +1249,14 @@ void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 		case TOOL_CREATE_RECTANGLE:
 		case TOOL_CREATE_TEXT: {
 			app_state->mouse_mode = MODE_INSERT;
+			set_cursor_crosshair();
 		} break;
 	}
 	app_state->mouse_tool = tool;
+	app_state->scene.annotation_set.editing_annotation_index = -1;
 }
 
-#define CLICK_DRAG_TOLERANCE 6.0f
+#define CLICK_DRAG_TOLERANCE 8.0f
 
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
 
@@ -1341,7 +1354,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (gui_want_capture_mouse) {
 			// ignore mouse input
 		} else {
-			if (was_button_released(&input->mouse_buttons[0])) {
+			if (was_button_released(&input->mouse_buttons[0]) && !scene->suppress_next_click) {
 				float drag_distance = v2f_length(scene->cumulative_drag_vector);
 				if (drag_distance < CLICK_DRAG_TOLERANCE) {
 					scene->clicked = true;
@@ -1383,6 +1396,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->drag_ended = true;
 //			        console_print("Drag ended: dx=%d dy=%d\n", input->drag_vector.x, input->drag_vector.y);
 				}
+				scene->suppress_next_click = false;
 			}
 		}
 	}
@@ -1560,7 +1574,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
             panning_multiplier *= app_state->display_scale_factor;
 
 			// Panning using the arrow or WASD keys.
-			float panning_speed = 1500.0f * delta_t * panning_multiplier;
+			float panning_speed = app_state->keyboard_base_panning_speed * 100.0f * delta_t * panning_multiplier;
 			bool panning = false;
 			if (scene->panning_velocity.y != 0.0f) {
 				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.y;
@@ -1595,12 +1609,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				viewer_switch_tool(app_state, TOOL_CREATE_LINE);
 			} else if (was_key_pressed(input, KEY_F) && key_modifiers_without_shift == 0) {
 				viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
-			} else if (was_key_pressed(input, KEY_E) && key_modifiers_without_shift == 0) {
-				viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
+//			} else if (was_key_pressed(input, KEY_E) && key_modifiers_without_shift == 0) {
+//				viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
 			} else if (was_key_pressed(input, KEY_R) && key_modifiers_without_shift == 0) {
 				viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
-			} else if (was_key_pressed(input, KEY_T) && key_modifiers_without_shift == 0) {
-				viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
+//			} else if (was_key_pressed(input, KEY_T) && key_modifiers_without_shift == 0) {
+//				viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
 			}
 #endif
 
@@ -1640,8 +1654,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (app_state->mouse_mode == MODE_VIEW) {
 				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE) {
-					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * panning_multiplier;
-					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * panning_multiplier;
+					float final_multiplier = panning_multiplier * app_state->mouse_sensitivity * 0.1f;
+					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * final_multiplier;
+					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * final_multiplier;
 
 					// camera has been updated (now we need to recalculate some things)
 					scene_update_camera_bounds(scene);
@@ -1681,40 +1696,23 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 							viewer_switch_tool(app_state, TOOL_NONE);
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_LINE) {
-						if (scene->drag_started) {
-							create_line_annotation(&scene->annotation_set, scene->mouse);
-							app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
-							app_state->mouse_tool = TOOL_NONE;
-//							console_print("Creating a line\n");
-						}
+						do_mouse_tool_create_line(app_state, input, scene, annotation_set);
 					} else if (app_state->mouse_tool == TOOL_CREATE_FREEFORM) {
-						if (scene->drag_started) {
-							// create first point
-						} else if (scene->is_dragging) {
-							// drop points along the way
-						} else if (scene->drag_ended) {
-							// finalize freeform
-							viewer_switch_tool(app_state, TOOL_NONE);
-						}
+						do_mouse_tool_create_freeform(app_state, input, scene, annotation_set);
 					} else if (app_state->mouse_tool == TOOL_CREATE_ELLIPSE) {
 						if (scene->drag_started) {
 							create_ellipse_annotation(annotation_set, scene->mouse);
 						} else if (scene->is_dragging) {
-							annotation_t* ellipse = get_active_annotation(annotation_set, annotation_set->editing_annotation_index);
-							ellipse->p1 = scene->mouse;
+							if (annotation_set->editing_annotation_index >= 0) {
+								annotation_t* ellipse = get_active_annotation(annotation_set, annotation_set->editing_annotation_index);
+								ellipse->p1 = scene->mouse;
+							}
 						} else if (scene->drag_ended) {
 							// finalize ellipse
 							viewer_switch_tool(app_state, TOOL_NONE);
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_RECTANGLE) {
-						if (scene->drag_started) {
-							// create first bounding point
-						} else if (scene->is_dragging) {
-							// update second bounding point and visualize the shape
-						} else if (scene->drag_ended) {
-							// finalize shape
-							viewer_switch_tool(app_state, TOOL_NONE);
-						}
+						do_mouse_tool_create_rectangle(app_state, input, scene, annotation_set);
 					} else if (app_state->mouse_tool == TOOL_CREATE_TEXT) {
 						if (scene->clicked) {
 							// create text
@@ -1745,21 +1743,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 
 			// Update dragging of objects
-			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE){
+			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE) {
 				if (scene->is_dragging) {
-					i32 annotation_with_selected_coordinate = scene->annotation_set.selected_coordinate_annotation_index;
-					if (annotation_with_selected_coordinate >= 0) {
-						annotation_t* annotation = get_active_annotation(&scene->annotation_set, scene->annotation_set.selected_coordinate_annotation_index);
-						i32 coordinate_index = scene->annotation_set.selected_coordinate_index;
-						if (coordinate_index >= 0 && coordinate_index < annotation->coordinate_count) {
-							v2f* coordinate = annotation->coordinates + coordinate_index;
-							coordinate->x = scene->mouse.x - scene->annotation_set.coordinate_drag_start_offset.x;
-							coordinate->y = scene->mouse.y - scene->annotation_set.coordinate_drag_start_offset.y;
-							annotation->has_valid_bounds = false;
-							annotations_modified(&scene->annotation_set);
-						}
-					}
-
+					do_drag_annotation_node(scene);
 				} else if (scene->drag_ended) {
 					app_state->mouse_mode = MODE_VIEW;
 //					scene->annotation_set.is_edit_mode = false;

@@ -59,6 +59,7 @@ typedef struct annotation_t {
 	bool8 selected;
 	bool8 has_valid_bounds;
 	bool8 has_properties;
+	bool8 is_open; // for 'unfinished' polygons
 
 	v2f p0, p1;
 } annotation_t;
@@ -115,7 +116,7 @@ typedef struct annotation_set_t {
 	i32* active_feature_indices; // array
 	i32 active_feature_count;
 
-	char* asap_xml_filename;
+	char asap_xml_filename[512];
 	char* coco_filename;
 	char base_filename[512];
 	bool modified;
@@ -140,7 +141,7 @@ typedef struct annotation_set_t {
 	v2f mpp; // microns per pixel
 	coco_t coco;
 	bool export_as_asap_xml;
-	bool export_as_coco;
+	bool annotations_were_loaded_from_file;
 } annotation_set_t;
 
 
@@ -168,8 +169,16 @@ u32 add_annotation_group(annotation_set_t* annotation_set, const char* name);
 u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name);
 i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name);
 void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
+void deselect_all_annotations(annotation_set_t* annotation_set);
+void do_drag_annotation_node(scene_t* scene);
 void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos);
+void do_mouse_tool_create_ellipse(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set);
+void create_rectangle_annotation(annotation_set_t* annotation_set, v2f pos);
+void do_mouse_tool_create_rectangle(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set);
+void create_freeform_annotation(annotation_set_t* annotation_set, v2f pos);
+void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set);
 void create_line_annotation(annotation_set_t* annotation_set, v2f pos);
+void do_mouse_tool_create_line(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set);
 void create_point_annotation(annotation_set_t* annotation_set, v2f pos);
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input);
 bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
@@ -180,8 +189,9 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 void deselect_annotation_coordinates(annotation_set_t* annotation_set);
 void annotations_modified(annotation_set_t* annotation_set);
 void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, v2f new_coordinate);
-void delete_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index);
+void delete_coordinate(annotation_set_t* annotation_set, i32 annotation_index, i32 coordinate_index);
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
+void delete_annotation(annotation_set_t* annotation_set, i32 active_annotation_index);
 void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 first_coordinate_index, i32 second_coordinate_index);
 void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group);
 i32 annotation_cycle_selection_within_group(annotation_set_t* annotation_set, i32 delta);
