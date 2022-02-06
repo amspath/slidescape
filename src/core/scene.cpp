@@ -187,7 +187,7 @@ void draw_selection_box(scene_t* scene) {
 			points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.screen_point_width);
 		}
 		rgba_t rgba = {0, 0, 0, 128};
-		gui_draw_polygon_outline(points, 4, rgba, 5.0f);
+		gui_draw_polygon_outline(points, 4, rgba, true, 5.0f);
 	}
 }
 

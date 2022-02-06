@@ -1138,12 +1138,12 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		u32 annotation_color = *(u32*)(&base_color);
 
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-		// TODO: move to platform independent code
+
 		// Prevent acute angles in annotations being drawn incorrectly (at least until ImGui bug is fixed):
 		// https://github.com/ocornut/imgui/issues/3366
 		// https://github.com/ocornut/imgui/pull/2964
 		ImDrawListFlags backup_flags = draw_list->Flags;
-		draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
+//		draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
 
 		if (annotation->coordinate_count > 0) {
 			v2f* points = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * annotation->coordinate_count);
@@ -1157,7 +1157,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
 			if (annotation->coordinate_count >= 4) {
-				draw_list->AddPolyline((ImVec2*)points, annotation->coordinate_count, annotation_color, poly_draw_flags, thickness);
+				gui_draw_polygon_outline(points, annotation->coordinate_count, base_color, closed, thickness);
 			} else if (annotation->coordinate_count >= 2) {
 				draw_list->AddLine(points[0], points[1], annotation_color, thickness);
 				if (annotation->coordinate_count == 3) {
@@ -1254,7 +1254,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						v2f split_line_points[2] = {};
 						split_line_points[0] = transformed_pos;
 						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.screen_point_width);
-						draw_list->AddPolyline((ImVec2*)split_line_points, 2, annotation_color, 0, thickness);
+						draw_list->AddLine(split_line_points[0], split_line_points[1], annotation_color, thickness);
 					} else {
 						if (DO_DEBUG) {
 							console_print_error("Error: tried to draw line for annotation split mode, but the selected coordinate (%d) is invalid for this annotation\n", annotation_set->selected_coordinate_index);
@@ -1270,7 +1270,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					v2f line_points[2] = {};
 					line_points[0] = world_pos_to_screen_pos(last, camera_min, scene->zoom.screen_point_width);
 					line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.screen_point_width);
-					draw_list->AddPolyline((ImVec2*)line_points, 2, annotation_color, 0, thickness);
+					draw_list->AddLine(line_points[0], line_points[1], annotation_color, thickness);
 				}
 			}
 

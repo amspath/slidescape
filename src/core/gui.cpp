@@ -63,17 +63,39 @@ void menu_close_file(app_state_t* app_state) {
 	unload_and_reinit_annotations(&app_state->scene.annotation_set);
 }
 
-void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, float thickness) {
+void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness) {
 	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 	u32 color = *(u32*)(&rgba);
-	draw_list->AddPolyline((ImVec2*)points, count, color, true, thickness);
+	// Workaround for problem with acute angles
+	// (lines are being drawn incorrectly with not enough thickness if the angles are too sharp)
+	// Solution until the problem is fixed in ImGui: split into segments based on whether the angle is acute or not
+	// https://github.com/ocornut/imgui/issues/3366#issuecomment-664779883
+	i32 i = 0;
+	ImDrawFlags flags = closed ? ImDrawFlags_Closed : 0;
+	while (i + 1 < count) {
+		i32 nlin = 2;
+		while (i + nlin < count) {
+			v2f v0 = points[0];
+			v2f v1 = points[1];
+			v2f v2 = points[2];
+			v2f s0 = v2f_subtract(v1, v0);
+			v2f s1 = v2f_subtract(v2, v1);
+			float dotprod = v2f_dot(s0, s1);
+			if (dotprod < 0) {
+				break;
+			}
+			++nlin;
+		}
+		draw_list->AddPolyline((ImVec2*)(points + i), nlin, color, flags, thickness);
+		i += nlin-1;
+	}
 }
 
-void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, float thickness, scene_t* scene) {
+void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene) {
 	for (i32 i = 0; i < count; ++i) {
 		points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.screen_point_width);
 	}
-	gui_draw_polygon_outline(points, 4, color, thickness);
+	gui_draw_polygon_outline(points, 4, color, closed, thickness);
 }
 
 void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene) {
@@ -82,7 +104,7 @@ void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, sc
 	points[1] = V2F(bounds.left, bounds.bottom);
 	points[2] = V2F(bounds.right, bounds.bottom);
 	points[3] = V2F(bounds.right, bounds.top);
-	gui_draw_polygon_outline_in_scene(points, 4, color, thickness, scene);
+	gui_draw_polygon_outline_in_scene(points, 4, color, thickness, true, scene);
 }
 
 bool enable_load_debug_coco_file;
