@@ -2211,7 +2211,7 @@ static void test_output_block_header(isyntax_image_t* wsi_image) {
 //			}
 		}
 
-		file_stream_close(test_block_header_fp);
+		fclose(test_block_header_fp);
 	}
 }
 #endif

@@ -118,7 +118,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 	i32 chunk_codeblock_count = codeblocks_per_color * 3;
 	i32 block_color_offsets[3] = {0, codeblocks_per_color, 2 * codeblocks_per_color};
 
-	i32 levels_in_chunk = ((wsi->codeblocks + current_level->tiles[0].codeblock_chunk_index)->scale % 3) + 1;
+	i32 levels_in_chunk = (scale % 3) + 1;
 
 	arena_t* temp_arena = &local_thread_memory->temp_arena;
 	temp_memory_t temp_memory = begin_temp_memory(temp_arena);
