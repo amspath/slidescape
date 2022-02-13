@@ -22,6 +22,9 @@
 #include "platform.h"
 #include "intrinsics.h"
 
+#define LISTING_IMPLEMENTATION
+#include "listing.h"
+
 #if !IS_SERVER
 #include "work_queue.c"
 #endif
