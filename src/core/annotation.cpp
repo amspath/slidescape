@@ -321,7 +321,7 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 				}
 			} else if (scene->is_dragging) {
 				// drop points along the way
-				if (distance_since_last_point > 40.0f && distance_to_start_point > annotation_hover_distance) {
+				if (distance_since_last_point > annotation_freeform_insert_interval_distance && distance_to_start_point > annotation_hover_distance) {
 					arrput(freeform->coordinates, scene->mouse);
 					++freeform->coordinate_count;
 				}
@@ -1798,18 +1798,21 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		if (ImGui::CollapsingHeader("Options"))
 		{
 			ImGui::Checkbox("Show annotations", &scene->enable_annotations);
-			ImGui::SliderFloat("Annotation opacity", &annotation_opacity, 0.0f, 1.0f);
+			ImGui::SliderFloat("Annotation opacity", &annotation_opacity, 0.0f, 1.0f, "%.3f");
 
-			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f);
-			ImGui::SliderFloat("Line thickness (selected)", &annotation_selected_line_thickness, 0.0f, 10.0f);
+			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f, "%.1f px");
+			ImGui::SliderFloat("Line thickness (selected)", &annotation_selected_line_thickness, 0.0f, 10.0f, "%.1f px");
 			ImGui::NewLine();
 
 			//			ImGui::Checkbox("Show polygon nodes", &annotation_show_polygon_nodes_outside_edit_mode);
 			ImGui::Checkbox("Allow editing annotation coordinates (press E to toggle)", &annotation_set->is_edit_mode);
-			ImGui::SliderFloat("Coordinate node size", &annotation_node_size, 0.0f, 20.0f);
+			ImGui::SliderFloat("Coordinate node size", &annotation_node_size, 0.0f, 20.0f, "%.1f px");
 
 			ImGui::NewLine();
 
+			ImGui::SliderFloat("Freeform node interval", &annotation_freeform_insert_interval_distance, 1.0f, 100.0f, "%.0f px");
+
+			ImGui::NewLine();
 			ImGui::Checkbox("Save in both XML and JSON formats", &app_state->export_as_coco);
 		}
 

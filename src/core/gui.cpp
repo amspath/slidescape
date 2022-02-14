@@ -64,6 +64,7 @@ void menu_close_file(app_state_t* app_state) {
 }
 
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness) {
+	if (count < 2) return;
 	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 	u32 color = *(u32*)(&rgba);
 	// Workaround for problem with acute angles
@@ -71,23 +72,36 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, 
 	// Solution until the problem is fixed in ImGui: split into segments based on whether the angle is acute or not
 	// https://github.com/ocornut/imgui/issues/3366#issuecomment-664779883
 	i32 i = 0;
-	ImDrawFlags flags = closed ? ImDrawFlags_Closed : 0;
+	bool has_at_least_one_split = false;
 	while (i + 1 < count) {
 		i32 nlin = 2;
 		while (i + nlin < count) {
-			v2f v0 = points[0];
-			v2f v1 = points[1];
-			v2f v2 = points[2];
+			v2f v0 = points[i+nlin-2];
+			v2f v1 = points[i+nlin-1];
+			v2f v2 = points[i+nlin];
 			v2f s0 = v2f_subtract(v1, v0);
 			v2f s1 = v2f_subtract(v2, v1);
 			float dotprod = v2f_dot(s0, s1);
 			if (dotprod < 0) {
+				has_at_least_one_split = true;
 				break;
 			}
 			++nlin;
 		}
+
+		// If it's the last segment, we may need to 'close' the polygon (but this only works if there are no splits)
+		ImDrawFlags flags = 0;
+		if (i + nlin == count && closed && !has_at_least_one_split) {
+			flags = ImDrawFlags_Closed;
+		}
+
 		draw_list->AddPolyline((ImVec2*)(points + i), nlin, color, flags, thickness);
 		i += nlin-1;
+	}
+
+	// Close the polygon using a manually added line in case of a split due to acute angles
+	if (closed && has_at_least_one_split) {
+		draw_list->AddLine(points[0], points[count-1], color, thickness);
 	}
 }
 

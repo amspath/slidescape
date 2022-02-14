@@ -119,6 +119,7 @@ extern float annotation_node_size INIT(= 5.0f);
 extern float annotation_opacity INIT(= 1.0f);
 extern float annotation_hover_distance INIT(= 10.0f);
 extern float annotation_insert_hover_distance INIT(= 25.0f);
+extern float annotation_freeform_insert_interval_distance INIT(= 30.0f);
 extern bool show_delete_annotation_prompt;
 extern bool dont_ask_to_delete_annotations;
 extern bool show_annotation_palette_window INIT(=true);
