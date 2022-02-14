@@ -2057,7 +2057,7 @@ void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotatio
 		ImGui::Checkbox("Don't ask me next time", &dont_ask_to_delete_annotations);
 		ImGui::PopStyleVar();
 
-		if (ImGui::Button("OK", ImVec2(120, 0))) {
+		if (ImGui::Button("OK", ImVec2(120, 0)) || was_key_pressed(app_state->input, KEY_Return)) {
 			delete_selected_annotations(app_state, annotation_set);
 			show_delete_annotation_prompt = false;
 			ImGui::CloseCurrentPopup();
