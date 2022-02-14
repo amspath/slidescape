@@ -1827,7 +1827,7 @@ void win32_init_cmdline() {
 	g_argv = (const char**)argv;
 }
 
-void win32_init_headless_console() {
+static void win32_init_headless_console() {
 	// When compiling with -mwindows or /subsytem:windows (which we do in release mode),
 	// stdout and stderr aren't displayed, even if you run the program from the command-line.
 	// It is possible to get console output back, but we have to jump through some hoops.
@@ -1848,12 +1848,31 @@ void win32_init_headless_console() {
 #endif //DO_DEBUG
 }
 
+static void win32_prepare_exit_console() {
+#if !DO_DEBUG
+	// Hack: send an enter so that the regular command prompt is displayed again
+	// NOTE: This doesn't work on Windows Terminal, see:
+	// https://github.com/microsoft/terminal/issues/6887
+	HWND console_window = GetConsoleWindow();
+	SendMessageA(console_window, WM_CHAR, VK_RETURN, 0);
+#endif
+	exit(0);
+}
+
 int main() {
 	win32_init_cmdline();
 
 #if CREATE_ICO
 	create_ico();
 #endif
+
+	app_command_t app_command = app_parse_commandline(g_argc, g_argv);
+	if (app_command.exit_immediately) {
+		win32_init_headless_console();
+		app_command_execute_immediately(&app_command);
+		win32_prepare_exit_console();
+		exit(0);
+	}
 
 	console_printer_benaphore = benaphore_create();
 	console_print("Starting up...\n");
@@ -1868,38 +1887,27 @@ int main() {
 
 	get_system_info();
 
-	app_state_t* app_state = &global_app_state;
-	init_app_state(app_state);
-
-	app_command_t app_command = app_parse_commandline(app_state, g_argc, g_argv);
-	if (app_command.headless) {
-		win32_init_headless_console();
-
-		app_command_execute(app_state, &app_command);
-
-		// Hack: send an enter so that the regular command prompt is displayed again
-		// NOTE: This doesn't work on Windows Terminal, see:
-		// https://github.com/microsoft/terminal/issues/6887
-		HWND console_window = GetConsoleWindow();
-		SendMessageA(console_window, WM_CHAR, VK_RETURN, 0);
-		exit(0);
-	}
-
 	win32_setup_appdata();
 	win32_set_file_type_associations();
+	win32_init_timer();
+	win32_init_multithreading();
+
+	app_state_t* app_state = &global_app_state;
+	init_app_state(app_state, app_command);
 
 	viewer_init_options(app_state);
 
-	win32_init_timer();
+	if (app_command.headless) {
+		load_openslide_task(0, NULL);
+		return app_command_execute(app_state);
+	}
+
 	win32_init_cursor();
 	win32_init_main_window(app_state);
-	win32_init_multithreading();
+
 	// Load OpenSlide in the background, we might not need it immediately.
-#if 1
 	add_work_queue_entry(&global_work_queue, load_openslide_task, NULL, 0);
-#else
-    load_openslide_task(0, NULL);
-#endif
+
 	win32_init_input();
 //	do_remote_connection_test();
 
@@ -1907,9 +1915,9 @@ int main() {
 
 	win32_init_gui(app_state);
 
-    init_opengl_stuff(app_state);
+	init_opengl_stuff(app_state);
 
-    // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
+	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	if (g_argc > 1) {
 		const char* filename = g_argv[1];
 //		console_print("filename = %s\n", filename);

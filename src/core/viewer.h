@@ -366,9 +366,34 @@ typedef struct tile_streamer_t {
 	zoom_state_t zoom;
 } tile_streamer_t;
 
+
+typedef enum command_enum {
+	COMMAND_NONE,
+	COMMAND_PRINT_VERSION,
+	COMMAND_EXPORT,
+} command_enum;
+
+typedef enum command_export_error_enum {
+	COMMAND_EXPORT_ERROR_NONE,
+	COMMAND_EXPORT_ERROR_NO_ROI,
+} command_export_error_enum;
+
+typedef struct app_command_t app_command_t;
+struct app_command_t {
+	bool headless;
+	bool exit_immediately;
+	command_enum command;
+	struct app_command_export_t {
+		const char* roi;
+		command_export_error_enum error;
+	} export_command;
+	const char** inputs; // array
+};
+
 typedef struct app_state_t {
-	u8* temp_storage_memory;
-	arena_t temp_arena;
+	app_command_t command;
+	u8* temp_storage_memory; // TODO: remove, use thread local temp storage instead
+	arena_t temp_arena; // TODO: remove
 	rect2i client_viewport;
 	float display_scale_factor;
 	float display_points_per_pixel;
@@ -402,12 +427,8 @@ typedef struct app_state_t {
 	bool is_export_in_progress;
 	bool export_as_coco;
 	bool enable_autosave;
-} app_state_t;
-
-typedef struct app_command_t {
 	bool headless;
-	bool print_version;
-} app_command_t;
+} app_state_t;
 
 
 //  prototypes
@@ -428,7 +449,7 @@ bool32 was_button_pressed(button_state_t* button);
 bool32 was_button_released(button_state_t* button);
 bool32 was_key_pressed(input_t* input, i32 keycode);
 bool32 is_key_down(input_t* input, i32 keycode);
-void init_app_state(app_state_t* app_state);
+void init_app_state(app_state_t* app_state, app_command_t command);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void scene_update_camera_pos(scene_t* scene, v2f pos);
@@ -453,8 +474,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 void viewer_init_options(app_state_t* app_state);
 
 // viewer_commandline.cpp
-app_command_t app_parse_commandline(app_state_t* app_state, int argc, const char** argv);
-void app_command_execute(app_state_t* app_state, app_command_t* app_command);
+app_command_t app_parse_commandline(int argc, const char** argv);
+void app_command_execute_immediately(app_command_t* app_command);
+int app_command_execute(app_state_t* app_state);
 
 // isyntax_streamer.cpp
 void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);

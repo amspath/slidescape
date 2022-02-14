@@ -573,10 +573,13 @@ int priority_cmp_func (const void* a, const void* b) {
 	return ( (*(load_tile_task_t*)b).priority - (*(load_tile_task_t*)a).priority );
 }
 
-void init_app_state(app_state_t* app_state) {
+void init_app_state(app_state_t* app_state, app_command_t command) {
 	ASSERT(!app_state->initialized); // check sanity
 	ASSERT(app_state->temp_storage_memory == NULL);
 //	memset(app_state, 0, sizeof(app_state_t));
+
+	app_state->command = command;
+	app_state->headless = command.headless;
 
 	if (app_state->display_points_per_pixel == 0.0f) {
 		app_state->display_points_per_pixel = 1.0f;
@@ -584,6 +587,8 @@ void init_app_state(app_state_t* app_state) {
 	if (app_state->display_scale_factor == 0.0f) {
 		app_state->display_scale_factor = 1.0f;
 	}
+
+	// TODO: remove
 	size_t temp_storage_size = MEGABYTES(16); // Note: what is a good size to use here?
 	app_state->temp_storage_memory = platform_alloc(temp_storage_size);
 	init_arena(&app_state->temp_arena, temp_storage_size, app_state->temp_storage_memory);

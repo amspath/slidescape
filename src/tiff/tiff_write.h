@@ -32,9 +32,9 @@ typedef enum export_flags_enum {
 	EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD = 0x2,
 } export_flags_enum;
 
-bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
+bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
                               u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags);
-void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2i level0_bounds, const char* filename,
+void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
                                   u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags);
 
 #ifdef __cplusplus
