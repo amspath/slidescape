@@ -215,6 +215,7 @@ set(VIEWER_SOURCE_FILES
         imgui/imgui_freetype.cpp
         utils/stringutils.c
         utils/mathutils.c
+        utils/triangulate.c
         utils/lz4.c
         utils/yxml.c
         utils/jpeg_decoder.c

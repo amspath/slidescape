@@ -21,6 +21,7 @@
 #include "annotation.h"
 #include "platform.h"
 #include "stringutils.h"
+#include "triangulate.h"
 #include "gui.h"
 #include "yxml.h"
 
@@ -128,8 +129,8 @@ void do_drag_annotation_node(scene_t* scene) {
 				annotation->coordinates[(coordinate_index + 1) % 4] = V2F(fixed.x, coordinate->y);
 				annotation->coordinates[(coordinate_index + 3) % 4] = V2F(coordinate->x, fixed.y);
 			}
-			annotation->has_valid_bounds = false;
-			annotations_modified(&scene->annotation_set);
+			annotation_invalidate_derived_calculations(annotation);
+			notify_annotation_set_modified(&scene->annotation_set);
 
 		}
 	}
@@ -154,7 +155,7 @@ void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos) {
 	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
 	annotation_set->active_annotation_count++;
 
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 
 	i32 active_index = annotation_set->active_annotation_count - 1;
 	annotation_set->editing_annotation_index = active_index;
@@ -202,7 +203,7 @@ void create_rectangle_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->selected_coordinate_index = 0;
 	annotation_set->selected_coordinate_annotation_index = annotation_active_index;
 
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 
 	i32 active_index = annotation_set->active_annotation_count - 1;
 	annotation_set->editing_annotation_index = active_index;
@@ -249,7 +250,7 @@ void create_freeform_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->selected_coordinate_index = 0;
 	annotation_set->selected_coordinate_annotation_index = annotation_active_index;
 
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 
 	i32 active_index = annotation_set->active_annotation_count - 1;
 	annotation_set->editing_annotation_index = active_index;
@@ -273,7 +274,7 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 				if (freeform->coordinate_count >= 3) {
 					// Abort method 1: finalize
 					freeform->is_open = false;
-					annotations_modified(annotation_set);
+					notify_annotation_set_modified(annotation_set);
 				} else {
 					// Abort method 2: delete (if not enough coordinates were already added)
 					delete_annotation(annotation_set, annotation_set->editing_annotation_index);
@@ -307,8 +308,8 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 				if (distance_to_start_point < annotation_hover_distance && freeform->coordinate_count >= 3) {
 					// finalize the annotation
 					freeform->is_open = false;
-					freeform->has_valid_bounds = false;
-					annotations_modified(annotation_set);
+					annotation_invalidate_derived_calculations(freeform);
+					notify_annotation_set_modified(annotation_set);
 					viewer_switch_tool(app_state, TOOL_NONE);
 					scene->drag_started = false;
 					scene->is_dragging = false;
@@ -330,9 +331,9 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 				if (distance_to_start_point < annotation_hover_distance && freeform->coordinate_count >= 3) {
 					// finalize the annotation
 					freeform->is_open = false;
-					freeform->has_valid_bounds = false;
+					annotation_invalidate_derived_calculations(freeform);
 					viewer_switch_tool(app_state, TOOL_NONE);
-					annotations_modified(annotation_set);
+					notify_annotation_set_modified(annotation_set);
 				}
 			}
 		} else {
@@ -369,7 +370,7 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->selected_coordinate_index = new_annotation.coordinate_count - 1;
 	annotation_set->selected_coordinate_annotation_index = annotation_active_index;
 
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 }
 
 void do_mouse_tool_create_line(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set) {
@@ -403,7 +404,7 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
 	annotation_set->active_annotation_count++;
 
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 }
 
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
@@ -567,7 +568,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			// Feature for quickly assigning the same annotation group to the next selected annotation.
 			if (did_select && hit_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
 				hit_annotation->group_id = annotation_set->last_assigned_annotation_group;
-				annotations_modified(annotation_set);
+				notify_annotation_set_modified(annotation_set);
 			}
 
 			annotation_set->is_insert_coordinate_mode = false;
@@ -637,9 +638,9 @@ bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* a
 }
 
 void annotation_recalculate_bounds_if_necessary(annotation_set_t* annotation_set, annotation_t* annotation) {
-	if (!annotation->has_valid_bounds) {
+	if (!(annotation->valid_flags & ANNOTATION_VALID_BOUNDS)) {
 		annotation->bounds = bounds_for_annotation(annotation_set, annotation);
-		annotation->has_valid_bounds = true;
+		annotation->valid_flags |= ANNOTATION_VALID_BOUNDS;
 	}
 }
 
@@ -780,9 +781,14 @@ void deselect_annotation_coordinates(annotation_set_t* annotation_set) {
 	annotation_set->selected_coordinate_annotation_index = -1;
 }
 
-void annotations_modified(annotation_set_t* annotation_set) {
+void notify_annotation_set_modified(annotation_set_t* annotation_set) {
 	annotation_set->modified = true; // need to (auto-)save the changes
 	annotation_set->last_modification_time = get_clock();
+}
+
+void annotation_invalidate_derived_calculations(annotation_t* annotation) {
+	annotation->fallback_valid_flags |= annotation->valid_flags;
+	annotation->valid_flags = 0;
 }
 
 bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annotation) {
@@ -833,8 +839,8 @@ void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set,
 		// The coordinate count has changed, maybe the type needs to change?
 		maybe_change_annotation_type_based_on_coordinate_count(annotation);
 
-		annotation->has_valid_bounds = false;
-		annotations_modified(annotation_set);
+		annotation_invalidate_derived_calculations(annotation);
+		notify_annotation_set_modified(annotation_set);
 //		console_print("inserted a coordinate at index %d\n", insert_at_index);
 	} else {
 #if DO_DEBUG
@@ -862,9 +868,9 @@ void delete_coordinate(annotation_set_t* annotation_set, i32 annotation_index, i
 				coordinate->order = i;
 			}
 #endif
-			annotation->has_valid_bounds = false;
+			annotation_invalidate_derived_calculations(annotation);
 		}
-		annotations_modified(annotation_set);
+		notify_annotation_set_modified(annotation_set);
 		deselect_annotation_coordinates(annotation_set);
 	} else {
 		panic("coordinate index out of bounds");
@@ -887,7 +893,7 @@ void annotation_group_delete(annotation_set_t* annotation_set, i32 active_index)
 	}
 	arrdel(annotation_set->active_group_indices, active_index);
 	--annotation_set->active_group_count;
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 }
 
 void annotation_feature_delete(annotation_set_t* annotation_set, i32 active_index) {
@@ -904,7 +910,7 @@ void annotation_feature_delete(annotation_set_t* annotation_set, i32 active_inde
 	}
 	arrdel(annotation_set->active_feature_indices, active_index);
 	--annotation_set->active_feature_count;
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 }
 
 // TODO: delete 'slice' of annotations, instead of hardcoded selected ones
@@ -937,7 +943,7 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 			}
 		}
 		annotation_set->active_annotation_count = arrlen(annotation_set->active_annotation_indices);
-		annotations_modified(annotation_set);
+		notify_annotation_set_modified(annotation_set);
 		end_temp_memory(&temp_memory);
 	}
 
@@ -982,7 +988,7 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 	v2f* original_coordinates = annotation->coordinates;
 	memcpy(&new_coordinates[0],                          &original_coordinates[0],                      new_coordinate_count_lower_part * sizeof(v2f));
 	memcpy(&new_coordinates[lower_coordinate_index + 1], &original_coordinates[upper_coordinate_index], new_coordinate_count_upper_part * sizeof(v2f));
-	new_annotation.has_valid_bounds = false;
+	annotation_invalidate_derived_calculations(&new_annotation);
 
 	// step 2: compactify the original annotation, leaving only the extracted section between the bounds (inclusive)
 	// e.g.: __<lower>XXXXX<upper>_____
@@ -990,7 +996,7 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 	ASSERT(new_coordinate_count >= 3);
 	memmove(annotation->coordinates, annotation->coordinates + lower_coordinate_index, new_coordinate_count * sizeof(v2f));
 	annotation->coordinate_count = new_coordinate_count;
-	annotation->has_valid_bounds = false;
+	annotation_invalidate_derived_calculations(annotation);
 	arrsetlen(annotation->coordinates, new_coordinate_count);
 
 	// Add the new annotation
@@ -1002,7 +1008,7 @@ void split_annotation(app_state_t* app_state, annotation_set_t* annotation_set, 
 
 	annotation_set->is_split_mode = false;
 	recount_selected_annotations(app_state, annotation_set);
-	annotations_modified(annotation_set);
+	notify_annotation_set_modified(annotation_set);
 }
 
 void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 new_group) {
@@ -1012,7 +1018,7 @@ void set_group_for_selected_annotations(annotation_set_t* annotation_set, i32 ne
 		annotation_t* annotation = annotation_set->selected_annotations[i];
 		ASSERT(annotation->selected);
 		annotation->group_id = new_group;
-		annotations_modified(annotation_set);
+		notify_annotation_set_modified(annotation_set);
 	}
 }
 
@@ -1021,7 +1027,7 @@ void set_type_for_selected_annotations(annotation_set_t* annotation_set, i32 new
 		annotation_t* annotation = annotation_set->selected_annotations[i];
 		ASSERT(annotation->selected);
 		annotation->type = (annotation_type_enum)new_type;
-		annotations_modified(annotation_set);
+		notify_annotation_set_modified(annotation_set);
 	}
 }
 
@@ -1031,7 +1037,7 @@ void set_features_for_selected_annotations(annotation_set_t* annotation_set, flo
 		annotation_t* annotation = annotation_set->selected_annotations[i];
 		ASSERT(annotation->selected);
 		memcpy(annotation->features, features, feature_count * sizeof(annotation->features[0]));
-		annotations_modified(annotation_set);
+		notify_annotation_set_modified(annotation_set);
 	}
 }
 
@@ -1153,7 +1159,42 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 			// Only draw the closing line back to the starting point if needed
 			bool closed = !annotation->is_open;
-			ImDrawFlags poly_draw_flags = closed ? ImDrawFlags_Closed : 0;
+
+			// Draw the inside of the annotation
+			if (annotation_highlight_inside_of_polygons && annotation->selected && annotation->coordinate_count >= 3 && closed) {
+
+				if (!(annotation->valid_flags & ANNOTATION_VALID_TESSELATION)) {
+					// Performance: don't tesselate large polygons too often (this is CPU intensive!)
+					if (annotation->coordinate_count < 10 || app_state->mouse_mode != MODE_DRAG_ANNOTATION_NODE) {
+						//  Invoke the triangulator to triangulate this polygon.
+						arrsetlen(annotation->tesselated_trianges, 0);
+						if (triangulate_process(annotation->coordinates, annotation->coordinate_count, &annotation->tesselated_trianges)) {
+							// success
+						} else {
+							annotation->is_complex_polygon = true;
+						}
+						annotation->valid_flags |= ANNOTATION_VALID_TESSELATION;
+					}
+				}
+
+				if ((annotation->valid_flags | annotation->fallback_valid_flags) & ANNOTATION_VALID_TESSELATION) {
+					i32 triangle_count = arrlen(annotation->tesselated_trianges) / 3;
+					if (triangle_count > 0) {
+
+						v2f* vertices = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * triangle_count * 3);
+						for (i32 i = 0; i < triangle_count * 3; ++i) {
+							vertices[i] = world_pos_to_screen_pos(annotation->tesselated_trianges[i], camera_min, scene->zoom.screen_point_width);
+						}
+
+						rgba_t fill_color = base_color;
+						fill_color.a = 20;
+						for (i32 i = 0; i < triangle_count; ++i) {
+							v2f* T = vertices + i * 3;
+							draw_list->AddTriangleFilled(T[0], T[1], T[2], *(u32*)(&fill_color));
+						}
+					}
+				}
+			}
 
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
 			if (annotation->coordinate_count >= 4) {
@@ -1604,7 +1645,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					flags = ImGuiInputTextFlags_ReadOnly;
 				}
 				if (ImGui::InputText("Group name", group_name_buf, 64)) {
-					annotations_modified(annotation_set);
+					notify_annotation_set_modified(annotation_set);
 				}
 			}
 
@@ -1622,7 +1663,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					rgba.g = FLOAT_TO_BYTE(color[1]);
 					rgba.b = FLOAT_TO_BYTE(color[2]);
 					group->color = rgba;
-					annotations_modified(annotation_set);
+					notify_annotation_set_modified(annotation_set);
 				}
 			} else {
 				flags = ImGuiColorEditFlags_NoPicker;
@@ -1645,7 +1686,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				char new_group_name[64];
 				snprintf(new_group_name, 64, "Group %d", annotation_set->stored_group_count);
 				edit_group_index = add_annotation_group(annotation_set, new_group_name);
-				annotations_modified(annotation_set);
+				notify_annotation_set_modified(annotation_set);
 			}
 
 			ImGui::NewLine();
@@ -1707,14 +1748,14 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					flags = ImGuiInputTextFlags_ReadOnly;
 				}
 				if (ImGui::InputText("Feature name", feature_name_buf, 64)) {
-					annotations_modified(annotation_set);
+					notify_annotation_set_modified(annotation_set);
 				}
 			}
 
 			bool restrict_to_group = selected_feature ? selected_feature->restrict_to_group : false;
 			if (ImGui::Checkbox("Restrict to group", &restrict_to_group)) {
 				if (selected_feature) selected_feature->restrict_to_group = restrict_to_group;
-				annotations_modified(annotation_set);
+				notify_annotation_set_modified(annotation_set);
 			}
 
 			if (!restrict_to_group) {
@@ -1736,7 +1777,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 						if (ImGui::Selectable(group_item_previews[group_index], (feature->group_id == group_index), 0, ImVec2())) {
 							feature->group_id = group_index;
-							annotations_modified(annotation_set);
+							notify_annotation_set_modified(annotation_set);
 						}
 					}
 				}
@@ -1786,7 +1827,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				char new_feature_name[64];
 				snprintf(new_feature_name, 64, "Feature %d", annotation_set->stored_feature_count);
 				edit_feature_index = add_annotation_feature(annotation_set, new_feature_name);
-				annotations_modified(annotation_set);
+				notify_annotation_set_modified(annotation_set);
 			}
 
 
@@ -1802,6 +1843,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f, "%.1f px");
 			ImGui::SliderFloat("Line thickness (selected)", &annotation_selected_line_thickness, 0.0f, 10.0f, "%.1f px");
+			ImGui::Checkbox("Highlight inside of annotations", &annotation_highlight_inside_of_polygons);
 			ImGui::NewLine();
 
 			//			ImGui::Checkbox("Show polygon nodes", &annotation_show_polygon_nodes_outside_edit_mode);
@@ -1956,7 +1998,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 									float new_value = checked ? 1.0f : 0.0f;
 									selected->features[feature->id] = new_value;
 								}
-								annotations_modified(annotation_set);
+								notify_annotation_set_modified(annotation_set);
 							}
 
 							if (selectable_index <= 9) {
@@ -2082,10 +2124,8 @@ annotation_t duplicate_annotation(annotation_t* annotation) {
 
 void destroy_annotation(annotation_t* annotation) {
 	if (annotation) {
-		if (annotation->coordinates) {
-			arrfree(annotation->coordinates);
-			annotation->coordinates = NULL;
-		}
+		arrfree(annotation->coordinates);
+		arrfree(annotation->tesselated_trianges);
 	}
 }
 
