@@ -145,14 +145,14 @@ typedef struct annotation_set_t {
 	bool is_split_mode;
 	i32 selection_count;
 	annotation_t** selected_annotations; // recreated every frame
-	i32 selected_coordinate_annotation_index;
+	i32 selected_coordinate_annotation_index; // which annotation the currently selected coordinate belongs to; invalid if -1
 	i32 selected_coordinate_index;
 	//annotation_t* annotation_belonging_to_selected_coordinate; // TODO: implement; recalculate together with active_annotations?
 	annotation_hit_result_t hit_result;
 	v2f coordinate_drag_start_offset;
 	i32 last_assigned_annotation_group;
 	bool last_assigned_group_is_valid;
-	i32 editing_annotation_index; // The active index of the annotation that is currently being edited
+	i32 editing_annotation_index; // The active index of the annotation that is currently being edited; invalid if -1
 	v2f mpp; // microns per pixel
 	coco_t coco;
 	bool export_as_asap_xml;

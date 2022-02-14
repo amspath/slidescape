@@ -2150,6 +2150,8 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 
 	// initialize new state
 	annotation_set->mpp = V2F(1.0f, 1.0f); // default value shouldn't be zero (has danger of divide-by-zero errors)
+	annotation_set->editing_annotation_index = -1;
+	annotation_set->selected_coordinate_annotation_index = -1;
 
 	// TODO: check is this still needed?
 	// reserve annotation group 0 for the "None" category
