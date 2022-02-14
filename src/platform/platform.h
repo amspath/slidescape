@@ -423,6 +423,7 @@ extern int g_argc;
 extern const char** g_argv;
 extern bool is_fullscreen;
 extern bool is_program_running;
+extern bool need_quit;
 extern THREAD_LOCAL thread_memory_t* local_thread_memory;
 extern input_t inputs[2];
 extern input_t *old_input;

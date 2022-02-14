@@ -147,6 +147,7 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		static struct {
 			bool open_file;
 			bool close;
+			bool save;
 			bool open_remote;
 			bool exit_program;
 			bool new_dataset_asap_xml;
@@ -174,10 +175,13 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		bool prev_is_vsync_enabled = is_vsync_enabled;
 		bool prev_fullscreen = is_fullscreen;
 		bool has_image_loaded = (arrlen(app_state->loaded_images) > 0);
+		bool can_save = scene->annotation_set.modified;
 
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
 			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Save", "Ctrl+S", &menu_items_clicked.save, can_save)) {}
 			ImGui::Separator();
 
 			if (ImGui::BeginMenu("Export", scene->can_export_region)) {
@@ -225,6 +229,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 #endif
 			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
 			if (ImGui::MenuItem("Assign group/feature...", NULL, &show_annotation_group_assignment_window)) {}
+			ImGui::Separator();
+			if (ImGui::MenuItem("Autosave", NULL, &app_state->enable_autosave)) {}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
@@ -279,7 +285,9 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			open_file_dialog(app_state, filetype_hint);
 		} else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
-		} else if (menu_items_clicked.open_remote) {
+		} else if (menu_items_clicked.save) {
+			save_annotations(app_state, &app_state->scene.annotation_set, true);
+		}else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = check_fullscreen(app_state->main_window);
@@ -734,6 +742,47 @@ static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
 	ImGui::End();
 }
 
+void save_changes_modal(app_state_t* app_state, annotation_set_t* annotation_set) {
+	if (show_save_quit_prompt) {
+		ImGui::OpenPopup("Save changes?");
+		show_save_quit_prompt = false;
+	}
+	gui_make_next_window_appear_in_center_of_screen();
+	if (ImGui::BeginPopupModal("Save changes?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::Text("There are unsaved changes to the currently loaded annotations.\nProceed?\n\n");
+		ImGui::Separator();
+
+		//static int unused_i = 0;
+		//ImGui::Combo("Combo", &unused_i, "Delete\0Delete harder\0");
+
+//		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+//		ImGui::Checkbox("Don't ask me next time", &dont_ask_to_delete_annotations);
+//		ImGui::PopStyleVar();
+
+		if (ImGui::Button("Save", ImVec2(120, 0)) || was_key_pressed(app_state->input, KEY_Return)) {
+			save_annotations(app_state, annotation_set, true);
+			show_save_quit_prompt = false;
+			is_program_running = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SetItemDefaultFocus();
+		ImGui::SameLine();
+		if (ImGui::Button("Don't save", ImVec2(120, 0))) {
+			show_save_quit_prompt = false;
+			is_program_running = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+			show_save_quit_prompt = false;
+			need_quit = false;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndPopup();
+	}
+}
+
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
@@ -1119,6 +1168,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	// Draw modal popups last
 	draw_export_region_dialog(app_state);
 	annotation_modal_dialog(app_state, &app_state->scene.annotation_set);
+	save_changes_modal(app_state, &app_state->scene.annotation_set);
 	gui_do_modal_popups();
 
 #if (LINUX || APPLE)
@@ -1208,13 +1258,14 @@ void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool a
 	arrpush(gui_modal_stack, popup);
 }
 
-void a_very_long_task(i32 logical_thread_index, void* userdata) {
+static void a_very_long_task(i32 logical_thread_index, void* userdata) {
 	for (i32 i = 0; i < 10; ++i) {
 		platform_sleep(1000);
 		global_progress_bar_test_progress = (i + 1) * 0.1f;
 	}
 }
 
+// for testing the progress bar popup
 void begin_a_very_long_task() {
 	add_work_queue_entry(&global_work_queue, a_very_long_task, NULL, 0);
 }

@@ -2216,7 +2216,7 @@ void save_geojson_annotations(annotation_set_t* annotation_set, const char* file
 	}
 }
 
-void autosave_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay) {
+void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay) {
 	if (!annotation_set->modified) return; // no changes, nothing to do
 
 	bool proceed = force_ignore_delay;

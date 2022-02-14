@@ -401,6 +401,7 @@ typedef struct app_state_t {
 	i32* active_resources; // array
 	bool is_export_in_progress;
 	bool export_as_coco;
+	bool enable_autosave;
 } app_state_t;
 
 typedef struct app_command_t {

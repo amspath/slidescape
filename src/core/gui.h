@@ -122,6 +122,7 @@ extern float annotation_insert_hover_distance INIT(= 25.0f);
 extern float annotation_freeform_insert_interval_distance INIT(= 30.0f);
 extern bool annotation_highlight_inside_of_polygons INIT(=true);
 extern bool show_delete_annotation_prompt;
+extern bool show_save_quit_prompt;
 extern bool dont_ask_to_delete_annotations;
 extern bool show_annotation_palette_window INIT(=true);
 

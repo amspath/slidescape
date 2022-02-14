@@ -485,9 +485,9 @@ int main(int argc, const char** argv)
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT) {
-	            is_program_running = false;
+	            need_quit = true;
             } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window)) {
-	            is_program_running = false;
+	            need_quit = true;
             } else if (event.type == SDL_DROPFILE) {
 	            u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
             	if (load_generic_file(app_state, event.drop.file, filetype_hint)) {
@@ -508,7 +508,7 @@ int main(int argc, const char** argv)
         linux_process_input();
 
 	    if (was_key_pressed(curr_input, KEY_F4) && curr_input->keyboard.key_alt.down) {
-		    is_program_running = false;
+		    need_quit = true;
 	    }
 	    if (was_key_pressed(curr_input, KEY_O) && curr_input->keyboard.key_ctrl.down) {
 		    open_file_dialog(app_state, 0);

@@ -595,6 +595,7 @@ void init_app_state(app_state_t* app_state) {
 
 	app_state->keyboard_base_panning_speed = 10.0f;
 	app_state->mouse_sensitivity = 10.0f;
+	app_state->enable_autosave = true;
 
 	init_scene(app_state, &app_state->scene);
 
@@ -605,7 +606,9 @@ void init_app_state(app_state_t* app_state) {
 
 void autosave(app_state_t* app_state, bool force_ignore_delay) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-	autosave_annotations(app_state, annotation_set, force_ignore_delay);
+	if (app_state->enable_autosave) {
+		save_annotations(app_state, annotation_set, force_ignore_delay);
+	}
 }
 
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
@@ -1183,17 +1186,19 @@ v2f viewer_do_2d_control(v2f velocity, v2f control, float dt, float time_since_s
 v2f get_2d_control_from_input(input_t* input) {
 	v2f control = {};
 	if (input) {
-		if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
-			control.y += 1.0f;
-		}
-		if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
-			control.y += -1.0f;
-		}
-		if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
-			control.x += 1.0f;
-		}
-		if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
-			control.x += -1.0f;
+		if (!input->keyboard.key_ctrl.down) {
+			if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
+				control.y += 1.0f;
+			}
+			if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
+				control.y += -1.0f;
+			}
+			if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
+				control.x += 1.0f;
+			}
+			if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
+				control.x += -1.0f;
+			}
 		}
 		// Normalize
 		float length_squared = v2f_length_squared(control);
@@ -1772,6 +1777,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			}
 
+
+			// Ctrl+S: save annotations manually
+			if (scene->annotation_set.modified) {
+				if (was_key_pressed(input, KEY_S) && input->keyboard.key_ctrl.down) {
+					save_annotations(app_state, &scene->annotation_set, true);
+				}
+			}
+
 			/*if (scene->clicked && !gui_want_capture_mouse) {
 				scene->has_selection_box = false; // deselect selection box
 			}*/
@@ -1891,6 +1904,14 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 
 	autosave(app_state, false);
 //	last_section = profiler_end_section(last_section, "autosave", 10.0f);
+
+	if (need_quit) {
+		if (!app_state->enable_autosave && app_state->scene.annotation_set.modified) {
+			show_save_quit_prompt = true;
+		} else {
+			is_program_running = false;
+		}
+	}
 
 	//glFinish();
 

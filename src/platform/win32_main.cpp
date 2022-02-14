@@ -544,7 +544,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 
 		case WM_CLOSE: {
 			// TODO: Handle this as a message to the user?
-			is_program_running = false;
+			need_quit = true;
 		} break;
 
 #if 1
@@ -666,7 +666,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 		i64 last_message_clock = get_clock();
 
 		if (message.message == WM_QUIT) {
-			is_program_running = false;
+			need_quit = true;
 		}
 
 		switch (message.message) {
@@ -988,7 +988,7 @@ void win32_process_xinput_controllers() {
 			}
 
 			if (new_controller_input->back.down) {
-				is_program_running = false;
+				need_quit = true;
 			}
 
 #if 0
