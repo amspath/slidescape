@@ -248,10 +248,15 @@ set(LIBRARY_SOURCE_FILES
 
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
-    add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
-    target_link_libraries(slidescape user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi)
-    # Hide the console window on release builds
+    add_executable(slidescape         ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
+    add_executable(slidescape_console ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
+
+    target_link_libraries(slidescape         user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi)
+    target_link_libraries(slidescape_console user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi)
+
+    # Hide the console window on (non-console) release builds
     target_link_options(slidescape PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
+    target_compile_definitions(slidescape PRIVATE DONT_REGISTER_FILETYPE_ASSOCIATIONS=1) # associate only non-console buils
 elseif(APPLE)
     set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -headerpad_max_install_names")
     find_package(SDL2 REQUIRED)

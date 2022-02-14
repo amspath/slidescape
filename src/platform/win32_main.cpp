@@ -1888,7 +1888,9 @@ int main() {
 	get_system_info();
 
 	win32_setup_appdata();
+#ifndef DONT_REGISTER_FILETYPE_ASSOCIATIONS // suppress filetype associations on separate console build
 	win32_set_file_type_associations();
+#endif
 	win32_init_timer();
 	win32_init_multithreading();
 
