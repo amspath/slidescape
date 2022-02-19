@@ -1169,6 +1169,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						//  Invoke the triangulator to triangulate this polygon.
 						arrsetlen(annotation->tesselated_trianges, 0);
 						if (triangulate_process(annotation->coordinates, annotation->coordinate_count, &annotation->tesselated_trianges)) {
+							DUMMY_STATEMENT;
 							// success
 						} else {
 							annotation->is_complex_polygon = true;
@@ -2116,9 +2117,17 @@ void draw_annotation_palette_window() {
 
 annotation_t duplicate_annotation(annotation_t* annotation) {
 	annotation_t result = *annotation;
+
+	// Transfer coordinates
 	result.coordinates = NULL;
 	arrsetlen(result.coordinates, annotation->coordinate_count);
 	memcpy(result.coordinates, annotation->coordinates, annotation->coordinate_count * sizeof(v2f));
+
+	// Invalidate derived calculations
+	result.valid_flags = 0;
+	result.fallback_valid_flags = 0;
+	result.tesselated_trianges = NULL;
+
 	return result;
 }
 
