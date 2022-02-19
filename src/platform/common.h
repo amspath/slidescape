@@ -135,15 +135,32 @@
 #include <fcntl.h>
 #endif
 
+// adapted from lz4.c
+#ifndef FORCE_INLINE
+#  ifdef _MSC_VER    /* Visual Studio */
+#    define FORCE_INLINE static __forceinline
+#  else
+#    if defined (__cplusplus) || defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L   /* C99 */
+#      ifdef __GNUC__
+#        define FORCE_INLINE static inline __attribute__((always_inline))
+#      else
+#        define FORCE_INLINE static inline
+#      endif
+#    else
+#      define FORCE_INLINE static
+#    endif /* __STDC_VERSION__ */
+#  endif  /* _MSC_VER */
+#endif /* LZ4_FORCE_INLINE */
+
 // Wrappers for using libc versions of malloc(), realloc() and free(), if you really need to.
 // Otherwise, they get replaced by ltmalloc (for better performance).
-static inline void* libc_malloc(size_t size) {
+FORCE_INLINE void* libc_malloc(size_t size) {
 	return malloc(size);
 }
-static inline void* libc_realloc(void* memory, size_t new_size) {
+FORCE_INLINE void* libc_realloc(void* memory, size_t new_size) {
 	return realloc(memory, new_size);
 }
-static inline void libc_free(void* memory) {
+FORCE_INLINE void libc_free(void* memory) {
 	free(memory);
 }
 
@@ -227,7 +244,7 @@ typedef int8_t bool8;
 #endif
 
 #define panic(message) _panic(__FILE__, __LINE__, __func__, "" message)
-static inline void _panic(const char* source_filename, i32 line, const char* func, const char* message) {
+FORCE_INLINE void _panic(const char* source_filename, i32 line, const char* func, const char* message) {
 	fprintf(stderr, "%s(): %s:%d\n", func, source_filename, line);
 	if (message[0] != '\0') fprintf(stderr, "Error: %s\n", message);
 	fprintf(stderr, "A fatal error occurred (aborting).\n");
@@ -265,7 +282,7 @@ static inline void _panic(const char* source_filename, i32 line, const char* fun
 
 #define DUMMY_STATEMENT do { int __x = 5; } while(0)
 
-static inline u64 next_pow2(u64 x) {
+FORCE_INLINE u64 next_pow2(u64 x) {
 	ASSERT(x > 1);
 	x -= 1;
 	x |= (x >> 1);
@@ -277,7 +294,7 @@ static inline u64 next_pow2(u64 x) {
 	return x + 1;
 }
 
-static inline i32 div_floor(i32 a, i32 b) {
+FORCE_INLINE i32 div_floor(i32 a, i32 b) {
 	return a / b - (a % b < 0);
 }
 
