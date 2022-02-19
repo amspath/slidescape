@@ -149,7 +149,7 @@ int app_command_execute(app_state_t* app_state) {
 							}
 
 							if (found_roi) {
-								bounds2f world_bounds = bounds_for_annotation(annotation_set, roi_annotation);
+								bounds2f world_bounds = bounds_for_annotation(roi_annotation);
 								bounds2i pixel_bounds = world_bounds_to_pixel_bounds(&world_bounds, image->mpp_x, image->mpp_y);
 
 								char filename_hint[512];

@@ -46,8 +46,6 @@ typedef struct texture_t {
 #define WSI_TILE_DIM 512
 #define BYTES_PER_PIXEL 4
 
-#define ENABLE_INSERT_TOOLS 1
-
 typedef struct {
 	i64 width;
 	i64 height;

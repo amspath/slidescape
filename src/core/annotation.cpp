@@ -103,6 +103,18 @@ i32 rectangle_get_quadrant_for_coordinate_index(i32 coordinate_index, v2f* coord
 	}
 }
 
+void annotation_set_rectangle_coordinates_to_bounding_box(annotation_set_t* annotation_set, annotation_t* annotation) {
+	if (annotation->coordinate_count == 4) {
+		annotation_recalculate_bounds_if_necessary(annotation);
+		annotation->coordinates[0] = annotation->bounds.min;
+		annotation->coordinates[1] = V2F(annotation->bounds.min.x, annotation->bounds.max.y);
+		annotation->coordinates[2] = annotation->bounds.max;
+		annotation->coordinates[3] = V2F(annotation->bounds.max.x, annotation->bounds.min.y);
+		annotation_invalidate_derived_calculations(annotation);
+		notify_annotation_set_modified(annotation_set);
+	}
+}
+
 void do_drag_annotation_node(scene_t* scene) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 	i32 annotation_with_selected_coordinate = annotation_set->selected_coordinate_annotation_index;
@@ -115,15 +127,7 @@ void do_drag_annotation_node(scene_t* scene) {
 			coordinate->x = scene->mouse.x - annotation_set->coordinate_drag_start_offset.x;
 			coordinate->y = scene->mouse.y - annotation_set->coordinate_drag_start_offset.y;
 			if (annotation->type == ANNOTATION_RECTANGLE && annotation->coordinate_count == 4) {
-				// Preserve rectangle structure
-//				i32 quadrant = rectangle_get_quadrant_for_coordinate_index(coordinate_index, annotation->coordinates, annotation->coordinate_count);
-//				i32 coordinate_for_quadrant[4]; // for looking up the coordinate index associated with each quadrant
-//				coordinate_for_quadrant[quadrant] = coordinate_index;
-//				for (i32 i = 0; i < 4; ++i) {
-//					i32 q = ((quadrant + i) % 4);
-//					i32 c = ((coordinate_index + i) % 4);
-//					coordinate_for_quadrant[q] = c;
-//				}
+				// Fixup rectangle coordinates
 				i32 fixed_coordinate_index = (coordinate_index + 2) % 4;
 				v2f fixed = annotation->coordinates[fixed_coordinate_index];
 				annotation->coordinates[(coordinate_index + 1) % 4] = V2F(fixed.x, coordinate->y);
@@ -415,7 +419,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 		i32 delta = (is_key_down(input, KEY_LeftShift) || is_key_down(input, KEY_RightShift)) ? -1 : +1;
 		i32 selected_index = annotation_cycle_selection_within_group(&app_state->scene.annotation_set, delta);
 		if (selected_index >= 0) {
-			center_scene_on_annotation(&app_state->scene, annotation_set, get_active_annotation(annotation_set, selected_index));
+			center_scene_on_annotation(&app_state->scene, get_active_annotation(annotation_set, selected_index));
 		}
 	}
 
@@ -607,9 +611,12 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			}
 
 			// Delete a coordinate by pressing 'C' while hovering over the coordinate
-			if (was_key_pressed(input, KEY_C) && annotation_set->is_edit_mode) {
+			if (is_key_down(input, KEY_C) && annotation_set->is_edit_mode) {
 				if (hit_result.annotation_index >= 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
-					delete_coordinate(annotation_set, hit_result.annotation_index, annotation_set->hovered_coordinate);
+					annotation_t* hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
+					if (hit_annotation->selected) {
+						delete_coordinate(annotation_set, hit_result.annotation_index, annotation_set->hovered_coordinate);
+					}
 				}
 			}
 		}
@@ -621,7 +628,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 }
 
 // Create a 2D bounding box that encompasses all of the annotation's coordinates
-bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
+bounds2f bounds_for_annotation(annotation_t* annotation) {
 	bounds2f result = { +FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX };
 	if (annotation->coordinate_count >=1) {
 		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
@@ -637,15 +644,15 @@ bounds2f bounds_for_annotation(annotation_set_t* annotation_set, annotation_t* a
 	return result;
 }
 
-void annotation_recalculate_bounds_if_necessary(annotation_set_t* annotation_set, annotation_t* annotation) {
+void annotation_recalculate_bounds_if_necessary(annotation_t* annotation) {
 	if (!(annotation->valid_flags & ANNOTATION_VALID_BOUNDS)) {
-		annotation->bounds = bounds_for_annotation(annotation_set, annotation);
+		annotation->bounds = bounds_for_annotation(annotation);
 		annotation->valid_flags |= ANNOTATION_VALID_BOUNDS;
 	}
 }
 
-bool is_point_within_annotation_bounds(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float tolerance_margin) {
-	annotation_recalculate_bounds_if_necessary(annotation_set, annotation);
+bool is_point_within_annotation_bounds(annotation_t* annotation, v2f point, float tolerance_margin) {
+	annotation_recalculate_bounds_if_necessary(annotation);
 	bounds2f bounds = annotation->bounds;
 	// TODO: Maybe make the tolerance depend on the size of the annotation?
 	if (tolerance_margin != 0.0f) {
@@ -679,7 +686,7 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
 		// TODO: think about what to do for annotations that are not polygons (e.g., circles) / i.e. have no coordinates
 		if (annotation->coordinate_count > 0) {
-			if (is_point_within_annotation_bounds(annotation_set, annotation, point, bounds_check_tolerance)) {
+			if (is_point_within_annotation_bounds(annotation, point, bounds_check_tolerance)) {
 				float bias = annotation->selected ? bias_for_selected : 0.0f;
 				float line_segment_distance = FLT_MAX; // distance to line segment
 				v2f projected_point = {}; // projected point on line segment
@@ -1097,7 +1104,7 @@ void set_region_for_whole_slide(scene_t* scene, image_t* image) {
 
 void set_region_encompassing_selected_annotations(annotation_set_t* annotation_set, scene_t* scene) {
 	annotation_t* selected_annotation = annotation_set->selected_annotations[0];
-	annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+	annotation_recalculate_bounds_if_necessary(selected_annotation);
 	if (annotation_set->selection_count == 1 && selected_annotation->coordinate_count >= 2) {
 		scene->selection_box = bounds2f_to_rect(selected_annotation->bounds);
 		scene->crop_bounds = selected_annotation->bounds;
@@ -1106,7 +1113,7 @@ void set_region_encompassing_selected_annotations(annotation_set_t* annotation_s
 		bounds2f bounds = selected_annotation->bounds;
 		for (i32 i = 1; i < annotation_set->selection_count; ++i) {
 			selected_annotation = annotation_set->selected_annotations[i];
-			annotation_recalculate_bounds_if_necessary(annotation_set, selected_annotation);
+			annotation_recalculate_bounds_if_necessary(selected_annotation);
 			bounds = bounds2f_encompassing(bounds, selected_annotation->bounds);
 		}
 		scene->selection_box = bounds2f_to_rect(bounds);
@@ -1244,6 +1251,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						if (!annotation->selected) {
 							select_annotation(annotation_set, annotation);
 						}
+
+						if (ImGui::MenuItem("Allow editing coordinates", "E", &annotation_set->is_edit_mode)) {}
+						ImGui::Separator();
+
 						if (ImGui::MenuItem("Delete coordinate", "C")) {
 							delete_coordinate(annotation_set, annotation_index, annotation_set->hovered_coordinate);
 						};
@@ -1258,14 +1269,13 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 							annotation_set->is_insert_coordinate_mode = false;
 							annotation_set->force_insert_mode = false;
 						}
-						// Option for setting the selection box around the selected annotation(s)
-						if (annotation_set->selection_count >= 1) {
+						ImGui::Separator();
+						if (gui_draw_selected_annotation_submenu_section(app_state, scene, annotation_set)) {
 							ImGui::Separator();
-							if (ImGui::MenuItem("Set region selection")) {
-								set_region_encompassing_selected_annotations(annotation_set, scene);
-							}
-
 						}
+
+						gui_draw_insert_annotation_submenu(app_state);
+
 						ImGui::EndPopup();
 					}
 				}
@@ -1354,40 +1364,22 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	if (!did_popup) {
 		if (ImGui::BeginPopupContextVoid()) {
 			did_popup = true;
-			if (ImGui::MenuItem("Enable editing", "E", &annotation_set->is_edit_mode)) {}
-			if (ImGui::MenuItem("Create point annotation", "Q")) {
-				create_point_annotation(annotation_set, scene->right_clicked_pos);
+			if (ImGui::MenuItem("Allow editing coordinates", "E", &annotation_set->is_edit_mode)) {}
+			ImGui::Separator();
+
+			if (gui_draw_selected_annotation_submenu_section(app_state, scene, annotation_set)) {
+				ImGui::Separator();
 			}
-			if (annotation_set->selection_count > 0) {
 
-				if (ImGui::MenuItem("Delete selected annotations", "Del")) {
-					if (dont_ask_to_delete_annotations) {
-						delete_selected_annotations(app_state, annotation_set);
-					} else {
-						show_delete_annotation_prompt = true;
-					}
-				};
+			gui_draw_insert_annotation_submenu(app_state);
 
-
-
-				// Option for setting the selection box around the selected annotation(s)
-				if (annotation_set->selection_count >= 1) {
-					ImGui::Separator();
-					if (ImGui::MenuItem("Set region selection")) {
-						set_region_encompassing_selected_annotations(annotation_set, scene);
-					}
-
-				}
-
-
-			}
 			ImGui::EndPopup();
 		}
 	}
 }
 
-void center_scene_on_annotation(scene_t* scene, annotation_set_t* annotation_set, annotation_t* annotation) {
-	bounds2f bounds = bounds_for_annotation(annotation_set, annotation);
+void center_scene_on_annotation(scene_t* scene, annotation_t* annotation) {
+	bounds2f bounds = bounds_for_annotation(annotation);
 	v2f center = {(bounds.max.x + bounds.min.x)*0.5f, (bounds.max.y + bounds.min.y)*0.5f};
 	scene_update_camera_pos(scene, center);
 }
@@ -1498,7 +1490,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					if (i == annotation_to_select) {
 						a->selected = true;
 						// Center the screen on the new annotation
-						center_scene_on_annotation(&app_state->scene, annotation_set, a);
+						center_scene_on_annotation(&app_state->scene, a);
 
 					} else {
 						a->selected = false;
@@ -2331,7 +2323,7 @@ annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* anno
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
 
 		// check bounds
-		annotation_recalculate_bounds_if_necessary(annotation_set, annotation);
+		annotation_recalculate_bounds_if_necessary(annotation);
 		if (are_bounds2f_overlapping(annotation->bounds, area)) {
 
 			annotation_t offsetted = duplicate_annotation(annotation);

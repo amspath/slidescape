@@ -1612,7 +1612,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				scene->scale_bar.enabled = !scene->scale_bar.enabled;
 			}
 
-#if ENABLE_INSERT_TOOLS
 			if (was_key_pressed(input, KEY_Q) && key_modifiers_without_shift == 0) {
 				viewer_switch_tool(app_state, TOOL_CREATE_POINT);
 			} else if (was_key_pressed(input, KEY_M) && key_modifiers_without_shift == 0) {
@@ -1626,7 +1625,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 //			} else if (was_key_pressed(input, KEY_T) && key_modifiers_without_shift == 0) {
 //				viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
 			}
-#endif
 
 			/*if (was_key_pressed(input, KEY_O)) {
 				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;

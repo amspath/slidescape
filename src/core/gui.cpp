@@ -126,7 +126,7 @@ bool enable_load_debug_isyntax_file;
 const char* coco_test_filename = "coco_test_in.json";
 const char* isyntax_test_filename = "1.isyntax";
 
-void check_presence_of_debug_test_files() {
+static void check_presence_of_debug_test_files() {
 	static bool checked;
 	if (!checked) {
 		enable_load_debug_coco_file = file_exists(coco_test_filename);
@@ -135,7 +135,82 @@ void check_presence_of_debug_test_files() {
 	}
 }
 
-void gui_draw_main_menu_bar(app_state_t* app_state) {
+bool gui_draw_selected_annotation_submenu_section(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set) {
+	// Change annotation type
+	bool proceed = annotation_set->selection_count > 0;
+	if (proceed) {
+		if (annotation_set->selection_count == 1) {
+			annotation_t* selected_annotation = annotation_set->selected_annotations[0];
+			if (selected_annotation->type == ANNOTATION_POLYGON && selected_annotation->coordinate_count == 4) {
+				if (ImGui::BeginMenu("Set annotation type")) {
+					if (ImGui::MenuItem("Freeform", NULL, true)) {}
+					if (ImGui::MenuItem("Rectangle", NULL, false)) {
+						selected_annotation->type = ANNOTATION_RECTANGLE;
+						annotation_set_rectangle_coordinates_to_bounding_box(annotation_set, selected_annotation);
+					}
+					ImGui::EndMenu();
+				}
+			} else if (selected_annotation->type == ANNOTATION_RECTANGLE) {
+				if (ImGui::BeginMenu("Set annotation type")) {
+					if (ImGui::MenuItem("Freeform", NULL, false)) {
+						selected_annotation->type = ANNOTATION_POLYGON;
+						notify_annotation_set_modified(annotation_set);
+					}
+					if (ImGui::MenuItem("Rectangle", NULL, true)) {}
+					ImGui::EndMenu();
+				}
+			}
+		}
+//				if (ImGui::MenuItem("Assign group/feature...", NULL)) {
+//					show_annotation_group_assignment_window = true;
+//				}
+
+		const char* delete_text = annotation_set->selection_count > 1 ? "Delete annotations" : "Delete annotation";
+		if (ImGui::MenuItem(delete_text, "Del")) {
+			if (dont_ask_to_delete_annotations) {
+				delete_selected_annotations(app_state, annotation_set);
+			} else {
+				show_delete_annotation_prompt = true;
+			}
+		};
+	}
+
+	// Option for setting the selection box around the selected annotation(s)
+	if (annotation_set->selection_count >= 1) {
+		if (ImGui::MenuItem("Set region")) {
+			set_region_encompassing_selected_annotations(annotation_set, scene);
+		}
+
+	}
+
+	return proceed;
+}
+
+void gui_draw_insert_annotation_submenu(app_state_t* app_state) {
+	if (ImGui::BeginMenu("New annotation", arrlen(app_state->loaded_images) > 0)) {
+		if (ImGui::MenuItem("Point", "Q")) {
+			viewer_switch_tool(app_state, TOOL_CREATE_POINT);
+		}
+		if (ImGui::MenuItem("Line", "M")) {
+			viewer_switch_tool(app_state, TOOL_CREATE_LINE);
+		}
+		if (ImGui::MenuItem("Freeform", "F")) {
+			viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
+		}
+//		if (ImGui::MenuItem("Ellipse", "E")) {
+//			viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
+//		}
+		if (ImGui::MenuItem("Rectangle", "R")) {
+			viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
+		}
+//		if (ImGui::MenuItem("Text", "T")) {
+//			viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
+//		}
+		ImGui::EndMenu();
+	}
+}
+
+static void gui_draw_main_menu_bar(app_state_t* app_state) {
 	check_presence_of_debug_test_files();
 
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
@@ -163,12 +238,6 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool load_coco_test_file;
 			bool load_isyntax_test_file;
 			bool reset_zoom;
-			bool insert_point;
-			bool insert_line;
-			bool insert_freeform;
-			bool insert_ellipse;
-			bool insert_rectangle;
-			bool insert_text;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
 
@@ -215,18 +284,8 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Annotation")) {
-#if ENABLE_INSERT_TOOLS
-			if (ImGui::BeginMenu("Insert")) {
-				if (ImGui::MenuItem("Point", "Q", &menu_items_clicked.insert_point)) {}
-				if (ImGui::MenuItem("Line", "M", &menu_items_clicked.insert_line)) {}
-				if (ImGui::MenuItem("Freeform", "F", &menu_items_clicked.insert_freeform)) {}
-//				if (ImGui::MenuItem("Ellipse", "E", &menu_items_clicked.insert_ellipse)) {}
-				if (ImGui::MenuItem("Rectangle", "R", &menu_items_clicked.insert_rectangle)) {}
-//				if (ImGui::MenuItem("Text", "T", &menu_items_clicked.insert_text)) {}
-				ImGui::EndMenu();
-			}
+			gui_draw_insert_annotation_submenu(app_state);
 			ImGui::Separator();
-#endif
 			if (ImGui::MenuItem("Annotations...", NULL, &show_annotations_window)) {}
 			if (ImGui::MenuItem("Assign group/feature...", NULL, &show_annotation_group_assignment_window)) {}
 			ImGui::Separator();
@@ -343,21 +402,6 @@ void gui_draw_main_menu_bar(app_state_t* app_state) {
 		} else if (menu_items_clicked.reset_zoom) {
 			scene->need_zoom_reset = true;
 		}
-#if ENABLE_INSERT_TOOLS
-		else if (menu_items_clicked.insert_point) {
-			viewer_switch_tool(app_state, TOOL_CREATE_POINT);
-		} else if (menu_items_clicked.insert_line) {
-			viewer_switch_tool(app_state, TOOL_CREATE_LINE);
-		} else if (menu_items_clicked.insert_freeform) {
-			viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
-		} else if (menu_items_clicked.insert_ellipse) {
-			viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
-		} else if (menu_items_clicked.insert_rectangle) {
-			viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
-		} else if (menu_items_clicked.insert_text) {
-			viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
-		}
-#endif
 	}
 
 }
