@@ -118,7 +118,7 @@ void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, sc
 	points[1] = V2F(bounds.left, bounds.bottom);
 	points[2] = V2F(bounds.right, bounds.bottom);
 	points[3] = V2F(bounds.right, bounds.top);
-	gui_draw_polygon_outline_in_scene(points, 4, color, thickness, true, scene);
+	gui_draw_polygon_outline_in_scene(points, 4, color, true, thickness, scene);
 }
 
 bool enable_load_debug_coco_file;

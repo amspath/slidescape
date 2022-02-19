@@ -69,14 +69,16 @@ void close_directory_listing(directory_listing_t* data) {
 
 #else // use dirent.h API for listing files
 
-struct directory_listing_type {
+#include <dirent.h>
+
+struct directory_listing_t {
 	DIR* dp;
 	char* found_filename;
 	const char* extension;
 };
 
-directory_listing_type* create_directory_listing_and_find_first_file(const char* directory, const char* extension) {
-	directory_listing_type* data = calloc(1, sizeof(directory_listing_type));
+directory_listing_t* create_directory_listing_and_find_first_file(const char* directory, const char* extension) {
+	directory_listing_t* data = calloc(1, sizeof(directory_listing_t));
 	bool ok = false;
 	data->dp = opendir(directory);
 	if (data->dp != NULL) {
@@ -99,11 +101,11 @@ directory_listing_type* create_directory_listing_and_find_first_file(const char*
 	}
 }
 
-char* get_current_filename_from_directory_listing(directory_listing_type* data) {
+char* get_current_filename_from_directory_listing(directory_listing_t* data) {
 	return data->found_filename;
 }
 
-bool find_next_file(directory_listing_type* data) {
+bool find_next_file(directory_listing_t* data) {
 	bool ok = false;
 	struct dirent* ep;
 	while ((ep = readdir(data->dp))) {
@@ -117,7 +119,7 @@ bool find_next_file(directory_listing_type* data) {
 	return ok;
 }
 
-void close_directory_listing(directory_listing_type *data) {
+void close_directory_listing(directory_listing_t *data) {
 	closedir(data->dp);
 	free(data);
 }

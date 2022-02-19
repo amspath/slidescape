@@ -252,15 +252,30 @@ int main(int argc, const char** argv)
 
     g_argc = argc;
     g_argv = argv;
+
+    app_command_t app_command = app_parse_commandline(argc, argv);
+    if (app_command.exit_immediately) {
+        app_command_execute_immediately(&app_command);
+        exit(0);
+    }
+    bool verbose_console = !app_command.headless;
+
 	console_printer_benaphore = benaphore_create();
-    console_print("Starting up...\n");
-    get_system_info();
+    if (verbose_console) console_print("Starting up...\n");
+    get_system_info(verbose_console);
 
 	app_state_t* app_state = &global_app_state;
-	init_app_state(app_state);
+	init_app_state(app_state, app_command);
 	viewer_init_options(app_state);
 
     linux_init_multithreading();
+
+    if (app_command.headless) {
+        is_openslide_available = init_openslide();
+        is_openslide_loading_done = true;
+        return app_command_execute(app_state);
+    }
+
     add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL, 0);
     linux_init_input();
 

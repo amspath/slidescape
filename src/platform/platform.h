@@ -377,7 +377,7 @@ i64 memrw_printf(memrw_t* buffer, const char* fmt, ...);
 i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read);
 void memrw_destroy(memrw_t* buffer);
 
-void get_system_info();
+void get_system_info(bool verbose);
 
 benaphore_t benaphore_create(void);
 void benaphore_destroy(benaphore_t* benaphore);

@@ -121,8 +121,8 @@ int app_command_execute(app_state_t* app_state) {
 			console_print("input: %s\n", command->inputs[i]);
 		}
 
-		for (i32 i = 0; i < arrlen(command->inputs); ++i) {
-			const char* filename = command->inputs[i];
+		for (i32 input_index = 0; input_index < arrlen(command->inputs); ++input_index) {
+			const char* filename = command->inputs[input_index];
 			if (load_generic_file(app_state, filename, 0)) {
 				if (arrlen(app_state->loaded_images) > 0) {
 					image_t* image = app_state->loaded_images;
@@ -141,7 +141,7 @@ int app_command_execute(app_state_t* app_state) {
 							annotation_t* roi_annotation;
 							for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 								annotation_t* annotation = get_active_annotation(&app_state->scene.annotation_set, i);
-								if (strncmp(annotation->name, command->export_command.roi, sizeof(annotation->name-1)) == 0) {
+								if (strncmp(annotation->name, command->export_command.roi, COUNT(annotation->name)-1) == 0) {
 									found_roi = true;
 									roi_annotation = annotation;
 									break;

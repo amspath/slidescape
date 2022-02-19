@@ -1873,9 +1873,10 @@ int main() {
 		win32_prepare_exit_console();
 		exit(0);
 	}
+    bool verbose_console = !app_command.headless;
 
-	console_printer_benaphore = benaphore_create();
-	console_print("Starting up...\n");
+    console_printer_benaphore = benaphore_create();
+    if (verbose_console) console_print("Starting up...\n");
 
 	// Don't open multiple instances of the program when opening a file -> switch to the existing instance
 	// (unless Shift is being held down)
@@ -1885,7 +1886,7 @@ int main() {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-	get_system_info();
+	get_system_info(verbose_console);
 
 	win32_setup_appdata();
 #ifndef DONT_REGISTER_FILETYPE_ASSOCIATIONS // suppress filetype associations on separate console build

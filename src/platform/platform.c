@@ -184,7 +184,7 @@ void memrw_destroy(memrw_t* buffer) {
 	memset(buffer, 0, sizeof(*buffer));
 }
 
-void get_system_info() {
+void get_system_info(bool verbose) {
 #if WINDOWS
     SYSTEM_INFO system_info;
     GetSystemInfo(&system_info);
@@ -205,7 +205,7 @@ void get_system_info() {
     os_page_size = (u32) getpagesize();
     page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
 #endif
-    console_print("There are %d logical CPU cores\n", logical_cpu_count);
+    if (verbose) console_print("There are %d logical CPU cores\n", logical_cpu_count);
     total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
 }
 
