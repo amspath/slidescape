@@ -317,7 +317,7 @@ typedef struct isyntax_t {
 
 // function prototypes
 void isyntax_xml_parser_init(isyntax_xml_parser_t* parser);
-void isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
+bool isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);

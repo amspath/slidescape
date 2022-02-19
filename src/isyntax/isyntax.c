@@ -1732,7 +1732,7 @@ static u32 symbol_counts[256];
 static u64 fast_count;
 static u64 nonfast_count;
 
-void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
+bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
 								i32 coefficient, i32 compressor_version, i16* out_buffer) {
 	ASSERT(compressor_version == 1 || compressor_version == 2);
 
@@ -1755,12 +1755,12 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	i32 coeff_count = (coefficient == 1) ? 3 : 1;
 	i32 coeff_bit_depth = 16; // fixed value for iSyntax
+	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
 
 	// Early out if dummy/empty block
 	if (compressed_size <= 8) {
-		size_t out_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
-		memset(out_buffer, 0, out_buffer_size);
-		return;
+		memset(out_buffer, 0, coeff_buffer_size);
+		return true;
 	}
 
 	arena_t* temp_arena = &local_thread_memory->temp_arena;
@@ -1790,10 +1790,20 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			bits_read += 6*8;
 			total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 		} else {
-			panic();
+			panic("invalid coeff_count");
 		}
 		serialized_length = total_mask_bits * (block_width * block_height / 8);
 	}
+
+	// Check that the serialized length is sane
+	if (serialized_length > 2 * coeff_buffer_size) {
+		ASSERT(!"serialized_length too large");
+		console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, serialized_length too large (%d)\n", serialized_length);
+		memset(out_buffer, 0, coeff_buffer_size);
+		end_temp_memory(&temp_memory);
+		return false;
+	}
+
 	u8 zerorun_symbol = *(u8*)byte_pos++;
 	bits_read += 8;
 	u8 zero_counter_size = *(u8*)byte_pos++;
@@ -1819,6 +1829,13 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		u32 code = 0;
 		i32 nonfast_symbol_index = 0;
 		do {
+			if (bits_read >= block_size_in_bits) {
+				ASSERT(!"out of bounds");
+				console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, Huffman table extends out of bounds (compressed_size=%d)\n", compressed_size);
+				memset(out_buffer, 0, coeff_buffer_size);
+				end_temp_memory(&temp_memory);
+				return false;
+			}
 			// Read a chunk of bits large enough to 'always' have the whole Huffman code, followed by the 8-bit symbol.
 			// A blob of 57-64 bits is more than sufficient for a Huffman code of at most 16 bits.
 			// The bitstream is organized least significant bit first (treat as one giant little-endian integer).
@@ -1952,7 +1969,11 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			DUMMY_STATEMENT;
 #endif
 			if (!match) {
-				DUMMY_STATEMENT;
+				ASSERT(!"out of bounds");
+				console_print_error("Error: isyntax_hulsken_decompress(): error decoding Huffman message (unknown symbol)\n");
+				memset(out_buffer, 0, coeff_buffer_size);
+				end_temp_memory(&temp_memory);
+				return false;
 			}
 		}
 
@@ -2051,7 +2072,7 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				bitmasks[2] = *(u16*)(byte_pos+4);
 				total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 			} else {
-				panic(); // TODO: handle error gracefully?
+				panic("invalid coeff_count");
 			}
 			expected_length = (total_mask_bits * block_width * block_height) / 8 + (coeff_count * 2);
 			ASSERT(decompressed_length == expected_length);
@@ -2060,7 +2081,6 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	// unpack bitplanes
 	i32 compressed_bitplane_index = 0;
-	size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(u16);
 	arena_align(temp_arena, 32);
 	u16* coeff_buffer = (u16*)arena_push_size(temp_arena, coeff_buffer_size);
 	memset(coeff_buffer, 0, coeff_buffer_size);
@@ -2139,7 +2159,7 @@ void isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	}
 
 	end_temp_memory(&temp_memory); // frees coeff_buffer and decompressed_buffer
-
+	return true;
 }
 
 #if 0

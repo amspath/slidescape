@@ -846,7 +846,8 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 						isyntax_codeblock_t* last_codeblock = wsi->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
 						u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
 						u64 read_size = offset1 - chunk->offset;
-						chunk->data = (u8*)malloc(read_size);
+						size_t safety_bytes = 7; // allocate extra safety bytes at the end for bitstream_lsb_read(), which might read past the end of the buffer
+						chunk->data = (u8*)malloc(read_size + safety_bytes);
 //				        console_print("loading chunk %d\n", chunk_index);
 
 						size_t bytes_read = file_handle_read_at_offset(chunk->data, isyntax->file_handle, chunk->offset, read_size);
