@@ -256,7 +256,7 @@ if (WIN32)
 
     # Hide the console window on (non-console) release builds
     target_link_options(slidescape PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
-    target_compile_definitions(slidescape PRIVATE DONT_REGISTER_FILETYPE_ASSOCIATIONS=1) # associate only non-console buils
+    target_compile_definitions(slidescape_console PRIVATE DONT_REGISTER_FILETYPE_ASSOCIATIONS=1) # associate only non-console buils
 elseif(APPLE)
     set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -headerpad_max_install_names")
     find_package(SDL2 REQUIRED)
