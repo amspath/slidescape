@@ -5,11 +5,14 @@ build/
 *.exe
 *.dll
 *.app/*
+*.desktop
+*.ini
 
 data/
 openslide/
 *.tiff
 *.isyntax
+*.png
 *.json
 *.xml
 *.orig

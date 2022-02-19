@@ -289,6 +289,16 @@ elseif(APPLE)
 else()
     add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     target_link_libraries(slidescape pthread dl m GL GLEW SDL2)
+
+    # Create slidescape.desktop and install/uninstall scripts, and copy them to the output directory
+    configure_file(resources/slidescape.desktop.in slidescape.desktop)
+    add_custom_command(TARGET slidescape POST_BUILD
+            COMMAND cp -f slidescape.desktop "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape.desktop"
+            COMMAND cp -f "${CMAKE_SOURCE_DIR}/resources/install_desktop_file.sh.in" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/install_desktop_file.sh"
+            COMMAND cp -f "${CMAKE_SOURCE_DIR}/resources/install_desktop_file.sh.in" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/uninstall_desktop_file.sh"
+            COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape.desktop"
+            COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/install_desktop_file.sh"
+            COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/uninstall_desktop_file.sh")
 endif()
 target_compile_definitions(slidescape PRIVATE IS_SERVER=0)
 

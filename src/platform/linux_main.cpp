@@ -258,7 +258,7 @@ int main(int argc, const char** argv)
         app_command_execute_immediately(&app_command);
         exit(0);
     }
-    bool verbose_console = !app_command.headless;
+    bool verbose_console = true;//!app_command.headless;
 
 	console_printer_benaphore = benaphore_create();
     if (verbose_console) console_print("Starting up...\n");
@@ -282,11 +282,14 @@ int main(int argc, const char** argv)
     // Setup SDL
     // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
     // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to latest version of SDL is recommended!)
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
+	i64 clock_sdl_begin = get_clock();
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
     {
         console_print_error("Error: %s\n", SDL_GetError());
         return -1;
     }
+	float seconds_elapsed_sdl_init = get_seconds_elapsed(clock_sdl_begin, get_clock());
+	console_print_verbose("Initialized SDL in %g seconds\n", seconds_elapsed_sdl_init);
 
     // Decide GL+GLSL versions
 #ifdef __APPLE__

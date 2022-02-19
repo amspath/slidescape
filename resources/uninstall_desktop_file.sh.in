@@ -1,0 +1,14 @@
+#!/usr/bin/bash
+
+SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
+
+if test -f "$SCRIPT_DIR/slidescape.desktop"; then
+
+  xdg-desktop-menu uninstall "$SCRIPT_DIR/slidescape.desktop"
+  xdg-icon-resource uninstall --context apps --size 16  slidescape
+  xdg-icon-resource uninstall --context apps --size 32 slidescape
+  xdg-icon-resource uninstall --context apps --size 64 slidescape
+  xdg-icon-resource uninstall --context apps --size 128 slidescape
+else
+  echo "slidescape.desktop is not configured/missing - nothing to uninstall."
+fi

@@ -1,0 +1,10 @@
+#!/usr/bin/env xdg-open
+
+[Desktop Entry]
+Type=Application
+Name=Slidescape
+Icon=${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources/icon/icon.svg
+Exec="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape" %f
+Comment=A whole-slide image viewer
+Categories=Graphics;
+MimeType=image/tiff;image/isyntax
