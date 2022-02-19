@@ -2,6 +2,10 @@
 
 Slidescape is a whole-slide image viewer for digital pathology.
 
+## Download
+The latest binaries can be downloaded on GitHub from the [releases](https://github.com/amspath/slidescape/releases) section
+for Windows, Linux and macOS.
+
 ## How to build
 
 ### Windows
@@ -24,26 +28,58 @@ cmake --build build --target slidescape -- -j
 ./slidescape
 ```
 
+## Features
 
-## Supported image formats
+### Supported image formats
 
 The viewer has built-in support for:
 * Tiled TIFF and BigTIFF (including generic and Philips TIFF variants).
 * Philips iSyntax.
 
-Slidescape can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime. 
+Slidescape can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime.
 If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana formats can additionally be loaded.
 
-To enable OpenSlide support on Windows, download (or compile) the [64-bit binaries](https://openslide.org/download/) 
+To enable OpenSlide support on Windows, download (or compile) the [64-bit binaries](https://openslide.org/download/)
 and put all of the DLL files together in an `openslide/` folder, and put that folder in the same location as `slidescape.exe`.
 
-To enable OpenSlide support on Linux, install the `openslide` library, either using a package manager or 
-by building and installing it manually. The program will try to locate `libopenslide.so`, either in the 
+To enable OpenSlide support on Linux, install the `openslide` library, either using a package manager or
+by building and installing it manually. The program will try to locate `libopenslide.so`, either in the
 default system library paths or in `/usr/local/lib/`.
 
 To enable OpenSlide support on macOS, install the `openslide` library using Homebrew or MacPorts.
 The program will try to locate `libopenslide.dylib` in the default install path: either `/usr/local/opt/openslide/lib/` for
 Homebrew, or `/opt/local/lib/` for MacPorts.
+
+### Viewing options
+
+Basic image filters are available under `View` > `Image options`. 
+These allow adjusting the black and white level and filtering out a background color.
+
+There is experimental support for loading a second image as an overlay (e.g. a mask image).
+To load an image as an overlay, press `F6` before loading the second image.
+
+To navigate an image, you can pan and zoom the view either the mouse or the keyboard. 
+The mouse and keyboard sensitivity can be adjusted in the general options, 
+`Edit` > `General options...` under the tab `Controls`.
+
+
+### Annotations
+Slidescape can create and edit annotations in XML format, 
+compatible with [ASAP](https://github.com/computationalpathologygroup/ASAP).
+
+Annotations can be manipulated in a variety of ways:
+* New annotations can be created (points `Q`, lines `M`, rectangles `R`, freeforms `F`).
+* Individual coordinates can be moved, inserted or deleted (to toggle editing of coordinates, press `E`).
+* Annotations can be assigned a (color-coded) group.
+* Annotations can be split into parts.
+
+Changes to annotations are autosaved by default (a backup of the original unchanged XML file will be preserved with file extension `.orig`).
+
+### Image cropping
+
+Images in TIFF format can be cropped to a smaller size. This may be useful to reduce the file size, or to restrict the image to a specific region of interest.
+
+To crop an image, select a region for cropping (`Edit` > `Select region`), then use `File` > `Export` > `Export region...` to export the file.
 
 ## Credits
 
