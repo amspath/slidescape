@@ -6,27 +6,6 @@ Slidescape is a whole-slide image viewer for digital pathology.
 The latest binaries can be downloaded on GitHub from the [releases](https://github.com/amspath/slidescape/releases) section
 for Windows, Linux and macOS.
 
-## How to build
-
-### Windows
-You can build the program using CMake and the MinGW-w64 toolchain.
-
-You may wish to install `nasm` so that the SIMD-optimized assembly code in libjpeg-turbo can be compiled.
-
-All library code is included with the source code distribution (there are no other external dependencies).
-
-### Linux / macOS
-
-Make sure the build tools `cmake` and (optionally) `nasm` are installed.
-
-The following libraries are required: SDL2 (on Linux and macOS), GLEW (Linux only).
-```
-mkdir build && cd build
-cmake ..
-cd ..
-cmake --build build --target slidescape -- -j
-./slidescape
-```
 
 ## Features
 
@@ -35,6 +14,7 @@ cmake --build build --target slidescape -- -j
 The viewer has built-in support for:
 * Tiled TIFF and BigTIFF (including generic and Philips TIFF variants).
 * Philips iSyntax.
+* Simple images (JPEG, PNG).
 
 Slidescape can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime.
 If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana formats can additionally be loaded.
@@ -52,15 +32,15 @@ Homebrew, or `/opt/local/lib/` for MacPorts.
 
 ### Viewing options
 
+To navigate an image, you can pan and zoom using either the mouse or the keyboard.
+The mouse and keyboard sensitivity can be adjusted in the general options,
+`Edit` > `General options...` under the tab `Controls`.
+
 Basic image filters are available under `View` > `Image options`. 
 These allow adjusting the black and white level and filtering out a background color.
 
 There is experimental support for loading a second image as an overlay (e.g. a mask image).
 To load an image as an overlay, press `F6` before loading the second image.
-
-To navigate an image, you can pan and zoom the view either the mouse or the keyboard. 
-The mouse and keyboard sensitivity can be adjusted in the general options, 
-`Edit` > `General options...` under the tab `Controls`.
 
 
 ### Annotations
@@ -80,6 +60,30 @@ Changes to annotations are autosaved by default (a backup of the original unchan
 Images in TIFF format can be cropped to a smaller size. This may be useful to reduce the file size, or to restrict the image to a specific region of interest.
 
 To crop an image, select a region for cropping (`Edit` > `Select region`), then use `File` > `Export` > `Export region...` to export the file.
+
+
+## How to build
+
+### Windows
+You can build the program using CMake and the MinGW-w64 toolchain.
+
+All library code is included with the source code distribution (there are no other external dependencies).
+
+You may wish to install `nasm` so that the SIMD-optimized assembly code in libjpeg-turbo can be compiled.
+
+### Linux / macOS
+
+Make sure the build tools `cmake` and (optionally) `nasm` are installed.
+
+The following libraries are required to be installed: SDL2 (on Linux and macOS), GLEW (Linux only).
+```
+mkdir build && cd build
+cmake ..
+cd ..
+cmake --build build --target slidescape -- -j
+./slidescape
+```
+
 
 ## Credits
 
