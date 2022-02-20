@@ -678,7 +678,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 
 	const char* ext = get_file_extension(filename);
 
-	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
+	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0 || strcasecmp(ext, "bmp") == 0 || strcasecmp(ext, "ppm") == 0) {
 		// Load using stb_image
 
 		image.type = IMAGE_TYPE_WSI;
