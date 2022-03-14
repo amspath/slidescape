@@ -60,7 +60,7 @@ void win32_init_gui(app_state_t* app_state) {
 
 	// Setup Platform/Renderer bindings
 	ImGui_ImplWin32_Init(app_state->main_window);
-	ImGui_ImplOpenGL3_Init(NULL);
+	ImGui_ImplOpenGL3_Init(NULL, global_is_using_software_renderer ? "opengl32software.dll" : "opengl32.dll");
 
 
 	// Load Fonts

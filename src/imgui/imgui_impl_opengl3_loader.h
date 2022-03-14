@@ -430,7 +430,7 @@ typedef void (*GL3WglProc)(void);
 typedef GL3WglProc (*GL3WGetProcAddressProc)(const char *proc);
 
 /* gl3w api */
-GL3W_API int imgl3wInit(void);
+GL3W_API int imgl3wInit(const char* lib_filename);
 GL3W_API int imgl3wInit2(GL3WGetProcAddressProc proc);
 GL3W_API int imgl3wIsSupported(int major, int minor);
 GL3W_API GL3WglProc imgl3wGetProcAddress(const char *proc);
@@ -579,9 +579,9 @@ static HMODULE libgl;
 typedef PROC(__stdcall* GL3WglGetProcAddr)(LPCSTR);
 static GL3WglGetProcAddr wgl_get_proc_address;
 
-static int open_libgl(void)
+static int open_libgl(const char* lib_filename)
 {
-    libgl = LoadLibraryA("opengl32.dll");
+    libgl = LoadLibraryA(lib_filename);
     if (!libgl)
         return GL3W_ERROR_LIBRARY_OPEN;
     wgl_get_proc_address = (GL3WglGetProcAddr)GetProcAddress(libgl, "wglGetProcAddress");
@@ -659,9 +659,9 @@ static int parse_version(void)
 
 static void load_procs(GL3WGetProcAddressProc proc);
 
-int imgl3wInit(void)
+int imgl3wInit(const char* lib_filename)
 {
-    int res = open_libgl();
+    int res = open_libgl(lib_filename);
     if (res)
         return res;
     atexit(close_libgl);
