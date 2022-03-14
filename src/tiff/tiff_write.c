@@ -804,24 +804,27 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			++tag_count_for_ifd;
 
 			raw_bigtiff_tag_t tag_x_resolution = {TIFF_TAG_X_RESOLUTION, TIFF_RATIONAL, 1, 0};
-			if (source_ifd->x_resolution.b > 0) {
-				tag_x_resolution.offset = *(u64*)(&source_ifd->x_resolution);
+			float downsample_factor = (float)(1 << level);
+			if (image->is_mpp_known) {
+				tiff_rational_t resolution = float_to_tiff_rational(image->mpp_x * downsample_factor * 10000.0f);
+				tag_x_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
 				++tag_count_for_ifd;
-			} else if (image->is_mpp_known) {
-				tiff_rational_t resolution = float_to_tiff_rational(image->mpp_x * 10000.0f);
-				tag_x_resolution.offset = *(u64*)(&resolution);
+			} else if (source_ifd->x_resolution.b > 0) {
+				// TODO: remove this fallback?
+				tag_x_resolution.offset = *(u64*)(&source_ifd->x_resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
 				++tag_count_for_ifd;
 			}
 			raw_bigtiff_tag_t tag_y_resolution = {TIFF_TAG_Y_RESOLUTION, TIFF_RATIONAL, 1, 0};
-			if (source_ifd->y_resolution.b > 0) {
-				tag_x_resolution.offset = *(u64*)(&source_ifd->y_resolution);
+			if (image->is_mpp_known) {
+				tiff_rational_t resolution = float_to_tiff_rational(image->mpp_y * downsample_factor * 10000.0f);
+				tag_y_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
 				++tag_count_for_ifd;
-			} else if (image->is_mpp_known) {
-				tiff_rational_t resolution = float_to_tiff_rational(image->mpp_y * 10000.0f);
-				tag_x_resolution.offset = *(u64*)(&resolution);
+			} else if (source_ifd->y_resolution.b > 0) {
+				// TODO: remove this fallback?
+				tag_y_resolution.offset = *(u64*)(&source_ifd->y_resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
 				++tag_count_for_ifd;
 			}

@@ -388,8 +388,8 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	for (i32 tag_index = 0; tag_index < tag_count; ++tag_index) {
 		tiff_tag_t* tag = tags + tag_index;
 		if (is_verbose_mode) {
-			console_print_verbose("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, offset=%llu\n",
-						 tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->offset);
+			console_print_verbose("tag %2d: %30s - code=%d, data_type=%2d, count=%5llu, %s=%llu\n",
+						 tag_index, get_tiff_tag_name(tag->code), tag->code, tag->data_type, tag->data_count, tag->data_is_offset ? "offset" : "  data",tag->offset);
 		}
 		switch(tag->code) {
 			case TIFF_TAG_NEW_SUBFILE_TYPE: {
@@ -771,11 +771,13 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 			u32 bytesize_of_offsets;
 			u64 next_ifd_offset = 0;
 			if (is_bigtiff) {
+				console_print_verbose("TIFF variant is BigTIFF\n");
 				bytesize_of_offsets = maybe_swap_16(tiff_header.bigtiff.offset_size, is_big_endian);
 				if (bytesize_of_offsets != 8) goto fail;
 				if (tiff_header.bigtiff.always_zero != 0) goto fail;
 				next_ifd_offset = maybe_swap_64(tiff_header.bigtiff.first_ifd_offset, is_big_endian);
 			} else {
+				console_print_verbose("TIFF variant is standard TIFF\n");
 				bytesize_of_offsets = 4;
 				next_ifd_offset = maybe_swap_32(tiff_header.tiff.first_ifd_offset, is_big_endian);
 			}

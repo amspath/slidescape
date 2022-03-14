@@ -1117,7 +1117,6 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 		char* pos = (char*)one_past_last_slash(dll_path, sizeof(dll_path));
 		i32 chars_left = sizeof(dll_path) - (pos - dll_path);
 		strncpy(pos, "softwarerenderer", chars_left);
-		console_print("Attempting to load opengl32software.dll from %s\n", dll_path);
 		SetDllDirectoryA(dll_path);
 		opengl32_dll_handle = LoadLibraryA("opengl32software.dll");
 		// NOTE: We again need access to the extra dll file in win32_init_gui(),
@@ -1239,7 +1238,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	}
 
 	// To test the software renderer
-	if (!use_software_renderer) is_opengl_version_supported = false;
+//	if (!use_software_renderer) is_opengl_version_supported = false;
 
 	if (!is_opengl_version_supported) {
 
