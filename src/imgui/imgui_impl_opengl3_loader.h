@@ -430,7 +430,7 @@ typedef void (*GL3WglProc)(void);
 typedef GL3WglProc (*GL3WGetProcAddressProc)(const char *proc);
 
 /* gl3w api */
-GL3W_API int imgl3wInit(const char* lib_filename);
+GL3W_API int imgl3wInit(const char *lib_filename = NULL);
 GL3W_API int imgl3wInit2(GL3WGetProcAddressProc proc);
 GL3W_API int imgl3wIsSupported(int major, int minor);
 GL3W_API GL3WglProc imgl3wGetProcAddress(const char *proc);
@@ -579,8 +579,10 @@ static HMODULE libgl;
 typedef PROC(__stdcall* GL3WglGetProcAddr)(LPCSTR);
 static GL3WglGetProcAddr wgl_get_proc_address;
 
-static int open_libgl(const char* lib_filename)
+static int open_libgl(const char *lib_filename)
 {
+    if (!lib_filename)
+        lib_filename = "opengl32.dll";
     libgl = LoadLibraryA(lib_filename);
     if (!libgl)
         return GL3W_ERROR_LIBRARY_OPEN;
@@ -601,9 +603,11 @@ static GL3WglProc get_proc(const char *proc)
 #include <dlfcn.h>
 
 static void *libgl;
-static int open_libgl(void)
+static int open_libgl(const char *lib_filename)
 {
-    libgl = dlopen("/System/Library/Frameworks/OpenGL.framework/OpenGL", RTLD_LAZY | RTLD_LOCAL);
+    if (!lib_filename)
+        lib_filename = "/System/Library/Frameworks/OpenGL.framework/OpenGL";
+    libgl = dlopen(lib_filename, RTLD_LAZY | RTLD_LOCAL);
     if (!libgl)
         return GL3W_ERROR_LIBRARY_OPEN;
     return GL3W_OK;
@@ -623,9 +627,11 @@ static GL3WglProc get_proc(const char *proc)
 static void *libgl;
 static GL3WglProc (*glx_get_proc_address)(const GLubyte *);
 
-static int open_libgl(void)
+static int open_libgl(const char *lib_filename)
 {
-    libgl = dlopen("libGL.so.1", RTLD_LAZY | RTLD_LOCAL);
+    if (!lib_filename)
+        lib_filename = "libGL.so.1";
+    libgl = dlopen(lib_filename, RTLD_LAZY | RTLD_LOCAL);
     if (!libgl)
         return GL3W_ERROR_LIBRARY_OPEN;
     *(void **)(&glx_get_proc_address) = dlsym(libgl, "glXGetProcAddressARB");
