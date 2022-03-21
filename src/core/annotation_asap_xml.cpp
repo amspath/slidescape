@@ -354,18 +354,18 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 			const char* part_of_group = annotation_set->stored_groups[annotation_set->active_group_indices[annotation->group_id]].name;
 			const char* type_name = get_annotation_type_name(annotation->type);
 
-			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">",
+			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">\n",
 			        color_buf, annotation->name, part_of_group, type_name);
 
 			ASSERT(annotation->coordinate_count == arrlen(annotation->coordinates));
 			if (annotation->coordinate_count > 0 && annotation->coordinates != NULL) {
-				fprintf(fp, "<Coordinates>");
+				fprintf(fp, "\t<Coordinates>\n");
 				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
 					v2f* coordinate = annotation->coordinates + coordinate_index;
-					fprintf(fp, "<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />", coordinate_index,
+					fprintf(fp, "\t\t<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />\n", coordinate_index,
 					        coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
 				}
-				fprintf(fp, "</Coordinates>");
+				fprintf(fp, "\t</Coordinates>\n");
 			}
 
 
