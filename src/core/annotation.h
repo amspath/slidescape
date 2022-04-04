@@ -99,9 +99,11 @@ typedef struct annotation_feature_t {
 	char name[256];
 	rgba_t color;
 	i32 id;
+	bool is_explicitly_defined; // true if there is an associated <Feature> in the XML file
 	bool restrict_to_group;
 	bool deleted;
 	i32 group_id;
+	float value; // NOTE: this variable could maybe be used in the future to represent a default value (?); however, it's currently unused except for while XML parsing
 } annotation_feature_t;
 
 typedef struct annotation_hit_result_t {
@@ -183,6 +185,9 @@ static inline annotation_feature_t* get_active_annotation_feature(annotation_set
 u32 add_annotation_group(annotation_set_t* annotation_set, const char* name);
 u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name);
 i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name);
+i32 find_annotation_group_or_create_if_not_found(annotation_set_t* annotation_set, const char* group_name);
+i32 find_annotation_feature(annotation_set_t* annotation_set, const char* feature_name);
+i32 find_annotation_feature_or_create_if_not_found(annotation_set_t* annotation_set, const char* feature_name);
 void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation);
 void deselect_all_annotations(annotation_set_t* annotation_set);
 void annotation_set_rectangle_coordinates_to_bounding_box(annotation_set_t* annotation_set, annotation_t* annotation);

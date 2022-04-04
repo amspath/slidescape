@@ -597,6 +597,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			bool were_annotations_loaded = false;
 
 			// Load JSON first
+#if 0
 			replace_file_extension(temp_filename, temp_size, "json");
 			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
 			if (file_exists(temp_filename)) {
@@ -616,6 +617,10 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 			} else {
 				coco_init_main_image(&annotation_set->coco, &image);
 			}
+#else
+			// TODO: remove?
+			coco_init_main_image(&annotation_set->coco, &image);
+#endif
 
 			// TODO: use most recently updated annotations?
 			replace_file_extension(temp_filename, temp_size, "xml");

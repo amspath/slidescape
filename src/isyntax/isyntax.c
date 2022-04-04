@@ -482,7 +482,6 @@ void isyntax_xml_parser_init(isyntax_xml_parser_t* parser) {
 	parser->attrbuf_capacity = KILOBYTES(32);
 	parser->contentbuf_capacity = MEGABYTES(8);
 
-	parser->current_element_name = "";
 	parser->attrbuf = malloc(parser->attrbuf_capacity);
 	parser->attrbuf_end = parser->attrbuf + parser->attrbuf_capacity;
 	parser->attrcur = NULL;
@@ -626,7 +625,6 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					}
 					parser->current_node_type = node->node_type;
 					parser->current_node_has_children = false;
-					parser->current_element_name = x->elem; // We need to remember this pointer, because it may point to something else at the YXML_ELEMEND state
 
 				} break;
 

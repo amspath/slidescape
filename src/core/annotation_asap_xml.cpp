@@ -23,28 +23,34 @@
 #define YXML_STACK_BUFFER_SIZE KILOBYTES(32)
 
 enum {
-	ASAP_XML_PARSE_GROUPS = 0,
+	ASAP_XML_PARSE_GROUPS_AND_FEATURES = 0,
 	ASAP_XML_PARSE_ANNOTATIONS = 1,
 };
 
 typedef enum asap_xml_element_enum {
-	ASAP_XML_ELEMENT_NONE = 0, // for unhandled elements
-	ASAP_XML_ELEMENT_ANNOTATION = 1,
-	ASAP_XML_ELEMENT_COORDINATE = 2,
-	ASAP_XML_ELEMENT_GROUP = 3,
+	ASAP_XML_ELEMENT_NONE = 0,               // for unhandled elements
+	ASAP_XML_ELEMENT_ANNOTATION = 1,         // <Annotation>
+	ASAP_XML_ELEMENT_COORDINATE = 2,         // <Coordinate>
+	ASAP_XML_ELEMENT_GROUP = 3,              // <Group>
+	ASAP_XML_ELEMENT_FEATURE = 4,            // <Feature>
+	ASAP_XML_ELEMENT_ATTRIBUTES = 5,         // <Attributes>
+	ASAP_XML_ELEMENT_ASAP_ANNOTATIONS = 6,   // <ASAP_Annotations>
+	ASAP_XML_ELEMENT_ANNOTATIONGROUPS = 7,   // <AnnotationGroups>
+	ASAP_XML_ELEMENT_ANNOTATIONFEATURES = 8, // <AnnotationFeatures>
+	ASAP_XML_ELEMENT_ANNOTATIONS = 9,        // <Annotations>
 } asap_xml_element_enum;
 
 typedef enum asap_xml_attribute_enum {
-	ASAP_XML_ATTRIBUTE_NONE = 0, // for unhandled attributes
-	ASAP_XML_ATTRIBUTE_COLOR = 1,
-	ASAP_XML_ATTRIBUTE_NAME = 2,
-	ASAP_XML_ATTRIBUTE_PARTOFGROUP = 3,
-	ASAP_XML_ATTRIBUTE_TYPE = 4,
-	ASAP_XML_ATTRIBUTE_X = 5,
-	ASAP_XML_ATTRIBUTE_Y = 6,
+	ASAP_XML_ATTRIBUTE_NONE = 0,             // for unhandled attributes
+	ASAP_XML_ATTRIBUTE_COLOR = 1,            // Color="#000000"
+	ASAP_XML_ATTRIBUTE_NAME = 2,             // Name="group_name"
+	ASAP_XML_ATTRIBUTE_PARTOFGROUP = 3,      // PartOfGroup="group_name"
+	ASAP_XML_ATTRIBUTE_TYPE = 4,             // Type="Polygon"
+	ASAP_XML_ATTRIBUTE_X = 5,                // X="12345" (for <Coordinate>)
+	ASAP_XML_ATTRIBUTE_Y = 6,                // Y="12345" (for <Coordinate>)
 } asap_xml_attribute_enum;
 
-rgba_t asap_xml_parse_color(const char* value) {
+static rgba_t asap_xml_parse_color(const char* value) {
 	rgba_t rgba = {0, 0, 0, 255};
 	if (strlen(value) != 7 || value[0] != '#') {
 		console_print("annotation_set_attribute(): Color attribute \"%s\" not in form #rrggbb\n", value);
@@ -63,18 +69,14 @@ rgba_t asap_xml_parse_color(const char* value) {
 	return rgba;
 }
 
-void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, const char* attr,
+static void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, const char* attr,
                               const char* value) {
 	if (strcmp(attr, "Color") == 0) {
 		annotation->color = asap_xml_parse_color(value);
 	} else if (strcmp(attr, "Name") == 0) {
 		strncpy(annotation->name, value, sizeof(annotation->name));
 	} else if (strcmp(attr, "PartOfGroup") == 0) {
-		i32 group_index = find_annotation_group(annotation_set, value);
-		if (group_index < 0) {
-			group_index = add_annotation_group(annotation_set, value); // Group not found --> create it
-		}
-		annotation->group_id = group_index;
+		annotation->group_id = find_annotation_group_or_create_if_not_found(annotation_set, value);
 	} else if (strcmp(attr, "Type") == 0) {
 		if (strcmp(value, "Rectangle") == 0) {
 			annotation->type = ANNOTATION_RECTANGLE;
@@ -91,7 +93,7 @@ void annotation_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 	}
 }
 
-void coordinate_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, v2f* coordinate, const char* attr,
+static void coordinate_set_attribute(annotation_set_t* annotation_set, annotation_t* annotation, v2f* coordinate, const char* attr,
                               const char* value) {
 	if (strcmp(attr, "Order") == 0) {
 		// ignored
@@ -103,7 +105,7 @@ void coordinate_set_attribute(annotation_set_t* annotation_set, annotation_t* an
 	}
 }
 
-void group_set_attribute(annotation_group_t* group, const char* attr, const char* value) {
+static void group_set_attribute(annotation_group_t* group, const char* attr, const char* value) {
 	if (strcmp(attr, "Color") == 0) {
 		group->color = asap_xml_parse_color(value);
 	} else if (strcmp(attr, "Name") == 0) {
@@ -113,11 +115,31 @@ void group_set_attribute(annotation_group_t* group, const char* attr, const char
 	}
 }
 
+static void feature_set_attribute(annotation_set_t* annotation_set, annotation_feature_t* feature, const char* attr, const char* value) {
+	if (strcmp(attr, "Value") == 0) {
+		feature->value = (float)atof(value);
+	} else if (strcmp(attr, "Name") == 0) {
+		strncpy(feature->name, value, sizeof(feature->name));
+	} else if (strcmp(attr, "RestrictToGroup") == 0) {
+		feature->group_id = find_annotation_group_or_create_if_not_found(annotation_set, value);
+		feature->restrict_to_group = true;
+		// TODO: allow restrict to multiple groups? nested groups?
+	} else if (strcmp(attr, "Color") == 0) {
+		feature->color = asap_xml_parse_color(value);
+	}
+}
+
+#define ASAP_XML_PARSER_MAX_STACK 16
+
 bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 	annotation_group_t current_group = {};
-	asap_xml_element_enum current_element_type = ASAP_XML_ELEMENT_NONE;
+	annotation_feature_t current_feature = {};
+	asap_xml_element_enum element_stack[ASAP_XML_PARSER_MAX_STACK] = {};
+	i32 element_stack_index = 0;
+	bool is_within_annotationfeatures_tag = false;
+
 
 	mem_t* file = platform_read_entire_file(filename);
 	yxml_t* x = NULL;
@@ -165,30 +187,71 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 //						    console_print("element start: %s\n", x->elem);
 							contentcur = contentbuf;
 							*contentcur = '\0';
-
-							current_element_type = ASAP_XML_ELEMENT_NONE;
-							if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Annotation") == 0) {
-								annotation_t new_annotation = {};
-								arrput(annotation_set->stored_annotations, new_annotation);
-								++annotation_set->stored_annotation_count;
-								current_element_type = ASAP_XML_ELEMENT_ANNOTATION;
-							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && strcmp(x->elem, "Coordinate") == 0) {
-								ASSERT(annotation_set->stored_annotation_count == arrlen(annotation_set->stored_annotations));
-								ASSERT(annotation_set->stored_annotation_count > 0);
-								if (annotation_set->stored_annotations != NULL && annotation_set->stored_annotation_count > 0) {
-									current_element_type = ASAP_XML_ELEMENT_COORDINATE;
-									annotation_t* current_annotation = arrlastptr(annotation_set->stored_annotations);
-									v2f new_coordinate = {};
-									ASSERT(current_annotation);
-									arrput(current_annotation->coordinates, new_coordinate);
-									++current_annotation->coordinate_count;
-								}
-							} else if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
-								current_element_type = ASAP_XML_ELEMENT_GROUP;
-								// reset the state (start parsing a new group)
-								memset(&current_group, 0, sizeof(current_group));
-								current_group.is_explicitly_defined = true; // (because this group has an XML tag)
+							++element_stack_index;
+							if (element_stack_index >= ASAP_XML_PARSER_MAX_STACK) {
+								console_print_error("load_asap_xml_annotations(): element stack overflow (too many nested elements)\n");
+								goto failed;
 							}
+
+							asap_xml_element_enum element_type = ASAP_XML_ELEMENT_NONE;
+							if (strcmp(x->elem, "Coordinate") == 0) {
+								element_type = ASAP_XML_ELEMENT_COORDINATE;
+							} else if (strcmp(x->elem, "Annotation") == 0) {
+								element_type = ASAP_XML_ELEMENT_ANNOTATION;
+							} else if (strcmp(x->elem, "Feature") == 0) {
+								element_type = ASAP_XML_ELEMENT_FEATURE;
+							} else if (strcmp(x->elem, "Group") == 0) {
+								element_type = ASAP_XML_ELEMENT_GROUP;
+							} else if (strcmp(x->elem, "Attributes") == 0) {
+								element_type = ASAP_XML_ELEMENT_ATTRIBUTES;
+							} else if (strcmp(x->elem, "ASAP_Annotations") == 0) {
+								element_type = ASAP_XML_ELEMENT_ASAP_ANNOTATIONS;
+							} else if (strcmp(x->elem, "AnnotationGroups") == 0) {
+								element_type = ASAP_XML_ELEMENT_ANNOTATIONGROUPS;
+							} else if (strcmp(x->elem, "AnnotationFeatures") == 0) {
+								element_type = ASAP_XML_ELEMENT_ANNOTATIONFEATURES;
+							} else if (strcmp(x->elem, "Annotations") == 0) {
+								element_type = ASAP_XML_ELEMENT_ANNOTATIONS;
+							}
+
+							if (element_type == ASAP_XML_ELEMENT_ANNOTATIONFEATURES) {
+								// We need to track this in order to disambiguate feature definitions from feature values
+								// Feature definitions are stored separately within an <AnnotationFeatures> tag
+								// Feature values are stored within an <Annotation>
+								// (We are letting both situations use the <Feature> tag, but in a different way)
+								is_within_annotationfeatures_tag = true;
+							} else if (pass == ASAP_XML_PARSE_GROUPS_AND_FEATURES) {
+								if (element_type == ASAP_XML_ELEMENT_GROUP) {
+									// reset the state (start parsing a new group)
+									memset(&current_group, 0, sizeof(current_group));
+									current_group.is_explicitly_defined = true; // (because this group has an XML tag)
+								} else if (element_type == ASAP_XML_ELEMENT_FEATURE && is_within_annotationfeatures_tag) {
+									// reset the state (start parsing a new feature)
+									memset(&current_group, 0, sizeof(current_feature));
+									current_feature.is_explicitly_defined = true; // (because this feature has an XML tag)
+								}
+							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS) {
+								if (element_type == ASAP_XML_ELEMENT_ANNOTATION) {
+									annotation_t new_annotation = {};
+									arrput(annotation_set->stored_annotations, new_annotation);
+									++annotation_set->stored_annotation_count;
+								} else if (element_type == ASAP_XML_ELEMENT_COORDINATE) {
+									ASSERT(annotation_set->stored_annotation_count == arrlen(annotation_set->stored_annotations));
+									ASSERT(annotation_set->stored_annotation_count > 0);
+									if (annotation_set->stored_annotations != NULL && annotation_set->stored_annotation_count > 0) {
+										annotation_t* current_annotation = arrlastptr(annotation_set->stored_annotations);
+										v2f new_coordinate = {};
+										ASSERT(current_annotation);
+										arrput(current_annotation->coordinates, new_coordinate);
+										++current_annotation->coordinate_count;
+									}
+								} else if (element_type == ASAP_XML_ELEMENT_FEATURE && !is_within_annotationfeatures_tag) {
+									element_type = ASAP_XML_ELEMENT_FEATURE;
+									memset(&current_feature, 0, sizeof(current_feature));
+								}
+							}
+							element_stack[element_stack_index] = element_type;
+
 						} break;
 						case YXML_CONTENT: {
 							// element content
@@ -201,30 +264,71 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							if (contentcur == contentbuf_end) {
 								// too long content
 								// TODO: harden against buffer overflow, see approach in isyntax.c
-								console_print("load_asap_xml_annotations(): encountered a too long XML element content\n");
+								console_print_error("load_asap_xml_annotations(): encountered a too long XML element content\n");
 								goto failed;
 							}
 							*contentcur = '\0';
 						} break;
+
 						case YXML_ELEMEND: {
 							// end of an element: '.. />' or '</Tag>'
-//						    console_print("element end: %s\n", x->elem);
+							asap_xml_element_enum current_element_type = element_stack[element_stack_index];
+//						    console_print("element end: %s\n", current_element_type);
 							if (contentcur) {
 								// NOTE: usually only whitespace (newlines and such)
 //							    console_print("elem content: %s\n", contentbuf);
 							}
-							if (pass == ASAP_XML_PARSE_GROUPS && strcmp(x->elem, "Group") == 0) {
-								annotation_group_t* parsed_group = &current_group;
-								// Check if a group already exists with this name, if not create it
-								i32 group_index = find_annotation_group(annotation_set, parsed_group->name);
-								if (group_index < 0) {
-									group_index = add_annotation_group(annotation_set, parsed_group->name);
+
+							if (pass == ASAP_XML_PARSE_GROUPS_AND_FEATURES) {
+								if (current_element_type == ASAP_XML_ELEMENT_GROUP) {
+									annotation_group_t* parsed_group = &current_group;
+									// Check if a group already exists with this name, if not create it
+									i32 group_index = find_annotation_group_or_create_if_not_found(annotation_set, parsed_group->name);
+									annotation_group_t* destination_group = annotation_set->stored_groups + group_index;
+									// 'Commit' the group with all its attributes
+									memcpy(destination_group, parsed_group, sizeof(*destination_group));
+								} else if (is_within_annotationfeatures_tag && current_element_type == ASAP_XML_ELEMENT_FEATURE) {
+									annotation_feature_t* parsed_feature = &current_feature;
+									// Check if a feature already exists with this name, if not create it
+									i32 feature_index = find_annotation_feature_or_create_if_not_found(annotation_set, parsed_feature->name);
+									annotation_feature_t* destination_feature = annotation_set->stored_features + feature_index;
+									// 'Commit' the group with all its attributes
+									memcpy(destination_feature, parsed_feature, sizeof(*destination_feature));
+									destination_feature->id = feature_index;
 								}
-								annotation_group_t* destination_group = annotation_set->stored_groups + group_index;
-								// 'Commit' the group with all its attributes
-								memcpy(destination_group, parsed_group, sizeof(*destination_group));
+							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS) {
+								if (!is_within_annotationfeatures_tag && current_element_type == ASAP_XML_ELEMENT_FEATURE) {
+									float value = current_feature.value;
+									annotation_feature_t* parsed_feature = &current_feature;
+									// Check if a feature already exists with this name, if not create it
+									i32 feature_index = find_annotation_feature_or_create_if_not_found(annotation_set, parsed_feature->name);
+									annotation_t* annotation = arrlastptr(annotation_set->stored_annotations);
+									if (annotation && feature_index < COUNT(annotation->features)) {
+										annotation->features[feature_index] = value;
+									} else {
+										panic();
+									}
+								}
 							}
+							if (current_element_type == ASAP_XML_ELEMENT_ANNOTATIONFEATURES) {
+								// We need to track this in order to disambiguate feature definitions from feature values
+								// Feature definitions are stored separately within an <AnnotationFeatures> tag
+								// Feature values are stored within an <Annotation>
+								// (We are letting both situations use the <Feature> tag, but in a different way)
+								is_within_annotationfeatures_tag = false;
+							}
+
+							// 'Pop' out of the element stack
+							if (element_stack_index <= 0) {
+								// Underflow! More YXML_ELEMEND than YXML_ELEMSTART?
+								// yxml should throw an error in this case (malformed XML file?); this code should never be reached.
+								panic();
+							}
+							--element_stack_index;
+
+
 						} break;
+
 						case YXML_ATTRSTART: {
 							// attribute: 'Name=..'
 //						    console_print("attr start: %s\n", x->attr);
@@ -248,22 +352,31 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 						} break;
 						case YXML_ATTREND: {
 							// end of attribute '.."'
+							asap_xml_element_enum current_element_type = element_stack[element_stack_index];
 							if (attrcur) {
 //							    console_print("attr %s = %s\n", x->attr, attrbuf);
-								if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
-									annotation_set_attribute(annotation_set, arrlastptr(annotation_set->stored_annotations), x->attr, attrbuf);
-								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS && current_element_type == ASAP_XML_ELEMENT_COORDINATE) {
-									annotation_t* annotation = arrlastptr(annotation_set->stored_annotations);
-									ASSERT(annotation);
-									if (annotation) {
-										v2f* coordinate = arrlastptr(annotation->coordinates);
-										ASSERT(coordinate);
-										if (coordinate) {
-											coordinate_set_attribute(annotation_set, annotation, coordinate, x->attr, attrbuf);
-										}
+								if (pass == ASAP_XML_PARSE_GROUPS_AND_FEATURES) {
+									if (current_element_type == ASAP_XML_ELEMENT_GROUP) {
+										group_set_attribute(&current_group, x->attr, attrbuf);
+									} else if (current_element_type == ASAP_XML_ELEMENT_FEATURE) {
+										feature_set_attribute(annotation_set, &current_feature, x->attr, attrbuf);
 									}
-								} else if (pass == ASAP_XML_PARSE_GROUPS && current_element_type == ASAP_XML_ELEMENT_GROUP) {
-									group_set_attribute(&current_group, x->attr, attrbuf);
+								} else if (pass == ASAP_XML_PARSE_ANNOTATIONS) {
+									if (current_element_type == ASAP_XML_ELEMENT_ANNOTATION) {
+										annotation_set_attribute(annotation_set, arrlastptr(annotation_set->stored_annotations), x->attr, attrbuf);
+									} else if (current_element_type == ASAP_XML_ELEMENT_COORDINATE) {
+										annotation_t* annotation = arrlastptr(annotation_set->stored_annotations);
+										ASSERT(annotation);
+										if (annotation) {
+											v2f* coordinate = arrlastptr(annotation->coordinates);
+											ASSERT(coordinate);
+											if (coordinate) {
+												coordinate_set_attribute(annotation_set, annotation, coordinate, x->attr, attrbuf);
+											}
+										}
+									} else if (current_element_type == ASAP_XML_ELEMENT_FEATURE) {
+										feature_set_attribute(annotation_set, &current_feature, x->attr, attrbuf);
+									}
 								}
 							}
 						} break;
@@ -321,11 +434,12 @@ const char* get_annotation_type_name(annotation_type_enum type) {
 
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out) {
 	ASSERT(annotation_set);
+	ASSERT(filename_out);
 	FILE* fp = fopen(filename_out, "wb");
 	if (fp) {
 //		const char* base_tag = "<ASAP_Annotations><Annotations>";
 
-		fprintf(fp, "<ASAP_Annotations>");
+		fprintf(fp, "<ASAP_Annotations>\n");
 
 		fprintf(fp, "<AnnotationGroups>\n");
 
@@ -337,14 +451,32 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 
 			const char* part_of_group = "None";
 
-			fprintf(fp, "<Group Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\"><Attributes /></Group>\n",
+			fprintf(fp, "\t<Group Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\"><Attributes/></Group>\n",
 			        color_buf, group->name, part_of_group);
 
 		}
 
 		fprintf(fp, "</AnnotationGroups>\n");
 
-		fprintf(fp, "<Annotations>");
+		if (annotation_set->active_feature_count > 0) {
+			fprintf(fp, "<AnnotationFeatures>\n");
+
+			for (i32 feature_index = 0; feature_index < annotation_set->active_feature_count; ++feature_index) {
+				annotation_feature_t* feature = get_active_annotation_feature(annotation_set, feature_index);
+				if (feature->restrict_to_group) {
+					annotation_group_t* group = annotation_set->stored_groups + feature->group_id;
+					fprintf(fp, "\t<Feature Name=\"%s\" RestrictToGroup=\"%s\"/>\n", feature->name, group->name);
+				} else {
+					fprintf(fp, "\t<Feature Name=\"%s\"/>\n", feature->name);
+				}
+
+			}
+
+			fprintf(fp, "</AnnotationFeatures>\n");
+		}
+
+		// Now, write out the annotations (including coordinates and features)
+		fprintf(fp, "<Annotations>\n");
 
 		for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 			annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
@@ -357,15 +489,40 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 			fprintf(fp, "<Annotation Color=\"%s\" Name=\"%s\" PartOfGroup=\"%s\" Type=\"%s\">\n",
 			        color_buf, annotation->name, part_of_group, type_name);
 
+			// Write coordinates
 			ASSERT(annotation->coordinate_count == arrlen(annotation->coordinates));
 			if (annotation->coordinate_count > 0 && annotation->coordinates != NULL) {
 				fprintf(fp, "\t<Coordinates>\n");
 				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
 					v2f* coordinate = annotation->coordinates + coordinate_index;
-					fprintf(fp, "\t\t<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\" />\n", coordinate_index,
+					fprintf(fp, "\t\t<Coordinate Order=\"%d\" X=\"%g\" Y=\"%g\"/>\n", coordinate_index,
 					        coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
 				}
 				fprintf(fp, "\t</Coordinates>\n");
+			}
+
+			// Write features
+			if (annotation_set->active_feature_count > 0) {
+				i32 features_written = 0;
+				for (i32 feature_index = 0; feature_index < annotation_set->active_feature_count; ++feature_index) {
+					i32 stored_index = annotation_set->active_feature_indices[feature_index];
+					i32 value = annotation->features[stored_index];
+					// Only output the feature if the value is nonzero; if the value is absent in the file, zero is implied
+					if (value != 0.0f) {
+						if (features_written == 0) {
+							fprintf(fp, "\t<Features>\n");
+						}
+						++features_written;
+						annotation_feature_t* feature = annotation_set->stored_features + stored_index;
+						ASSERT(!feature->deleted);
+						ASSERT(stored_index < COUNT(annotation->features));
+						fprintf(fp, "\t\t<Feature Name=\"%s\" Value=\"%g\"/>\n", feature->name, annotation->features[stored_index]);
+					}
+
+				}
+				if (features_written > 0) {
+					fprintf(fp, "\t</Features>\n");
+				}
 			}
 
 

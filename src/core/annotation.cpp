@@ -65,6 +65,31 @@ i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_na
 	return -1; // not found
 }
 
+i32 find_annotation_group_or_create_if_not_found(annotation_set_t* annotation_set, const char* group_name) {
+	i32 group_index = find_annotation_group(annotation_set, group_name);
+	if (group_index < 0) {
+		group_index = add_annotation_group(annotation_set, group_name); // Group not found --> create it
+	}
+	return group_index;
+}
+
+i32 find_annotation_feature(annotation_set_t* annotation_set, const char* feature_name) {
+	for (i32 i = 0; i < annotation_set->stored_feature_count; ++i) {
+		if (strcmp(annotation_set->stored_features[i].name, feature_name) == 0) {
+			return i;
+		}
+	}
+	return -1; // not found
+}
+
+i32 find_annotation_feature_or_create_if_not_found(annotation_set_t* annotation_set, const char* feature_name) {
+	i32 feature_index = find_annotation_feature(annotation_set, feature_name);
+	if (feature_index < 0) {
+		feature_index = add_annotation_feature(annotation_set, feature_name); // Feature not found --> create it
+	}
+	return feature_index;
+}
+
 
 void select_annotation(annotation_set_t* annotation_set, annotation_t* annotation) {
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {

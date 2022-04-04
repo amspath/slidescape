@@ -264,7 +264,6 @@ typedef struct isyntax_xml_parser_t {
 	isyntax_image_t* current_image;
 	i32 running_image_index;
 	u32 current_image_type;
-	char* current_element_name;
 	char* attrbuf;
 	char* attrbuf_end;
 	char* attrcur;
