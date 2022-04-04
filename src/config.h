@@ -14,5 +14,5 @@
 #define REMOTE_CLIENT_VERBOSE 0
 
 #define APP_TITLE "Slidescape"
-#define APP_VERSION "0.42"
+#define APP_VERSION "0.43"
 
