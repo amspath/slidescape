@@ -244,7 +244,20 @@ typedef int8_t bool8;
 #endif
 
 #define panic(message) _panic(__FILE__, __LINE__, __func__, "" message)
-FORCE_INLINE void _panic(const char* source_filename, i32 line, const char* func, const char* message) {
+#if PANIC_DONT_INLINE
+#define PANIC_INLINE_SPECIFIER
+// Not inlining _panic() shaves a few kilobytes off the executable size.
+// NOTE: if PANIC_DONT_INLINE is enabled, PANIC_IMPLEMENTATION must be defined in exactly 1 source file.
+#ifdef __cplusplus
+extern "C"
+#endif
+void _panic(const char* source_filename, i32 line, const char* func, const char* message);
+#else
+#define PANIC_IMPLEMENTATION
+#define PANIC_INLINE_SPECIFIER FORCE_INLINE
+#endif //PANIC_DONT_INLINE
+#ifdef PANIC_IMPLEMENTATION
+PANIC_INLINE_SPECIFIER void _panic(const char* source_filename, i32 line, const char* func, const char* message) {
 	fprintf(stderr, "%s(): %s:%d\n", func, source_filename, line);
 	if (message[0] != '\0') fprintf(stderr, "Error: %s\n", message);
 	fprintf(stderr, "A fatal error occurred (aborting).\n");
@@ -255,6 +268,7 @@ FORCE_INLINE void _panic(const char* source_filename, i32 line, const char* func
 #endif
 	abort();
 }
+#endif //PANIC_IMPLEMENTATION
 
 #ifndef NDEBUG
 #define DO_DEBUG 1

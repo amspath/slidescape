@@ -227,7 +227,7 @@ bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 									current_group.is_explicitly_defined = true; // (because this group has an XML tag)
 								} else if (element_type == ASAP_XML_ELEMENT_FEATURE && is_within_annotationfeatures_tag) {
 									// reset the state (start parsing a new feature)
-									memset(&current_group, 0, sizeof(current_feature));
+									memset(&current_feature, 0, sizeof(current_feature));
 									current_feature.is_explicitly_defined = true; // (because this feature has an XML tag)
 								}
 							} else if (pass == ASAP_XML_PARSE_ANNOTATIONS) {
