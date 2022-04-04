@@ -437,7 +437,7 @@ GL3W_API GL3WglProc imgl3wGetProcAddress(const char *proc);
 
 /* gl3w internal state */
 union GL3WProcs {
-    GL3WglProc ptr[53];
+    GL3WglProc ptr[54];
     struct {
         PFNGLACTIVETEXTUREPROC           ActiveTexture;
         PFNGLATTACHSHADERPROC            AttachShader;
@@ -627,11 +627,9 @@ static GL3WglProc get_proc(const char *proc)
 static void *libgl;
 static GL3WglProc (*glx_get_proc_address)(const GLubyte *);
 
-static int open_libgl(const char *lib_filename)
+static int open_libgl(void)
 {
-    if (!lib_filename)
-        lib_filename = "libGL.so.1";
-    libgl = dlopen(lib_filename, RTLD_LAZY | RTLD_LOCAL);
+    libgl = dlopen("libGL.so.1", RTLD_LAZY | RTLD_LOCAL);
     if (!libgl)
         return GL3W_ERROR_LIBRARY_OPEN;
     *(void **)(&glx_get_proc_address) = dlsym(libgl, "glXGetProcAddressARB");
