@@ -35,7 +35,7 @@
 #include "stb_image.h"
 #include "stringified_icon.h"
 
-#include "imgui_freetype.h"
+#include "misc/freetype/imgui_freetype.h"
 
 // About Desktop OpenGL function loaders:
 //  Modern desktop OpenGL doesn't have a standard portable header file to load OpenGL function pointers.
@@ -167,6 +167,119 @@ void linux_process_button_event(button_state_t* new_state, bool32 down) {
     }
 }
 
+static ImGuiKey hid_keycode_to_ImGuiKey(int keycode)
+{
+	switch (keycode)
+	{
+		case KEY_Tab: return ImGuiKey_Tab;
+		case KEY_Left: return ImGuiKey_LeftArrow;
+		case KEY_Right: return ImGuiKey_RightArrow;
+		case KEY_Up: return ImGuiKey_UpArrow;
+		case KEY_Down: return ImGuiKey_DownArrow;
+		case KEY_PageUp: return ImGuiKey_PageUp;
+		case KEY_PageDown: return ImGuiKey_PageDown;
+		case KEY_Home: return ImGuiKey_Home;
+		case KEY_End: return ImGuiKey_End;
+		case KEY_Insert: return ImGuiKey_Insert;
+		case KEY_DeleteForward: return ImGuiKey_Delete;
+		case KEY_Delete: return ImGuiKey_Backspace;
+		case KEY_Space: return ImGuiKey_Space;
+		case KEY_Return: return ImGuiKey_Enter;
+		case KEY_Escape: return ImGuiKey_Escape;
+		case KEY_Quote: return ImGuiKey_Apostrophe;
+		case KEY_Comma: return ImGuiKey_Comma;
+		case KEY_Minus: return ImGuiKey_Minus;
+		case KEY_Period: return ImGuiKey_Period;
+		case KEY_Slash: return ImGuiKey_Slash;
+		case KEY_Semicolon: return ImGuiKey_Semicolon;
+		case KEY_Equals: return ImGuiKey_Equal;
+		case KEY_LeftBracket: return ImGuiKey_LeftBracket;
+		case KEY_Backslash: return ImGuiKey_Backslash;
+		case KEY_RightBracket: return ImGuiKey_RightBracket;
+		case KEY_Grave: return ImGuiKey_GraveAccent;
+		case KEY_CapsLock: return ImGuiKey_CapsLock;
+		case KEY_ScrollLock: return ImGuiKey_ScrollLock;
+		case ImGuiKey_NumLock: return ImGuiKey_NumLock;
+		case KEY_PrintScreen: return ImGuiKey_PrintScreen;
+		case KEY_Pause: return ImGuiKey_Pause;
+		case KP_0: return ImGuiKey_Keypad0;
+		case KP_1: return ImGuiKey_Keypad1;
+		case KP_2: return ImGuiKey_Keypad2;
+		case KP_3: return ImGuiKey_Keypad3;
+		case KP_4: return ImGuiKey_Keypad4;
+		case KP_5: return ImGuiKey_Keypad5;
+		case KP_6: return ImGuiKey_Keypad6;
+		case KP_7: return ImGuiKey_Keypad7;
+		case KP_8: return ImGuiKey_Keypad8;
+		case KP_9: return ImGuiKey_Keypad9;
+		case KP_Point: return ImGuiKey_KeypadDecimal;
+		case KP_Divide: return ImGuiKey_KeypadDivide;
+		case KP_Multiply: return ImGuiKey_KeypadMultiply;
+		case KP_Subtract: return ImGuiKey_KeypadSubtract;
+		case KP_Add: return ImGuiKey_KeypadAdd;
+		case KP_Enter: return ImGuiKey_KeypadEnter;
+		case KP_Equals: return ImGuiKey_KeypadEqual;
+		case KEY_LeftControl: return ImGuiKey_LeftCtrl;
+		case KEY_LeftShift: return ImGuiKey_LeftShift;
+		case KEY_LeftAlt: return ImGuiKey_LeftAlt;
+		case KEY_LeftGUI: return ImGuiKey_LeftSuper;
+		case KEY_RightControl: return ImGuiKey_RightCtrl;
+		case KEY_RightShift: return ImGuiKey_RightShift;
+		case KEY_RightAlt: return ImGuiKey_RightAlt;
+		case KEY_RightGUI: return ImGuiKey_RightSuper;
+		case KEY_Menu: return ImGuiKey_Menu;
+		case KEY_0: return ImGuiKey_0;
+		case KEY_1: return ImGuiKey_1;
+		case KEY_2: return ImGuiKey_2;
+		case KEY_3: return ImGuiKey_3;
+		case KEY_4: return ImGuiKey_4;
+		case KEY_5: return ImGuiKey_5;
+		case KEY_6: return ImGuiKey_6;
+		case KEY_7: return ImGuiKey_7;
+		case KEY_8: return ImGuiKey_8;
+		case KEY_9: return ImGuiKey_9;
+		case KEY_A: return ImGuiKey_A;
+		case KEY_B: return ImGuiKey_B;
+		case KEY_C: return ImGuiKey_C;
+		case KEY_D: return ImGuiKey_D;
+		case KEY_E: return ImGuiKey_E;
+		case KEY_F: return ImGuiKey_F;
+		case KEY_G: return ImGuiKey_G;
+		case KEY_H: return ImGuiKey_H;
+		case KEY_I: return ImGuiKey_I;
+		case KEY_J: return ImGuiKey_J;
+		case KEY_K: return ImGuiKey_K;
+		case KEY_L: return ImGuiKey_L;
+		case KEY_M: return ImGuiKey_M;
+		case KEY_N: return ImGuiKey_N;
+		case KEY_O: return ImGuiKey_O;
+		case KEY_P: return ImGuiKey_P;
+		case KEY_Q: return ImGuiKey_Q;
+		case KEY_R: return ImGuiKey_R;
+		case KEY_S: return ImGuiKey_S;
+		case KEY_T: return ImGuiKey_T;
+		case KEY_U: return ImGuiKey_U;
+		case KEY_V: return ImGuiKey_V;
+		case KEY_W: return ImGuiKey_W;
+		case KEY_X: return ImGuiKey_X;
+		case KEY_Y: return ImGuiKey_Y;
+		case KEY_Z: return ImGuiKey_Z;
+		case KEY_F1: return ImGuiKey_F1;
+		case KEY_F2: return ImGuiKey_F2;
+		case KEY_F3: return ImGuiKey_F3;
+		case KEY_F4: return ImGuiKey_F4;
+		case KEY_F5: return ImGuiKey_F5;
+		case KEY_F6: return ImGuiKey_F6;
+		case KEY_F7: return ImGuiKey_F7;
+		case KEY_F8: return ImGuiKey_F8;
+		case KEY_F9: return ImGuiKey_F9;
+		case KEY_F10: return ImGuiKey_F10;
+		case KEY_F11: return ImGuiKey_F11;
+		case KEY_F12: return ImGuiKey_F12;
+	}
+	return ImGuiKey_None;
+}
+
 bool linux_process_input() {
     // Swap
     input_t* temp = old_input;
@@ -177,6 +290,9 @@ bool linux_process_input() {
     curr_input->drag_vector = old_input->drag_vector;
 
     ImGuiIO& io = ImGui::GetIO();
+	// Make sure we have the latest events processed
+	ImGui::UpdateInputEvents(io.ConfigInputTrickleEventQueue);
+
 	curr_input->mouse_xy = io.MousePos;
 
 	SDL_PumpEvents();
@@ -193,10 +309,13 @@ bool linux_process_input() {
         curr_input->keyboard.buttons[i].down = old_input->keyboard.buttons[i].down;
 
     }
-    u32 key_count = MIN(COUNT(curr_input->keyboard.keys), COUNT(io.KeysDown));
+    u32 key_count = COUNT(curr_input->keyboard.keys);
     for (u32 i = 0; i < key_count; ++i) {
         curr_input->keyboard.keys[i].down = old_input->keyboard.keys[i].down;
-        linux_process_button_event(&curr_input->keyboard.keys[i], io.KeysDown[i]);
+		ImGuiKey key = hid_keycode_to_ImGuiKey(i);
+		if (key != ImGuiKey_None) {
+			linux_process_button_event(&curr_input->keyboard.keys[i], ImGui::IsKeyDown(hid_keycode_to_ImGuiKey(i)));
+		}
     }
 
     curr_input->keyboard.key_shift.down = old_input->keyboard.key_shift.down;
