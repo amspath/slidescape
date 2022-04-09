@@ -556,9 +556,11 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 
 }
 
-bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
+bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 	const char* ext = get_file_extension(filename);
-	if (strcasecmp(ext, "json") == 0) {
+	if (is_directory(filename)) {
+		console_print("Trying to open a directory %s\n", filename);
+	} else if (strcasecmp(ext, "json") == 0) {
 		// TODO: disambiguate between COCO annotations and case lists
 		reload_global_caselist(app_state, filename);
 		show_slide_list_window = true;
@@ -650,6 +652,7 @@ bool32 load_generic_file(app_state_t* app_state, const char* filename, u32 filet
 		}
 
 	}
+	return false;
 }
 
 const char* get_active_directory(app_state_t* app_state) {

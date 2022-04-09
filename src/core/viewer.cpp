@@ -546,26 +546,26 @@ bool init_image_from_stbi(app_state_t* app_state, image_t* image, simple_image_t
 	return image->is_valid;
 }
 
-bool32 was_button_pressed(button_state_t* button) {
-	bool32 result = button->down && button->transition_count > 0;
+bool was_button_pressed(button_state_t* button) {
+	bool result = button->down && button->transition_count > 0;
 	return result;
 }
 
-bool32 was_button_released(button_state_t* button) {
-	bool32 result = (!button->down) && button->transition_count > 0;
+bool was_button_released(button_state_t* button) {
+	bool result = (!button->down) && button->transition_count > 0;
 	return result;
 }
 
-bool32 was_key_pressed(input_t* input, i32 keycode) {
+bool was_key_pressed(input_t* input, i32 keycode) {
 	u8 key = keycode & 0xFF;
 	button_state_t* button = &input->keyboard.keys[key];
-	bool32 result = was_button_pressed(button);
+	bool result = was_button_pressed(button);
 	return result;
 }
 
-bool32 is_key_down(input_t* input, i32 keycode) {
+bool is_key_down(input_t* input, i32 keycode) {
 	u8 key = keycode & 0xFF;
-	bool32 result = input->keyboard.keys[key].down;
+	bool result = input->keyboard.keys[key].down;
 	return result;
 }
 

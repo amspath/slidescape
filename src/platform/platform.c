@@ -80,6 +80,12 @@ bool file_exists(const char* filename) {
 	return (access(filename, F_OK) != -1);
 }
 
+bool is_directory(const char* path) {
+	struct stat st;
+	stat(path, &st);
+	return S_ISDIR(st.st_mode);
+}
+
 void memrw_maybe_grow(memrw_t* buffer, u64 new_size) {
 	if (new_size > buffer->capacity) {
 		u64 new_capacity = next_pow2(new_size);

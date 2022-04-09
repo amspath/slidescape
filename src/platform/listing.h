@@ -35,17 +35,26 @@ void close_directory_listing(directory_listing_t* data);
 
 #ifdef _WIN32
 
-#include <windows.h>
+#include "win32_platform.h"
+
 struct directory_listing_t {
-	WIN32_FIND_DATA find_data;
+	WIN32_FIND_DATAW find_data;
 	HANDLE search_handle;
+	char current_filename_UTF8[1024];
 };
 
 directory_listing_t* create_directory_listing_and_find_first_file(const char* directory, const char* extension) {
-	directory_listing_t* directory_listing = calloc(1, sizeof(directory_listing_t));
-	char search_pattern[512];
-	snprintf(search_pattern, 512, "%s/*.%s", directory, extension);
-	directory_listing->search_handle = FindFirstFileA( search_pattern, &directory_listing->find_data );
+	directory_listing_t* directory_listing = (directory_listing_t*)calloc(1, sizeof(directory_listing_t));
+	char search_pattern[1024];
+	// If we provide an extension, search only for files with that extension
+	if (extension != NULL) {
+		snprintf(search_pattern, sizeof(search_pattern), "%s/*.%s", directory, extension);
+	} else {
+		snprintf(search_pattern, sizeof(search_pattern), "%s/*", directory);
+	}
+	WCHAR search_pattern_UTF16[1024];
+	win32_string_widen(search_pattern, COUNT(search_pattern_UTF16), search_pattern_UTF16);
+	directory_listing->search_handle = FindFirstFileW(search_pattern_UTF16, &directory_listing->find_data);
 	if (directory_listing->search_handle != INVALID_HANDLE_VALUE) {
 		return directory_listing;
 	} else {
@@ -55,11 +64,11 @@ directory_listing_t* create_directory_listing_and_find_first_file(const char* di
 }
 
 char* get_current_filename_from_directory_listing(directory_listing_t* data) {
-	return data->find_data.cFileName;
+	return win32_string_narrow(data->find_data.cFileName, data->current_filename_UTF8, sizeof(data->current_filename_UTF8));
 }
 
 bool find_next_file(directory_listing_t* data) {
-	return (bool) FindNextFileA( data->search_handle, &data->find_data );
+	return (bool) FindNextFileW( data->search_handle, &data->find_data );
 }
 
 void close_directory_listing(directory_listing_t* data) {
@@ -84,12 +93,18 @@ directory_listing_t* create_directory_listing_and_find_first_file(const char* di
 	if (data->dp != NULL) {
 		struct dirent* ep;
 		while ((ep = readdir(data->dp))) {
-			char *ext = strrchr(ep->d_name, '.');
-			if (ext != NULL && strcasecmp(ext+1, extension) == 0) {
+			if (extension == NULL) {
 				data->found_filename = ep->d_name;
 				data->extension = extension;
 				ok = true;
-				break;
+			} else {
+				char *ext = strrchr(ep->d_name, '.');
+				if (ext != NULL && strcasecmp(ext+1, extension) == 0) {
+					data->found_filename = ep->d_name;
+					data->extension = extension;
+					ok = true;
+					break;
+				}
 			}
 		}
 	}
@@ -109,11 +124,17 @@ bool find_next_file(directory_listing_t* data) {
 	bool ok = false;
 	struct dirent* ep;
 	while ((ep = readdir(data->dp))) {
-		char *ext = strrchr(ep->d_name, '.');
-		if (ext != NULL && strcasecmp(ext+1, data->extension) == 0) {
+		if (data->extension == NULL) {
 			data->found_filename = ep->d_name;
 			ok = true;
 			break;
+		} else {
+			char *ext = strrchr(ep->d_name, '.');
+			if (ext != NULL && strcasecmp(ext+1, data->extension) == 0) {
+				data->found_filename = ep->d_name;
+				ok = true;
+				break;
+			}
 		}
 	}
 	return ok;

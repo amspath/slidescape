@@ -283,6 +283,7 @@ typedef struct block_allocator_t {
 	bool is_valid;
 } block_allocator_t;
 
+typedef struct directory_listing_t directory_listing_t;
 
 // Inline procedures as wrappers for system routines
 #if WINDOWS
@@ -362,6 +363,7 @@ void drain_work_queue(work_queue_t* queue); // NOTE: only use this on the main t
 void test_multithreading_work_queue();
 
 bool file_exists(const char* filename);
+bool is_directory(const char* path);
 
 void memrw_maybe_grow(memrw_t* buffer, u64 new_size);
 u64 memrw_push_back(memrw_t* buffer, void* data, u64 size);

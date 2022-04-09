@@ -24,6 +24,7 @@
 
 #include <time.h>
 #include <pwd.h>
+#include <dirent.h>
 
 #include "ImGuiFileDialog.h"
 
