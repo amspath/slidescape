@@ -25,10 +25,6 @@
 #include "dicom.h"
 #include "dicom_tags.h"
 
-#include <windows.h>
-
-
-
 
 
 static void dicom_switch_data_encoding(dicom_t* dicom_state, dicom_data_element_t *transfer_syntax_uid) {
