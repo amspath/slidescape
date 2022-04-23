@@ -18,6 +18,10 @@
 
 #include "common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // OS abstraction for listing directory contents
 // Directory listing using dirent.h is available using MinGW on Windows, but not using MSVC (need to use Win32 API).
 // - Under GNU/Linux, etc (or if compiling with MinGW on Windows), we can use dirent.h
@@ -56,6 +60,11 @@ directory_listing_t* create_directory_listing_and_find_first_file(const char* di
 	win32_string_widen(search_pattern, COUNT(search_pattern_UTF16), search_pattern_UTF16);
 	directory_listing->search_handle = FindFirstFileW(search_pattern_UTF16, &directory_listing->find_data);
 	if (directory_listing->search_handle != INVALID_HANDLE_VALUE) {
+		const wchar_t* name = directory_listing->find_data.cFileName;
+		// Skip magic dirs
+		while (name[0] == L'.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+			FindNextFileW(directory_listing->search_handle, &directory_listing->find_data);
+		}
 		return directory_listing;
 	} else {
 		free(directory_listing);
@@ -68,7 +77,7 @@ char* get_current_filename_from_directory_listing(directory_listing_t* data) {
 }
 
 bool find_next_file(directory_listing_t* data) {
-	return (bool) FindNextFileW( data->search_handle, &data->find_data );
+	return (bool) FindNextFileW(data->search_handle, &data->find_data);
 }
 
 void close_directory_listing(directory_listing_t* data) {
@@ -147,3 +156,7 @@ void close_directory_listing(directory_listing_t *data) {
 
 #endif //LISTING_IMPLEMENTATION
 #endif //_WIN32
+
+#ifdef __cplusplus
+}
+#endif

@@ -17,6 +17,7 @@
 */
 
 #include "tif_lzw.h"
+#include "dicom.h"
 
 // TODO: refactor
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
@@ -560,6 +561,8 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 	const char* ext = get_file_extension(filename);
 	if (is_directory(filename)) {
 		console_print("Trying to open a directory %s\n", filename);
+		dicom_t dicom = {};
+		dicom_open(&dicom, filename);
 	} else if (strcasecmp(ext, "json") == 0) {
 		// TODO: disambiguate between COCO annotations and case lists
 		reload_global_caselist(app_state, filename);

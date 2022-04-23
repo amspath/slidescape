@@ -77,6 +77,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 include_directories("${CMAKE_SOURCE_DIR}/src")
 include_directories("${CMAKE_SOURCE_DIR}/src/core")
+include_directories("${CMAKE_SOURCE_DIR}/src/dicom")
 include_directories("${CMAKE_SOURCE_DIR}/src/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/src/isyntax")
 include_directories("${CMAKE_SOURCE_DIR}/src/platform")
@@ -200,6 +201,7 @@ set(VIEWER_SOURCE_FILES
         core/coco.cpp
         core/ini.c
         core/remote.c
+        dicom/dicom.cpp
         tiff/tiff.c
         tiff/tiff_write.c
         tiff/tiff_xml.c
