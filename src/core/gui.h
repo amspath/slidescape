@@ -116,7 +116,7 @@ extern float target_layer_t INIT(= 1.0f);
 extern bool auto_assign_last_group;
 extern bool annotation_show_polygon_nodes_outside_edit_mode INIT(= false);
 extern float annotation_normal_line_thickness INIT(= 2.0f);
-extern float annotation_selected_line_thickness INIT(= 4.0f);
+extern float annotation_selected_line_thickness INIT(= 8.0f);
 extern float annotation_node_size INIT(= 5.0f);
 extern float annotation_opacity INIT(= 1.0f);
 extern float annotation_hover_distance INIT(= 10.0f);
