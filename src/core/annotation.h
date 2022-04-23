@@ -51,6 +51,7 @@ enum annotation_valid_flags_enum {
 	ANNOTATION_VALID_TESSELATION = 2,
 	ANNOTATION_VALID_AREA = 4,
 	ANNOTATION_VALID_LENGTH = 8,
+	ANNOTATION_VALID_NONZERO_FEATURE_COUNT = 0x10,
 };
 
 typedef struct annotation_t {
@@ -68,6 +69,7 @@ typedef struct annotation_t {
 	bool is_complex_polygon; // meaning tesselation failed, most likely due to the polygon intersection itself
 	float area;
 	float length;
+	u32 nonzero_feature_count;
 	u32 valid_flags; // keeps track of whether derived calculations are valid
 	u32 fallback_valid_flags; // if invalidated, keep track of whether an old/outdated derived calculation exists
 
@@ -209,7 +211,7 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);
 void deselect_annotation_coordinates(annotation_set_t* annotation_set);
 void notify_annotation_set_modified(annotation_set_t* annotation_set);
-void annotation_invalidate_derived_calculations(annotation_t* annotation);
+void annotation_invalidate_derived_calculations_from_coordinates(annotation_t* annotation);
 void insert_coordinate(app_state_t* app_state, annotation_set_t* annotation_set, annotation_t* annotation, i32 insert_at_index, v2f new_coordinate);
 void delete_coordinate(annotation_set_t* annotation_set, i32 annotation_index, i32 coordinate_index);
 void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
