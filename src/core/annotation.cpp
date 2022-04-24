@@ -1160,9 +1160,9 @@ void annotation_draw_coordinate_dot(ImDrawList* draw_list, v2f point, float node
 
 enum annotation_draw_condition_enum {
 	ANNOTATION_DRAW_NEVER = 0,
-	ANNOTATION_DRAW_ALWAYS,
-	ANNOTATION_DRAW_IF_SELECTED,
-	ANNOTATION_DRAW_IF_AT_LEAST_ONE_FEATURE_SET,
+	ANNOTATION_DRAW_ALWAYS = 1,
+	ANNOTATION_DRAW_IF_SELECTED = 2,
+	ANNOTATION_DRAW_IF_AT_LEAST_ONE_FEATURE_SET = 3,
 };
 
 annotation_draw_condition_enum annotation_draw_fill_area_condition = ANNOTATION_DRAW_IF_AT_LEAST_ONE_FEATURE_SET;
@@ -1219,7 +1219,6 @@ static void draw_annotation_fill_area(temp_memory_t* temp_memory, app_state_t* a
 			}
 
 			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-			fill_color.a = 20;
 			for (i32 i = 0; i < triangle_count; ++i) {
 				v2f* T = vertices + i * 3;
 				draw_list->AddTriangleFilled(T[0], T[1], T[2], *(u32*)(&fill_color));
@@ -1272,7 +1271,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			// Draw the inside of the annotation
 			if (annotation_need_draw_fill_area(annotation)) {
 				rgba_t fill_color = base_color;
-				fill_color.a = 20;
+				fill_color.a = (u8)(annotation_highlight_opacity * 255.0f);
 				draw_annotation_fill_area(&temp_memory, app_state, scene, camera_min, annotation, fill_color);
 			}
 
@@ -1284,7 +1283,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			rgba_t line_color = base_color;
 			if (need_draw_nodes) {
 				// make nodes stand out more by making the line transparent
-				line_color.a /= 3;
+				line_color.a /= 2;
 			}
 
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
@@ -1915,7 +1914,37 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f, "%.1f px");
 			ImGui::SliderFloat("Line thickness (selected)", &annotation_selected_line_thickness, 0.0f, 10.0f, "%.1f px");
-			ImGui::Checkbox("Highlight inside of annotations", &annotation_highlight_inside_of_polygons);
+
+			ImGui::NewLine();
+
+			ImGui::Checkbox("Enable highlighting the inside of annotations", &annotation_highlight_inside_of_polygons);
+
+			if (!annotation_highlight_inside_of_polygons) {
+				ImGui::BeginDisabled();
+			}
+
+			static const char* highlight_options[] = {"Never", "Always", "If selected", "If at least one feature is set"};
+			u32 current_highlight_condition = annotation_draw_fill_area_condition;
+			const char* current_highlight_string = "";
+			if (current_highlight_condition < COUNT(highlight_options)) {
+				current_highlight_string = highlight_options[current_highlight_condition];
+			}
+			if (ImGui::BeginCombo("Highlight condition", current_highlight_string, ImGuiComboFlags_HeightLargest)) {
+				for (i32 i = 1; i < COUNT(highlight_options); ++i) {
+					if (ImGui::Selectable(highlight_options[i], current_highlight_condition == i, 0, ImVec2())) {
+						annotation_draw_fill_area_condition = (annotation_draw_condition_enum)i;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SliderFloat("Highlight opacity", &annotation_highlight_opacity, 0.0f, 1.0f, "%.2f");
+
+			if (!annotation_highlight_inside_of_polygons) {
+				ImGui::EndDisabled();
+			}
+
+
+
 			ImGui::NewLine();
 
 			//			ImGui::Checkbox("Show polygon nodes", &annotation_show_polygon_nodes_outside_edit_mode);
