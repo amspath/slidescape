@@ -448,19 +448,43 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 		}
 	}
 
+	// Pressing Escape deselects annotations
+	if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_Escape)) {
+		deselect_all_annotations(annotation_set);
+	}
+
+	// Pressing E toggles coordinate editing mode
 	if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_E)) {
 		annotation_set->is_edit_mode = !annotation_set->is_edit_mode;
 	}
 
-	// TODO: Instead of a bias, we should handle the situation differently depending on what is actually happening.
-	// E.g.: if clicking to select another annotation, but within the tolerance/bias, we should not unselect but rather switch
-	// over to the other annotation.
-	// And if we 'promise' to grab or insert a coordinate (as indicated by the visual cue: larger node circle), then
-	// that should always be the action that happens, no matter if it's within the tolerance or not.
-	// Possible solution: retrieve multiple hit results, one for only the selected annotation(s), and one
-	// for the 'actually' closest annotation. Then we decide later what to do, based on the difference between those results.
+	// Determine which annotation is being targeted by the mouse.
+	annotation_hit_result_t hit_result = {};
+	bool need_select_deselect = false;
+	if (annotation_set->is_edit_mode) {
+		// For most edit operations, including those targeting a coordinate node, we want to be biased toward the
+		// selected annotation (otherwise we might end up interacting with a non-selected annotation instead)
+		hit_result = get_annotation_hit_result(annotation_set, scene->mouse,
+											   300.0f * scene->zoom.screen_point_width,
+											   +5.0f * scene->zoom.screen_point_width);
 
-	annotation_hit_result_t hit_result = get_annotation_hit_result(annotation_set, scene->mouse, 300.0f * scene->zoom.screen_point_width, 5.0f * scene->zoom.pixel_width);
+		if (!annotation_set->is_insert_coordinate_mode && !annotation_set->is_insert_coordinate_mode) {
+			// In this case we can either try to grab a coordinate node, or select/deselect annotation.
+			if ((hit_result.coordinate_distance / scene->zoom.screen_point_width) > annotation_hover_distance) {
+				// Apparently we are 'out of range' for targeting a coordinate node
+				// --> fall back to targeting a whole annotation for select/deselect
+				need_select_deselect = true;
+			}
+		}
+	}
+	if (!annotation_set->is_edit_mode || need_select_deselect) {
+		// NOTE: There is a small negative bias for clicking on selected annotations, so that you are more
+		// likely to switch over to another annotation instead of deselecting the one you are on.
+		hit_result = get_annotation_hit_result(annotation_set, scene->mouse,
+		                                       300.0f * scene->zoom.screen_point_width,
+		                                       -5.0f * scene->zoom.screen_point_width);
+	}
+
 	if (hit_result.is_valid) {
 		ASSERT(scene->zoom.screen_point_width > 0.0f);
 		float line_segment_pixel_distance = hit_result.line_segment_distance / scene->zoom.screen_point_width;
