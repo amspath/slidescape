@@ -1192,25 +1192,35 @@ v2f get_2d_control_from_input(input_t* input) {
 	v2f control = {};
 	if (input) {
 		if (!input->keyboard.key_ctrl.down) {
-			if (input->keyboard.action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
+			if (input->keyboard.action_down.down || input->controllers[0].action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
 				control.y += 1.0f;
 			}
-			if (input->keyboard.action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
+			if (input->keyboard.action_up.down || input->controllers[0].action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
 				control.y += -1.0f;
 			}
-			if (input->keyboard.action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
+			if (input->keyboard.action_right.down || input->controllers[0].action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
 				control.x += 1.0f;
 			}
-			if (input->keyboard.action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
+			if (input->keyboard.action_left.down || input->controllers[0].action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
 				control.x += -1.0f;
 			}
 		}
+
 		// Normalize
 		float length_squared = v2f_length_squared(control);
 		if (length_squared > 1.0f) {
 			float length = sqrtf(length_squared);
 			control = v2f_scale(1.0f / length, control);
 		}
+
+		// Analog stick input
+		if (input->controllers[0].is_analog) {
+			const float multiplier = 1.5f;
+			v2f stick = input->controllers[0].stick_end;
+			control.x += stick.x * multiplier;
+			control.y += -stick.y * multiplier;
+		}
+
 	}
 	return control;
 }
@@ -1478,10 +1488,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 				scene->panning_velocity = viewer_do_2d_control(scene->panning_velocity, scene->control, delta_t, scene->time_since_control_start, input->keyboard.key_shift.down);
 
-				// Zoom out using Z or /
-				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)) {
+				// Zoom out using Z or / or controller button A
+				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash) || input->controllers[0].button_a.down) {
 
-					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash)) {
+					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash) || was_button_pressed(&input->controllers[0].button_a)) {
 						dlevel += 1;
 						zoom_in_key_hold_down_start_time = get_clock();
 						zoom_in_key_times_zoomed_while_holding = 0;
@@ -1495,10 +1505,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					}
 				}
 
-				// Zoom in using X or .
-				if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)) {
+				// Zoom in using X or . or controller button B
+				if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period) || input->controllers[0].button_b.down) {
 
-					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period)) {
+					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period) || was_button_pressed(&input->controllers[0].button_b)) {
 						dlevel -= 1;
 						zoom_out_key_hold_down_start_time = get_clock();
 						zoom_out_key_times_zoomed_while_holding = 0;

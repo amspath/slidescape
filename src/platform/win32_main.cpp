@@ -899,11 +899,39 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 void win32_process_xinput_controllers() {
 	// NOTE: performance bug in XInput! May stall if no controller is connected.
+	// We space out XInputGetState calls for unconnected controllers, but prioritize controller index 0 and 1
+	static u8 poll_order[] = {0,1,0,2,0,1,0,3};
+	static i32 poll_index;
+	static i64 last_poll_time;
+	i64 current_clock = get_clock();
+	bool need_poll = false;
+	float seconds_since_last_poll = get_seconds_elapsed(last_poll_time, current_clock);
+	if (seconds_since_last_poll > 1.0f) {
+		need_poll = true;
+	}
+
 	u32 game_max_controller_count = MIN(XUSER_MAX_COUNT, COUNT(curr_input->controllers));
-	// TODO: should we poll this more frequently?
 	for (DWORD controller_index = 0; controller_index < game_max_controller_count; ++controller_index) {
 		controller_input_t* old_controller_input = &old_input->controllers[controller_index];
 		controller_input_t* new_controller_input = &curr_input->controllers[controller_index];
+
+		if (old_input->controllers[controller_index].is_connected) {
+			if (need_poll && poll_order[poll_index] == controller_index) {
+				// We don't need to poll for a controller that is already connected
+				poll_index = (poll_index + 1) % COUNT(poll_order);
+			}
+		} else {
+			if (need_poll && controller_index == poll_order[poll_index]) {
+				// Device is not connected and it is time to poll
+//				console_print("XInput: polling for controller index %d\n", controller_index);
+				poll_index = (poll_index + 1) % COUNT(poll_order);
+				last_poll_time = current_clock;
+				need_poll = false;
+			} else {
+				// Device is not connected and it is not yet time to poll -> skip
+				continue;
+			}
+		}
 
 		XINPUT_STATE xinput_state;
 		if (XInputGetState(controller_index, &xinput_state) == ERROR_SUCCESS) {
@@ -971,7 +999,7 @@ void win32_process_xinput_controllers() {
 				new_controller_input->stick_start = old_controller_input->stick_start;
 				new_controller_input->stick_end = stick;
 
-				const float threshold = 0.4f;
+				/*const float threshold = 0.4f;
 				WORD move_up_state = (stick.y > threshold) ? 1 : 0;
 				WORD move_down_state = (stick.y < -threshold) ? 1 : 0;
 				WORD move_left_state = (stick.x < -threshold) ? 1 : 0;
@@ -984,7 +1012,7 @@ void win32_process_xinput_controllers() {
 				win32_process_xinput_button(&old_controller_input->move_left, move_left_state, 1,
 				                            &new_controller_input->move_left);
 				win32_process_xinput_button(&old_controller_input->move_right, move_right_state, 1,
-				                            &new_controller_input->move_right);
+				                            &new_controller_input->move_right);*/
 			}
 
 			if (new_controller_input->back.down) {
@@ -1506,7 +1534,7 @@ bool win32_process_input(app_state_t* app_state) {
 	bool did_idle = win32_process_pending_messages(curr_input, app_state->main_window, app_state->allow_idling_next_frame);
 //	last_section = profiler_end_section(last_section, "input: (2) process pending messages", 20.0f);
 
-//	win32_process_xinput_controllers();
+	win32_process_xinput_controllers();
 //	last_section = profiler_end_section(last_section, "input: (3) xinput", 5.0f);
 
 	// Check if at least one button/key is pressed at all (if no buttons are pressed,
