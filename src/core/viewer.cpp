@@ -1188,22 +1188,55 @@ v2f viewer_do_2d_control(v2f velocity, v2f control, float dt, float time_since_s
 	return new_velocity;
 }
 
-v2f get_2d_control_from_input(input_t* input) {
+controller_input_t* get_preferred_controller(input_t* input) {
+	ASSERT(input->preferred_controller_index < COUNT(input->controllers));
+	controller_input_t* controller = &input->controllers[input->preferred_controller_index];
+	return controller;
+}
+
+v2f get_2d_control_from_input(input_t* input, bool allow_keyboard_input) {
 	v2f control = {};
 	if (input) {
-		if (!input->keyboard.key_ctrl.down) {
-			if (input->keyboard.action_down.down || input->controllers[0].action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
-				control.y += 1.0f;
+
+		if (allow_keyboard_input) {
+			controller_input_t* keyboard = &input->keyboard;
+			if (!keyboard->key_ctrl.down) {
+				if (keyboard->action_down.down || is_key_down(input, KEY_S) || is_key_down(input, KEY_Down)) {
+					control.y += 1.0f;
+				}
+				if (keyboard->action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
+					control.y += -1.0f;
+				}
+				if (keyboard->action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
+					control.x += 1.0f;
+				}
+				if (keyboard->action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
+					control.x += -1.0f;
+				}
 			}
-			if (input->keyboard.action_up.down || input->controllers[0].action_up.down || is_key_down(input, KEY_W) || is_key_down(input, KEY_Up)) {
-				control.y += -1.0f;
-			}
-			if (input->keyboard.action_right.down || input->controllers[0].action_right.down || is_key_down(input, KEY_D) || is_key_down(input, KEY_Right)) {
-				control.x += 1.0f;
-			}
-			if (input->keyboard.action_left.down || input->controllers[0].action_left.down || is_key_down(input, KEY_A) || is_key_down(input, KEY_Left)) {
-				control.x += -1.0f;
-			}
+		}
+
+		controller_input_t* controller = get_preferred_controller(input);
+		if (controller->action_down.down) {
+			control.y += 1.0f;
+		}
+		if (controller->action_up.down) {
+			control.y += -1.0f;
+		}
+		if (controller->action_right.down) {
+			control.x += 1.0f;
+		}
+		if (controller->action_left.down) {
+			control.x += -1.0f;
+		}
+
+
+		// Analog stick input
+		if (controller->is_analog) {
+			v2f left_stick = controller->left_stick.end;
+			v2f right_stick = controller->right_stick.end;
+			control.x += left_stick.x + right_stick.x;
+			control.y -= left_stick.y + right_stick.y;
 		}
 
 		// Normalize
@@ -1211,14 +1244,6 @@ v2f get_2d_control_from_input(input_t* input) {
 		if (length_squared > 1.0f) {
 			float length = sqrtf(length_squared);
 			control = v2f_scale(1.0f / length, control);
-		}
-
-		// Analog stick input
-		if (input->controllers[0].is_analog) {
-			const float multiplier = 1.5f;
-			v2f stick = input->controllers[0].stick_end;
-			control.x += stick.x * multiplier;
-			control.y += -stick.y * multiplier;
 		}
 
 	}
@@ -1357,7 +1382,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 	if (input) {
-		if (input->are_any_buttons_down) app_state->allow_idling_next_frame = false;
+		// TODO: select preferred controller based on input?
+		controller_input_t* controller = get_preferred_controller(input);
+
+		if (input->are_any_buttons_down || controller->is_analog || controller->left_trigger.has_input || controller->right_trigger.has_input) {
+			app_state->allow_idling_next_frame = false;
+		}
 
 		if (input->mouse_moved) {
 			app_state->seconds_without_mouse_movement = 0.0f;
@@ -1456,6 +1486,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		scene->mouse = scene->camera;
 
 		if (input) {
+			controller_input_t* controller = get_preferred_controller(input);
 
 			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
@@ -1463,36 +1494,41 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				scene->right_clicked_pos = scene->mouse;
 			}
 
-			i32 dlevel = 0;
+			// Panning control
+			scene->control = get_2d_control_from_input(input, !gui_want_capture_keyboard);
+			float control_length = v2f_length(scene->control);
+			if (control_length > 0.0f) {
+				scene->time_since_control_start += delta_t;
+			} else {
+				scene->time_since_control_start = 0.0f;
+			}
+			scene->panning_velocity = viewer_do_2d_control(scene->panning_velocity, scene->control, delta_t, scene->time_since_control_start, input->keyboard.key_shift.down);
+
+
+			// Zoom control
+			float dlevel = 0.0f;
+			bool integer_zoom = true; // can override later
 			bool32 used_mouse_to_zoom = false;
 
 			// Zoom in or out using the mouse wheel.
 			if (!gui_want_capture_mouse && input->mouse_z != 0) {
-				dlevel = (input->mouse_z > 0 ? -1 : 1);
+				dlevel = (input->mouse_z > 0 ? -1.0f : 1.0f);
 				used_mouse_to_zoom = true;
 			}
 
 			float key_repeat_interval = 0.15f; // in seconds
 
-			scene->control = v2f();
+			// Zoom out using Z or / or controller button B
+			bool zoom_out_button_held = input->controllers[0].button_b.down ||
+			                            (!gui_want_capture_keyboard && (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash)));
+			// Zoom in using X or . or controller button A
+			bool zoom_in_button_held = input->controllers[0].button_a.down ||
+			                           (!gui_want_capture_keyboard && (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period)));
 
-			if (!gui_want_capture_keyboard) {
-
-				scene->control = get_2d_control_from_input(input);
-				float control_length = v2f_length(scene->control);
-				if (control_length > 0.0f) {
-					scene->time_since_control_start += delta_t;
-				} else {
-					scene->time_since_control_start = 0.0f;
-				}
-
-				scene->panning_velocity = viewer_do_2d_control(scene->panning_velocity, scene->control, delta_t, scene->time_since_control_start, input->keyboard.key_shift.down);
-
-				// Zoom out using Z or / or controller button A
-				if (is_key_down(input, KEY_Z) || is_key_down(input, KEY_Slash) || input->controllers[0].button_a.down) {
-
-					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash) || was_button_pressed(&input->controllers[0].button_a)) {
-						dlevel += 1;
+			if (prefer_integer_zoom) {
+				if (zoom_out_button_held) {
+					if (was_key_pressed(input, KEY_Z) || was_key_pressed(input, KEY_Slash) || was_button_pressed(&input->controllers[0].button_b)) {
+						dlevel += 1.0f;
 						zoom_in_key_hold_down_start_time = get_clock();
 						zoom_in_key_times_zoomed_while_holding = 0;
 					} else {
@@ -1500,16 +1536,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						int zooms = (int) (time_elapsed / key_repeat_interval);
 						if ((zooms - zoom_in_key_times_zoomed_while_holding) == 1) {
 							zoom_in_key_times_zoomed_while_holding = zooms;
-							dlevel += 1;
+							dlevel += 1.0f;
 						}
 					}
 				}
 
-				// Zoom in using X or . or controller button B
-				if (is_key_down(input, KEY_X) || is_key_down(input, KEY_Period) || input->controllers[0].button_b.down) {
-
-					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period) || was_button_pressed(&input->controllers[0].button_b)) {
-						dlevel -= 1;
+				if (zoom_in_button_held) {
+					if (was_key_pressed(input, KEY_X) || was_key_pressed(input, KEY_Period) || was_button_pressed(&input->controllers[0].button_a)) {
+						dlevel -= 1.0f;
 						zoom_out_key_hold_down_start_time = get_clock();
 						zoom_out_key_times_zoomed_while_holding = 0;
 					} else {
@@ -1517,25 +1551,48 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						int zooms = (int) (time_elapsed / key_repeat_interval);
 						if ((zooms - zoom_out_key_times_zoomed_while_holding) == 1) {
 							zoom_out_key_times_zoomed_while_holding = zooms;
-							dlevel -= 1;
+							dlevel -= 1.0f;
 						}
 					}
 				}
+			} else {
+				// non-integer zoom
+				if (zoom_out_button_held) {
+					dlevel += 6.0f * delta_t;
+					integer_zoom = false;
+				}
+				if (zoom_in_button_held) {
+					dlevel -= 6.0f * delta_t;
+					integer_zoom = false;
+				}
 			}
 
-			if (dlevel != 0) {
+			if (controller->left_trigger.has_input) {
+				dlevel += controller->left_trigger.end * 7.0f * delta_t;
+				integer_zoom = false;
+			}
+			if (controller->right_trigger.has_input) {
+				dlevel -= controller->right_trigger.end * 7.0f * delta_t;
+				integer_zoom = false;
+			}
+
+			if (dlevel != 0.0f) {
 //		        console_print("mouse_z = %d\n", input->mouse_z);
 
-				i32 new_level = scene->zoom.level + dlevel;
+				float new_level = scene->zoom.pos + dlevel;
 				if (scene->need_zoom_animation) {
-					i32 residual_dlevel = scene->zoom_target_state.level - scene->zoom.level;
+					float residual_dlevel = scene->zoom_target_state.pos - scene->zoom.pos;
 					new_level += residual_dlevel;
 				}
+				if (integer_zoom) {
+					new_level = roundf(new_level);
+				}
+
 				new_level = CLAMP(new_level, viewer_min_level, viewer_max_level);
 				zoom_state_t new_zoom = scene->zoom;
 				zoom_update_pos(&new_zoom, (float) new_level);
 
-				if (new_zoom.level != old_zoom.level) {
+				if (new_zoom.pos != old_zoom.pos) {
 					if (used_mouse_to_zoom) {
 						scene->zoom_pivot = scene->mouse;
 						scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, displayed_image->width_in_um);

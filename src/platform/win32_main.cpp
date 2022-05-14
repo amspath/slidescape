@@ -897,6 +897,34 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 }
 
+analog_stick_t win32_get_xinput_analog_stick_input(SHORT x, SHORT y, v2f old_stick_position) {
+	analog_stick_t stick = {};
+	stick.start = old_stick_position;
+	if (x < 0) ++x;
+	if (y < 0) ++y;
+	stick.end.x = (float) x / 32767.f;
+	stick.end.y = (float) y / 32767.f;
+
+	float magnitude_squared = SQUARE(stick.end.x) + SQUARE(stick.end.y);
+	if (magnitude_squared > SQUARE(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE / 32767.f)) {
+		stick.has_input = true;
+	} else {
+		stick.end.x = 0;
+		stick.end.y = 0;
+	}
+	return stick;
+}
+
+analog_trigger_t win32_get_xinput_analog_trigger_input(BYTE x, float old_trigger_position) {
+	analog_trigger_t trigger = {};
+	trigger.start = old_trigger_position;
+	if (x > XINPUT_GAMEPAD_TRIGGER_THRESHOLD) {
+		trigger.has_input = true;
+		trigger.end = (float) x / 255.f;
+	}
+	return trigger;
+}
+
 void win32_process_xinput_controllers() {
 	// NOTE: performance bug in XInput! May stall if no controller is connected.
 	// We space out XInputGetState calls for unconnected controllers, but prioritize controller index 0 and 1
@@ -971,49 +999,19 @@ void win32_process_xinput_controllers() {
 			                           XINPUT_GAMEPAD_DPAD_LEFT|XINPUT_GAMEPAD_DPAD_RIGHT)
 					) {
 				new_controller_input->is_analog = false;
-				new_controller_input->stick_end = v2f();
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_UP) new_controller_input->stick_end.y += 1.0f;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_DOWN) new_controller_input->stick_end.y -= 1.0f;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_LEFT) new_controller_input->stick_end.x += 1.0f;
-				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_RIGHT) new_controller_input->stick_end.x -= 1.0f;
+				new_controller_input->left_stick.end = v2f();
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_UP) new_controller_input->left_stick.end.y += 1.0f;
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_DOWN) new_controller_input->left_stick.end.y -= 1.0f;
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_LEFT) new_controller_input->left_stick.end.x += 1.0f;
+				if (xinput_button_state & XINPUT_GAMEPAD_DPAD_RIGHT) new_controller_input->left_stick.end.x -= 1.0f;
 			}
 
-			{
-				i16 xinput_stick_x = xinput_gamepad->sThumbLX;
-				i16 xinput_stick_y = xinput_gamepad->sThumbLY;
+			new_controller_input->left_stick = win32_get_xinput_analog_stick_input(xinput_gamepad->sThumbLX, xinput_gamepad->sThumbLY, old_controller_input->left_stick.end);
+			new_controller_input->right_stick = win32_get_xinput_analog_stick_input(xinput_gamepad->sThumbRX, xinput_gamepad->sThumbRY, old_controller_input->left_stick.end);
+			new_controller_input->is_analog = (new_controller_input->left_stick.has_input || new_controller_input->right_stick.has_input);
 
-				v2f stick;
-				if (xinput_stick_x < 0) ++xinput_stick_x;
-				if (xinput_stick_y < 0) ++xinput_stick_y;
-				stick.x = (float) xinput_stick_x / 32767.f;
-				stick.y = (float) xinput_stick_y / 32767.f;
-
-				float magnitude_squared = SQUARE(stick.x) + SQUARE(stick.y);
-				if (magnitude_squared > SQUARE(XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE / 32767.f)) {
-					new_controller_input->is_analog = true;
-				} else {
-					stick.x = 0;
-					stick.y = 0;
-				}
-
-				new_controller_input->stick_start = old_controller_input->stick_start;
-				new_controller_input->stick_end = stick;
-
-				/*const float threshold = 0.4f;
-				WORD move_up_state = (stick.y > threshold) ? 1 : 0;
-				WORD move_down_state = (stick.y < -threshold) ? 1 : 0;
-				WORD move_left_state = (stick.x < -threshold) ? 1 : 0;
-				WORD move_right_state = (stick.x > threshold) ? 1 : 0;
-
-				win32_process_xinput_button(&old_controller_input->move_up, move_up_state, 1,
-				                            &new_controller_input->move_up);
-				win32_process_xinput_button(&old_controller_input->move_down, move_down_state, 1,
-				                            &new_controller_input->move_down);
-				win32_process_xinput_button(&old_controller_input->move_left, move_left_state, 1,
-				                            &new_controller_input->move_left);
-				win32_process_xinput_button(&old_controller_input->move_right, move_right_state, 1,
-				                            &new_controller_input->move_right);*/
-			}
+			new_controller_input->left_trigger = win32_get_xinput_analog_trigger_input(xinput_gamepad->bLeftTrigger, old_controller_input->left_trigger.end);
+			new_controller_input->right_trigger = win32_get_xinput_analog_trigger_input(xinput_gamepad->bRightTrigger, old_controller_input->right_trigger.end);
 
 			if (new_controller_input->back.down) {
 				need_quit = true;
@@ -1496,12 +1494,23 @@ bool win32_process_input(app_state_t* app_state) {
 
 	for (u32 controller_index = 0; controller_index < COUNT(curr_input->abstract_controllers); ++controller_index) {
 		controller_input_t* controller = curr_input->abstract_controllers + controller_index;
-		controller->stick_start = controller->stick_end;
+//		controller->left_stick.start = controller->left_stick.end;
 		// Reset transition counts.
 		for (u32 i = 0; i < COUNT(controller->buttons); ++i) {
 			controller->buttons[i].transition_count = 0;
 		}
 	}
+
+	// The preferred controller is the first connected controller.
+	i32 preferred_controller_index = 0;
+	for (i32 i = 0; i < COUNT(curr_input->controllers); ++i) {
+		if (curr_input->controllers[i].is_connected) {
+			preferred_controller_index = i;
+			break;
+		}
+	}
+	curr_input->preferred_controller_index = preferred_controller_index;
+	controller_input_t* preferred_controller = curr_input->controllers + preferred_controller_index;
 
 	memset_zero(&curr_input->mouse_buttons);
 	for (u32 i = 0; i < COUNT(curr_input->mouse_buttons); ++i) {
@@ -1542,6 +1551,9 @@ bool win32_process_input(app_state_t* app_state) {
 	curr_input->are_any_buttons_down = false;
 	for (u32 i = 0; i < COUNT(curr_input->keyboard.buttons); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.buttons[i].down;
+	}
+	for (u32 i = 0; i < COUNT(preferred_controller->buttons); ++i) {
+		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || preferred_controller->buttons[i].down;
 	}
 	for (u32 i = 0; i < COUNT(curr_input->keyboard.keys); ++i) {
 		curr_input->are_any_buttons_down = (curr_input->are_any_buttons_down) || curr_input->keyboard.keys[i].down;

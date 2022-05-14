@@ -910,8 +910,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			app_state->scene.need_zoom_reset = true;
 		}
 		ImGui::SameLine();
-		float zoom_objective_factor = 40.0f * exp2f(-app_state->scene.zoom.level);
-		ImGui::Text("Current zoom level: %d (%gx)", app_state->scene.zoom.level, zoom_objective_factor);
+		float zoom_objective_factor = 40.0f * exp2f(-app_state->scene.zoom.pos);
+		ImGui::Text("Current zoom level: %.1f (%gx)", app_state->scene.zoom.pos, zoom_objective_factor);
 
 		if (ImGui::SliderFloat("Zoom level", &app_state->scene.zoom.pos, -5.0f, 15.0f, "%.1f")) {
 			zoom_update_pos(&app_state->scene.zoom, app_state->scene.zoom.pos);

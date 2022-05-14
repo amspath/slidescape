@@ -158,11 +158,25 @@ typedef struct button_state_t {
 	u8 transition_count;
 } button_state_t;
 
+typedef struct analog_stick_t {
+	v2f start;
+	v2f end;
+	bool has_input;
+} analog_stick_t;
+
+typedef struct analog_trigger_t {
+	float start;
+	float end;
+	bool has_input;
+} analog_trigger_t;
+
 typedef struct controller_input_t {
 	bool32 is_connected;
 	bool32 is_analog;
-	v2f stick_start;
-	v2f stick_end;
+	analog_stick_t left_stick;
+	analog_stick_t right_stick;
+	analog_trigger_t left_trigger;
+	analog_trigger_t right_trigger;
 	u32 modifiers;
 	union {
 		button_state_t buttons[533];
@@ -216,6 +230,7 @@ typedef struct input_t {
 			controller_input_t controllers[4];
 		};
 	};
+	u8 preferred_controller_index;
 	bool are_any_buttons_down;
 
 } input_t;
