@@ -1876,7 +1876,7 @@ static void win32_init_headless_console() {
 	// stdout and stderr aren't displayed, even if you run the program from the command-line.
 	// It is possible to get console output back, but we have to jump through some hoops.
 #if !DO_DEBUG
-	WINBOOL ret = AttachConsole(ATTACH_PARENT_PROCESS);
+	BOOL ret = AttachConsole(ATTACH_PARENT_PROCESS);
 	HANDLE stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (stdout_handle != INVALID_HANDLE_VALUE) {
 		freopen("CONOUT$", "w", stdout);
