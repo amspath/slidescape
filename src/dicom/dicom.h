@@ -82,6 +82,20 @@ typedef struct dicom_header_t {
 #define DICOM_UNDEFINED_LENGTH 0xFFFFFFFF
 
 #pragma pack(push,1)
+typedef struct dicom_dict_entry_t {
+	u32 tag;
+	u32 name_offset;
+	u32 keyword_offset;
+	u16 vr;
+} dicom_dict_entry_t;
+
+typedef struct dicom_dict_packed_entry_t {
+	u32 tag;
+	u8 name_len;
+	u8 keyword_len;
+	u8 vr_index;
+} dicom_dict_packed_entry_t;
+
 typedef struct dicom_tag_t {
 	union {
 		struct {
@@ -133,5 +147,6 @@ typedef struct dicom_t {
 	FILE* debug_output_file;
 } dicom_t;
 
+bool dicom_init();
 void dicom_open(dicom_t* dicom, const char* path);
 

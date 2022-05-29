@@ -23,7 +23,9 @@
 
 #define DICOM_TAGS_IMPLEMENTATION
 #include "dicom.h"
-#include "dicom_tags.h"
+#include "dicom_dict.h"
+
+#include "lz4.h"
 
 #define LISTING_IMPLEMENTATION
 #include "listing.h"
@@ -63,40 +65,110 @@ static inline bool32 need_alternate_element_layout(u16 vr) {
 	return (sum != 0);
 }
 
-static inline void get_dicom_dictionary(u16 group, DICOM_Dictonary_Element** dictionary, u32* tag_count) {
-	ASSERT(dictionary != NULL);
-	if (dictionary != NULL) {
-		switch(group) {
-			default: {
-				*dictionary = the_dicom_tag_dictionary;
-				*tag_count = COUNT(the_dicom_tag_dictionary);
-			} break;
+dicom_dict_entry_t* dicom_dict_entries;
+const char* dicom_dict_string_pool;
+
+dicom_dict_entry_t* dicom_dict_hash_table;
+u32 dicom_dict_hash_table_size;
+
+// Hash function adapted from https://github.com/skeeto/hash-prospector
+u32 lowbias32(u32 x) {
+	x ^= x >> 16;
+	x *= 0x21f0aaad;
+	x ^= x >> 15;
+	x *= 0x735a2d97;
+	x ^= x >> 15;
+	return x;
+}
+
+// Note: Unfortunately it looks like lookup using a hash table is only marginally faster than linear lookup
+static dicom_dict_entry_t* dicom_dict_lookup(u32 tag) {
+	u32 hash = lowbias32(tag);
+	u32 index = hash & (dicom_dict_hash_table_size-1);
+	dicom_dict_entry_t* slot = dicom_dict_hash_table + index;
+	i32 j = 0;
+	u32 first_checked_index = index;
+	while (slot->tag != tag) {
+		// linear probing
+		++j;
+		index = (first_checked_index + j) & (dicom_dict_hash_table_size-1);
+		slot = dicom_dict_hash_table + index;
+		if (slot->tag == 0) {
+			// empty slot -> not found
+			return NULL;
 		}
 	}
+	return slot;
 }
 
 static u16 get_dicom_tag_vr(u32 tag) {
-	u32 tag_count = the_dicom_tag_dictionary_tag_count;
+	dicom_dict_entry_t* entry = dicom_dict_lookup(tag);
+	if (entry) {
+		return entry->vr;
+	} else {
+		return DICOM_VR_UN;
+	}
+}
+
+
+static const char* get_dicom_tag_name(u32 tag) {
+	dicom_dict_entry_t* entry = dicom_dict_lookup(tag);
+	if (entry) {
+		return dicom_dict_string_pool + entry->name_offset;
+	} else {
+		return NULL;
+	}
+}
+
+static const char* get_dicom_tag_keyword(u32 tag) {
+	dicom_dict_entry_t* entry = dicom_dict_lookup(tag);
+	if (entry) {
+		return dicom_dict_string_pool + entry->keyword_offset;
+	} else {
+		return NULL;
+	}
+}
+
+#if 0
+static u16 get_dicom_tag_vr_linear(u32 tag) {
+	u32 tag_count = COUNT(dicom_dict_packed_entries);
 
 	// TODO: hash table
 	for (u32 tag_index = 0; tag_index < tag_count; ++tag_index) {
-		if (the_dicom_tag_dictionary[tag_index].tag == tag) {
-			return the_dicom_tag_dictionary[tag_index].vr;
+		if (dicom_dict_entries[tag_index].tag == tag) {
+			return dicom_dict_entries[tag_index].vr;
 		}
 	}
 	return DICOM_VR_UN;
 }
 
-static char* get_dicom_tag_keyword(u32 tag) {
-	u32 tag_count = the_dicom_tag_dictionary_tag_count;
+static u16 test_vr;
 
-	for (u32 tag_index = 0; tag_index < tag_count; ++tag_index) {
-		if (the_dicom_tag_dictionary[tag_index].tag == tag) {
-			return the_dicom_tag_dictionary[tag_index].keyword;
-		}
+void lookup_tester() {
+	i64 start = get_clock();
+
+	i32 lookup_count = 1000000;
+
+	srand(46458);
+	for (i32 i = 0; i < lookup_count; ++i) {
+		i32 entry_index = rand() % COUNT(dicom_dict_packed_entries);
+		dicom_dict_entry_t* entry_to_lookup = dicom_dict_entries + entry_index;
+		test_vr = get_dicom_tag_vr(entry_to_lookup->tag);
 	}
-	return NULL;
+	console_print("Lookup using hash table (%dx) took %g seconds\n", lookup_count, get_seconds_elapsed(start, get_clock()));
+
+	start = get_clock();
+
+	srand(46458);
+	for (i32 i = 0; i < lookup_count; ++i) {
+		i32 entry_index = rand() % COUNT(dicom_dict_packed_entries);
+		dicom_dict_entry_t* entry_to_lookup = dicom_dict_entries + entry_index;
+		test_vr = get_dicom_tag_vr_linear(entry_to_lookup->tag);
+	}
+	console_print("Lookup using linear method (%dx) took %g seconds\n", lookup_count, get_seconds_elapsed(start, get_clock()));
+
 }
+#endif
 
 static dicom_data_element_t read_dicom_data_element(u8 *pos, dicom_transfer_syntax_enum encoding) {
 	dicom_data_element_t result = {};
@@ -187,7 +259,7 @@ static inline u32 dicom_get_element_length_without_trailing_whitespace(dicom_dat
 static void debug_print_dicom_element(dicom_data_element_t element, FILE* out) {
 	char vr_text[4] = {}; // convert 2-byte VR to printable form
 	*(u16*) vr_text = element.vr;
-	char* keyword = get_dicom_tag_keyword(element.tag.as_u32);
+	const char* keyword = get_dicom_tag_keyword(element.tag.as_u32);
 	fprintf(out, "(%04x,%04x) - %s - length: %d - %s",
 	        element.tag.group, element.tag.element, vr_text, element.length,
 	        keyword);
@@ -263,7 +335,7 @@ void dicom_debug_load_file(dicom_t* dicom, const char* filename) {
 			} else {
 				//printf("Oh no! '%s' does not seem to be a DICOM file!\n", filename);
 			}
-
+			memrw_destroy(&buffer);
 		}
 	}
 	file_stream_close(fp);
@@ -286,6 +358,7 @@ void dicom_open(dicom_t* dicom, const char* path) {
 			dicom->debug_output_file = fopen("dicom_dump.txt", "wb");
 			dicom->tag_handler_func = handle_dicom_tag_for_tag_dumping;
 #endif
+			i64 start = get_clock();
 
 			do {
 				char* current_filename = get_current_filename_from_directory_listing(directory_listing);
@@ -303,10 +376,144 @@ void dicom_open(dicom_t* dicom, const char* path) {
 			} while (find_next_file(directory_listing));
 			close_directory_listing(directory_listing);
 
+//			console_print("DICOM parsing took %g seconds\n", get_seconds_elapsed(start, get_clock()));
+
 			if (dicom->debug_output_file) {
 				fclose(dicom->debug_output_file);
 			}
 
 		}
 	}
+}
+
+static u16 dicom_vr_tbl[] = {
+	0, // undefined
+	DICOM_VR_AE,
+	DICOM_VR_AS,
+	DICOM_VR_AT,
+	DICOM_VR_CS,
+	DICOM_VR_DA,
+	DICOM_VR_DS,
+	DICOM_VR_DT,
+	DICOM_VR_FD,
+	DICOM_VR_FL,
+	DICOM_VR_IS,
+	DICOM_VR_LO,
+	DICOM_VR_LT,
+	DICOM_VR_OB,
+	DICOM_VR_OD,
+	DICOM_VR_OF,
+	DICOM_VR_OL,
+	DICOM_VR_OV,
+	DICOM_VR_OW,
+	DICOM_VR_PN,
+	DICOM_VR_SH,
+	DICOM_VR_SL,
+	DICOM_VR_SQ,
+	DICOM_VR_SS,
+	DICOM_VR_ST,
+	DICOM_VR_SV,
+	DICOM_VR_TM,
+	DICOM_VR_UC,
+	DICOM_VR_UI,
+	DICOM_VR_UL,
+	DICOM_VR_UN,
+	DICOM_VR_UR,
+	DICOM_VR_US,
+	DICOM_VR_UT,
+	DICOM_VR_UV,
+};
+
+void dicom_dict_init_hash_table() {
+	ASSERT(dicom_dict_entries);
+	dicom_dict_hash_table_size = next_pow2(COUNT(dicom_dict_packed_entries) * 4);
+	dicom_dict_hash_table = (dicom_dict_entry_t*)calloc(1, dicom_dict_hash_table_size * sizeof(dicom_dict_entry_t));
+	i32 collision_count = 0;
+	i32 extra_lookup_count = 0;
+	for (i32 i = 0; i < COUNT(dicom_dict_packed_entries); ++i) {
+		dicom_dict_entry_t entry = dicom_dict_entries[i];
+		u32 hash = lowbias32(entry.tag);
+		u32 index = hash % dicom_dict_hash_table_size;
+		dicom_dict_entry_t* slot = dicom_dict_hash_table + index;
+		if (slot->tag == 0) {
+			// empty slot!
+			*slot = entry;
+		} else {
+			++collision_count;
+			i32 cluster_size = 1;
+			bool resolved = false;
+			for (i32 j = 1; j < dicom_dict_hash_table_size; ++j) {
+				// Use linear probing for collision resolution
+				i32 new_index = (index + (j)) % dicom_dict_hash_table_size;
+				slot = dicom_dict_hash_table + new_index;
+				if (slot->tag == 0) {
+					resolved = true;
+					break; // resolved
+				} else {
+					++cluster_size;
+//					console_print("Hash table collision: extra lookups %d\n", cluster_size);
+				}
+			}
+			if (!resolved) {
+				panic();
+			}
+			extra_lookup_count += cluster_size;
+		}
+	}
+	console_print_verbose("Hash table size: %d entries: %d (load factor %.2f) collisions: %d extra lookups: %d", dicom_dict_hash_table_size,
+				  COUNT(dicom_dict_packed_entries),
+				  (float)COUNT(dicom_dict_packed_entries)/(float)dicom_dict_hash_table_size,
+				  collision_count, extra_lookup_count);
+}
+
+bool dicom_unpack_and_decompress_dictionary() {
+	// Unpack dictionary entries, these have been packed to take up ~0.5x space
+	// - convert 1-byte name/keyword lengths back into 4-byte offsets into the string pool
+	// - convert 1-byte VR lookup indices back into 2-byte VR codes as used in DICOM streams
+	// (this packed data is not much further compressible using LZ4, and is therefore left uncompressed)
+	dicom_dict_entry_t* unpacked_entries = (dicom_dict_entry_t*) malloc(COUNT(dicom_dict_packed_entries) * sizeof(dicom_dict_entry_t));
+	u32 running_offset = 0;
+	for (i32 i = 0; i < COUNT(dicom_dict_packed_entries); ++i) {
+		dicom_dict_packed_entry_t packed_entry = dicom_dict_packed_entries[i];
+		dicom_dict_entry_t entry = {};
+		entry.tag = packed_entry.tag;
+		entry.name_offset = running_offset;
+		running_offset += packed_entry.name_len + 1; // one extra byte for the '\0'
+		entry.keyword_offset = running_offset;
+		running_offset += packed_entry.keyword_len + 1;
+		ASSERT(running_offset <= DICOM_DICT_STRING_POOL_UNCOMPRESSED_SIZE);
+		entry.vr = dicom_vr_tbl[packed_entry.vr_index];
+		unpacked_entries[i] = entry;
+	}
+	dicom_dict_entries = unpacked_entries;
+
+	// LZ4-decompress string pool, which contains the DICOM tag names and keywords
+	i32 decompressed_size = DICOM_DICT_STRING_POOL_UNCOMPRESSED_SIZE;
+	i32 compressed_size = DICOM_DICT_STRING_POOL_COMPRESSED_SIZE;
+	u8* decompressed = (u8*) malloc(decompressed_size);
+	i32 bytes_decompressed = LZ4_decompress_safe((char*)dicom_dict_string_pool_lz4_compressed, (char*)decompressed, compressed_size, decompressed_size);
+	if (bytes_decompressed <= 0) {
+		console_print_error("LZ4_decompress_safe() failed (return value %d)\n", bytes_decompressed);
+		free(decompressed);
+		return false;
+	} else {
+		if (bytes_decompressed != decompressed_size) {
+			console_print_error("LZ4_decompress_safe() decompressed %d bytes, however the expected size was %d\n", bytes_decompressed, decompressed_size);
+			free(decompressed);
+			return false;
+		} else {
+			dicom_dict_string_pool = (const char*)decompressed;
+			return true;
+		}
+	}
+}
+
+bool dicom_init() {
+	i64 start = get_clock();
+	bool success = dicom_unpack_and_decompress_dictionary();
+	if (success) {
+		dicom_dict_init_hash_table();
+		console_print_verbose("Initialized DICOM dictionary in %g seconds.\n", get_seconds_elapsed(start, get_clock()));
+	}
+	return success;
 }

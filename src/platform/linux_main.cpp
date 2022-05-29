@@ -26,6 +26,7 @@
 #include "platform.h"
 #include "viewer.h"
 #include "gui.h" // TODO: move
+#include "dicom.h"
 
 #include "imgui.h"
 #include "imgui_impl_sdl.h"
@@ -396,6 +397,7 @@ int main(int argc, const char** argv)
     }
 
     add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL, 0);
+    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)dicom_init, NULL, 0);
     linux_init_input();
 
     // Setup SDL

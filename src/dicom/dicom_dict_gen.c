@@ -16,6 +16,22 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+// dicom_dict_gen.c is a code generation tool for generating a dictionary of DICOM tags.
+// The tags and associated attributes are parsed directly from the DICOM Standard (Part 6: Data Dictionary).
+// Input file: part06.xml
+// Output files: dicom_dict.h and dicom_dict.c
+
+// The input file can be downloaded from the website of the DICOM Standard:
+// https://dicom.nema.org/medical/dicom/current/source/docbook/part06/part06.xml
+
+// The output files dicom_dict.h and dicom_dict.c are used in the Slidescape codebase.
+// dicom_dict.h: contains an enumeration of all DICOM tags and declarations for the dictionary data
+// dicom_dict.c: contains packed dictionary data and an LZ4-compressed string pool holding tag names and keywords
+
+// An application integrating dicom_dict.h and dicom_dict.c will want to:
+// - initialize the data by unpacking the dictionary and LZ4-decompressing the string pool
+// - implement a procedure for looking up tags (e.g. linear lookup or a hash table)
+
 #define STB_SPRINTF_IMPLEMENTATION
 #include "common.h"
 #include "memrw.h"
@@ -76,8 +92,8 @@ typedef struct dicom_dict_parser_t {
 	i32 header_template_index;
 	i32 dimension_index;
 	i32 td_index;
-	bool in_chapter6;
-	bool in_chapter6_tbody;
+	bool in_chapters_6_7_8;
+	bool in_chapters_6_7_8_tbody;
 	bool initialized;
 } dicom_dict_parser_t;
 
@@ -120,23 +136,7 @@ static const char* get_spaces(i32 length) {
 	return spaces + offset;
 }
 
-#pragma pack(push,1)
-typedef struct dicom_dict_entry_t {
-	u32 tag;
-	u32 name_offset;
-	u32 keyword_offset;
-	u16 vr;
-} dicom_dict_entry_t;
-
-typedef struct dicom_dict_packed_entry_t {
-	u32 tag;
-	u8 name_len;
-	u8 keyword_len;
-	u8 vr_index;
-} dicom_dict_packed_entry_t;
-#pragma pack(pop)
-
-u16 dicom_vr_tbl[] = {
+static u16 dicom_vr_tbl[] = {
 	0, // undefined
 	DICOM_VR_AE,
 	DICOM_VR_AS,
@@ -210,8 +210,8 @@ bool output_dicom_dict_to_generated_c_code(dicom_dict_entry_t* dict_entries, mem
 
 	// Because the dictionary table and the string pool are quite large, we'll try to LZ4-compress the data
 	// Compression results (29 May 2022):
-	// Dictionary size: 33726, compressed 30073 (compression ratio 0.891686)
-	// String pool size: 248368, compressed 93673 (compression ratio 0.377154)
+	// Dictionary size: 33992, compressed 30338 (compression ratio 0.892504)
+	// String pool size: 250772, compressed 94610 (compression ratio 0.377275)
 	// So: it makes sense to compress the string pool, but the dictionary table not so much.
 	i32 dictionary_uncompressed_size = arrlen(packed_entries)*sizeof(dicom_dict_packed_entry_t);
 	i32 string_pool_uncompressed_size = name_buffer->used_size;
@@ -258,8 +258,10 @@ bool output_dicom_dict_to_generated_c_code(dicom_dict_entry_t* dict_entries, mem
 	}
 	memrw_write_literal("};\n", &code_buffer);
 
-	memrw_printf(&code_buffer, "\nextern dicom_dict_packed_entry_t dicom_dict[%u];\n", arrlen(dict_entries));
+	memrw_printf(&code_buffer, "\nextern dicom_dict_packed_entry_t dicom_dict_packed_entries[%u];\n", arrlen(dict_entries));
 	memrw_printf(&code_buffer, "extern const u8 dicom_dict_string_pool_lz4_compressed[%u];\n", string_pool_compressed_size);
+	memrw_printf(&code_buffer, "#define DICOM_DICT_STRING_POOL_COMPRESSED_SIZE %u\n", string_pool_compressed_size);
+	memrw_printf(&code_buffer, "#define DICOM_DICT_STRING_POOL_UNCOMPRESSED_SIZE %u\n", string_pool_uncompressed_size);
 
 	const char* out_path = (file_exists("src/dicom")) ? "src/dicom/dicom_dict.h" : "dicom_dict.h";
 	FILE* fp = fopen(out_path, "w");
@@ -274,7 +276,7 @@ bool output_dicom_dict_to_generated_c_code(dicom_dict_entry_t* dict_entries, mem
 						"#include \"dicom_dict.h\"\n", &code_buffer);
 
 	// dictionary entries
-	memrw_printf(&code_buffer, "\ndicom_dict_packed_entry_t dicom_dict[%d] = {\n", arrlen(packed_entries));
+	memrw_printf(&code_buffer, "\ndicom_dict_packed_entry_t dicom_dict_packed_entries[%d] = {\n", arrlen(packed_entries));
 	for (i32 i = 0; i < arrlen(packed_entries); ++i) {
 		dicom_dict_packed_entry_t entry = packed_entries[i];
 		memrw_printf(&code_buffer, "\t{0x%x,%u,%u,%u},\n", entry.tag, entry.name_len, entry.keyword_len, entry.vr_index);
@@ -377,8 +379,8 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 //						console_print_verbose("%schapter\n", get_spaces(parser.node_stack_index));
 					} else if (strcmp(x->elem, "tbody") == 0) {
 						node->node_type = DICOM_DICT_XML_TBODY;
-						if (parser.in_chapter6) {
-							parser.in_chapter6_tbody = true;
+						if (parser.in_chapters_6_7_8) {
+							parser.in_chapters_6_7_8_tbody = true;
 						}
 //						console_print_verbose("%stbody\n", get_spaces(parser.node_stack_index));
 					} else if (strcmp(x->elem, "tr") == 0) {
@@ -435,7 +437,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 				case YXML_ELEMEND: {
 					// end of an element: '.. />' or '</Tag>'
 					if (parser.current_node_type == DICOM_DICT_XML_EMPHASIS || parser.current_node_type == DICOM_DICT_XML_PARA) {
-						if (parser.in_chapter6_tbody && parser.contentlen > 0) {
+						if (parser.in_chapters_6_7_8_tbody && parser.contentlen > 0) {
 							// strip whitespace and non ascii UTF-8 characters (may contain zero width spaces - U+200B)
 							u8 cleaned[256] = "";
 							i32 pos = 0;
@@ -463,7 +465,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 							}
 						}
 					} else if (parser.current_node_type == DICOM_DICT_XML_TD) {
-						if (parser.in_chapter6_tbody) {
+						if (parser.in_chapters_6_7_8_tbody) {
 							char* content = parser.current_cleaned_content;
 							i32 content_len = parser.current_cleaned_content_len;
 							if (parser.td_index == 0) {
@@ -494,9 +496,15 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 							} else if (parser.td_index == 1) {
 								// Name
 								strncpy(parser.current_dicom_name, content, sizeof(parser.current_dicom_name));
+								if (strlen(content) == 0) {
+									parser.current_dicom_invalid = true;
+								}
 							} else if (parser.td_index == 2) {
 								// Keyword
 								strncpy(parser.current_dicom_keyword, content, sizeof(parser.current_dicom_name));
+								if (strlen(content) == 0) {
+									parser.current_dicom_invalid = true;
+								}
 							} else if (parser.td_index == 3) {
 								// VR
 								bool ok = false;
@@ -562,7 +570,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 //							console_print_verbose("%s content: %s\n", get_spaces(parser.node_stack_index), parser.current_cleaned_content);
 						}
 					} else if (parser.current_node_type == DICOM_DICT_XML_TR) {
-						if (parser.in_chapter6_tbody) {
+						if (parser.in_chapters_6_7_8_tbody) {
 
 							if (!parser.current_dicom_invalid) {
 								// add new dictionary item
@@ -592,9 +600,9 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 							}
 						}
 					} else if (parser.current_node_type == DICOM_DICT_XML_CHAPTER) {
-						parser.in_chapter6 = false;
+						parser.in_chapters_6_7_8 = false;
 					} else if (parser.current_node_type == DICOM_DICT_XML_TBODY) {
-						parser.in_chapter6_tbody = false;
+						parser.in_chapters_6_7_8_tbody = false;
 					}
 
 
@@ -649,8 +657,8 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 						ASSERT(strlen(parser.attrbuf) == parser.attrlen);
 
 						if (parser.current_node_type == DICOM_DICT_XML_CHAPTER) {
-							if (strcmp(x->attr, "label") == 0 && strcmp(parser.attrbuf, "6") == 0) {
-								parser.in_chapter6 = true;
+							if (strcmp(x->attr, "label") == 0 && (strcmp(parser.attrbuf, "6") == 0 || strcmp(parser.attrbuf, "7") == 0 || strcmp(parser.attrbuf, "8") == 0)) {
+								parser.in_chapters_6_7_8 = true;
 							}
 						} else {
 //							console_print_verbose("%sattr %s = %s\n", get_spaces(parser.node_stack_index), x->attr, parser.attrbuf);

@@ -27,7 +27,7 @@
 
 //#define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
-
+#include "dicom.h"
 
 #include "viewer.h"
 
@@ -312,6 +312,11 @@ void load_openslide_task(int logical_thread_index, void* userdata) {
 		SHChangeNotify(SHCNE_ASSOCCHANGED, 0, 0, 0);
 	}
 	is_openslide_loading_done = true;
+}
+
+void load_dicom_task(int logical_thread_index, void* userdata) {
+	is_dicom_available = dicom_init();
+	is_dicom_loading_done = true;
 }
 
 static char appdata_path[MAX_PATH];
@@ -1954,6 +1959,9 @@ int main() {
 
 	// Load OpenSlide in the background, we might not need it immediately.
 	add_work_queue_entry(&global_work_queue, load_openslide_task, NULL, 0);
+
+	// Load DICOM support in the background
+	add_work_queue_entry(&global_work_queue, load_dicom_task, NULL, 0);
 
 	win32_init_input();
 //	do_remote_connection_test();

@@ -447,6 +447,10 @@ extern bool save_file_dialog_open;
 
 extern float total_rgb_transform_time;
 
+extern bool is_dicom_available;
+extern bool is_dicom_loading_done;
+
+
 #undef INIT
 #undef extern
 

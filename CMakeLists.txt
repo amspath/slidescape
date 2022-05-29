@@ -204,6 +204,7 @@ set(VIEWER_SOURCE_FILES
         core/ini.c
         core/remote.c
         dicom/dicom.cpp
+        dicom/dicom_dict.c
         tiff/tiff.c
         tiff/tiff_write.c
         tiff/tiff_xml.c
@@ -220,6 +221,7 @@ set(VIEWER_SOURCE_FILES
         utils/stringutils.c
         utils/mathutils.c
         utils/memrw.c
+        utils/random.c
         utils/triangulate.c
         utils/lz4.c
         utils/yxml.c
