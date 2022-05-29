@@ -348,5 +348,6 @@ add_executable(dicom_dict_gen
         src/dicom/dicom_dict_gen.c
         src/utils/memrw.c
         src/utils/yxml.c
+        src/utils/lz4.c
         )
 target_compile_definitions(dicom_dict_gen PRIVATE IS_SERVER=1)
