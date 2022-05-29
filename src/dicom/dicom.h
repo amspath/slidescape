@@ -24,6 +24,8 @@
 #define LE_2CHARS(a,b) ( ((b)<<8) | (a) )
 #define LE_4CHARS(a,b,c,d) ( ((d)<<24) | ((c)<<16) | ((b)<<8) | (a) )
 
+#define DICOM_TAG(g,e) ( (u32) (((e)<<16) | ((u16)g)) )
+
 enum dicom_value_representation_enum {
 	DICOM_VR_AE = LE_2CHARS('A','E'), // Application Entity      // 4 bytes fixed
 	DICOM_VR_AS = LE_2CHARS('A','S'), // Age String              // 4 bytes fixed
@@ -41,6 +43,7 @@ enum dicom_value_representation_enum {
 	DICOM_VR_OD = LE_2CHARS('O','D'), // Other Double (String)
 	DICOM_VR_OF = LE_2CHARS('O','F'), // Other Float (String)
 	DICOM_VR_OL = LE_2CHARS('O','L'), // Other Long (String)
+	DICOM_VR_OV = LE_2CHARS('O','V'), // Other 64-Bit Very Long (String)
 	DICOM_VR_OW = LE_2CHARS('O','W'), // Other Word (String)
 	DICOM_VR_PN = LE_2CHARS('P','N'), // Person Name
 	DICOM_VR_SH = LE_2CHARS('S','H'), // Short String            // 16 chars maximum
@@ -48,6 +51,7 @@ enum dicom_value_representation_enum {
 	DICOM_VR_SQ = LE_2CHARS('S','Q'), // Sequence of Items
 	DICOM_VR_SS = LE_2CHARS('S','S'), // Signed Short            // 2 bytes fixed
 	DICOM_VR_ST = LE_2CHARS('S','T'), // Short Text              // 1024 chars maximum
+	DICOM_VR_SV = LE_2CHARS('S','V'), // Signed 64-Bit Very Long // 8 bytes fixed
 	DICOM_VR_TM = LE_2CHARS('T','M'), // Time                    // 14 bytes maximum
 	DICOM_VR_UC = LE_2CHARS('U','C'), // Unlimited Characters
 	DICOM_VR_UI = LE_2CHARS('U','I'), // Unique Identifier       // 64 bytes maximum
@@ -56,15 +60,16 @@ enum dicom_value_representation_enum {
 	DICOM_VR_UR = LE_2CHARS('U','R'), // URI/URL
 	DICOM_VR_US = LE_2CHARS('U','S'), // Unsigned Short          // 2 bytes fixed
 	DICOM_VR_UT = LE_2CHARS('U','T'), // Unlimited Text
+	DICOM_VR_UV = LE_2CHARS('U','V'), // Unsigned 64-Bit Very Long // 8 bytes fixed
 };
 
 
-enum dicom_transfer_syntax_enum {
+typedef enum dicom_transfer_syntax_enum {
 	DICOM_TRANSFER_SYNTAX_IMPLICIT_VR_LITTLE_ENDIAN,
 	DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN,
 	DICOM_TRANSFER_SYNTAX_DEFLATED_EXPLICIT_VR_LITTLE_ENDIAN,
 	DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN_RETIRED,
-};
+} dicom_transfer_syntax_enum;
 
 typedef struct dicom_header_t {
 	u8 preamble[128]; // the preamble will be all zeroes, if not used by a specific application/implementation
@@ -81,7 +86,7 @@ typedef struct dicom_tag_t {
 	union {
 		struct {
 			u16 group;
-			u16 element_number;
+			u16 element;
 		};
 		u32 as_u32;
 	};

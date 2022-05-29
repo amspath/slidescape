@@ -25,7 +25,8 @@
 #include "dicom.h"
 #include "dicom_tags.h"
 
-
+#define LISTING_IMPLEMENTATION
+#include "listing.h"
 
 static void dicom_switch_data_encoding(dicom_t* dicom_state, dicom_data_element_t *transfer_syntax_uid) {
 
@@ -52,6 +53,7 @@ static inline bool32 need_alternate_element_layout(u16 vr) {
 	          (vr == DICOM_VR_OD) +
 	          (vr == DICOM_VR_OF) +
 	          (vr == DICOM_VR_OL) +
+	          (vr == DICOM_VR_OV) +
 	          (vr == DICOM_VR_OW) +
 	          (vr == DICOM_VR_SQ) +
 	          (vr == DICOM_VR_UC) +
@@ -187,7 +189,7 @@ static void debug_print_dicom_element(dicom_data_element_t element, FILE* out) {
 	*(u16*) vr_text = element.vr;
 	char* keyword = get_dicom_tag_keyword(element.tag.as_u32);
 	fprintf(out, "(%04x,%04x) - %s - length: %d - %s",
-	        element.tag.group, element.tag.element_number, vr_text, element.length,
+	        element.tag.group, element.tag.element, vr_text, element.length,
 	        keyword);
 
 	// Try to print out the value of the tag.

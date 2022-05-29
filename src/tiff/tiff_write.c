@@ -78,12 +78,8 @@ void encode_tile_func(i32 logical_thread_index, void* userdata) {
 		for (i32 source_tile_x = 0; source_tile_x < source_bounds_width_in_tiles; ++source_tile_x) {
 
 			// load the tile into memory
-
-
 		}
 	}
-
-
 
 }
 
@@ -883,6 +879,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			}*/
 
 		}
+		// TODO: progress bar progress managed on the main thread?
 		global_tiff_export_progress = 0.05f;
 
 		u64 next_ifd_offset_terminator = 0;

@@ -1,0 +1,228 @@
+/*
+  Slidescape, a whole-slide image viewer for digital pathology.
+  Copyright (C) 2019-2022  Pieter Valkema
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#include "common.h"
+#include "win32_platform.h"
+
+wchar_t* win32_string_widen(const char* s, size_t len, wchar_t* buffer) {
+	int characters_written = MultiByteToWideChar(CP_UTF8, 0, s, -1, buffer, len);
+	if (characters_written > 0) {
+		int last_character = MIN(characters_written, ((int)len)-1);
+		buffer[last_character] = '\0';
+	} else {
+		win32_diagnostic("MultiByteToWideChar");
+		buffer[0] = '\0';
+	}
+	return buffer;
+}
+
+char* win32_string_narrow(wchar_t* s, char* buffer, size_t buffer_size) {
+	int bytes_written = WideCharToMultiByte(CP_UTF8, 0, s, -1, buffer, buffer_size, NULL, NULL);
+	if (bytes_written > 0) {
+		ASSERT(bytes_written < buffer_size);
+		int last_byte = MIN(bytes_written, ((int)buffer_size)-1);
+		buffer[last_byte] = '\0';
+	} else {
+		win32_diagnostic("WideCharToMultiByte");
+		buffer[0] = '\0';
+	}
+	return buffer;
+}
+
+void win32_diagnostic(const char* prefix) {
+	DWORD error_id = GetLastError();
+	char* message_buffer;
+	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+	                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
+	console_print("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
+	LocalFree(message_buffer);
+}
+
+void win32_diagnostic_verbose(const char* prefix) {
+	DWORD error_id = GetLastError();
+	char* message_buffer;
+	/*size_t size = */FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+	                                 NULL, error_id, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&message_buffer, 0, NULL);
+	console_print_verbose("%s: (error code 0x%x) %s\n", prefix, (u32)error_id, message_buffer);
+	LocalFree(message_buffer);
+}
+
+HANDLE win32_open_overlapped_file_handle(const char* filename) {
+	// NOTE: Using the FILE_FLAG_NO_BUFFERING flag *might* be faster, but I am not actually noticing a speed increase,
+	// so I am keeping it turned off for now.
+	size_t filename_len = strlen(filename) + 1;
+	wchar_t* wide_filename = win32_string_widen(filename, filename_len, (wchar_t*) alloca(2 * filename_len));
+	HANDLE handle = CreateFileW(wide_filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+	                            FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
+	                            /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
+	                            NULL);
+	return handle;
+}
+
+file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
+	return win32_open_overlapped_file_handle(filename);
+}
+
+size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
+	// We align reads to 4K boundaries, so that file handles can be used with the FILE_FLAG_NO_BUFFERING flag.
+	// See: https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering
+	i64 aligned_offset = offset & ~(KILOBYTES(4)-1);
+	i64 align_delta = offset - aligned_offset;
+	ASSERT(align_delta >= 0);
+
+	i64 end_byte = offset + read_size;
+	i64 raw_read_size = end_byte - aligned_offset;
+	ASSERT(raw_read_size >= 0);
+
+	i64 bytes_to_read_in_last_sector = raw_read_size % KILOBYTES(4);
+	if (bytes_to_read_in_last_sector > 0) {
+		raw_read_size += KILOBYTES(4) - bytes_to_read_in_last_sector;
+	}
+
+	// TODO: detect if read size does not fit in the arena, and allocate memory if needed
+	temp_memory_t temp_memory = begin_temp_memory(&thread_memory->temp_arena);
+	u8* temp_dest = (u8*)arena_push_size(&thread_memory->temp_arena, raw_read_size);
+
+	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
+	// offset in the file where we want to do the read operation
+	LARGE_INTEGER offset_ = {.QuadPart = (i64)aligned_offset};
+	OVERLAPPED overlapped = {};
+	overlapped.Offset = offset_.LowPart;
+	overlapped.OffsetHigh = (DWORD)offset_.HighPart;
+	overlapped.hEvent = thread_memory->async_io_events[0];
+	ResetEvent(thread_memory->async_io_events[0]); // reset the event to unsignaled state
+
+	if (!ReadFile(file_handle, temp_dest, raw_read_size, NULL, &overlapped)) {
+		DWORD error = GetLastError();
+		if (error != ERROR_IO_PENDING) {
+			win32_diagnostic("ReadFile");
+			end_temp_memory(&temp_memory);
+			return 0;
+		}
+	}
+
+	// Wait for the result of the I/O operation (blocking, because we specify bWait=TRUE)
+	DWORD bytes_read = 0;
+	if (!GetOverlappedResult(file_handle, &overlapped, &bytes_read, TRUE)) {
+		win32_diagnostic("GetOverlappedResult");
+	}
+	// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
+	if(WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
+		win32_diagnostic("WaitForSingleObject");
+	}
+
+	memcpy(dest, temp_dest + align_delta, read_size);
+
+	end_temp_memory(&temp_memory);
+	return read_size;
+}
+
+size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
+	size_t bytes_read = win32_overlapped_read(local_thread_memory, file_handle, dest, bytes_to_read, offset);
+	return bytes_read;
+}
+
+
+file_stream_t file_stream_open_for_reading(const char* filename) {
+//	console_print_verbose("Attempting CreateFile() for reading...\n");
+
+	size_t filename_len = strlen(filename) + 1;
+	wchar_t* wide_filename = win32_string_widen(filename, filename_len, (wchar_t*) alloca(2 * filename_len));
+	HANDLE handle = CreateFileW(wide_filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+	                            FILE_ATTRIBUTE_NORMAL /* | FILE_FLAG_SEQUENTIAL_SCAN */
+		/*| FILE_FLAG_NO_BUFFERING |*/ /* | FILE_FLAG_OVERLAPPED*/,
+		                        NULL);
+	if (handle == INVALID_HANDLE_VALUE) {
+		win32_diagnostic_verbose("CreateFile");
+		return 0;
+	} else {
+		return handle;
+	}
+}
+
+file_stream_t file_stream_open_for_writing(const char* filename) {
+//	console_print_verbose("Attempting CreateFile()...\n");
+
+	size_t filename_len = strlen(filename) + 1;
+	wchar_t* wide_filename = win32_string_widen(filename, filename_len, (wchar_t*) alloca(2 * filename_len));
+	HANDLE handle = CreateFileW(wide_filename, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+	                            FILE_ATTRIBUTE_NORMAL /* | FILE_FLAG_SEQUENTIAL_SCAN */
+		/*| FILE_FLAG_NO_BUFFERING |*/ /* | FILE_FLAG_OVERLAPPED*/,
+		                        NULL);
+	if (handle == INVALID_HANDLE_VALUE) {
+		win32_diagnostic("CreateFile");
+		return 0;
+	} else {
+		return handle;
+	}
+}
+
+i64 file_stream_read(void* dest, size_t bytes_to_read, file_stream_t file_stream) {
+	DWORD bytes_read;
+//	console_print_verbose("Attempting ReadFile()...\n");
+//	OVERLAPPED overlapped = {};
+	if (!ReadFile(file_stream, dest, bytes_to_read, &bytes_read, NULL)) {
+		win32_diagnostic("ReadFile");
+		return 0;
+	} else {
+//		console_print_verbose("ReadFile(): %d bytes read\n", bytes_read);
+		return (i64)bytes_read;
+	}
+}
+
+void file_stream_write(void* source, size_t bytes_to_write, file_stream_t file_stream) {
+	DWORD bytes_written;
+	if (!WriteFile(file_stream, source, bytes_to_write, &bytes_written, NULL)) {
+		win32_diagnostic("WriteFile");
+	}
+}
+
+i64 file_stream_get_filesize(file_stream_t file_stream) {
+	LARGE_INTEGER filesize = {};
+	if (!GetFileSizeEx(file_stream, &filesize)) {
+		win32_diagnostic("GetFileSizeEx");
+	}
+	return filesize.QuadPart;
+}
+
+i64 file_stream_get_pos(file_stream_t file_stream) {
+	LARGE_INTEGER file_position = {};
+	LARGE_INTEGER distance_to_move = {};
+	if (!SetFilePointerEx(file_stream, distance_to_move, &file_position, FILE_CURRENT)) {
+		win32_diagnostic("SetFilePointerEx");
+	}
+	return file_position.QuadPart;
+}
+
+bool file_stream_set_pos(file_stream_t file_stream, i64 offset) {
+	LARGE_INTEGER new_file_pointer = {};
+	new_file_pointer.QuadPart = offset;
+	if (!SetFilePointerEx(file_stream, new_file_pointer, NULL, FILE_BEGIN)) {
+		win32_diagnostic("SetFilePointerEx");
+		return false;
+	} else {
+		return true;
+	}
+}
+
+void file_stream_close(file_stream_t file_stream) {
+	if (!CloseHandle(file_stream)) {
+		win32_diagnostic("CloseHandle");
+	}
+}
+

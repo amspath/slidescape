@@ -38,7 +38,6 @@ struct DICOM_Dictonary_Element {
     u16 vr;
 };
 
-#define DICOM_TAG(g,e) ( (u32) (((e)<<16) | ((u16)g)) )
 
 //#pragma clang diagnostic push
 //#pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
@@ -4225,6 +4224,8 @@ global_shared DICOM_Dictonary_Element the_dicom_tag_dictionary[] INIT(= {
 
 
 global_shared u32 the_dicom_tag_dictionary_tag_count INIT(= COUNT(the_dicom_tag_dictionary));
+
+#undef INIT
 
 //#pragma clang diagnostic pop
 

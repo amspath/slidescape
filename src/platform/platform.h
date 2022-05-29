@@ -21,6 +21,7 @@
 #include "common.h"
 #include "mathutils.h"
 #include "arena.h"
+#include "memrw.h"
 
 #include "keycode.h"
 #include "keytable.h"
@@ -88,14 +89,6 @@ typedef struct mem_t {
 	size_t capacity;
 	u8 data[0];
 } mem_t;
-
-typedef struct memrw_t {
-	u8* data;
-	i64 cursor;
-	u64 used_size;
-	u64 used_count;
-	u64 capacity;
-} memrw_t;
 
 typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
 
@@ -380,20 +373,6 @@ void test_multithreading_work_queue();
 bool file_exists(const char* filename);
 bool is_directory(const char* path);
 
-void memrw_maybe_grow(memrw_t* buffer, u64 new_size);
-u64 memrw_push_back(memrw_t* buffer, void* data, u64 size);
-void memrw_init(memrw_t* buffer, u64 capacity);
-memrw_t memrw_create(u64 capacity);
-void memrw_rewind(memrw_t* buffer);
-void memrw_seek(memrw_t* buffer, i64 offset);
-i64 memrw_write(const void* src, memrw_t* buffer, i64 bytes_to_write);
-i64 memrw_putc(i64 c, memrw_t* buffer);
-i64 memrw_write_string(const char* s, memrw_t* buffer);
-i64 memrw_printf(memrw_t* buffer, const char* fmt, ...);
-#define memrw_write_literal(s, buffer) memrw_write((s), (buffer), COUNT(s)-1)
-i64 memrw_read(void* dest, memrw_t* buffer, size_t bytes_to_read);
-void memrw_destroy(memrw_t* buffer);
-
 void get_system_info(bool verbose);
 
 benaphore_t benaphore_create(void);
@@ -419,7 +398,7 @@ unsigned int crc32_skip_carriage_return(unsigned char* buffer, int len);
 #if IS_SERVER
 #define console_print printf
 #define console_print_error(...) fprintf(stderr, __VA_ARGS__)
-#define console_print_verbose(...) do { if (is_verbose_mode) fprintf(stderr, __VA_ARGS__); } while(0)
+#define console_print_verbose(...) do { if (is_verbose_mode) fprintf(stdout, __VA_ARGS__); } while(0)
 #else
 void console_print(const char* fmt, ...); // defined in console.cpp
 void console_print_verbose(const char* fmt, ...); // defined in console.cpp

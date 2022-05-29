@@ -219,6 +219,7 @@ set(VIEWER_SOURCE_FILES
         imgui/misc/freetype/imgui_freetype.cpp
         utils/stringutils.c
         utils/mathutils.c
+        utils/memrw.c
         utils/triangulate.c
         utils/lz4.c
         utils/yxml.c
@@ -228,6 +229,7 @@ if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/win32_main.cpp
             platform/win32_platform.cpp
+            platform/win32_utils.cpp
             platform/win32_gui.cpp
             platform/glad.c
             imgui/imgui_impl_win32.cpp
@@ -237,6 +239,7 @@ else()
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/linux_main.cpp
             platform/linux_platform.cpp
+            platform/linux_utils.cpp
             imgui/imgui_impl_sdl.cpp
             imgui/ImGuiFileDialog.cpp
             )
@@ -306,15 +309,31 @@ else()
 endif()
 target_compile_definitions(slidescape PRIVATE IS_SERVER=0)
 
+
+# Separately compiled tools:
+# slideserver    - server application for streaming WSIs, currently only TIFF format [WIP]
+# dicom_dict_gen - tool for generating a DICOM dictionary (dicom_dict.h and dicom_dict.c) by parsing the DICOM standard.
+
+# Some files are always required for the separately compiled tools
+set(BASE_FILES
+        src/platform/platform.c
+        deps/ltalloc.cc
+        )
+if (WIN32)
+    list(APPEND BASE_FILES src/platform/win32_utils.cpp)
+else()
+    list(APPEND BASE_FILES src/platform/linux_utils.cpp)
+endif()
+
 set(SERVER_SOURCE_FILES
-        platform/platform.c
-        server.c
-        tiff/tiff.c
-        utils/jpeg_decoder.c
-        utils/lz4.c
-        utils/stringutils.c
+        ${BASE_FILES}
+        src/server.c
+        src/tiff/tiff.c
+        src/utils/jpeg_decoder.c
+        src/utils/lz4.c
+        src/utils/stringutils.c
+        src/utils/memrw.c
 )
-prepend_path(SERVER_SOURCE_FILES src)
 add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} deps/ltalloc.cc)
 target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
@@ -323,3 +342,11 @@ if (WIN32)
 else()
     target_link_libraries(slideserver pthread m)
 endif()
+
+add_executable(dicom_dict_gen
+        ${BASE_FILES}
+        src/dicom/dicom_dict_gen.c
+        src/utils/memrw.c
+        src/utils/yxml.c
+        )
+target_compile_definitions(dicom_dict_gen PRIVATE IS_SERVER=1)
