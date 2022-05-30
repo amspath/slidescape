@@ -558,9 +558,13 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 }
 
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
+	// TODO: make a two-step process: first disambiguate file types, then try to load.
 	const char* ext = get_file_extension(filename);
 	if (is_directory(filename)) {
 		console_print("Trying to open a directory %s\n", filename);
+		dicom_t dicom = {};
+		dicom_open(&dicom, filename);
+	} else if (strcasecmp(ext, "dcm") == 0 || strlen(ext) == 0) {
 		dicom_t dicom = {};
 		dicom_open(&dicom, filename);
 	} else if (strcasecmp(ext, "json") == 0) {

@@ -96,6 +96,13 @@ typedef struct dicom_dict_packed_entry_t {
 	u8 vr_index;
 } dicom_dict_packed_entry_t;
 
+typedef struct dicom_dict_uid_entry_t {
+	char uid_last_part[20]; // after 1.2.840.10008.
+	u32 name_offset;
+	u32 keyword_offset;
+	u8 type;
+} dicom_dict_uid_entry_t;
+
 typedef struct dicom_tag_t {
 	union {
 		struct {

@@ -170,11 +170,31 @@ void lookup_tester() {
 }
 #endif
 
+static dicom_dict_uid_entry_t* dicom_uid_lookup(const char* uid) {
+	if (strncmp(uid, "1.2.840.10008.", 14) == 0) {
+		for (i32 i = 0; i < COUNT(dicom_dict_uid_entries); ++i) {
+			dicom_dict_uid_entry_t* entry = dicom_dict_uid_entries + i;
+			if (strcmp(uid+14, entry->uid_last_part) == 0) {
+				return entry;
+			}
+		}
+	}
+	return NULL;
+}
+
 static dicom_data_element_t read_dicom_data_element(u8 *pos, dicom_transfer_syntax_enum encoding) {
 	dicom_data_element_t result = {};
 	result.tag = *(dicom_tag_t*) pos;
 
-	if (encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN || result.tag.group == 2 /*File Meta info*/ ) {
+	if (result.tag.group == 0xFFFE) {
+		// special cases: DICOM_Item, DICOM_ItemDelimitationItem, DICOM_SequenceDelimitationItem
+		DUMMY_STATEMENT;
+		dicom_implicit_data_element_header_t* element_header = (dicom_implicit_data_element_header_t*) pos;
+		result.tag = element_header->tag;
+		result.length = element_header->value_length;
+		result.data = element_header->data;
+		result.vr = 0; // undefined
+	} else if (encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN || result.tag.group == 2 /*File Meta info*/ ) {
 		// Data element is Explicit VR.
 		dicom_explicit_data_element_header_t* element_header = (dicom_explicit_data_element_header_t*) pos;
 		result.vr = element_header->vr;
@@ -199,9 +219,11 @@ static dicom_data_element_t read_dicom_data_element(u8 *pos, dicom_transfer_synt
 	return result;
 }
 
-static void debug_read_dicom_dataset_recursive(dicom_t* dicom_state, u8* pos, u8* end, dicom_transfer_syntax_enum encoding,
+static i64 debug_read_dicom_dataset_recursive(dicom_t* dicom_state, u8* pos, i64 bytes_remaining, dicom_transfer_syntax_enum encoding,
                                                u32 item_number = 0) {
 	i32 element_count = 0;
+	u8* start = pos;
+	u8* end = pos + bytes_remaining;
 	do {
 		// Read an element
 		dicom_data_element_t element = read_dicom_data_element(pos, encoding);
@@ -216,35 +238,73 @@ static void debug_read_dicom_dataset_recursive(dicom_t* dicom_state, u8* pos, u8
 //		ASSERT(dicom_state->tag_handler_func != NULL);
 		dicom_state->current_item_number = item_number;
 		if (dicom_state->tag_handler_func != NULL) {
-			dicom_state->tag_handler_func(element.tag, element, dicom_state);
+			// Dump all tags (except Item and ItemDelimitationItem to reduce spam)
+			if (element.tag.as_u32 != DICOM_ItemDelimitationItem && element.tag.as_u32 != DICOM_Item) {
+				dicom_state->tag_handler_func(element.tag, element, dicom_state);
+			}
 		}
 
-		// TODO: handle sequence with unspecified length
+		if (element.tag.as_u32 == DICOM_ItemDelimitationItem) {
+			return element.data - start;
+		}
 
 		if (element.vr == DICOM_VR_SQ) {
 			// Start reading the items
 			pos = element.data;
-			u8* sequence_end = element.data + element.length;
+			u8* sequence_end;
+			if (element.length == DICOM_UNDEFINED_LENGTH) {
+				sequence_end = element.data + bytes_remaining;
+			} else {
+				sequence_end = element.data + element.length;
+			}
 			u32 sequence_item_number = 0;
 			while (pos < sequence_end /*&& sequence_item_number < 50*/) {
 				dicom_sequence_item_t* item = (dicom_sequence_item_t*) pos;
 				if (item->item_tag.as_u32 == DICOM_SequenceDelimitationItem) {
-					break; // End of sequence was reached
+					// End of sequence was reached
+					if (element.length == DICOM_UNDEFINED_LENGTH) {
+						// Hack: advance correctly to the next element by retroactively telling what the length was.
+						element.length = item->data - element.data;
+					}
+					break;
 				}
 				// Read the "Item Value Data Set" recursively!
 				++dicom_state->current_nesting_level;
-				debug_read_dicom_dataset_recursive(dicom_state, item->data, item->data + item->length, encoding,
+
+				// TODO: fix this ugliness: temp debug output only!
+//				if (dicom_state->tag_handler_func != NULL) {
+//					dicom_data_element_t temp_element = read_dicom_data_element(pos, encoding);
+//					dicom_state->tag_handler_func(temp_element.tag, temp_element, dicom_state);
+//				}
+
+				i64 item_bytes_available;
+				if (item->length == DICOM_UNDEFINED_LENGTH) {
+					// undefined length, need to wait for an item delimitation item
+					item_bytes_available = end - pos;
+				} else {
+					item_bytes_available = item->length;
+				}
+				i64 bytes_read = debug_read_dicom_dataset_recursive(dicom_state, item->data, item_bytes_available, encoding,
 				                                   sequence_item_number);
 				--dicom_state->current_nesting_level;
 
-				pos = item->data + item->length;
+				if (item->length == DICOM_UNDEFINED_LENGTH) {
+					pos = item->data + bytes_read;
+				} else {
+					pos = item->data + item->length;
+				}
 				++sequence_item_number;
 			}
 		}
 
 		++element_count;
-		pos = element.data + element.length;
+		if (element.length == DICOM_UNDEFINED_LENGTH) {
+			pos = element.data;
+		} else {
+			pos = element.data + element.length;
+		}
 	} while (pos < end /*&& element_count <= 150*/);
+	return pos - start;
 }
 
 static inline u32 dicom_get_element_length_without_trailing_whitespace(dicom_data_element_t* element) {
@@ -256,11 +316,14 @@ static inline u32 dicom_get_element_length_without_trailing_whitespace(dicom_dat
 }
 
 // Print information about a data element
-static void debug_print_dicom_element(dicom_data_element_t element, FILE* out) {
+static void debug_print_dicom_element(dicom_data_element_t element, memrw_t* string_builder) {
 	char vr_text[4] = {}; // convert 2-byte VR to printable form
 	*(u16*) vr_text = element.vr;
 	const char* keyword = get_dicom_tag_keyword(element.tag.as_u32);
-	fprintf(out, "(%04x,%04x) - %s - length: %d - %s",
+	if (keyword == NULL) {
+		keyword = get_dicom_tag_keyword(element.tag.as_u32);
+	}
+	memrw_printf(string_builder, "(%04x,%04x) - %s - length: %d - %s",
 	        element.tag.group, element.tag.element, vr_text, element.length,
 	        keyword);
 
@@ -281,30 +344,43 @@ static void debug_print_dicom_element(dicom_data_element_t element, FILE* out) {
 		u32 length = MIN(64, dicom_get_element_length_without_trailing_whitespace(&element));
 		strncpy(identifier, (const char*) element.data, length);
 		identifier[length] = '\0';
-		fprintf(out, " - \"%s\"", identifier);
+		memrw_printf(string_builder, " - \"%s\"", identifier);
+		if (element.vr == DICOM_VR_UI) {
+			dicom_dict_uid_entry_t* uid_entry = dicom_uid_lookup(identifier);
+			if (uid_entry) {
+				const char* keyword = dicom_dict_string_pool + uid_entry->keyword_offset;
+				memrw_printf(string_builder, " - %s", keyword);
+			}
+		}
 	} else if (element.vr == DICOM_VR_UL) {
 		u32 value = *(u32*) element.data;
-		fprintf(out, " - %u", value);
+		memrw_printf(string_builder, " - %u", value);
 	} else if (element.vr == DICOM_VR_US) {
 		u32 value = *(u16*) element.data;
-		fprintf(out, " - %u", value);
+		memrw_printf(string_builder, " - %u", value);
 	} else if (element.vr == DICOM_VR_FL) {
 		float value = *(float*) element.data;
-		fprintf(out, " - %g", value);
+		memrw_printf(string_builder, " - %g", value);
 	}
-	putc('\n', out);
+	memrw_putc('\n', string_builder);
 }
 
 // Print information about a nested data element from a sequence.
-static inline void
-debug_print_dicom_element(dicom_data_element_t element, FILE* out, i32 nesting_level, u32 item_number) {
+static void debug_print_dicom_element(dicom_data_element_t element, FILE* out, i32 nesting_level, u32 item_number) {
+	memrw_t string_builder = memrw_create(512);
 	if (nesting_level > 0) {
 		for (i32 i = 1; i < nesting_level; ++i) {
-			fprintf(out, "  "); // extra indentation
+			memrw_write_literal("  ", &string_builder); // extra indentation
 		}
-		fprintf(out, "  %u: ", item_number);
+		memrw_printf(&string_builder, "  %u: ", item_number);
 	}
-	debug_print_dicom_element(element, out);
+	debug_print_dicom_element(element, &string_builder);
+	memrw_putc('\0', &string_builder);
+	console_print("%s", string_builder.data);
+	if (out) {
+		fprintf(out, "%s", string_builder.data);
+	}
+	memrw_destroy(&string_builder);
 }
 
 static void
@@ -325,12 +401,13 @@ void dicom_debug_load_file(dicom_t* dicom, const char* filename) {
 			u32 prefix = *(u32*) dicom_header->prefix;
 
 			if (prefix == LE_4CHARS('D','I','C','M')) {
-				console_print("Hooray! '%s' looks like a valid DICOM file!\n", filename);
+				console_print("Found DICOM file: '%s'\n", filename);
 				buffer.cursor = sizeof(dicom_header_t);
 				if (dicom->debug_output_file) {
 					fprintf(dicom->debug_output_file, "\nFile: %s\n\n", filename);
 				}
-				debug_read_dicom_dataset_recursive(dicom, buffer.data + buffer.cursor, buffer.data + (buffer.used_size - buffer.cursor), DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN);
+				i64 payload_bytes = (buffer.used_size - buffer.cursor);
+				debug_read_dicom_dataset_recursive(dicom, buffer.data + buffer.cursor, payload_bytes, DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN);
 
 			} else {
 				//printf("Oh no! '%s' does not seem to be a DICOM file!\n", filename);
@@ -367,8 +444,8 @@ void dicom_open(dicom_t* dicom, const char* path) {
 				console_print("File: %s\n", full_filename);
 
 #if DO_DEBUG
+				dicom_debug_load_file(dicom, full_filename);
 				if (strcmp(current_filename, "10_0") == 0) {
-					dicom_debug_load_file(dicom, full_filename);
 				}
 #endif
 
@@ -382,6 +459,14 @@ void dicom_open(dicom_t* dicom, const char* path) {
 				fclose(dicom->debug_output_file);
 			}
 
+		}
+	} else {
+		// not a directory but a file
+		dicom->debug_output_file = fopen("dicom_dump.txt", "wb");
+		dicom->tag_handler_func = handle_dicom_tag_for_tag_dumping;
+		dicom_debug_load_file(dicom, path);
+		if (dicom->debug_output_file) {
+			fclose(dicom->debug_output_file);
 		}
 	}
 }
@@ -447,6 +532,7 @@ void dicom_dict_init_hash_table() {
 				i32 new_index = (index + (j)) % dicom_dict_hash_table_size;
 				slot = dicom_dict_hash_table + new_index;
 				if (slot->tag == 0) {
+					*slot = entry;
 					resolved = true;
 					break; // resolved
 				} else {
