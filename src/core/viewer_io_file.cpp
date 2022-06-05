@@ -551,63 +551,156 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 
 			}
 		}
-
-
 	}
-
 }
 
-bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
-	// TODO: make a two-step process: first disambiguate file types, then try to load.
+static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
+	if (file->is_regular_file) {
+		if (strlen(file->ext) == 0) { // no extension
+			if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
+				return VIEWER_FILE_TYPE_DICOM;
+			} else {
+				return VIEWER_FILE_TYPE_UNKNOWN;
+			}
+		} if (strcasecmp(file->ext, "tiff") == 0 ||
+		      strcasecmp(file->ext, "tif") == 0 ||
+		      strcasecmp(file->ext, "ptif") == 0)
+		{
+			return VIEWER_FILE_TYPE_TIFF;
+		} else if (strcasecmp(file->ext, "png") == 0 ||
+		           strcasecmp(file->ext, "jpg") == 0 ||
+		           strcasecmp(file->ext, "jpeg") == 0 ||
+		           strcasecmp(file->ext, "bmp") == 0 ||
+		           strcasecmp(file->ext, "ppm") == 0)
+		{
+			return VIEWER_FILE_TYPE_SIMPLE_IMAGE; // i.e. stb_image compatible
+		} else if (strcasecmp(file->ext, "xml") == 0) {
+			return VIEWER_FILE_TYPE_XML;
+		} else if (strcasecmp(file->ext, "json") == 0) {
+			return VIEWER_FILE_TYPE_JSON;
+		} else if (strcasecmp(file->ext, "dcm") == 0) {
+			return VIEWER_FILE_TYPE_DICOM;
+		} else if (strcasecmp(file->ext, "isyntax") == 0) {
+			return VIEWER_FILE_TYPE_ISYNTAX;
+		} else {
+			// TODO: this is a total guess, maybe flesh out more?
+			return VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE;
+		}
+	}
+	return VIEWER_FILE_TYPE_UNKNOWN;
+}
+
+file_info_t viewer_get_file_info(const char* filename) {
+	file_info_t file = {};
+	size_t filename_len = strlen(filename);
+	if (filename_len >= sizeof(file.filename)) {
+		console_print_error("viewer_get_file_info(): filename too long (length=%u): '%s'\n", filename_len, filename);
+		return file;
+	}
+	memcpy(file.filename, filename, filename_len);
 	const char* ext = get_file_extension(filename);
-	if (is_directory(filename)) {
-		console_print("Trying to open a directory %s\n", filename);
-		dicom_t dicom = {};
-		dicom_open(&dicom, filename);
-	} else if (strcasecmp(ext, "dcm") == 0 || strlen(ext) == 0) {
-		dicom_t dicom = {};
-		dicom_open(&dicom, filename);
-	} else if (strcasecmp(ext, "json") == 0) {
-		// TODO: disambiguate between COCO annotations and case lists
-		reload_global_caselist(app_state, filename);
-		show_slide_list_window = true;
-		caselist_select_first_case(app_state, &app_state->caselist);
-		return true;
-	} else if (strcasecmp(ext, "xml") == 0) {
-		// TODO: how to get the correct scale factor for the annotations?
-		// Maybe a placeholder value, which gets updated based on the scale of the scene image?
+	strncpy(file.ext, ext, sizeof(file.ext) - 1);
+
+	struct stat st;
+	if (stat(filename, &st) == 0) {
+		file.is_valid = true;
+		file.is_directory = S_ISDIR(st.st_mode);
+		file.is_regular_file = S_ISREG(st.st_mode);
+		if (file.is_regular_file) {
+			file.filesize = st.st_size;
+			file_stream_t fp = file_stream_open_for_reading(filename);
+			if (fp) {
+				size_t bytes_to_read = MIN(file.filesize, sizeof(file.header));
+				size_t bytes_read = file_stream_read(file.header, bytes_to_read, fp);
+				if (bytes_read == bytes_to_read) {
+					file.type = viewer_determine_file_type(&file);
+					switch(file.type) {
+						default: break;
+						case VIEWER_FILE_TYPE_SIMPLE_IMAGE:
+						case VIEWER_FILE_TYPE_TIFF:
+						case VIEWER_FILE_TYPE_DICOM:
+						case VIEWER_FILE_TYPE_ISYNTAX:
+						case VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE:
+							file.is_image = true;
+							break;
+					}
+				} else {
+					console_print_error("viewer_get_file_info(): read header failed (tried to read %d bytes, but read %d)\n", bytes_to_read, bytes_read);
+					file.is_valid = false;
+				}
+				file_stream_close(fp);
+			} else {
+				file.is_valid = false;
+			}
+		}
+	}
+	return file;
+}
+
+directory_info_t viewer_get_directory_info(const char* path) {
+	directory_info_t directory = {};
+	directory_listing_t* listing = create_directory_listing_and_find_first_file(path, NULL);
+	if (listing) {
+		directory.is_valid = true;
+		do {
+			char* current_filename = get_current_filename_from_directory_listing(listing);
+			char full_filename[512];
+			snprintf(full_filename, sizeof(full_filename), "%s" PATH_SEP "%s", path, current_filename);
+			file_info_t file = viewer_get_file_info(full_filename);
+			if (file.is_valid) {
+				if (file.is_directory) {
+					// TODO: handle directory inside directory...
+				} else if (file.is_regular_file) {
+					if (file.type == VIEWER_FILE_TYPE_DICOM) {
+						directory.contains_dicom_files = true;
+						arrput(directory.dicom_files, file);
+					} else {
+						if (file.is_image) {
+							directory.contains_nondicom_images = true;
+						}
+					}
+				}
+			}
+
+//			console_print("File: %s\n", full_filename);
+
+
+//				FILE* fp = fopen(full_filename, "rb");
+		} while (find_next_file(listing));
+		close_directory_listing(listing);
+	}
+
+	return directory;
+}
+
+bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, u32 filetype_hint) {
+	// assume it is an image file?
+	reset_global_caselist(app_state);
+	bool is_base_image = filetype_hint != FILETYPE_HINT_OVERLAY;
+	if (is_base_image) {
+		unload_all_images(app_state);
+		// Unload any old annotations if necessary
+		unload_and_reinit_annotations(&app_state->scene.annotation_set);
+	}
+	load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
+	image_t image = load_image_from_file(app_state, file->filename, filetype_hint);
+	if (image.is_valid) {
+		add_image(app_state, image, is_base_image);
+
 		annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 		unload_and_reinit_annotations(annotation_set);
-		annotation_set->mpp = V2F(0.25f, 0.25f);
-		return load_asap_xml_annotations(app_state, filename);
-	} else {
-		// assume it is an image file?
-		reset_global_caselist(app_state);
-		bool is_base_image = filetype_hint != FILETYPE_HINT_OVERLAY;
-		if (is_base_image) {
-			unload_all_images(app_state);
-			// Unload any old annotations if necessary
-			unload_and_reinit_annotations(&app_state->scene.annotation_set);
-		}
-		load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
-		image_t image = load_image_from_file(app_state, filename, filetype_hint);
-		if (image.is_valid) {
-			add_image(app_state, image, is_base_image);
+		annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
 
-			annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-			unload_and_reinit_annotations(annotation_set);
-			annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
+		// Check if there is an associated ASAP XML or COCO JSON annotations file
+		size_t filename_len = strlen(file->filename);
+		size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
+		char* temp_filename = (char*) alloca(temp_size);
+		strncpy(temp_filename, file->filename, temp_size);
+		bool were_annotations_loaded = false;
 
-			// Check if there is an associated ASAP XML or COCO JSON annotations file
-			size_t filename_len = strlen(filename);
-			size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
-			char* temp_filename = (char*) alloca(temp_size);
-			strncpy(temp_filename, filename, temp_size);
-			bool were_annotations_loaded = false;
-
-			// Load JSON first
+		// Load JSON first
 #if 0
-			replace_file_extension(temp_filename, temp_size, "json");
+		replace_file_extension(temp_filename, temp_size, "json");
 			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
 			if (file_exists(temp_filename)) {
 				console_print("Found JSON annotations: '%s'\n", temp_filename);
@@ -627,39 +720,89 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 				coco_init_main_image(&annotation_set->coco, &image);
 			}
 #else
-			// TODO: remove?
-			coco_init_main_image(&annotation_set->coco, &image);
+		// TODO: remove?
+		coco_init_main_image(&annotation_set->coco, &image);
 #endif
 
-			// TODO: use most recently updated annotations?
-			replace_file_extension(temp_filename, temp_size, "xml");
-			if (file_exists(temp_filename)) {
-				console_print("Found XML annotations: '%s'\n", temp_filename);
-				if (!were_annotations_loaded) {
-					load_asap_xml_annotations(app_state, temp_filename);
-				}
+		// TODO: use most recently updated annotations?
+		replace_file_extension(temp_filename, temp_size, "xml");
+		if (file_exists(temp_filename)) {
+			console_print("Found XML annotations: '%s'\n", temp_filename);
+			if (!were_annotations_loaded) {
+				load_asap_xml_annotations(app_state, temp_filename);
 			}
-
-
-			// TODO: only save/convert COCO, not the XML as well!
-			if (annotation_set->export_as_asap_xml) {
-//				annotation_set->modified = true; // to force export in COCO as well
-			}
-
-			console_print("Loaded '%s'\n", filename);
-			if (image.backend == IMAGE_BACKEND_ISYNTAX) {
-				console_print("   iSyntax: loading took %g seconds\n", image.isyntax.loading_time);
-			}
-			return true;
-
-		} else {
-			console_print_error("Could not load '%s'\n", filename);
-			gui_add_modal_message_popup("Error##load_generic_file", "Could not load '%s'.\n", filename);
-			return false;
 		}
 
+
+		// TODO: only save/convert COCO, not the XML as well!
+		if (annotation_set->export_as_asap_xml) {
+//				annotation_set->modified = true; // to force export in COCO as well
+		}
+
+		console_print("Loaded '%s'\n", file->filename);
+		if (image.backend == IMAGE_BACKEND_ISYNTAX) {
+			console_print("   iSyntax: loading took %g seconds\n", image.isyntax.loading_time);
+		}
+		return true;
+
+	} else {
+		console_print_error("Could not load '%s'\n", file->filename);
+		gui_add_modal_message_popup("Error##load_generic_file", "Could not load '%s'.\n", file->filename);
+		return false;
 	}
-	return false;
+}
+
+
+bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
+	file_info_t file = viewer_get_file_info(filename);
+	bool success = false;
+	if (file.is_valid) {
+		if (file.is_regular_file) {
+			if (file.type == VIEWER_FILE_TYPE_DICOM) {
+				// TODO: load the rest of the directory
+				dicom_series_t dicom = {};
+				dicom_open_from_file(&dicom, &file);
+				success = true;
+			} else if (file.is_image) {
+				success = viewer_load_new_image(app_state, &file, filetype_hint);
+			} else {
+				if (file.type == VIEWER_FILE_TYPE_XML) {
+					// TODO: how to get the correct scale factor for the annotations?
+					// Maybe a placeholder value, which gets updated based on the scale of the scene image?
+					annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+					unload_and_reinit_annotations(annotation_set);
+					annotation_set->mpp = V2F(0.25f, 0.25f);
+					success = load_asap_xml_annotations(app_state, filename);
+				} else if (file.type == VIEWER_FILE_TYPE_JSON) {
+					// TODO: disambiguate between COCO annotations and case lists
+					reload_global_caselist(app_state, filename);
+					show_slide_list_window = true;
+					success = caselist_select_first_case(app_state, &app_state->caselist);
+				}
+			}
+		} else if (file.is_directory) {
+			directory_info_t directory = viewer_get_directory_info(filename);
+			if (directory.is_valid) {
+				if (directory.contains_dicom_files) {
+					console_print("Trying to open a directory '%s'\n", filename);
+					dicom_series_t dicom = {};
+					dicom_open_from_directory(&dicom, &directory);
+				}
+				arrfree(directory.dicom_files); // TODO: transfer ownership?
+			}
+
+
+
+			success = true;
+		}
+	}
+
+	if (!success) {
+		console_print_error("Could not load '%s'\n", filename);
+		gui_add_modal_message_popup("Error##load_generic_file", "Could not load '%s'.\n", filename);
+	}
+	return success;
+
 }
 
 const char* get_active_directory(app_state_t* app_state) {

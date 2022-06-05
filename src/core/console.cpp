@@ -26,21 +26,18 @@
 #endif
 
 struct console_log_item_t {
-	char* text;
+	i64 text_offset_in_string_pool;
 	bool has_color;
 	u32 item_type;
 };
 
-console_log_item_t* console_log_items; //sb
+static console_log_item_t* console_log_items; //sb
+static memrw_t console_string_pool;
+
 
 void console_clear_log() {
 	benaphore_lock(&console_printer_benaphore);
-	for (int i = 0; i < arrlen(console_log_items); i++) {
-		console_log_item_t* item = console_log_items + i;
-		if (item->text) {
-			free(item->text);
-		}
-	}
+	memrw_rewind(&console_string_pool);
 	arrfree(console_log_items);
 	console_log_items = NULL;
 	benaphore_unlock(&console_printer_benaphore);
@@ -403,6 +400,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 			while (clipper.Step()) {
 				for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
 					console_log_item_t item = console_log_items[i];
+					const char* text = (char*)console_string_pool.data + item.text_offset_in_string_pool;
 //				    if (!Filter.PassFilter(item))
 //					    continue;
 
@@ -412,10 +410,10 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 					if (item.has_color) {
 						if (item.item_type == 1)      { color = ImVec4(1.0f, 0.4f, 0.4f, 1.0f);}
 						else if (item.item_type == 2) { color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);}
-						else if (strncmp(item.text, "# ", 2) == 0) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f);  }
+						else if (strncmp(text, "# ", 2) == 0) { color = ImVec4(1.0f, 0.8f, 0.6f, 1.0f);  }
 						ImGui::PushStyleColor(ImGuiCol_Text, color);
 					}
-					ImGui::TextUnformatted(item.text);
+					ImGui::TextUnformatted(text);
 					if (item.has_color) {
 						ImGui::PopStyleColor();
 					}
@@ -491,8 +489,10 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 }
 
 
-
 void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_type) {
+	if (!console_string_pool.data) {
+		memrw_init(&console_string_pool, KILOBYTES(64));
+	}
 	size_t num_lines = 0;
 	char** lines = split_into_lines(raw, &num_lines);
 	if (lines) {
@@ -501,13 +501,10 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 			size_t line_len = strlen(line);
 			if (line && line_len > 0) {
 				console_log_item_t new_item = {};
-				// TODO: fix strdup() conflicting with ltmalloc()
-				new_item.text = (char*)malloc(line_len+1);
-				memcpy(new_item.text, line, line_len);
-				new_item.text[line_len] = '\0';
+				benaphore_lock(&console_printer_benaphore);
+				new_item.text_offset_in_string_pool = memrw_string_pool_push(&console_string_pool, line);
 				new_item.has_color = has_color;
 				new_item.item_type = item_type;
-				benaphore_lock(&console_printer_benaphore);
 				arrput(console_log_items, new_item);
 				benaphore_unlock(&console_printer_benaphore);
 			}

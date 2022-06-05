@@ -37,6 +37,7 @@
 
 #define VIEWER_IMPL
 #include "viewer.h"
+#include "listing.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
 #define STB_IMAGE_IMPLEMENTATION

@@ -36,11 +36,36 @@ typedef struct image_t image_t;
 #include "caselist.h"
 #include "annotation.h"
 
-typedef struct texture_t {
-	u32 texture;
-	i32 width;
-	i32 height;
-} texture_t;
+
+typedef enum viewer_file_type_enum {
+	VIEWER_FILE_TYPE_UNKNOWN = 0,
+	VIEWER_FILE_TYPE_SIMPLE_IMAGE,
+	VIEWER_FILE_TYPE_TIFF,
+	VIEWER_FILE_TYPE_DICOM,
+	VIEWER_FILE_TYPE_ISYNTAX,
+	VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE,
+	VIEWER_FILE_TYPE_XML,
+	VIEWER_FILE_TYPE_JSON,
+} viewer_file_type_enum;
+
+typedef struct file_info_t {
+	char filename[512];
+	char ext[16];
+	i64 filesize;
+	viewer_file_type_enum type;
+	bool is_valid;
+	bool is_directory;
+	bool is_regular_file;
+	bool is_image;
+	u8 header[256];
+} file_info_t;
+
+typedef struct directory_info_t {
+	file_info_t* dicom_files; // array
+	bool contains_dicom_files;
+	bool contains_nondicom_images;
+	bool is_valid;
+} directory_info_t;
 
 
 #define WSI_TILE_DIM 512

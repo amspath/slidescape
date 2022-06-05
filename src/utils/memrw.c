@@ -98,6 +98,14 @@ i64 memrw_write_string(const char* s, memrw_t* buffer) {
 	return memrw_write(s, buffer, len);
 }
 
+// Push a zero-terminated string onto the buffer, and return the offset in the buffer (for use as a string pool)
+i64 memrw_string_pool_push(memrw_t* buffer, const char* s) {
+	i64 cursor = buffer->cursor;
+	memrw_write_string(s, buffer);
+	memrw_putc('\0', buffer);
+	return cursor;
+}
+
 i64 memrw_printf(memrw_t* buffer, const char* fmt, ...) {
 	char buf[4096];
 	va_list args;

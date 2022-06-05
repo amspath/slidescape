@@ -20,11 +20,13 @@
 
 #include "common.h"
 
+#ifndef DONT_INCLUDE_DICOM_DICT_H
+#include "dicom_dict.h"
+#endif
+
 // Convert two-byte strings into their little-endian number equivalent
 #define LE_2CHARS(a,b) ( ((b)<<8) | (a) )
 #define LE_4CHARS(a,b,c,d) ( ((d)<<24) | ((c)<<16) | ((b)<<8) | (a) )
-
-#define DICOM_TAG(g,e) ( (u32) (((e)<<16) | ((u16)g)) )
 
 enum dicom_value_representation_enum {
 	DICOM_VR_AE = LE_2CHARS('A','E'), // Application Entity      // 4 bytes fixed
@@ -82,26 +84,6 @@ typedef struct dicom_header_t {
 #define DICOM_UNDEFINED_LENGTH 0xFFFFFFFF
 
 #pragma pack(push,1)
-typedef struct dicom_dict_entry_t {
-	u32 tag;
-	u32 name_offset;
-	u32 keyword_offset;
-	u16 vr;
-} dicom_dict_entry_t;
-
-typedef struct dicom_dict_packed_entry_t {
-	u32 tag;
-	u8 name_len;
-	u8 keyword_len;
-	u8 vr_index;
-} dicom_dict_packed_entry_t;
-
-typedef struct dicom_dict_uid_entry_t {
-	char uid_last_part[20]; // after 1.2.840.10008.
-	u32 name_offset;
-	u32 keyword_offset;
-	u8 type;
-} dicom_dict_uid_entry_t;
 
 typedef struct dicom_tag_t {
 	union {
@@ -110,6 +92,9 @@ typedef struct dicom_tag_t {
 			u16 element;
 		};
 		u32 as_u32;
+#ifndef DONT_INCLUDE_DICOM_DICT_H
+		dicom_tag_enum as_enum;
+#endif
 	};
 } dicom_tag_t;
 
@@ -139,21 +124,57 @@ typedef struct dicom_data_element_t {
 	dicom_tag_t tag;
 	u32 length;
 	u16 vr;
+	bool is_valid;
 	u8* data;
+	i64 data_offset;
 } dicom_data_element_t;
 
 
-typedef struct dicom_t dicom_t; // fwd declaration
-typedef void dicom_parser_callback_func_t(dicom_tag_t tag, dicom_data_element_t element, dicom_t* dicom_state);
+typedef struct dicom_series_t dicom_series_t; // fwd declaration
+typedef void dicom_parser_callback_func_t(dicom_tag_t tag, dicom_data_element_t element, dicom_series_t* dicom_state);
 
-typedef struct dicom_t {
+typedef struct dicom_parser_pos_t {
+	dicom_data_element_t element;
+	i64 offset;
+	i64 element_index;
+	i64 item_number;
+	i64 bytes_left_in_sequence_or_item;
+} dicom_parser_pos_t;
+
+typedef struct dicom_series_t {
 	dicom_parser_callback_func_t* tag_handler_func;
 	i32 current_nesting_level;
 	u32 current_item_number;
+	i64 bytes_read;
 	dicom_transfer_syntax_enum encoding;
 	FILE* debug_output_file;
-} dicom_t;
+
+	u8* data_start;
+	i64 bytes_available;
+	i64 total_bytes_in_stream;
+	dicom_parser_pos_t pos_stack[16]; // one per nesting level
+} dicom_series_t;
+
+typedef struct dicom_instance_t {
+	dicom_series_t* series;
+	dicom_parser_callback_func_t* tag_handler_func;
+	i32 nesting_level;
+	u32 current_item_number;
+	dicom_transfer_syntax_enum encoding;
+	u8* data;
+	i64 bytes_read_from_file;
+	i64 total_bytes_in_stream;
+	bool found_pixel_data;
+	dicom_parser_pos_t pos_stack[16]; // one per nesting level
+} dicom_instance_t;
+
+typedef struct dicom_context_t {
+
+} dicom_context_t;
+
+typedef struct directory_info_t directory_info_t; // from viewer.h
 
 bool dicom_init();
-void dicom_open(dicom_t* dicom, const char* path);
-
+bool is_file_a_dicom_file(u8* file_header_data, size_t file_header_data_len);
+bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* directory);
+bool dicom_open_from_file(dicom_series_t* dicom, file_info_t* file);
