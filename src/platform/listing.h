@@ -96,7 +96,7 @@ struct directory_listing_t {
 };
 
 directory_listing_t* create_directory_listing_and_find_first_file(const char* directory, const char* extension) {
-	directory_listing_t* data = calloc(1, sizeof(directory_listing_t));
+	directory_listing_t* data = (directory_listing_t*)calloc(1, sizeof(directory_listing_t));
 	bool ok = false;
 	data->dp = opendir(directory);
 	if (data->dp != NULL) {

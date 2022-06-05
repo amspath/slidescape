@@ -221,7 +221,6 @@ set(VIEWER_SOURCE_FILES
         utils/stringutils.c
         utils/mathutils.c
         utils/memrw.c
-        utils/random.c
         utils/triangulate.c
         utils/lz4.c
         utils/yxml.c
@@ -297,6 +296,8 @@ elseif(APPLE)
     endif()
 else()
     add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
+    find_package(SDL2 REQUIRED)
+    include_directories(${SDL2_INCLUDE_DIRS})
     target_link_libraries(slidescape pthread dl m GL GLEW SDL2)
 
     # Create slidescape.desktop and install/uninstall scripts, and copy them to the output directory
