@@ -120,10 +120,9 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 
 	i32 levels_in_chunk = (scale % 3) + 1;
 
-	arena_t* temp_arena = &local_thread_memory->temp_arena;
-	temp_memory_t temp_memory = begin_temp_memory(temp_arena);
+	temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 
-	u8** data_chunks = arena_push_array(temp_arena, current_level->tile_count, u8*);
+	u8** data_chunks = arena_push_array(temp_memory.arena, current_level->tile_count, u8*);
 	memset(data_chunks, 0, current_level->tile_count * sizeof(u8*));
 
 	// Read codeblock data from disk
@@ -142,8 +141,8 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 				isyntax_codeblock_t* last_codeblock = wsi->codeblocks + tile->codeblock_chunk_index + chunk_codeblock_count - 1;
 				u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
 				u64 read_size = offset1 - offset0;
-				arena_align(temp_arena, 64);
-				data_chunks[tile_index] = (u8*) arena_push_size(temp_arena, read_size);
+				arena_align(temp_memory.arena, 64);
+				data_chunks[tile_index] = (u8*) arena_push_size(temp_memory.arena, read_size);
 
 				size_t bytes_read = file_handle_read_at_offset(data_chunks[tile_index], isyntax->file_handle, offset0, read_size);
 				if (!(bytes_read > 0)) {

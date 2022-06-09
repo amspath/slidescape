@@ -415,12 +415,14 @@ void console_print_error(const char* fmt, ...); // // defined in console.cpp
 #undef extern
 #endif
 
+extern THREAD_LOCAL thread_memory_t* local_thread_memory;
+static inline temp_memory_t begin_temp_memory_on_local_thread() { return begin_temp_memory(&local_thread_memory->temp_arena); }
+
 extern int g_argc;
 extern const char** g_argv;
 extern bool is_fullscreen;
 extern bool is_program_running;
 extern bool need_quit;
-extern THREAD_LOCAL thread_memory_t* local_thread_memory;
 extern input_t inputs[2];
 extern input_t *old_input;
 extern input_t *curr_input;

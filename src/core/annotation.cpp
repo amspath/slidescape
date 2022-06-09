@@ -989,7 +989,7 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 	}
 	if (has_selected) {
 		// rebuild the annotations, leaving out the deleted ones
-		temp_memory_t temp_memory = begin_temp_memory(&local_thread_memory->temp_arena);
+		temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 		size_t copy_size = annotation_set->active_annotation_count * sizeof(i32);
 		i32* temp_copy = (i32*) arena_push_size(temp_memory.arena, copy_size);
 		memcpy(temp_copy, annotation_set->active_annotation_indices, copy_size);
@@ -1259,7 +1259,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	bool did_popup = false;
 
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
-		temp_memory_t temp_memory = begin_temp_memory(&local_thread_memory->temp_arena);
+		temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
 		annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };

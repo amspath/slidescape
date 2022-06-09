@@ -1504,8 +1504,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i32 idwt_stride = idwt_width;
 	size_t row_copy_size = block_width * sizeof(icoeff_t);
 
-	arena_t* arena = &local_thread_memory->temp_arena;
-	temp_memory_t temp_memory = begin_temp_memory(arena);
+	temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 
 	icoeff_t* Y = NULL;
 	icoeff_t* Co = NULL;
@@ -1520,7 +1519,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 		i64 start_idwt = get_clock();
 		// idwt will be allocated in temporary memory (only needed for the duration of this function)
 		size_t idwt_buffer_size = idwt_width * idwt_height * sizeof(icoeff_t);
-		icoeff_t* idwt = arena_push_size(arena, idwt_buffer_size);
+		icoeff_t* idwt = arena_push_size(temp_memory.arena, idwt_buffer_size);
 		memset(idwt, 0, idwt_buffer_size);
 		invalid_edges |= isyntax_idwt_tile_for_color_channel(isyntax, wsi, scale, tile_x, tile_y, color, idwt);
 		elapsed_idwt += get_seconds_elapsed(start_idwt, get_clock());
@@ -1761,8 +1760,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		return true;
 	}
 
-	arena_t* temp_arena = &local_thread_memory->temp_arena;
-	temp_memory_t temp_memory = begin_temp_memory(temp_arena);
+	temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 
 	i32 bits_read = 0;
 	i32 block_size_in_bits = compressed_size * 8;
@@ -1905,7 +1903,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	}
 
 	// Decode the message
-	u8* decompressed_buffer = (u8*)arena_push_size(temp_arena, serialized_length); // TODO: check that length is sane
+	u8* decompressed_buffer = (u8*)arena_push_size(temp_memory.arena, serialized_length); // TODO: check that length is sane
 
 	u32 zerorun_code = huffman.code[zerorun_symbol];
 	u32 zerorun_code_size = huffman.size[zerorun_symbol];
@@ -2079,8 +2077,8 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	// unpack bitplanes
 	i32 compressed_bitplane_index = 0;
-	arena_align(temp_arena, 32);
-	u16* coeff_buffer = (u16*)arena_push_size(temp_arena, coeff_buffer_size);
+	arena_align(temp_memory.arena, 32);
+	u16* coeff_buffer = (u16*)arena_push_size(temp_memory.arena, coeff_buffer_size);
 	memset(coeff_buffer, 0, coeff_buffer_size);
 	memset(out_buffer, 0, coeff_buffer_size);
 
