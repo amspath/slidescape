@@ -24,40 +24,21 @@
 #include "viewer.h"
 
 #include "dicom.h"
-#include "dicom_dict.h"
+#include "dicom_wsi.h"
 
 #include "lz4.h"
 
 #define LISTING_IMPLEMENTATION
 #include "listing.h"
 
-static void dicom_switch_data_encoding(dicom_series_t* dicom_state, dicom_data_element_t *transfer_syntax_uid) {
+
+static void dicom_switch_data_encoding(dicom_instance_t* instance, dicom_data_element_t *transfer_syntax_uid) {
 
 	// TODO: what if the transfer UID only applies to the interpretation of e.g. pixel data?
 	// list of UIDs: https://dicom.nema.org/medical/dicom/current/output/chtml/part06/chapter_A.html
 
 	// The first 18 chars do not discriminate (all have the prefix "1.2.840.10008.1.2")
-	const char* suffix = (const char*) &transfer_syntax_uid->data[17];
-	u32 uid_length = transfer_syntax_uid->length;
-
-	if (uid_length == 20 && suffix[0] == '.') {
-		if (suffix[1] == '1') {
-			dicom_state->encoding = DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN; // 1.2.840.10008.1.2.1
-		} else if (suffix[1] == '2') {
-			dicom_state->encoding = DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN_RETIRED; // 1.2.840.10008.1.2.2
-		}
-	} else if (uid_length == 23 && strncmp(suffix, ".1.99", 5) == 0) {
-		dicom_state->encoding = DICOM_TRANSFER_SYNTAX_DEFLATED_EXPLICIT_VR_LITTLE_ENDIAN; // 1.2.840.10008.1.2.1.99
-	}
-}
-
-static void dicom_switch_data_encoding2(dicom_instance_t* instance, dicom_data_element_t *transfer_syntax_uid) {
-
-	// TODO: what if the transfer UID only applies to the interpretation of e.g. pixel data?
-	// list of UIDs: https://dicom.nema.org/medical/dicom/current/output/chtml/part06/chapter_A.html
-
-	// The first 18 chars do not discriminate (all have the prefix "1.2.840.10008.1.2")
-	const char* suffix = (const char*) &transfer_syntax_uid->data[17];
+	const char* suffix = (const char*) &(instance->data + transfer_syntax_uid->data_offset)[17];
 	u32 uid_length = transfer_syntax_uid->length;
 
 	if (uid_length == 20 && suffix[0] == '.') {
@@ -191,16 +172,29 @@ void lookup_tester() {
 }
 #endif
 
-static dicom_dict_uid_entry_t* dicom_uid_lookup(const char* uid) {
-	if (strncmp(uid, "1.2.840.10008.", 14) == 0) {
-		for (i32 i = 0; i < COUNT(dicom_dict_uid_entries); ++i) {
+static dicom_uid_enum dicom_uid_lookup(const char* uid, i32 len) {
+	// TODO: hash table
+	if (len > 14 && strncmp(uid, "1.2.840.10008.", 14) == 0) {
+		for (i32 i = 1; i < COUNT(dicom_dict_uid_entries); ++i) {
 			dicom_dict_uid_entry_t* entry = dicom_dict_uid_entries + i;
-			if (strcmp(uid+14, entry->uid_last_part) == 0) {
-				return entry;
+			if (strncmp(uid+14, entry->uid_last_part, len - 14) == 0) {
+				return i;
 			}
 		}
+		char uid_copy[65] = {};
+		strncpy(uid_copy, uid, MIN(len, sizeof(uid_copy)-1));
+		console_print("DICOM UID not found: %s\n", uid_copy);
 	}
-	return NULL;
+	return 0;
+}
+
+static dicom_dict_uid_entry_t* dicom_uid_get_entry(const char* uid, i32 len) {
+	dicom_uid_enum uid_index = dicom_uid_lookup(uid, len);
+	if (uid_index > 0) {
+		return dicom_dict_uid_entries + uid_index;
+	} else {
+		return NULL;
+	}
 }
 
 static dicom_data_element_t read_dicom_data_element(u8* data_start, i64 data_offset, dicom_transfer_syntax_enum encoding, i64 bytes_available) {
@@ -219,7 +213,7 @@ static dicom_data_element_t read_dicom_data_element(u8* data_start, i64 data_off
 			dicom_implicit_data_element_header_t* element_header = (dicom_implicit_data_element_header_t*) pos;
 			result.tag = element_header->tag;
 			result.length = element_header->value_length;
-			result.data = element_header->data;
+//			result.data = element_header->data;
 			result.data_offset = data_offset + sizeof(*element_header);
 			result.vr = 0; // undefined
 		} else if (encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN || result.tag.group == 2 /*File Meta info*/ ) {
@@ -231,14 +225,14 @@ static dicom_data_element_t read_dicom_data_element(u8* data_start, i64 data_off
 			if (need_alternate_element_layout(result.vr)) {
 				if (bytes_available >= 12) {
 					result.length = *(u32*) &element_header->variable_part[+2];
-					result.data = pos + 12; // Advance to value field
-					result.data_offset = data_offset + 12;
+//					result.data = pos + 12; // Advance to value field
+					result.data_offset = data_offset + 12; // Advance to value field
 				} else {
 					result.is_valid = false;
 				}
 			} else {
 				result.length = *(u16*) &element_header->variable_part[0];
-				result.data = pos + 8;
+//				result.data = pos + 8;
 				result.data_offset = data_offset + 8;
 			}
 		} else {
@@ -246,7 +240,7 @@ static dicom_data_element_t read_dicom_data_element(u8* data_start, i64 data_off
 			dicom_implicit_data_element_header_t* element_header = (dicom_implicit_data_element_header_t*) pos;
 			result.tag = element_header->tag;
 			result.length = element_header->value_length;
-			result.data = element_header->data;
+//			result.data = element_header->data;
 			result.data_offset = data_offset + sizeof(*element_header);
 			result.vr = get_dicom_tag_vr(result.tag.as_u32); // look up the VR from the data dictionary.
 		}
@@ -255,22 +249,32 @@ static dicom_data_element_t read_dicom_data_element(u8* data_start, i64 data_off
 	return result;
 }
 
-static inline u32 dicom_get_element_length_without_trailing_whitespace(dicom_data_element_t* element) {
-	u32 length = element->length;
-	if (length != 0 && length % 2 == 0 && element->data[length-1] == ' ') {
+static inline u32 dicom_get_element_length_without_trailing_whitespace(u8* element_data, u32 element_length) {
+	u32 length = element_length;
+	if (length != 0 && length % 2 == 0 && element_data[length-1] == ' ') {
 		--length; // ignore trailing space character
 	}
 	return length;
 }
 
 // Print information about a data element
-static void debug_print_dicom_element(dicom_data_element_t element, memrw_t* string_builder) {
+static void debug_print_dicom_element(dicom_instance_t* instance, dicom_data_element_t element, FILE* out, i32 nesting_level, u32 item_number) {
+	memrw_t string_builder = memrw_create(512);
+	if (nesting_level > 0) {
+		for (i32 i = 1; i < nesting_level; ++i) {
+			memrw_write_literal("  ", &string_builder); // extra indentation
+		}
+		memrw_printf(&string_builder, "  %u: ", item_number);
+	}
+
 	char vr_text[4] = {}; // convert 2-byte VR to printable form
 	*(u16*) vr_text = element.vr;
 	const char* keyword = get_dicom_tag_keyword(element.tag.as_u32);
-	memrw_printf(string_builder, "(%04x,%04x) - %s - length: %d - %s",
-	        element.tag.group, element.tag.element, vr_text, element.length,
-	        keyword);
+	memrw_printf(&string_builder, "(%04x,%04x) - %s - length: %d - %s",
+	             element.tag.group, element.tag.element, vr_text, element.length,
+	             keyword);
+
+	u8* element_data = instance->data + element.data_offset;
 
 	// Try to print out the value of the tag.
 	switch(element.vr) {
@@ -290,52 +294,43 @@ static void debug_print_dicom_element(dicom_data_element_t element, memrw_t* str
 		case DICOM_VR_TM: {
 			// print identifier
 			char identifier[65];
-			u32 length = MIN(64, dicom_get_element_length_without_trailing_whitespace(&element));
-			strncpy(identifier, (const char*) element.data, length);
+			u32 length = MIN(64, dicom_get_element_length_without_trailing_whitespace(element_data, element.length));
+			strncpy(identifier, (const char*) element_data, length);
 			identifier[length] = '\0';
-			memrw_printf(string_builder, " - \"%s\"", identifier);
-			if (element.vr == DICOM_VR_UI) {
-				dicom_dict_uid_entry_t* uid_entry = dicom_uid_lookup(identifier);
-				if (uid_entry) {
-					const char* keyword = dicom_dict_string_pool + uid_entry->keyword_offset;
-					memrw_printf(string_builder, " - %s", keyword);
+			if (length > 0) {
+				memrw_printf(&string_builder, " - \"%s\"", identifier);
+				if (element.vr == DICOM_VR_UI) {
+					dicom_dict_uid_entry_t* uid_entry = dicom_uid_get_entry(identifier, length);
+					if (uid_entry) {
+						const char* keyword = dicom_dict_string_pool + uid_entry->keyword_offset;
+						memrw_printf(&string_builder, " - %s", keyword);
+					}
 				}
 			}
 		} break;
 		case DICOM_VR_UL: {
-			u32 value = *(u32*) element.data;
-			memrw_printf(string_builder, " - %u", value);
+			u32 value = *(u32*) element_data;
+			memrw_printf(&string_builder, " - %u", value);
 		} break;
 		case DICOM_VR_SL: {
-			i32 value = *(i32*) element.data;
-			memrw_printf(string_builder, " - %d", value);
+			i32 value = *(i32*) element_data;
+			memrw_printf(&string_builder, " - %d", value);
 		} break;
 		case DICOM_VR_US: {
-			u32 value = *(u16*) element.data;
-			memrw_printf(string_builder, " - %u", value);
+			u32 value = *(u16*) element_data;
+			memrw_printf(&string_builder, " - %u", value);
 		} break;
 		case DICOM_VR_SS: {
-			i32 value = *(i16*) element.data;
-			memrw_printf(string_builder, " - %d", value);
+			i32 value = *(i16*) element_data;
+			memrw_printf(&string_builder, " - %d", value);
 		} break;
 		case DICOM_VR_FL: {
-			float value = *(float*) element.data;
-			memrw_printf(string_builder, " - %g", value);
+			float value = *(float*) element_data;
+			memrw_printf(&string_builder, " - %g", value);
 		} break;
 	}
-	memrw_putc('\n', string_builder);
-}
+	memrw_putc('\n', &string_builder);
 
-// Print information about a nested data element from a sequence.
-static void debug_print_dicom_element(dicom_data_element_t element, FILE* out, i32 nesting_level, u32 item_number) {
-	memrw_t string_builder = memrw_create(512);
-	if (nesting_level > 0) {
-		for (i32 i = 1; i < nesting_level; ++i) {
-			memrw_write_literal("  ", &string_builder); // extra indentation
-		}
-		memrw_printf(&string_builder, "  %u: ", item_number);
-	}
-	debug_print_dicom_element(element, &string_builder);
 	memrw_putc('\0', &string_builder);
 	console_print_verbose("%s", string_builder.data);
 	if (out) {
@@ -345,9 +340,217 @@ static void debug_print_dicom_element(dicom_data_element_t element, FILE* out, i
 }
 
 static void
-handle_dicom_tag_for_tag_dumping(dicom_tag_t tag, dicom_data_element_t element, dicom_series_t* dicom_parser) {
-	debug_print_dicom_element(element, dicom_parser->debug_output_file, dicom_parser->current_nesting_level, dicom_parser->current_item_number);
+handle_dicom_tag_for_tag_dumping(dicom_series_t* series, dicom_instance_t* instance, dicom_data_element_t element) {
+	u32 current_item_number = instance->pos_stack[instance->nesting_level].item_number;
+	debug_print_dicom_element(instance, element, series->debug_output_file, instance->nesting_level,
+	                          current_item_number);
 }
+
+static i64 dicom_parse_integer_string(const char* s, size_t len) {
+	// Notes:
+	// * the string will generally NOT be zero-terminated
+	// * only base 10
+	// * leading and trailing spaces are not significant
+	i64 result = 0;
+	bool positive = true;
+	bool in_leading_section = true;
+	for (i32 i = 0; i < len; ++i) {
+		char c = s[i];
+		if (c == '\0') break;
+		if (in_leading_section) {
+			if (c == ' ') continue;
+			else if (c == '-') {
+				positive = false;
+				in_leading_section = false;
+				continue;
+			} else if (c == '+') {
+				in_leading_section = false;
+				continue;
+			}
+		}
+		in_leading_section = false;
+		if (c >= '0' && c <= '9') {
+			result = (result * 10) + (c - '0');
+		} else {
+			break; // any other character other than a decimal terminates the number
+		}
+	}
+	if (!positive) {
+		result = -result;
+	}
+	return result;
+}
+
+
+dicom_cs_t dicom_parse_code_string(const char* s, size_t len, const char** next) {
+	dicom_cs_t result = {};
+	i32 bytes_written = 0;
+	bool in_leading_section = true;
+	if (next) *next = NULL; // set to position after \ separator if there is another value
+	for (i32 i = 0; i < len; ++i) {
+		char c = s[i];
+		if (c == '\0') break;
+		if (in_leading_section && c == ' ') continue;
+		in_leading_section = false;
+		if (c == '\\') {
+			if (next) *next = s + i + 1;
+			break;
+		}
+		result.value[bytes_written++] = c;
+		if (bytes_written >= COUNT(result.value)-1) break;
+	}
+	return result;
+}
+
+static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, dicom_data_element_t element) {
+	u8* data = instance->data + element.data_offset;
+	char* data_str = (char*)data;
+
+	switch(element.tag.group) {
+		default: break;
+		case 0x0002: {
+			if (element.vr == DICOM_VR_UI) {
+				if (element.tag.as_enum == DICOM_MediaStorageSOPClassUID) {
+					dicom_uid_enum uid = dicom_uid_lookup(data_str, element.length);
+					instance->media_storage_sop_class_uid = uid;
+					if (uid == DICOM_VLWholeSlideMicroscopyImageStorage) {
+
+					}
+				}
+			}
+		} break;
+		case 0x0008: {
+			switch(element.tag.as_u32) {
+				default: break;
+				case DICOM_ImageType: {
+					// TODO: handle by SOP Class
+					// Parse multi-valued code string, e.g. "ORIGINAL\PRIMARY\VOLUME\NONE"
+					// for WSI: https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.4.html#sect_C.8.12.4.1.1
+					temp_memory_t temp = begin_temp_memory_on_local_thread();
+					char* data_copy = arena_push_size(temp.arena, element.length + 1);
+					memcpy(data_copy, data_str, element.length);
+					data_copy[element.length] = '\0';
+					char** values = arena_push_array(temp.arena, element.length, char*); // worst case: every character is a separator \ character
+					values[0] = data_copy;
+					i32 value_count = 1;
+					for (i32 i = 0; i < element.length; ++i) {
+						char c = data_str[i];
+						if (c == '\0') break;
+						if (c == '\\') {
+							values[value_count] = data_copy + (i+1);
+							++value_count;
+							data_copy[i] = '\0'; // stomp out the separator characters so that 0-terminated strings remain
+						}
+						// TODO: handle trailing/leading spaces, which the standard says are not significant
+					}
+
+					for (i32 i = 0; i < value_count; ++i) {
+						char* value = values[i];
+
+					}
+
+					end_temp_memory(&temp);
+				} break;
+				case DICOM_SOPClassUID: {
+					// TODO
+				} break;
+			}
+		} break;
+		case 0x0020: {
+			switch(element.tag.as_u32) {
+				default: break;
+				case DICOM_StudyInstanceUID: {
+					// TODO
+
+				} break;
+				case DICOM_SeriesInstanceUID: {
+					// TODO
+				} break;
+				case DICOM_StudyID: {
+					// TODO
+				} break;
+				case DICOM_SeriesNumber: {
+					// TODO
+				} break;
+				case DICOM_PatientOrientation: {
+					// TODO
+				} break;
+				case DICOM_FrameOfReferenceUID: {
+					// TODO
+				} break;
+				case DICOM_PositionReferenceIndicator: {
+					// TODO
+				} break;
+			}
+		} break;
+		case 0x0028: {
+			switch(element.tag.as_u32) {
+				default: break;
+				case DICOM_SamplesPerPixel: {
+					instance->samples_per_pixel = *(u16*)data;
+				} break;
+				case DICOM_PhotometricInterpretation: {
+					dicom_photometric_interpretation_enum photometric_interpretation = DICOM_PHOTOMETRIC_INTERPRETATION_UNKNOWN;
+					static const char* possible_values[] = {"MONOCHROME1", "MONOCHROME2", "PALETTE COLOR", "RGB", "HSV",
+															"ARGB", "CMYK", "YBR_FULL", "YBR_FULL_422", "YBR_PARTIAL_422",
+															"YBR_PARTIAL_420", "YBR_ICT", "YBR_RCT"};
+					ASSERT(COUNT(possible_values) == DICOM_PHOTOMETRIC_INTERPRETATION_YBR_RCT); // enum value equals index+1
+					size_t length = dicom_get_element_length_without_trailing_whitespace(data, element.length);
+					for (i32 i = 0; i < COUNT(possible_values); ++i) {
+						if (strncmp(data_str, possible_values[i], length) == 0) {
+							photometric_interpretation = i + 1;
+							break;
+						}
+					}
+					if (photometric_interpretation == DICOM_PHOTOMETRIC_INTERPRETATION_UNKNOWN) {
+						// TODO: decide error checking here or at the end?
+						console_print("DICOM: unknown Photometric Interpretation '%s'\n", data_str);
+						instance->is_image_invalid = true;
+					}
+					instance->photometric_interpretation = photometric_interpretation;
+				} break;
+				case DICOM_PlanarConfiguration: { instance->planar_configuration = *(u16*)data; } break;
+				case DICOM_NumberOfFrames: {
+					instance->number_of_frames = dicom_parse_integer_string(data_str, element.length);
+				} break;
+				case DICOM_Rows:                instance->rows = *(u16*)data; break;
+				case DICOM_Columns:             instance->columns = *(u16*)data; break;
+				case DICOM_BitsAllocated:       instance->bits_allocated = *(u16*)data; break;
+				case DICOM_BitsStored:          instance->bits_stored = *(u16*)data; break;
+				case DICOM_HighBit:             instance->high_bit = *(u16*)data; break;
+				case DICOM_PixelRepresentation: instance->high_bit = *(u16*)data; break;
+				case DICOM_BurnedInAnnotation: {
+
+				} break;
+				case DICOM_LossyImageCompression: {
+
+				} break;
+				case DICOM_LossyImageCompressionRatio: {
+
+				} break;
+				case DICOM_LossyImageCompressionMethod: {
+					dicom_lossy_image_compression_method_enum method = DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_UNKNOWN;
+					static const char* possible_values[] = {"ISO_10918_1", "ISO_14495_1", "ISO_15444_1", "ISO_13818_2", "ISO_14496_10", "ISO_23008_2"};
+					ASSERT(COUNT(possible_values) == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_23008_2); // enum value equals index+1
+					size_t length = dicom_get_element_length_without_trailing_whitespace(data, element.length);
+					for (i32 i = 0; i < COUNT(possible_values); ++i) {
+						if (strncmp(data_str, possible_values[i], length) == 0) {
+							method = i + 1;
+							break;
+						}
+					}
+					instance->lossy_image_compression_method = method;
+				} break;
+			}
+		} break;
+	}
+
+	if (instance->media_storage_sop_class_uid == DICOM_VLWholeSlideMicroscopyImageStorage) {
+		// TODO: handle microscopy stuff
+		dicom_wsi_interpret_top_level_data_element(instance, element);
+	}
+}
+
 
 bool dicom_read_chunk(dicom_instance_t* instance) {
 
@@ -365,7 +568,7 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 					--instance->nesting_level;
 					--current_position;
 					// Advance position
-					current_position->offset = (parent_element->data - instance->data) + parent_element->length;
+					current_position->offset = parent_element->data_offset + parent_element->length;
 					if (parent_element->tag.as_u32 == DICOM_Item) {
 						++current_position->item_number;
 					}
@@ -385,6 +588,14 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 		i64 data_bytes_left = instance->bytes_read_from_file - element.data_offset;
 		bool known_enough_bytes_left = false;
 		if (element.length != DICOM_UNDEFINED_LENGTH) {
+
+			// Special case: start of unencapsulated Pixel Data
+			if (element.tag.as_u32 == DICOM_PixelData) {
+				instance->found_pixel_data = true;
+				instance->is_pixel_data_encapsulated = false;
+				instance->pixel_data = element;
+			}
+
 			if (data_bytes_left >= element.length) {
 				known_enough_bytes_left = true;
 			} else {
@@ -395,15 +606,13 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 		current_position->element = element;
 		// Switch to a different encoding scheme (Explicit or Implicit VR), if specified in the File Meta info.
 		if (element.tag.as_u32 == DICOM_TransferSyntaxUID && known_enough_bytes_left) {
-			dicom_switch_data_encoding2(instance, &element);
+			dicom_switch_data_encoding(instance, &element);
 		}
 
 		// Do actions for specific tags
 //		ASSERT(dicom_state->tag_handler_func != NULL);
 		dicom_series_t* series = instance->series;
 		if (series) {
-			series->current_item_number = current_position->item_number; // TODO: update item number
-			series->current_nesting_level = instance->nesting_level;
 			if (series->tag_handler_func != NULL) {
 				// Dump all tags (except Item and ItemDelimitationItem to reduce spam)
 				bool want_dump = true;
@@ -420,9 +629,13 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 				}
 
 				if (want_dump) {
-					series->tag_handler_func(element.tag, element, series);
+					series->tag_handler_func(series, instance, element);
 				}
 			}
+		}
+
+		if (known_enough_bytes_left && element.vr != DICOM_VR_SQ) {
+			dicom_interpret_top_level_data_element(instance, element);
 		}
 
 
@@ -471,8 +684,16 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 						if (parent_element->tag.as_u32 == DICOM_PixelData) {
 							if (current_position->item_number == 0) {
 								console_print_verbose("Found Basic Offset Table at offset=%d\n", element.data_offset);
-								if (known_enough_bytes_left) {
+								if (known_enough_bytes_left && element.length % 4 == 0) {
 									instance->found_pixel_data = true;
+									// TODO: is this always true?
+									// https://dicom.nema.org/dicom/2013/output/chtml/part05/sect_A.4.html
+									instance->has_basic_offset_table = true;
+									i32 offset_count = element.length / 4;
+									arrsetlen(instance->offsets, offset_count);
+									ASSERT(instance->offsets != NULL);
+									ASSERT(offset_count * sizeof(u32) == element.length);
+									memcpy(instance->offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
 								} else {
 									// TODO: handle error condition (malformed DICOM file?)
 								}
@@ -487,6 +708,7 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 			} else if (element.tag.as_u32 == DICOM_PixelData) {
 				if (element.length == DICOM_UNDEFINED_LENGTH) {
 					need_push = true;
+					instance->is_pixel_data_encapsulated = true;
 				}
 			}
 
@@ -744,7 +966,7 @@ bool dicom_unpack_and_decompress_dictionary() {
 	// - convert 1-byte VR lookup indices back into 2-byte VR codes as used in DICOM streams
 	// (this packed data is not much further compressible using LZ4, and is therefore left uncompressed)
 	dicom_dict_entry_t* unpacked_entries = (dicom_dict_entry_t*) malloc(COUNT(dicom_dict_packed_entries) * sizeof(dicom_dict_entry_t));
-	u32 running_offset = 0;
+	u32 running_offset = 1; // the first byte is a '\0' character (for the null / empty string), so start at offset=1
 	for (i32 i = 0; i < COUNT(dicom_dict_packed_entries); ++i) {
 		dicom_dict_packed_entry_t packed_entry = dicom_dict_packed_entries[i];
 		dicom_dict_entry_t entry = {};

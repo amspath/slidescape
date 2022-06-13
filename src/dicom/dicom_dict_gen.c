@@ -337,6 +337,16 @@ bool output_dicom_dict_to_generated_c_code(dicom_dict_entry_t* dict_entries, dic
 	}
 	memrw_write_literal("} dicom_tag_enum;\n", &code_buffer);
 
+	// enum containing all DICOM UIDs
+	memrw_write_literal("\ntypedef enum dicom_uid_enum {\n", &code_buffer);
+	for (i32 i = 1; i < arrlen(uid_entries); ++i) {
+		dicom_dict_uid_entry_t uid = uid_entries[i];
+		const char* keyword = (const char*)name_buffer->data + uid.keyword_offset;
+		memrw_printf(&code_buffer, "\tDICOM_%s=%d,\n", keyword, i);
+	}
+	memrw_write_literal("} dicom_uid_enum;\n", &code_buffer);
+
+
 	memrw_write_literal("\n#pragma pack(push,1)\n"
 	                    "typedef struct dicom_dict_entry_t {\n"
 	                    "\tu32 tag;\n"
@@ -614,8 +624,13 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 	x = parser.x;
 
 	memrw_t name_buffer = memrw_create(MEGABYTES(1));
+	memrw_putc('\0', &name_buffer); // so that offset 0 into the name buffer will give back an empty string
+
 	dicom_dict_entry_t* dict_entries = NULL; // array
 	dicom_dict_uid_entry_t* uid_entries = NULL; // array
+
+	dicom_dict_uid_entry_t dummy_uid = {};
+	arrput(uid_entries, dummy_uid); // null UID entry, making sure that enum value 0 will not be a valid entry
 
 	if (0) { failed: cleanup:
 		if (parser.x) {

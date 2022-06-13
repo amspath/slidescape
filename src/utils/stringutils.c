@@ -19,8 +19,6 @@
 #include "common.h"
 #include "stringutils.h"
 
-
-
 void strip_character(char* s, char character_to_strip) {
 	if (!s) return;
 	char c;
@@ -135,4 +133,22 @@ char** split_into_lines(char* buffer, size_t* num_lines) {
 	} while (c != '\0');
 	if (num_lines) *num_lines = lines_counted;
 	return lines;
+}
+
+size_t count_lines(char* buffer) {
+	size_t lines_counted = 0;
+	bool32 newline = true;
+	char* pos = buffer;
+	int c;
+	do {
+		c = *pos;
+		if (c == '\n' || c == '\r') {
+			newline = true;
+		} else if (newline || c == '\0') {
+			lines_counted++;
+			newline = false;
+		}
+		++pos;
+	} while (c != '\0');
+	return lines_counted;
 }
