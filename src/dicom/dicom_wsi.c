@@ -20,10 +20,6 @@
 #include "dicom.h"
 #include "dicom_wsi.h"
 
-typedef struct dicom_wsi_t {
-
-} dicom_wsi_t;
-
 // Attributes that describe the Whole Slide Microscopy Image Module:
 // https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.4.html#sect_C.8.12.4.1.1
 
@@ -61,9 +57,9 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 					} else {
 						instance->image_flavor = DICOM_IMAGE_FLAVOR_UNKNOWN;
 					}
+					instance->image_flavor_cs = cs;
 				} else if (i == 3) {
 					// Value 4 (Derived Pixel)
-					instance->image_flavor = DICOM_IMAGE_FLAVOR_LABEL;
 					if (strcmp(cs.value, "NONE") == 0) {
 						instance->is_image_resampled = false;
 					} else if (strcmp(cs.value, "RESAMPLED") == 0) {

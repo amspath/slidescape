@@ -23,6 +23,7 @@ extern "C" {
 #endif
 
 #include "common.h"
+#include "mathutils.h" // for v2f
 
 #ifndef DONT_INCLUDE_DICOM_DICT_H
 #include "dicom_dict.h"
@@ -188,14 +189,15 @@ typedef struct dicom_parser_pos_t {
 	i64 bytes_left_in_sequence_or_item;
 } dicom_parser_pos_t;
 
-typedef struct dicom_series_t {
-	dicom_parser_callback_func_t* tag_handler_func;
-	i64 bytes_read;
-	dicom_transfer_syntax_enum encoding;
-	FILE* debug_output_file;
-} dicom_series_t;
+typedef struct dicom_tile_t {
+	i32 instance_index; // index of the dicom_instance_t that contains the data
+	u32 offset;
+	bool exists;
+	u8* data;
+} dicom_tile_t;
 
 typedef struct dicom_instance_t {
+	bool is_valid;
 	dicom_series_t* series;
 	dicom_parser_callback_func_t* tag_handler_func;
 	i32 nesting_level;
@@ -210,12 +212,15 @@ typedef struct dicom_instance_t {
 	bool is_pixel_data_encapsulated;
 	bool has_basic_offset_table;
 	dicom_data_element_t pixel_data;
-	u32* offsets; // array
+	u32* pixel_data_offsets; // array
+	u32 pixel_data_offset_count;
 	dicom_uid_enum media_storage_sop_class_uid;
 	dicom_uid_enum transfer_syntax_uid;
 	bool is_image_original;
+	dicom_cs_t image_flavor_cs;
 	dicom_image_flavor_enum image_flavor;
 	bool is_image_resampled;
+	i64 instance_number;
 	u16 samples_per_pixel; // 1 for monochrome and palette color images, 3 for RGB images
 	dicom_photometric_interpretation_enum photometric_interpretation;
 	u16 planar_configuration;
@@ -232,11 +237,32 @@ typedef struct dicom_instance_t {
 	float imaged_volume_depth;
 	u32 total_pixel_matrix_columns;
 	u32 total_pixel_matrix_rows;
+	i32 tile_count;
+	i32 width_in_tiles; //TODO
+	i32 height_in_tiles; //TODO
+	v2f origin_offset; //TODO
+	dicom_tile_t* tiles; // TODO
 } dicom_instance_t;
 
-typedef struct dicom_context_t {
+typedef struct dicom_wsi_t {
+	dicom_instance_t* label_instance;
+	i32 level_count;
+	dicom_instance_t* level_instances[16];
+	float mpp_x;
+	float mpp_y;
+	bool is_mpp_known;
 
-} dicom_context_t;
+} dicom_wsi_t;
+
+typedef struct dicom_series_t {
+	dicom_parser_callback_func_t* tag_handler_func;
+	i64 bytes_read;
+	dicom_transfer_syntax_enum encoding;
+	FILE* debug_output_file;
+	dicom_instance_t* instances; // array
+	dicom_wsi_t wsi;
+} dicom_series_t;
+
 
 typedef struct directory_info_t directory_info_t; // from viewer.h
 typedef struct file_info_t file_info_t;

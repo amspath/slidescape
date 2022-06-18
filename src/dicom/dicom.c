@@ -339,8 +339,7 @@ static void debug_print_dicom_element(dicom_instance_t* instance, dicom_data_ele
 	memrw_destroy(&string_builder);
 }
 
-static void
-handle_dicom_tag_for_tag_dumping(dicom_series_t* series, dicom_instance_t* instance, dicom_data_element_t element) {
+static void handle_dicom_tag_for_tag_dumping(dicom_series_t* series, dicom_instance_t* instance, dicom_data_element_t element) {
 	u32 current_item_number = instance->pos_stack[instance->nesting_level].item_number;
 	debug_print_dicom_element(instance, element, series->debug_output_file, instance->nesting_level,
 	                          current_item_number);
@@ -472,6 +471,9 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 				case DICOM_SeriesNumber: {
 					// TODO
 				} break;
+				case DICOM_InstanceNumber: {
+					instance->instance_number = dicom_parse_integer_string(data_str, element.length);
+				} break;
 				case DICOM_PatientOrientation: {
 					// TODO
 				} break;
@@ -481,6 +483,7 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 				case DICOM_PositionReferenceIndicator: {
 					// TODO
 				} break;
+
 			}
 		} break;
 		case 0x0028: {
@@ -688,12 +691,16 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 									instance->found_pixel_data = true;
 									// TODO: is this always true?
 									// https://dicom.nema.org/dicom/2013/output/chtml/part05/sect_A.4.html
-									instance->has_basic_offset_table = true;
-									i32 offset_count = element.length / 4;
-									arrsetlen(instance->offsets, offset_count);
-									ASSERT(instance->offsets != NULL);
-									ASSERT(offset_count * sizeof(u32) == element.length);
-									memcpy(instance->offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
+									u32 offset_count = element.length / 4;
+									if (offset_count > 0) {
+										instance->has_basic_offset_table = true;
+										instance->pixel_data_offset_count = offset_count;
+										arrsetlen(instance->pixel_data_offsets, offset_count);
+										ASSERT(instance->pixel_data_offsets != NULL);
+										ASSERT(offset_count * sizeof(u32) == element.length);
+										memcpy(instance->pixel_data_offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
+									}
+
 								} else {
 									// TODO: handle error condition (malformed DICOM file?)
 								}
@@ -755,9 +762,13 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 
 }
 
-bool dicom_load_file(dicom_series_t* dicom_series, file_info_t* file) {
+dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file) {
 
-	bool success = false;
+	dicom_instance_t instance = {};
+	instance.series = dicom_series;
+
+	// TODO: pipe all debug output to private memrw_t for dumping it onto the console later (enable concurrent loading?)
+
 	file_stream_t fp = file_stream_open_for_reading(file->filename);
 	if (fp) {
 		size_t chunk_size = KILOBYTES(64);
@@ -780,8 +791,6 @@ bool dicom_load_file(dicom_series_t* dicom_series, file_info_t* file) {
 					i64 total_bytes_in_stream = file->filesize - payload_offset;
 					ASSERT(total_bytes_in_stream >= payload_bytes);
 
-					dicom_instance_t instance = {};
-					instance.series = dicom_series;
 					instance.encoding = DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN;
 					instance.data = buffer.data + payload_offset;
 					instance.bytes_read_from_file = bytes_read - payload_offset;
@@ -793,6 +802,7 @@ bool dicom_load_file(dicom_series_t* dicom_series, file_info_t* file) {
 					for(;;) {
 						bool finished = dicom_read_chunk(&instance);
 						if (finished || instance.found_pixel_data) {
+							instance.is_valid = !instance.is_image_invalid; // TODO: what to do here?
 							break;
 						} else {
 							i64 bytes_left_in_file = file->filesize - instance.bytes_read_from_file;
@@ -822,7 +832,17 @@ bool dicom_load_file(dicom_series_t* dicom_series, file_info_t* file) {
 		}
 	}
 	file_stream_close(fp);
-	return success;
+	return instance;
+}
+
+typedef struct indexed_value_t {
+	i64 value;
+	i32 index;
+} indexed_value_t;
+
+// for qsort
+static int compare_indexed_value (const void* a, const void* b) {
+	return ( ((indexed_value_t*)b)->value - ((indexed_value_t*)a)->value );
 }
 
 bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* directory) {
@@ -838,11 +858,66 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 	i32 file_count = arrlen(directory->dicom_files);
 	for (i32 i = 0; i < file_count; ++i) {
 		file_info_t* file = directory->dicom_files + i;
-		dicom_load_file(dicom, file);
+		dicom_instance_t instance = dicom_load_file(dicom, file);
+		if (instance.is_valid) {
+			arrput(dicom->instances, instance);
+		}
 	}
 
 	if (dicom->debug_output_file) {
 		fclose(dicom->debug_output_file);
+	}
+
+	console_print("DICOM: series has %d instances\n", arrlen(dicom->instances));
+
+	// TODO: move much of this to dicom_wsi.c
+
+	for (i32 i = 0; i < arrlen(dicom->instances); ++i) {
+		dicom_instance_t* instance = dicom->instances + i;
+
+		// TODO: handle concatenations
+		// https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.6.16.html#sect_C.7.6.16.1.3
+		// Strategy: fold concatenated instances back into a single 'parent' instance, with links to the children?
+
+		console_print_verbose("%d: #=%d flavor=%s w=%u h=%u\n", i, instance->instance_number, instance->image_flavor_cs.value,
+		              instance->total_pixel_matrix_columns, instance->total_pixel_matrix_rows);
+	}
+
+	// Sort levels (volumes) by descending image width to get the
+	indexed_value_t volume_image_widths[16] = {};
+	i32 running_volume_index = 0;
+	for (i32 i = 0; i < arrlen(dicom->instances); ++i) {
+		dicom_instance_t* instance = dicom->instances + i;
+		if (instance->image_flavor == DICOM_IMAGE_FLAVOR_VOLUME) {
+			i64 pixel_count = instance->total_pixel_matrix_columns;
+			volume_image_widths[running_volume_index++] = (indexed_value_t){pixel_count, i};
+		}
+	}
+	i32 volume_count = running_volume_index;
+	qsort(volume_image_widths, volume_count, sizeof(indexed_value_t), compare_indexed_value);
+
+	// Verify that all the widths are different (we are not supporting concatenations or z-levels just yet)
+	i64 previous_width = 0;
+	bool ok = true;
+	for (i32 i = 0; i < volume_count; ++i) {
+		i64 width = volume_image_widths[i].value;
+		if (width == previous_width) {
+			ok = false;
+			break;
+		}
+		previous_width = width;
+	}
+	if (!ok) {
+		// TODO: handle concatenations
+		console_print("DICOM: multiple instances with same image width - can't determine levels\n");
+	} else {
+		dicom->wsi.level_count = volume_count;
+		for (i32 i = 0; i < volume_count; ++i) {
+			i32 instance_index = volume_image_widths[i].index;
+			dicom_instance_t* instance = dicom->instances + instance_index;
+			dicom->wsi.level_instances[i] = instance;
+			console_print("level %d: #=%d w=%u h=%u\n", i, instance_index, instance->total_pixel_matrix_columns, instance->total_pixel_matrix_rows);
+		}
 	}
 
 	console_print("DICOM parsing took %g seconds\n", get_seconds_elapsed(start, get_clock()));

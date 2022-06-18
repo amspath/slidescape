@@ -32,6 +32,7 @@ typedef struct image_t image_t;
 #include "arena.h"
 #include "tiff.h"
 #include "isyntax.h"
+#include "dicom.h"
 #include "openslide_api.h"
 #include "caselist.h"
 #include "annotation.h"
@@ -118,6 +119,7 @@ typedef enum {
 	IMAGE_BACKEND_TIFF,
 	IMAGE_BACKEND_OPENSLIDE,
 	IMAGE_BACKEND_ISYNTAX,
+	IMAGE_BACKEND_DICOM,
 } image_backend_enum;
 
 typedef enum filetype_hint_enum {
@@ -195,6 +197,7 @@ typedef struct image_t {
 		struct {
 			wsi_t wsi;
 		} wsi;
+		dicom_series_t dicom;
 	};
 	i32 level_count;
 	u32 tile_width;

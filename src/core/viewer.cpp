@@ -229,6 +229,8 @@ void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
 	}
 }
 
+// TODO: write 'drivers' / interfaces to be queried, instead of this copy-pasta
+
 bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay) {
 	image->type = IMAGE_TYPE_WSI;
 	image->backend = IMAGE_BACKEND_TIFF;
@@ -485,6 +487,118 @@ bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* 
 			image->label_image.is_valid = true;
 		}
 	}
+
+
+	image->is_valid = true;
+	image->is_freshly_loaded = true;
+	return image->is_valid;
+}
+
+bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_t* dicom, bool is_overlay) {
+	image->type = IMAGE_TYPE_WSI;
+	image->backend = IMAGE_BACKEND_DICOM;
+	image->dicom = *dicom;
+	dicom = &image->dicom;
+	image->is_freshly_loaded = true;
+
+	image->mpp_x = dicom->wsi.mpp_x;
+	image->mpp_y = dicom->wsi.mpp_y;
+	image->is_mpp_known = dicom->wsi.is_mpp_known;
+	dicom_instance_t* base_level_instance = dicom->wsi.level_instances[0];
+	ASSERT(base_level_instance);
+	if (!base_level_instance) return false;
+	image->tile_width = base_level_instance->columns;
+	image->tile_height = base_level_instance->rows;
+	image->width_in_pixels = base_level_instance->total_pixel_matrix_columns;
+	image->width_in_um = base_level_instance->imaged_volume_width; // TODO: checks out with mpp?
+	image->height_in_pixels = base_level_instance->total_pixel_matrix_rows;
+	image->height_in_um = base_level_instance->imaged_volume_height; // TODO: checks out with mpp?
+	// TODO: fix code duplication with tiff_deserialize()
+	if (dicom->wsi.level_count > 0 && image->tile_width) {
+
+		memset(image->level_images, 0, sizeof(image->level_images));
+		image->level_count = dicom->wsi.level_count;
+
+		if (image->level_count > WSI_MAX_LEVELS) {
+			panic();
+		}
+
+		for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
+			level_image_t* level_image = image->level_images + level_index;
+			dicom_instance_t* level_instance = dicom->wsi.level_instances[level_index];
+
+			level_image->exists = true;
+			level_image->pyramid_image_index = level_index; // not used
+			level_image->downsample_factor = exp2f((float)level_index);
+			level_image->tile_count = level_instance->pixel_data_offset_count;
+			if (level_instance->rows != image->tile_width) {
+				ASSERT(!"tile width is not equal across all levels");
+				return false;
+			}
+			if (level_instance->columns != image->tile_height) {
+				ASSERT(!"tile height is not equal across all levels");
+				return false;
+			}
+			level_image->width_in_tiles = (level_instance->total_pixel_matrix_columns + level_instance->columns - 1) / level_instance->columns;
+			ASSERT(level_image->width_in_tiles > 0);
+			level_image->height_in_tiles = (level_instance->total_pixel_matrix_rows + level_instance->rows - 1) / level_instance->rows;
+			ASSERT(level_image->height_in_tiles > 0);
+			level_image->tile_width = level_instance->columns;
+			level_image->tile_height = level_instance->rows;
+			level_image->um_per_pixel_x = level_image->downsample_factor * dicom->wsi.mpp_x;
+			level_image->um_per_pixel_y = level_image->downsample_factor * dicom->wsi.mpp_y;
+			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * level_instance->columns;
+			level_image->y_tile_side_in_um = level_image->um_per_pixel_x * level_instance->rows;
+			ASSERT(level_image->x_tile_side_in_um > 0);
+			ASSERT(level_image->y_tile_side_in_um > 0);
+			level_image->origin_offset = level_instance->origin_offset;
+			level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
+			for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+				tile_t* tile = level_image->tiles + tile_index;
+				// Facilitate some introspection by storing self-referential information
+				// in the tile_t struct. This is needed for some specific cases where we
+				// pass around pointers to tile_t structs without caring exactly where they
+				// came from.
+				// (Specific example: we use this when exporting a selected region as BigTIFF)
+				tile->tile_index = tile_index;
+				tile->tile_x = tile_index % level_image->width_in_tiles;
+				tile->tile_y = tile_index / level_image->width_in_tiles;
+
+				dicom_tile_t* isyntax_tile = level_instance->tiles + tile_index;
+				if (!isyntax_tile->exists) {
+					tile->is_empty = true;
+				}
+			}
+			DUMMY_STATEMENT;
+		}
+	}
+
+	/*isyntax_image_t* macro_image = isyntax->images + isyntax->macro_image_index;
+	if (macro_image->image_type == ISYNTAX_IMAGE_TYPE_MACROIMAGE) {
+		if (macro_image->pixels) {
+			image->macro_image.pixels = macro_image->pixels;
+			macro_image->pixels = NULL; // transfer ownership
+			image->macro_image.width = macro_image->width;
+			image->macro_image.height = macro_image->height;
+			image->macro_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
+			image->macro_image.world_pos.x = -((float)base_level_instance->offset_x * isyntax->mpp_x);
+			image->macro_image.world_pos.y = -((float)base_level_instance->offset_y * isyntax->mpp_y);
+			image->macro_image.is_valid = true;
+		}
+	}
+	isyntax_image_t* label_image = isyntax->images + isyntax->label_image_index;
+	if (label_image->image_type == ISYNTAX_IMAGE_TYPE_LABELIMAGE) {
+		if (label_image->pixels) {
+			image->label_image.pixels = label_image->pixels;
+			label_image->pixels = NULL; // transfer ownership
+			image->label_image.width = label_image->width;
+			image->label_image.height = label_image->height;
+			image->label_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
+//			image->label_image.world_pos.x = -((float)wsi_image->offset_x * isyntax->mpp_x);
+//			image->label_image.world_pos.y = -((float)wsi_image->offset_y * isyntax->mpp_y);
+			image->label_image.is_valid = true;
+		}
+	}*/
 
 
 	image->is_valid = true;
