@@ -93,7 +93,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 	u8* temp_memory = (u8*)malloc(pixel_memory_size);//(u8*) thread_memory->aligned_rest_of_thread_memory;
 	memset(temp_memory, 0xFF, pixel_memory_size);
-	u8* compressed_tile_data = (u8*) thread_memory->aligned_rest_of_thread_memory;// + WSI_BLOCK_SIZE;
+//	u8* compressed_tile_data = NULL;
 
 	bool failed = false;
 	ASSERT(image->type == IMAGE_TYPE_WSI);
@@ -107,9 +107,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 		u64 tile_offset = 0;
 		u64 compressed_tile_size_in_bytes = 0;
+		u8* compressed_tile_data = NULL;
 		if (level_ifd->is_tiled) {
 			tile_offset = level_ifd->tile_offsets[tile_index];
 			compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
+			compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, compressed_tile_size_in_bytes);
 
 			// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
 			// We need to check for this situation and chicken out if this is the case.
@@ -152,13 +154,16 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 		} else {
 			// image is not tiled
+			compressed_tile_size_in_bytes = level_ifd->strip_byte_counts[0];
+			// TODO: handle super large files
+			compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, compressed_tile_size_in_bytes);
 			if (!tiff->is_remote) {
 
 				if (level_ifd->strip_count > 0) {
 					ASSERT(level_ifd->strip_offsets);
 					ASSERT(level_ifd->strip_byte_counts);
 					if (level_ifd->strip_count == 1) {
-						file_handle_read_at_offset(compressed_tile_data, tiff->file_handle, level_ifd->strip_offsets[0], level_ifd->strip_byte_counts[0]);
+						file_handle_read_at_offset(compressed_tile_data, tiff->file_handle, level_ifd->strip_offsets[0], compressed_tile_size_in_bytes);
 					} else {
 						/*u8** strip_data = (u8**)alloca(level_ifd->strip_count * sizeof(u8**));
 						for (i32 i = 0; i < level_ifd->strip_count; ++i) {
@@ -185,6 +190,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 				failed = true;
 			}
 		}
+		ASSERT(compressed_tile_data != NULL);
 
 		// Now decompress
 		if (!failed) {
@@ -374,6 +380,43 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		i64 x = (tile_x * level_image->tile_width) << level;
 		i64 y = (tile_y * level_image->tile_height) << level;
 		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
+	} else if (image->backend == IMAGE_BACKEND_DICOM) {
+
+		dicom_series_t* dicom = &image->dicom;
+		dicom_instance_t* instance = dicom->wsi.level_instances[level];
+		dicom_tile_t* dicom_tile = instance->tiles + tile_index;
+		size_t read_size = dicom_tile->data_size;
+		if (dicom_tile->data_size == DICOM_UNDEFINED_LENGTH) {
+			u8 temp[12];
+			size_t bytes_read = file_handle_read_at_offset(temp, instance->file_handle, dicom_tile->data_offset_in_file, 12);
+			dicom_data_element_t element = dicom_read_data_element(temp, 0, instance->encoding, bytes_read);
+			if (element.tag.as_u32 == DICOM_Item) {
+				read_size = element.length; // TODO: bounds/sanity checks
+			}
+		}
+		if (read_size == DICOM_UNDEFINED_LENGTH) {
+			// TODO: handle undefined read_size?
+			panic();
+		}
+		u8* compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, read_size);
+		file_handle_read_at_offset(compressed_tile_data, instance->file_handle, dicom_tile->data_offset_in_file, read_size);
+
+		// TODO: handle native pixel data instead of encapsulated
+		i64 data_size = dicom_defragment_encapsulated_pixel_data_frame(compressed_tile_data, read_size);
+		if (data_size > 0) {
+			if (instance->lossy_image_compression_method == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_10918_1) {
+				// JPEG compression
+				i32 width = 0;
+				i32 height = 0;
+				i32 channels_in_file = 0;
+				u8* pixels = jpeg_decode_image(compressed_tile_data, data_size, &width, &height, &channels_in_file);
+				if (pixels && width == level_image->tile_width && height == level_image->tile_height && channels_in_file == 4) {
+					free(temp_memory);
+					temp_memory = pixels;
+				}
+				DUMMY_STATEMENT;
+			}
+		}
 	} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 //		console_print_error("thread %d: tile level %d, tile %d (%d, %d): TYRING\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		ASSERT(!"invalid code path");
@@ -673,7 +716,7 @@ directory_info_t viewer_get_directory_info(const char* path) {
 	return directory;
 }
 
-bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, u32 filetype_hint) {
+bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint) {
 	// assume it is an image file?
 	reset_global_caselist(app_state);
 	bool is_base_image = filetype_hint != FILETYPE_HINT_OVERLAY;
@@ -683,7 +726,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, u32 filety
 		unload_and_reinit_annotations(&app_state->scene.annotation_set);
 	}
 	load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
-	image_t image = load_image_from_file(app_state, file->filename, filetype_hint);
+	image_t image = load_image_from_file(app_state, file, directory, filetype_hint);
 	if (image.is_valid) {
 		add_image(app_state, image, is_base_image);
 
@@ -764,7 +807,7 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 				dicom_open_from_file(&dicom, &file);
 				success = true;
 			} else if (file.is_image) {
-				success = viewer_load_new_image(app_state, &file, filetype_hint);
+				success = viewer_load_new_image(app_state, &file, NULL, filetype_hint);
 			} else {
 				if (file.type == VIEWER_FILE_TYPE_XML) {
 					// TODO: how to get the correct scale factor for the annotations?
@@ -784,9 +827,11 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 			directory_info_t directory = viewer_get_directory_info(filename);
 			if (directory.is_valid) {
 				if (directory.contains_dicom_files) {
+					file.type = VIEWER_FILE_TYPE_DICOM;
 					console_print("Trying to open a directory '%s'\n", filename);
 					dicom_series_t dicom = {};
-					dicom_open_from_directory(&dicom, &directory);
+					success = viewer_load_new_image(app_state, &file, &directory, filetype_hint);
+
 				}
 				arrfree(directory.dicom_files); // TODO: transfer ownership?
 			}
@@ -817,13 +862,15 @@ const char* get_active_directory(app_state_t* app_state) {
 	return get_default_save_directory();
 }
 
-image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
+//TODO: refactor
+image_t load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint) {
 
 	image_t image = {};
 	image.is_local = true;
 	image.resource_id = global_next_resource_id++;
 
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
+	const char* filename = file->filename;
 
 	size_t filename_len = strlen(filename);
 	const char* name = one_past_last_slash(filename, filename_len);
@@ -836,7 +883,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 
 	const char* ext = get_file_extension(filename);
 
-	if (strcasecmp(ext, "png") == 0 || strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0 || strcasecmp(ext, "bmp") == 0 || strcasecmp(ext, "ppm") == 0) {
+	if (file->type == VIEWER_FILE_TYPE_SIMPLE_IMAGE) {
 		// Load using stb_image
 
 		image.type = IMAGE_TYPE_WSI;
@@ -853,7 +900,7 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 			//stbi_image_free(image->stbi.pixels);
 		}
 
-	} else if (app_state->use_builtin_tiff_backend && (strcasecmp(ext, "tiff") == 0 || strcasecmp(ext, "tif") == 0 || strcasecmp(ext, "ptif") == 0)) {
+	} else if (app_state->use_builtin_tiff_backend && file->type == VIEWER_FILE_TYPE_TIFF) {
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
@@ -864,12 +911,27 @@ image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 f
 			image.is_valid = false;
 			return image;
 		}
-	} else if (strcasecmp(ext, "isyntax") == 0) {
+	} else if (file->type == VIEWER_FILE_TYPE_ISYNTAX) {
 		// Try to open as iSyntax
 		isyntax_t isyntax = {0};
 		if (isyntax_open(&isyntax, filename)) {
 			init_image_from_isyntax(app_state, &image, &isyntax, is_overlay);
 			return image;
+		}
+	} else if (file->type == VIEWER_FILE_TYPE_DICOM) {
+
+		if (file->is_regular_file) {
+			// TODO: load the rest of the directory
+			dicom_series_t dicom = {};
+			if (dicom_open_from_file(&dicom, file)) {
+
+			}
+		} else if (file->is_directory && directory) {
+			dicom_series_t dicom = {};
+			if (dicom_open_from_directory(&dicom, directory)) {
+				init_image_from_dicom(app_state, &image, &dicom, is_overlay);
+				return image;
+			}
 		}
 	} else {
 		// Try to load the file using OpenSlide

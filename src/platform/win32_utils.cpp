@@ -78,6 +78,12 @@ file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
 	return win32_open_overlapped_file_handle(filename);
 }
 
+void file_handle_close(file_handle_t file_handle) {
+	if (file_handle) {
+		CloseHandle(file_handle);
+	}
+}
+
 size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset) {
 	// We align reads to 4K boundaries, so that file handles can be used with the FILE_FLAG_NO_BUFFERING flag.
 	// See: https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering
@@ -94,9 +100,17 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 		raw_read_size += KILOBYTES(4) - bytes_to_read_in_last_sector;
 	}
 
-	// TODO: detect if read size does not fit in the arena, and allocate memory if needed
 	temp_memory_t temp_memory = begin_temp_memory(&thread_memory->temp_arena);
-	u8* temp_dest = (u8*)arena_push_size(&thread_memory->temp_arena, raw_read_size);
+	i64 bytes_left_in_temp_memory = arena_get_bytes_left(&thread_memory->temp_arena);
+	bool need_free_temp_dest;
+	u8* temp_dest;
+	if (bytes_left_in_temp_memory >= raw_read_size) {
+		temp_dest = (u8*)arena_push_size(&thread_memory->temp_arena, raw_read_size);
+		need_free_temp_dest = false;
+	} else {
+		temp_dest = (u8*)malloc(raw_read_size);
+		need_free_temp_dest = true;
+	}
 
 	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 	// offset in the file where we want to do the read operation
@@ -111,7 +125,10 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 		DWORD error = GetLastError();
 		if (error != ERROR_IO_PENDING) {
 			win32_diagnostic("ReadFile");
-			end_temp_memory(&temp_memory);
+			if (need_free_temp_dest) {
+				free(temp_dest);
+			}
+			release_temp_memory(&temp_memory);
 			return 0;
 		}
 	}
@@ -128,7 +145,10 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 
 	memcpy(dest, temp_dest + align_delta, read_size);
 
-	end_temp_memory(&temp_memory);
+	if (need_free_temp_dest) {
+		free(temp_dest);
+	}
+	release_temp_memory(&temp_memory);
 	return read_size;
 }
 

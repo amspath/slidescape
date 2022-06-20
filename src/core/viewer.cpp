@@ -93,6 +93,8 @@ void unload_image(image_t* image) {
 				tiff_destroy(&image->tiff);
 			} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 				isyntax_destroy(&image->isyntax);
+			} else if (image->backend == IMAGE_BACKEND_DICOM) {
+				dicom_destroy(&image->dicom);
 			} else if (image->backend == IMAGE_BACKEND_STBI) {
 				if (image->simple.pixels) {
 					stbi_image_free(image->simple.pixels);
@@ -501,18 +503,25 @@ bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_
 	dicom = &image->dicom;
 	image->is_freshly_loaded = true;
 
-	image->mpp_x = dicom->wsi.mpp_x;
-	image->mpp_y = dicom->wsi.mpp_y;
-	image->is_mpp_known = dicom->wsi.is_mpp_known;
 	dicom_instance_t* base_level_instance = dicom->wsi.level_instances[0];
 	ASSERT(base_level_instance);
 	if (!base_level_instance) return false;
+
+	image->mpp_x = dicom->wsi.mpp_x;
+	image->mpp_y = dicom->wsi.mpp_y;
+	image->is_mpp_known = dicom->wsi.is_mpp_known;
+	if (image->mpp_x <= 0.0f || image->mpp_y <= 0.0f) {
+		image->is_mpp_known = false;
+		image->mpp_x = 1.0f;
+		image->mpp_y = 1.0f;
+	}
+
 	image->tile_width = base_level_instance->columns;
 	image->tile_height = base_level_instance->rows;
 	image->width_in_pixels = base_level_instance->total_pixel_matrix_columns;
-	image->width_in_um = base_level_instance->imaged_volume_width; // TODO: checks out with mpp?
+	image->width_in_um = base_level_instance->total_pixel_matrix_columns * image->mpp_x;
 	image->height_in_pixels = base_level_instance->total_pixel_matrix_rows;
-	image->height_in_um = base_level_instance->imaged_volume_height; // TODO: checks out with mpp?
+	image->height_in_um = base_level_instance->total_pixel_matrix_rows * image->mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
 	if (dicom->wsi.level_count > 0 && image->tile_width) {
 
@@ -530,7 +539,13 @@ bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_
 			level_image->exists = true;
 			level_image->pyramid_image_index = level_index; // not used
 			level_image->downsample_factor = exp2f((float)level_index);
-			level_image->tile_count = level_instance->pixel_data_offset_count;
+			level_image->width_in_tiles = level_instance->width_in_tiles;
+			ASSERT(level_image->width_in_tiles > 0);
+			level_image->height_in_tiles = level_instance->height_in_tiles;
+			ASSERT(level_image->height_in_tiles > 0);
+			level_image->tile_count = level_instance->tile_count;
+			level_image->tile_width = level_instance->columns;
+			level_image->tile_height = level_instance->rows;
 			if (level_instance->rows != image->tile_width) {
 				ASSERT(!"tile width is not equal across all levels");
 				return false;
@@ -539,12 +554,6 @@ bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_
 				ASSERT(!"tile height is not equal across all levels");
 				return false;
 			}
-			level_image->width_in_tiles = (level_instance->total_pixel_matrix_columns + level_instance->columns - 1) / level_instance->columns;
-			ASSERT(level_image->width_in_tiles > 0);
-			level_image->height_in_tiles = (level_instance->total_pixel_matrix_rows + level_instance->rows - 1) / level_instance->rows;
-			ASSERT(level_image->height_in_tiles > 0);
-			level_image->tile_width = level_instance->columns;
-			level_image->tile_height = level_instance->rows;
 			level_image->um_per_pixel_x = level_image->downsample_factor * dicom->wsi.mpp_x;
 			level_image->um_per_pixel_y = level_image->downsample_factor * dicom->wsi.mpp_y;
 			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * level_instance->columns;

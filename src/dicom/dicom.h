@@ -23,6 +23,7 @@ extern "C" {
 #endif
 
 #include "common.h"
+#include "platform.h" // for file_handle_t
 #include "mathutils.h" // for v2f
 
 #ifndef DONT_INCLUDE_DICOM_DICT_H
@@ -176,6 +177,10 @@ typedef struct dicom_cs_t {
 	char value[17]; // 16 bytes maximum, plus an extra byte to zero-terminate the string
 } dicom_cs_t;
 
+typedef struct dicom_sq_t {
+	dicom_data_element_t element;
+} dicom_sq_t;
+
 
 typedef struct dicom_series_t dicom_series_t; // fwd declaration
 typedef struct dicom_instance_t dicom_instance_t; // fwd declaration
@@ -186,33 +191,50 @@ typedef struct dicom_parser_pos_t {
 	i64 offset;
 	i64 element_index;
 	i64 item_number;
-	i64 bytes_left_in_sequence_or_item;
 } dicom_parser_pos_t;
 
 typedef struct dicom_tile_t {
-	i32 instance_index; // index of the dicom_instance_t that contains the data
-	u32 offset;
+	dicom_instance_t* instance;
+	u32 frame_index;
+	u32 data_offset_in_file;
+	u32 data_size;
 	bool exists;
 	u8* data;
 } dicom_tile_t;
 
+// C.8.12.6.1 Plane Position (Slide) Macro
+// https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.6.html#sect_C.8.12.6.1
+typedef struct dicom_plane_position_slide_t {
+	i32 column_position_in_total_image_pixel_matrix;
+	i32 row_position_in_total_image_pixel_matrix;
+	v2f offset_in_slide_coordinate_system;
+	float z_offset_in_slide_coordinate_system;
+} dicom_plane_position_slide_t;
+
 typedef struct dicom_instance_t {
 	bool is_valid;
+	i32 refcount; // TODO
 	dicom_series_t* series;
 	dicom_parser_callback_func_t* tag_handler_func;
+	char filename[512];
+	file_handle_t file_handle; // for simultaneous file access on multiple threads
 	i32 nesting_level;
+	dicom_parser_pos_t pos_stack[16]; // one per nesting level, for keeping track where we need to push/pop during parsing
+	dicom_tag_t nested_sequences[8]; // one for every two nesting levels (sequences only, not sequence items)
+	i32 nested_item_numbers[8];
 //	u32 current_item_number;
 	dicom_transfer_syntax_enum encoding;
 	u8* data;
 	i64 bytes_read_from_file;
 	i64 total_bytes_in_stream;
-	dicom_parser_pos_t pos_stack[16]; // one per nesting level
 	bool is_image_invalid;
 	bool found_pixel_data;
 	bool is_pixel_data_encapsulated;
 	bool has_basic_offset_table;
 	dicom_data_element_t pixel_data;
-	u32* pixel_data_offsets; // array
+	u32* pixel_data_offsets; // malloc'ed
+	u32* pixel_data_sizes; // malloc'ed
+	u32 pixel_data_start_offset;
 	u32 pixel_data_offset_count;
 	dicom_uid_enum media_storage_sop_class_uid;
 	dicom_uid_enum transfer_syntax_uid;
@@ -235,13 +257,16 @@ typedef struct dicom_instance_t {
 	float imaged_volume_width;
 	float imaged_volume_height;
 	float imaged_volume_depth;
+	v2f pixel_spacing;
 	u32 total_pixel_matrix_columns;
 	u32 total_pixel_matrix_rows;
 	i32 tile_count;
-	i32 width_in_tiles; //TODO
-	i32 height_in_tiles; //TODO
-	v2f origin_offset; //TODO
-	dicom_tile_t* tiles; // TODO
+	i32 width_in_tiles;
+	i32 height_in_tiles;
+	v2f origin_offset;
+	dicom_tile_t* tiles; // malloc'ed
+	dicom_plane_position_slide_t current_plane_position_slide; // for parsing only
+	dicom_plane_position_slide_t* per_frame_plane_position_slide; // array
 } dicom_instance_t;
 
 typedef struct dicom_wsi_t {
@@ -268,10 +293,16 @@ typedef struct directory_info_t directory_info_t; // from viewer.h
 typedef struct file_info_t file_info_t;
 
 bool dicom_init();
+void dicom_destroy(dicom_series_t* dicom_series);
+void dicom_instance_destroy(dicom_instance_t* instance);
 bool is_file_a_dicom_file(u8* file_header_data, size_t file_header_data_len);
 bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* directory);
 bool dicom_open_from_file(dicom_series_t* dicom, file_info_t* file);
-dicom_cs_t dicom_parse_code_string(const char* s, size_t len, const char** next);
+dicom_data_element_t dicom_read_data_element(u8* data_start, i64 data_offset, dicom_transfer_syntax_enum encoding, i64 bytes_available);
+i64 dicom_parse_integer_string(str_t s, str_t* next);
+dicom_cs_t dicom_parse_code_string(str_t s, str_t* next);
+float dicom_parse_decimal_string(str_t s, str_t* next);
+i64 dicom_defragment_encapsulated_pixel_data_frame(u8* data, i64 len);
 
 #ifdef __cplusplus
 }

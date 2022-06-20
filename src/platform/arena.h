@@ -71,9 +71,13 @@ static inline temp_memory_t begin_temp_memory(arena_t* arena) {
 	return result;
 }
 
-static inline void end_temp_memory(temp_memory_t* temp) {
+static inline void release_temp_memory(temp_memory_t* temp) {
 	ASSERT(temp->arena->temp_count > 0);
 	temp->arena->temp_count--;
 	temp->arena->used = temp->used;
 	ASSERT(temp->temp_index == temp->arena->temp_count);
+}
+
+static inline i64 arena_get_bytes_left(arena_t* arena) {
+	return arena->size - arena->used;
 }

@@ -116,8 +116,13 @@ bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 			u8* userdata = alloca(sizeof(entry.userdata));
 			memcpy(userdata, entry.userdata, sizeof(entry.userdata));
 
+			// Ensure all the memory allocated on the thread's temp_arena will be released when the task completes
+			temp_memory_t temp = begin_temp_memory_on_local_thread();
+
 			// Execute the task
 			entry.callback(logical_thread_index, userdata);
+
+			release_temp_memory(&temp);
 			--work_queue_call_depth;
 		}
 		mark_queue_entry_completed(queue);

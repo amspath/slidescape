@@ -81,6 +81,12 @@ file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
 	}
 }
 
+void file_handle_close(file_handle_t file_handle) {
+	if (file_handle) {
+		CloseHandle(file_handle);
+	}
+}
+
 size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
 	size_t bytes_read = pread(file_handle, dest, bytes_to_read, offset);
 	return bytes_read;

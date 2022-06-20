@@ -27,6 +27,8 @@ extern "C" {
 #include "dicom.h"
 
 void dicom_wsi_interpret_top_level_data_element(dicom_instance_t *instance, dicom_data_element_t element);
+void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_data_element_t element);
+void dicom_wsi_finalize_sequence_item(dicom_instance_t* instance);
 
 #ifdef __cplusplus
 }

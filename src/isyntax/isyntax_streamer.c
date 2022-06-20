@@ -317,7 +317,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 	}
 //	console_print("   blocks allocated and freed: %d\n", blocks_freed);
 
-	end_temp_memory(&temp_memory); // deallocate data chunk
+	release_temp_memory(&temp_memory); // deallocate data chunk
 
 	wsi->first_load_complete = true;
 
@@ -1023,7 +1023,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 			}
 		}
 
-		end_temp_memory(&temp_memory);
+			release_temp_memory(&temp_memory);
 
 		// Iterate a few times, to allow more tiles to load; early out if we are taking too long.
         float elapsed = get_seconds_elapsed(clock_start, get_clock());

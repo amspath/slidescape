@@ -1007,7 +1007,7 @@ void delete_selected_annotations(app_state_t* app_state, annotation_set_t* annot
 		}
 		annotation_set->active_annotation_count = arrlen(annotation_set->active_annotation_indices);
 		notify_annotation_set_modified(annotation_set);
-		end_temp_memory(&temp_memory);
+		release_temp_memory(&temp_memory);
 	}
 
 
@@ -1460,7 +1460,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		}
 
 		draw_list->Flags = backup_flags;
-		end_temp_memory(&temp_memory);
+		release_temp_memory(&temp_memory);
 	}
 
 	if (!did_popup) {

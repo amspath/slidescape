@@ -1614,7 +1614,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 					console_print("load: scale=%d x=%d y=%d  idwt time =%g  invalid edges=%x\n", scale, tile_x, tile_y, elapsed_idwt, invalid_edges);
 					// early out
 					tile->is_submitted_for_loading = false;
-					end_temp_memory(&temp_memory);
+					release_temp_memory(&temp_memory);
 					return NULL;
 				}
 			}
@@ -1643,7 +1643,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
 	}*/
 
-	end_temp_memory(&temp_memory); // free Y, Co and Cg
+	release_temp_memory(&temp_memory); // free Y, Co and Cg
 	return bgra;
 }
 
@@ -1796,7 +1796,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		ASSERT(!"serialized_length too large");
 		console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, serialized_length too large (%d)\n", serialized_length);
 		memset(out_buffer, 0, coeff_buffer_size);
-		end_temp_memory(&temp_memory);
+		release_temp_memory(&temp_memory);
 		return false;
 	}
 
@@ -1829,7 +1829,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				ASSERT(!"out of bounds");
 				console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, Huffman table extends out of bounds (compressed_size=%d)\n", compressed_size);
 				memset(out_buffer, 0, coeff_buffer_size);
-				end_temp_memory(&temp_memory);
+				release_temp_memory(&temp_memory);
 				return false;
 			}
 			// Read a chunk of bits large enough to 'always' have the whole Huffman code, followed by the 8-bit symbol.
@@ -1968,7 +1968,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				ASSERT(!"out of bounds");
 				console_print_error("Error: isyntax_hulsken_decompress(): error decoding Huffman message (unknown symbol)\n");
 				memset(out_buffer, 0, coeff_buffer_size);
-				end_temp_memory(&temp_memory);
+				release_temp_memory(&temp_memory);
 				return false;
 			}
 		}
@@ -2154,7 +2154,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	}
 
-	end_temp_memory(&temp_memory); // frees coeff_buffer and decompressed_buffer
+	release_temp_memory(&temp_memory); // frees coeff_buffer and decompressed_buffer
 	return true;
 }
 
@@ -2691,13 +2691,5 @@ void isyntax_destroy(isyntax_t* isyntax) {
 			}
 		}
 	}
-#if WINDOWS
-	if (isyntax->file_handle) {
-		CloseHandle(isyntax->file_handle);
-	}
-#else
-	if (isyntax->file_handle) {
-		close(isyntax->file_handle);
-	}
-#endif
+	file_handle_close(isyntax->file_handle);
 }

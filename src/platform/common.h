@@ -207,6 +207,12 @@ typedef unsigned long long u64;
 typedef int32_t bool32;
 typedef int8_t bool8;
 
+// String type with a known size (don't assume zero-termination)
+typedef struct str_t {
+	const char* s;
+	size_t len;
+} str_t;
+
 // Convenience macros
 #define COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #ifndef MIN

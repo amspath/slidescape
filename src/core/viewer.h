@@ -464,9 +464,10 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset);
 void unload_all_images(app_state_t* app_state);
 bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay);
 bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* isyntax, bool is_overlay);
+bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_t* dicom, bool is_overlay);
 bool init_image_from_stbi(app_state_t* app_state, image_t* image, simple_image_t* simple, bool is_overlay);
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
-image_t load_image_from_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
+image_t load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_wsi(wsi_t* wsi, const char* filename);
 void unload_wsi(wsi_t* wsi);
@@ -492,6 +493,7 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 const char* get_active_directory(app_state_t* app_state);
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
+file_info_t viewer_get_file_info(const char* filename);
 
 // viewer_io_remote.cpp
 void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);

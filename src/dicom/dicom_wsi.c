@@ -20,6 +20,60 @@
 #include "dicom.h"
 #include "dicom_wsi.h"
 
+// C.8.12.6.1 Plane Position (Slide) Macro
+// https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.6.html#sect_C.8.12.6.1
+
+
+void dicom_interpret_data_element_in_plane_position_slide_sq_item(dicom_instance_t* instance, dicom_data_element_t element) {
+	dicom_plane_position_slide_t* plane_position_slide = &instance->current_plane_position_slide;
+	u8* data = instance->data + element.data_offset;
+	const char* data_str = (const char*)data;
+
+	switch(element.tag.as_u32) {
+		default: break;
+		case DICOM_ColumnPositionInTotalImagePixelMatrix: {
+			// Type 1
+			// The column position of the top left hand pixel of the frame in the Total Pixel Matrix (see Section C.8.12.4.1.1).
+			// The column position of the top left pixel of the Total Pixel Matrix is 1.
+			plane_position_slide->column_position_in_total_image_pixel_matrix = *(i32*)data;
+		} break;
+		case DICOM_RowPositionInTotalImagePixelMatrix: {
+			// Type 1
+			// The row position of the top left hand pixel of the frame in the Total Pixel Matrix (see Section C.8.12.4.1.1).
+			// The row position of the top left pixel of the Total Pixel Matrix is 1.
+			plane_position_slide->row_position_in_total_image_pixel_matrix = *(i32*)data;
+		} break;
+		case DICOM_XOffsetInSlideCoordinateSystem: {
+			// Type 1
+			// The X offset in mm from the Origin of the Slide Coordinate System.
+			plane_position_slide->offset_in_slide_coordinate_system.x = dicom_parse_decimal_string((str_t){data_str, element.length}, NULL);
+		} break;
+		case DICOM_YOffsetInSlideCoordinateSystem: {
+			// Type 1
+			// The Y offset in mm from the Origin of the Slide Coordinate System.
+			plane_position_slide->offset_in_slide_coordinate_system.y = dicom_parse_decimal_string((str_t){data_str, element.length}, NULL);
+		} break;
+		case DICOM_ZOffsetInSlideCoordinateSystem: {
+			// Type 1
+			// The Z offset in µm from the Origin of the Slide Coordinate System, nominally the surface of the glass slide substrate.
+			plane_position_slide->z_offset_in_slide_coordinate_system = dicom_parse_decimal_string((str_t){data_str, element.length}, NULL);
+		} break;
+	}
+}
+
+
+
+void dicom_interpret_data_element_in_shared_functional_groups(dicom_instance_t* instance, dicom_data_element_t element) {
+	u8* data = instance->data + element.data_offset;
+	const char* data_str = (const char*)data;
+
+	switch(element.tag.as_u32) {
+		default: break;
+
+	}
+}
+
+
 // Attributes that describe the Whole Slide Microscopy Image Module:
 // https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.4.html#sect_C.8.12.4.1.1
 
@@ -31,9 +85,9 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 		case DICOM_ImageType: {
 			// Type 1
 			// Image identification characteristics.
-			const char* next = data_str;
+			str_t next = {data_str, element.length};
 			for (i32 i = 0; i < 4; ++i) {
-				dicom_cs_t cs = dicom_parse_code_string(next, element.length, &next);
+				dicom_cs_t cs = dicom_parse_code_string(next, &next);
 				if (i == 0) {
 					// Value 1 shall have a value of ORIGINAL or DERIVED
 					if (strcmp(cs.value, "ORIGINAL") == 0) {
@@ -66,7 +120,7 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 						instance->is_image_resampled = true;
 					}
 				}
-				if (!next) {
+				if (!next.s) {
 					break;
 				}
 			}
@@ -236,5 +290,61 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 			// Total number of rows in pixel matrix; i.e., height of total imaged volume in pixels.
 			instance->total_pixel_matrix_rows = *(u32*)data;
 		} break;
+	}
+}
+
+void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_data_element_t element) {
+	switch(instance->nested_sequences[0].as_u32) {
+		default: break;
+		case DICOM_PerFrameFunctionalGroupsSequence: {
+			switch(instance->nested_sequences[1].as_u32) {
+				default: break;
+				case DICOM_PlanePositionSlideSequence: {
+					dicom_interpret_data_element_in_plane_position_slide_sq_item(instance, element);
+				} break;
+			}
+		} break;
+		case DICOM_SharedFunctionalGroupsSequence: {
+			switch(instance->nested_sequences[1].as_u32) {
+				default: break;
+				case DICOM_PixelMeasuresSequence: {
+					switch(element.tag.as_u32) {
+						case DICOM_SliceThickness: {
+
+						} break;
+						case DICOM_SpacingBetweenSlices: {
+
+						} break;
+						case DICOM_PixelSpacing: {
+							str_t next = {(const char*)instance->data + element.data_offset, element.length};
+							v2f pixel_spacing = {};
+							pixel_spacing.x = dicom_parse_decimal_string(next, &next);
+							if (next.s) {
+								pixel_spacing.y = dicom_parse_decimal_string(next, NULL);
+							} else {
+								pixel_spacing.y = pixel_spacing.x; // this should not happen
+							}
+							instance->pixel_spacing = pixel_spacing; // TODO: error if pixel spacing not under shared functional groups?
+						} break;
+					}
+				} break;
+			}
+		} break;
+	}
+}
+
+void dicom_wsi_finalize_sequence_item(dicom_instance_t* instance) {
+	switch(instance->nested_sequences[0].as_u32) {
+		default: break;
+		case DICOM_PerFrameFunctionalGroupsSequence: {
+			switch(instance->nested_sequences[1].as_u32) {
+				default: break;
+				case DICOM_PlanePositionSlideSequence: {
+					arrput(instance->per_frame_plane_position_slide, instance->current_plane_position_slide);
+					instance->current_plane_position_slide = (dicom_plane_position_slide_t){};
+				} break;
+			}
+		} break;
+
 	}
 }

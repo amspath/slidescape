@@ -63,7 +63,8 @@ bool32 caselist_open_slide(app_state_t* app_state, caselist_t* caselist, slide_i
 			}
 
 			unload_all_images(app_state);
-			image_t image = load_image_from_file(app_state, path_buffer, 0);
+			file_info_t file = viewer_get_file_info(path_buffer);
+			image_t image = load_image_from_file(app_state, &file, NULL, 0);
 			add_image(app_state, image, true);
 			success = image.is_valid;
 		}
