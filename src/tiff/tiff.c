@@ -26,6 +26,9 @@
 #include "lz4.h"
 
 #include "tiff.h"
+#include "tif_lzw.h"
+#include "remote.h"
+#include "jpeg_decoder.h"
 
 u32 get_tiff_field_size(u16 data_type) {
 	u32 size = 0;
@@ -1253,4 +1256,344 @@ void tiff_destroy(tiff_t* tiff) {
 		arrfree(tiff->ifds);
 	}
 	memset(tiff, 0, sizeof(*tiff));
+}
+
+// Adapted from ASAP: see core/PathologyEnums.cpp
+u32 lut[] = {
+	MAKE_BGRA(0, 0, 0, 0),
+	MAKE_BGRA(0, 224, 249, 255),
+	MAKE_BGRA(0, 249, 50, 255),
+	MAKE_BGRA(174, 249, 0, 255),
+	MAKE_BGRA(249, 100, 0, 255),
+	MAKE_BGRA(249, 0, 125, 255),
+	MAKE_BGRA(149, 0, 249, 255),
+	MAKE_BGRA(0, 0, 206, 255),
+	MAKE_BGRA(0, 185, 206, 255),
+	MAKE_BGRA(0, 206, 41, 255),
+	MAKE_BGRA(143, 206, 0, 255),
+	MAKE_BGRA(206, 82, 0, 255),
+	MAKE_BGRA(206, 0, 103, 255),
+	MAKE_BGRA(124, 0, 206, 255),
+	MAKE_BGRA(0, 0, 162, 255),
+	MAKE_BGRA(0, 145, 162, 255),
+	MAKE_BGRA(0, 162, 32, 255),
+	MAKE_BGRA(114, 162, 0, 255),
+	MAKE_BGRA(162, 65, 0, 255),
+	MAKE_BGRA(162, 0, 81, 255),
+	MAKE_BGRA(97, 0, 162, 255),
+	MAKE_BGRA(0, 0, 119, 255),
+	MAKE_BGRA(0, 107, 119, 255),
+	MAKE_BGRA(0, 119, 23, 255),
+	MAKE_BGRA(83, 119, 0, 255),
+	MAKE_BGRA(119, 47, 0, 255),
+	MAKE_BGRA(119, 0, 59, 255),
+	MAKE_BGRA(71, 0, 119, 255),
+	MAKE_BGRA(100, 100, 249, 255),
+	MAKE_BGRA(100, 234, 249, 255)
+};
+
+// TODO: move this somewhere appropriate?
+static inline u32 lookup_color_from_lut(u8 index) {
+	if (index >= COUNT(lut)) {
+		index = 0;
+	}
+	u32 color = lut[index];
+	return color;
+}
+
+u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_ifd, i32 tile_index, i32 level, i32 tile_x, i32 tile_y) {
+
+	u16 compression = level_ifd->compression;
+	u8* jpeg_tables = level_ifd->jpeg_tables;
+	u64 jpeg_tables_length = level_ifd->jpeg_tables_length;
+
+	u64 tile_offset = 0;
+	u64 compressed_tile_size_in_bytes = 0;
+	u8* compressed_tile_data = NULL;
+	bool failed = false;
+
+	if (level_ifd->is_tiled) {
+		tile_offset = level_ifd->tile_offsets[tile_index];
+		compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
+		compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, compressed_tile_size_in_bytes);
+
+		// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
+		// We need to check for this situation and chicken out if this is the case.
+		if (tile_offset == 0 || compressed_tile_size_in_bytes == 0) {
+#if DO_DEBUG
+			console_print("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+#endif
+			return NULL;
+		}
+
+		if (!tiff->is_remote) {
+			file_handle_read_at_offset(compressed_tile_data, tiff->file_handle, tile_offset, compressed_tile_size_in_bytes);
+		} else {
+			console_print_verbose("[thread %d] remote tile requested: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+
+			i32 bytes_read = 0;
+			u8* read_buffer = download_remote_chunk(tiff->location.hostname, tiff->location.portno, tiff->location.filename,
+			                                        tile_offset, compressed_tile_size_in_bytes, &bytes_read, logical_thread_index);
+			if (read_buffer && bytes_read > 0) {
+				i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
+				i64 content_length = bytes_read - content_offset;
+				u8* content = read_buffer + content_offset;
+
+				if (content_length >= compressed_tile_size_in_bytes) {
+					memcpy(compressed_tile_data, content, compressed_tile_size_in_bytes);
+				} else {
+					failed = true;
+				}
+
+			} else {
+				failed = true;
+			}
+			if (read_buffer) {
+				free(read_buffer);
+			}
+			if (failed) {
+				console_print_error("[thread %d] failed to read from remote level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+				return NULL;
+			}
+		}
+
+	} else {
+		// image is not tiled
+		compressed_tile_size_in_bytes = level_ifd->strip_byte_counts[0];
+		// TODO: handle super large files
+		compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, compressed_tile_size_in_bytes);
+		if (!tiff->is_remote) {
+
+			if (level_ifd->strip_count > 0) {
+				ASSERT(level_ifd->strip_offsets);
+				ASSERT(level_ifd->strip_byte_counts);
+				if (level_ifd->strip_count == 1) {
+					file_handle_read_at_offset(compressed_tile_data, tiff->file_handle, level_ifd->strip_offsets[0], compressed_tile_size_in_bytes);
+				} else {
+					/*u8** strip_data = (u8**)alloca(level_ifd->strip_count * sizeof(u8**));
+					for (i32 i = 0; i < level_ifd->strip_count; ++i) {
+						u64 strip_offset = level_ifd->strip_offsets[i];
+						u64 strip_byte_count = level_ifd->strip_byte_counts[i];
+						strip_data[i] = (u8*)calloc(1, strip_byte_count);
+						file_handle_read_at_offset(strip_data[i], tiff->file_handle, strip_offset, strip_byte_count);
+					}
+					// TODO: stub
+
+					for (i32 i = 0; i < level_ifd->strip_count; ++i) {
+						free(strip_data[i]);
+					}*/
+					failed = true;
+					console_print_error("[thread %d] Cannot decode TIFF: multi-strip TIFFs not implemented.\n");
+					return NULL; // TODO: release compressed tile data
+				}
+
+			} else {
+				failed = true; // no tiles and no strips?
+				return NULL; // TODO: release compressed tile data
+			}
+
+		} else {
+			// TODO: stub
+			failed = true;
+			return NULL; // TODO: release compressed tile data
+		}
+	}
+	ASSERT(compressed_tile_data != NULL);
+
+	// Now decompress
+	size_t pixel_memory_size = level_ifd->tile_width * level_ifd->tile_height * BYTES_PER_PIXEL;
+
+	if (!compressed_tile_data) {
+		return NULL;
+	} else {
+//		console_print_verbose("[thread %d] loading tile: level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+
+		if (compression == TIFF_COMPRESSION_JPEG) {
+			if (compressed_tile_data[0] == 0xFF && compressed_tile_data[1] == 0xD9) {
+				// JPEG stream is empty
+			} else {
+				u8* pixel_memory = (u8*)malloc(pixel_memory_size);
+				if (jpeg_decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data,
+				                     compressed_tile_size_in_bytes,
+				                     pixel_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+//		            console_print_verbose("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					return pixel_memory;
+				} else {
+					console_print_error("thread %d: failed to decode level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+					free(pixel_memory);
+					return NULL;
+				}
+			}
+		} else if (level_ifd->compression == TIFF_COMPRESSION_LZW) {
+
+			size_t decompressed_size = level_ifd->tile_width * level_ifd->tile_height * level_ifd->samples_per_pixel;
+			u8* decompressed = (u8*)malloc(decompressed_size);
+
+			PseudoTIFF tif = {};
+			tif.tif_rawdata = compressed_tile_data;
+			tif.tif_rawcp = compressed_tile_data;
+			tif.tif_rawdatasize = compressed_tile_size_in_bytes;
+			tif.tif_rawcc = compressed_tile_size_in_bytes;
+			LZWSetupDecode(&tif);
+			LZWPreDecode(&tif, 0);
+			// Check for old bit-reversed codes.
+			int decode_success = 0;
+			if (tif.tif_rawcc >= 2 && tif.tif_rawdata[0] == 0 && (tif.tif_rawdata[1] & 0x1)) {
+				decode_success = LZWDecodeCompat(&tif, decompressed, decompressed_size, 0);
+			} else {
+				decode_success = LZWDecode(&tif, decompressed, decompressed_size, 0);
+			}
+			if (!decode_success) {
+				console_print_error("LZW decompression failed\n");
+				free(decompressed);
+				return NULL;
+			}
+
+			// Convert RGB to BGRA
+			if (level_ifd->samples_per_pixel == 4) {
+				// TODO: convert RGBA to BGRA
+				console_print_error("LZW decompression: RGBA to BGRA conversion not implemented, assuming already in BGRA\n");
+				ASSERT(decompressed_size == pixel_memory_size);
+				return decompressed;
+			} else if (level_ifd->samples_per_pixel == 3) {
+
+				// NOTE: Some TIFFs should actually be treated as palettized, but still set PhotometricInterpretation to TIFF_PHOTOMETRIC_RGB.
+				// (as an example, the TIFF masks from the Kaggle challenge do this)
+				// However, in that case they will still probably have set SMaxSampleValue to a low value (the number of colors/categories used).
+				// We can use this fact to guess that we still want to treat the image as palettized / using a color lookup table.
+				bool palettized = level_ifd->color_space == TIFF_PHOTOMETRIC_PALETTE || level_ifd->max_sample_value < 64;
+
+				u64 pixel_count = level_ifd->tile_width * level_ifd->tile_height;
+				i32 source_pos = 0;
+				u32* pixels = (u32*)malloc(pixel_memory_size);
+
+				// TODO: vectorize: https://stackoverflow.com/questions/7194452/fast-vectorized-conversion-from-rgb-to-bgra
+				if (palettized) {
+					for (u64 i = 0; i < pixel_count; ++i) {
+						u8 r = decompressed[source_pos]; // only the red channel is being used
+//						    u8 g = decompressed[source_pos+1];
+//					    	u8 b = decompressed[source_pos+2];
+//					    	pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
+						u32 color = lookup_color_from_lut(r);
+						color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
+						pixels[i] = color;
+						source_pos+=3;
+					}
+				} else {
+					for (u64 i = 0; i < pixel_count; ++i) {
+						u8 r = decompressed[source_pos]; // only the red channel is being used
+						u8 g = decompressed[source_pos+1];
+						u8 b = decompressed[source_pos+2];
+						pixels[i] = MAKE_BGRA(r, g, b, 255);
+						source_pos+=3;
+					}
+				}
+
+				free(decompressed);
+			} else if (level_ifd->samples_per_pixel == 1) {
+				// Grayscale image
+				u64 pixel_count = level_ifd->tile_width * level_ifd->tile_height;
+				i32 source_pos = 0;
+				u32* pixels = (u32*)malloc(pixel_memory_size);
+
+				u8 output_for_min_value = 0;
+				u8 output_for_max_value = 255;
+				if (level_ifd->color_space == TIFF_PHOTOMETRIC_MINISBLACK) {
+					// no action
+				} else if (level_ifd->color_space == TIFF_PHOTOMETRIC_MINISWHITE) {
+					output_for_min_value = 255;
+					output_for_max_value = 0;
+				} else {
+					// Issue warning? PhotometricInterpretation missing
+				}
+
+				bool is_bilevel = level_ifd->max_sample_value == 1 && level_ifd->min_sample_value == 0;
+
+				if (is_bilevel) {
+					for (u64 i = 0; i < pixel_count; ++i) {
+						u8 r = decompressed[source_pos];
+						r = r ? output_for_max_value : output_for_min_value;
+						u32 color = MAKE_BGRA(r, r, r, 255);
+						pixels[i] = color;
+						source_pos+=1;
+					}
+				} else {
+					if (level_ifd->max_sample_value == 0 /*assume not set*/ || level_ifd->max_sample_value == 255) {
+						// output raw value as RGB value
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u8 r = decompressed[source_pos];
+							u32 color = MAKE_BGRA(r, r, r, 255);
+							pixels[i] = color;
+							source_pos+=1;
+						}
+					} else {
+						// resample
+						float convert_factor = (1.0f / (float)level_ifd->max_sample_value) * 255.0f;
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u8 r = decompressed[source_pos];
+							r = (u8)((float)r * convert_factor);
+							u32 color = MAKE_BGRA(r, r, r, 255);
+							pixels[i] = color;
+							source_pos+=1;
+						}
+					}
+
+				}
+
+				free(decompressed);
+				return (u8*)pixels;
+			} else {
+				console_print_error("LZW decompression: unexpected number of samples per pixel (%d)\n", level_ifd->samples_per_pixel);
+				failed = true;
+				return NULL;
+			}
+
+		} else if (level_ifd->compression == TIFF_COMPRESSION_NONE) {
+			u8* decompressed = (u8*)compressed_tile_data;
+			u64 pixel_count = level_ifd->tile_width * level_ifd->tile_height;
+			i32 source_pos = 0;
+			if (level_ifd->samples_per_pixel == 3) {
+				u32* pixels = (u32*)malloc(pixel_memory_size);
+				for (u64 i = 0; i < pixel_count; ++i) {
+					u8 r = decompressed[source_pos]; // only the red channel is being used
+					u8 g = decompressed[source_pos+1];
+					u8 b = decompressed[source_pos+2];
+					pixels[i] = MAKE_BGRA(r, g, b, 255);
+					source_pos+=3;
+				}
+				return (u8*)pixels;
+			} else {
+				// TODO
+				failed = true;
+				return NULL;
+			}
+		} else {
+			console_print_error("\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
+			failed = true;
+			return NULL;
+		}
+
+	}
+	ASSERT(!"should not reach this code");
+	return NULL;
+
+	// Trim the tile (replace with transparent color) if it extends beyond the image size
+	// TODO: anti-alias edge?
+/*	i32 new_tile_height = level_image->tile_height;
+	i32 pitch = level_image->tile_width * BYTES_PER_PIXEL;
+	if (tile_y_excess > 0) {
+		i32 excess_rows = (int)((tile_y_excess / level_image->y_tile_side_in_um) * level_image->tile_height);
+		ASSERT(excess_rows >= 0);
+		new_tile_height = level_image->tile_height - excess_rows;
+		memset(pixel_memory + (new_tile_height * pitch), 0, excess_rows * pitch);
+	}
+	if (tile_x_excess > 0) {
+		i32 excess_pixels = (int)((tile_x_excess / level_image->x_tile_side_in_um) * level_image->tile_width);
+		ASSERT(excess_pixels >= 0);
+		i32 new_tile_width = level_image->tile_width - excess_pixels;
+		for (i32 row = 0; row < new_tile_height; ++row) {
+			u8* write_pos = pixel_memory + (row * pitch) + (new_tile_width * BYTES_PER_PIXEL);
+			memset(write_pos, 0, excess_pixels * BYTES_PER_PIXEL);
+		}
+	}*/
 }

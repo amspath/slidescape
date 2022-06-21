@@ -1044,25 +1044,29 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 		instance->tile_count = instance->width_in_tiles * instance->height_in_tiles;
 		instance->tiles = calloc(instance->tile_count, sizeof(dicom_tile_t));
 
-		ASSERT(arrlen(instance->per_frame_plane_position_slide) > 0);
-		for (i32 frame_index = 0; frame_index < arrlen(instance->per_frame_plane_position_slide); ++frame_index) {
-			dicom_plane_position_slide_t* plane_position = instance->per_frame_plane_position_slide + frame_index;
-			i32 tile_x = plane_position->column_position_in_total_image_pixel_matrix / instance->columns;
-			i32 tile_y = plane_position->row_position_in_total_image_pixel_matrix / instance->rows;
+		if(arrlen(instance->per_frame_plane_position_slide) > 0) {
+			for (i32 frame_index = 0; frame_index < arrlen(instance->per_frame_plane_position_slide); ++frame_index) {
+				dicom_plane_position_slide_t* plane_position = instance->per_frame_plane_position_slide + frame_index;
+				i32 tile_x = plane_position->column_position_in_total_image_pixel_matrix / instance->columns;
+				i32 tile_y = plane_position->row_position_in_total_image_pixel_matrix / instance->rows;
 
-			dicom_tile_t* tile = instance->tiles + tile_y * instance->width_in_tiles + tile_x;
-			ASSERT(!tile->exists);
-			tile->exists = true;
-			tile->instance = instance; //NOTE: points to element in dicom_series->instances array
-			tile->frame_index = frame_index;
-			if (instance->pixel_data_offsets && instance->pixel_data_sizes) {
-				// TODO: bounds check
-				tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[frame_index];
-				tile->data_size = instance->pixel_data_sizes[frame_index];
-			} else {
-				ASSERT(!"tile offset/size unknown");
+				dicom_tile_t* tile = instance->tiles + tile_y * instance->width_in_tiles + tile_x;
+				ASSERT(!tile->exists);
+				tile->exists = true;
+				tile->instance = instance; //NOTE: points to element in dicom_series->instances array
+				tile->frame_index = frame_index;
+				if (instance->pixel_data_offsets && instance->pixel_data_sizes) {
+					// TODO: bounds check
+					tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[frame_index];
+					tile->data_size = instance->pixel_data_sizes[frame_index];
+				} else {
+					ASSERT(!"tile offset/size unknown");
+				}
 			}
+		} else {
+			success = false;
 		}
+
 	}
 
 	// Reopen files for simultaneous access

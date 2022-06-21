@@ -29,6 +29,7 @@ extern "C" {
 void dicom_wsi_interpret_top_level_data_element(dicom_instance_t *instance, dicom_data_element_t element);
 void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_data_element_t element);
 void dicom_wsi_finalize_sequence_item(dicom_instance_t* instance);
+u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 tile_index);
 
 #ifdef __cplusplus
 }

@@ -218,6 +218,13 @@ typedef struct image_t {
 	bool is_valid;
 } image_t;
 
+typedef enum load_tile_error_code_enum {
+	LOAD_TILE_SUCCESS,
+	LOAD_TILE_EMPTY,
+	LOAD_TILE_READ_LOCAL_FAILED,
+	LOAD_TILE_READ_REMOTE_FAILED,
+} load_tile_error_code_enum;
+
 typedef struct load_tile_task_t {
 	i32 resource_id;
 	image_t* image;

@@ -378,6 +378,7 @@ memrw_t* tiff_serialize(tiff_t* tiff, memrw_t* buffer);
 i64 find_end_of_http_headers(u8* str, u64 len);
 bool32 tiff_deserialize(tiff_t* tiff, u8* buffer, u64 buffer_size);
 void tiff_destroy(tiff_t* tiff);
+u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_ifd, i32 tile_index, i32 level, i32 tile_x, i32 tile_y);
 double tiff_rational_to_float(tiff_rational_t rational);
 tiff_rational_t float_to_tiff_rational(double x);
 

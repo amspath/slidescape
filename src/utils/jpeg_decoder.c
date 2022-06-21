@@ -66,7 +66,7 @@ void setup_jpeg_source(j_decompress_ptr cinfo, uint8_t *input_ptr, uint32_t inpu
 
 
 EMSCRIPTEN_KEEPALIVE
-boolean decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool32 is_YCbCr) {
+boolean jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool32 is_YCbCr) {
 	struct jpeg_decompress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 

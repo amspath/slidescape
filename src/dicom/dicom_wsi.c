@@ -20,6 +20,8 @@
 #include "dicom.h"
 #include "dicom_wsi.h"
 
+#include "jpeg_decoder.h"
+
 // C.8.12.6.1 Plane Position (Slide) Macro
 // https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.6.html#sect_C.8.12.6.1
 
@@ -347,4 +349,49 @@ void dicom_wsi_finalize_sequence_item(dicom_instance_t* instance) {
 		} break;
 
 	}
+}
+
+u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 tile_index) {
+	dicom_instance_t* instance = dicom_series->wsi.level_instances[scale];
+	ASSERT(instance);
+	if (!instance) return NULL;
+	dicom_tile_t* dicom_tile = instance->tiles + tile_index;
+	size_t read_size = dicom_tile->data_size;
+	if (dicom_tile->data_size == DICOM_UNDEFINED_LENGTH) {
+		u8 temp[12];
+		size_t bytes_read = file_handle_read_at_offset(temp, instance->file_handle, dicom_tile->data_offset_in_file, 12);
+		dicom_data_element_t element = dicom_read_data_element(temp, 0, instance->encoding, bytes_read);
+		if (element.tag.as_u32 == DICOM_Item) {
+			read_size = element.length; // TODO: bounds/sanity checks
+		} else {
+			ASSERT(!"could not read a valid Item");
+			return NULL;
+		}
+	}
+	if (read_size == DICOM_UNDEFINED_LENGTH) {
+		ASSERT(!"unknown length");
+		return NULL;
+	}
+	u8* compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, read_size);
+	file_handle_read_at_offset(compressed_tile_data, instance->file_handle, dicom_tile->data_offset_in_file, read_size);
+
+	// TODO: handle native pixel data instead of encapsulated
+	i64 data_size = dicom_defragment_encapsulated_pixel_data_frame(compressed_tile_data, read_size);
+	if (data_size > 0) {
+		if (instance->lossy_image_compression_method == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_10918_1) {
+			// JPEG compression
+			i32 width = 0;
+			i32 height = 0;
+			i32 channels_in_file = 0;
+			u8* pixels = jpeg_decode_image(compressed_tile_data, data_size, &width, &height, &channels_in_file);
+			if (pixels && width == instance->columns && height == instance->rows && channels_in_file == 4) {
+				// success
+				return pixels;
+			} else {
+				if (pixels) free(pixels);
+				return NULL;
+			}
+		}
+	}
+	return NULL;
 }
