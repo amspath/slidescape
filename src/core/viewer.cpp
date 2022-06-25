@@ -1909,6 +1909,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						} else if (scene->drag_ended) {
 							// finalize ellipse
 							viewer_switch_tool(app_state, TOOL_NONE);
+						} else if (was_key_pressed(input, KEY_Escape)) {
+							viewer_switch_tool(app_state, TOOL_NONE);
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_RECTANGLE) {
 						do_mouse_tool_create_rectangle(app_state, input, scene, annotation_set);

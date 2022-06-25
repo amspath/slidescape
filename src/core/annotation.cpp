@@ -246,6 +246,8 @@ void do_mouse_tool_create_rectangle(app_state_t* app_state, input_t* input, scen
 	} else if (scene->drag_ended) {
 		// finalize shape
 		viewer_switch_tool(app_state, TOOL_NONE);
+	} else if (was_key_pressed(input, KEY_Escape)) {
+		viewer_switch_tool(app_state, TOOL_NONE);
 	}
 }
 
@@ -408,6 +410,8 @@ void do_mouse_tool_create_line(app_state_t* app_state, input_t* input, scene_t* 
 		viewer_switch_tool(app_state, TOOL_NONE);
 		app_state->mouse_mode = MODE_DRAG_ANNOTATION_NODE;
 //							console_print("Creating a line\n");
+	} else if (was_key_pressed(input, KEY_Escape)) {
+		viewer_switch_tool(app_state, TOOL_NONE);
 	}
 }
 
