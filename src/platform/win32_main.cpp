@@ -815,6 +815,9 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 				if (hid_code == KEY_LeftAlt || hid_code == KEY_RightAlt) {
 					win32_process_keyboard_event(&keyboard_input->key_alt, is_down);
+				} else if (keyboard_input->key_alt.down && !alt_down) {
+					// NOTE: workaround for a bug: sometimes Alt doesn't get released properly??
+					win32_process_keyboard_event(&keyboard_input->key_alt, false);
 				}
 
 				switch (vk_code) {
