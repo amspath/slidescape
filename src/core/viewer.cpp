@@ -1528,7 +1528,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (gui_want_capture_mouse) {
 			// ignore mouse input
 		} else {
-			if (was_button_released(&input->mouse_buttons[0]) && !scene->suppress_next_click) {
+			// TODO: fix click on another window (but inside window bounds) registering as a click
+			rect2i window_rect = {0, 0, (i32)(client_width * app_state->display_scale_factor), (i32)(client_height * app_state->display_scale_factor)};
+			bool mouse_inside_window = is_point_inside_rect2i(window_rect, V2I((i32)input->mouse_xy.x, (i32)input->mouse_xy.y));
+
+			if (was_button_released(&input->mouse_buttons[0]) && !scene->suppress_next_click && mouse_inside_window) {
 				float drag_distance = v2f_length(scene->cumulative_drag_vector);
 				if (drag_distance < CLICK_DRAG_TOLERANCE) {
 					scene->clicked = true;
@@ -1546,10 +1550,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (input->mouse_buttons[0].down) {
 				// Mouse drag.
-				rect2i valid_drag_start_rect = {0, 0, (i32)(client_width * app_state->display_scale_factor), (i32)(client_height * app_state->display_scale_factor)};
 				if (input->mouse_buttons[0].transition_count != 0) {
 					// Don't start dragging if clicked outside the window
-					if (is_point_inside_rect2i(valid_drag_start_rect, V2I((i32)input->mouse_xy.x, (i32)input->mouse_xy.y))) {
+					if (mouse_inside_window) {
 						scene->is_dragging = true; // drag start
 						scene->drag_started = true;
 						scene->cumulative_drag_vector = v2f();
@@ -1892,6 +1895,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						if (scene->clicked) {
 							create_point_annotation(&scene->annotation_set, scene->mouse);
 //							console_print("Creating a point\n");
+							viewer_switch_tool(app_state, TOOL_NONE);
+						} else if (was_key_pressed(input, KEY_Escape)) {
 							viewer_switch_tool(app_state, TOOL_NONE);
 						}
 					} else if (app_state->mouse_tool == TOOL_CREATE_LINE) {

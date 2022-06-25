@@ -107,27 +107,6 @@ void deselect_all_annotations(annotation_set_t* annotation_set) {
 }
 
 
-// TODO: unused, delete?
-// Quadrant  layout:
-//  0 | 1
-// ------
-//  3 | 2
-i32 rectangle_get_quadrant_for_coordinate_index(i32 coordinate_index, v2f* coordinates, i32 coordinate_count) {
-	ASSERT(coordinate_count == 4);
-	if (coordinate_count != 4) {
-		return 0;
-	} else {
-		v2f sum = v2f_add(coordinates[3], v2f_add(coordinates[2], v2f_add(coordinates[1], coordinates[0])));
-		v2f center = v2f_scale(0.25f, sum);
-		v2f c = coordinates[coordinate_index];
-		if (c.x > center.x) {
-			return (c.y > center.y) ? 2 : 1;
-		} else {
-			return (c.y > center.y) ? 3 : 0;
-		}
-	}
-}
-
 void annotation_set_rectangle_coordinates_to_bounding_box(annotation_set_t* annotation_set, annotation_t* annotation) {
 	if (annotation->coordinate_count == 4) {
 		annotation_recalculate_bounds_if_necessary(annotation);
@@ -165,6 +144,10 @@ void do_drag_annotation_node(scene_t* scene) {
 	}
 }
 
+void annotation_set_automatic_name(annotation_t* annotation, i32 annotation_index) {
+	snprintf(annotation->name, sizeof(annotation->name), "Annotation %d", annotation_index);
+}
+
 void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_t new_annotation = {};
 	new_annotation.type = ANNOTATION_ELLIPSE;
@@ -178,16 +161,18 @@ void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos) {
 	deselect_all_annotations(annotation_set);
 	new_annotation.selected = true;
 
+	i32 active_index = annotation_set->active_annotation_count;
+	annotation_set_automatic_name(&new_annotation, active_index);
+
 	arrput(annotation_set->stored_annotations, new_annotation);
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
 
 	arrput(annotation_set->active_annotation_indices, annotation_stored_index);
 	annotation_set->active_annotation_count++;
 
-	notify_annotation_set_modified(annotation_set);
-
-	i32 active_index = annotation_set->active_annotation_count - 1;
 	annotation_set->editing_annotation_index = active_index;
+
+	notify_annotation_set_modified(annotation_set);
 }
 
 void finalize_ellipse_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f pos) {
@@ -222,6 +207,9 @@ void create_rectangle_annotation(annotation_set_t* annotation_set, v2f pos) {
 	deselect_all_annotations(annotation_set);
 	new_annotation.selected = true;
 
+	i32 active_index = annotation_set->active_annotation_count;
+	annotation_set_automatic_name(&new_annotation, active_index);
+
 	arrput(annotation_set->stored_annotations, new_annotation);
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
 
@@ -234,7 +222,6 @@ void create_rectangle_annotation(annotation_set_t* annotation_set, v2f pos) {
 
 	notify_annotation_set_modified(annotation_set);
 
-	i32 active_index = annotation_set->active_annotation_count - 1;
 	annotation_set->editing_annotation_index = active_index;
 }
 
@@ -271,6 +258,9 @@ void create_freeform_annotation(annotation_set_t* annotation_set, v2f pos) {
 	deselect_all_annotations(annotation_set);
 	new_annotation.selected = true;
 
+	i32 active_index = annotation_set->active_annotation_count;
+	annotation_set_automatic_name(&new_annotation, active_index);
+
 	arrput(annotation_set->stored_annotations, new_annotation);
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
 
@@ -283,7 +273,6 @@ void create_freeform_annotation(annotation_set_t* annotation_set, v2f pos) {
 
 	notify_annotation_set_modified(annotation_set);
 
-	i32 active_index = annotation_set->active_annotation_count - 1;
 	annotation_set->editing_annotation_index = active_index;
 }
 
@@ -391,6 +380,9 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	deselect_all_annotations(annotation_set);
 	new_annotation.selected = true;
 
+	i32 active_index = annotation_set->active_annotation_count;
+	annotation_set_automatic_name(&new_annotation, active_index);
+
 	arrput(annotation_set->stored_annotations, new_annotation);
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
 
@@ -430,6 +422,9 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 
 	deselect_all_annotations(annotation_set);
 	new_annotation.selected = true;
+
+	i32 active_index = annotation_set->active_annotation_count;
+	annotation_set_automatic_name(&new_annotation, active_index);
 
 	arrput(annotation_set->stored_annotations, new_annotation);
 	i32 annotation_stored_index = annotation_set->stored_annotation_count++;
@@ -1609,6 +1604,21 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::BeginDisabled();
 			}
 
+			if (annotation_set->selection_count == 1) {
+				annotation_t* selected_annotation = annotation_set->selected_annotations[0];
+				if (selected_annotation) {
+					if (ImGui::InputText("Name", selected_annotation->name, sizeof(selected_annotation->name))) {
+						notify_annotation_set_modified(annotation_set);
+					}
+				}
+			} else {
+				ImGui::BeginDisabled();
+				char temp[256];
+				temp[0] = '\0';
+				ImGui::InputText("Name", temp, sizeof(temp), 0);
+				ImGui::EndDisabled();
+			}
+
 			static const char* annotation_types[] = {"Unknown type", "Rectangle", "Polygon", "Point", "Line", "Spline", "Ellipse", "Text" };
 
 			// Figure out which types have been selected
@@ -1679,13 +1689,24 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 
 		if (ImGui::CollapsingHeader("Dataset info")) {
-			ImGuiInputTextFlags input_text_flags = 0;
-			ImGui::InputText("Description", annotation_set->coco.info.description, COCO_MAX_FIELD, input_text_flags);
-			ImGui::InputText("URL", annotation_set->coco.info.url, COCO_MAX_FIELD, input_text_flags);
-			ImGui::InputText("Version", annotation_set->coco.info.version, COCO_MAX_FIELD, input_text_flags);
-			ImGui::InputInt("Year", &annotation_set->coco.info.year, 1, 100, input_text_flags);
-			ImGui::InputText("Contributor", annotation_set->coco.info.contributor, COCO_MAX_FIELD, input_text_flags);
-			ImGui::InputText("Date created", annotation_set->coco.info.date_created, COCO_MAX_FIELD, input_text_flags);
+			if (ImGui::InputText("Description", annotation_set->coco.info.description, COCO_MAX_FIELD)) {
+				notify_annotation_set_modified(annotation_set);
+			}
+			if (ImGui::InputText("URL", annotation_set->coco.info.url, COCO_MAX_FIELD)) {
+				notify_annotation_set_modified(annotation_set);
+			}
+			if (ImGui::InputText("Version", annotation_set->coco.info.version, COCO_MAX_FIELD)) {
+				notify_annotation_set_modified(annotation_set);
+			}
+			if (ImGui::InputInt("Year", &annotation_set->coco.info.year, 1, 100)) {
+				notify_annotation_set_modified(annotation_set);
+			}
+			if (ImGui::InputText("Contributor", annotation_set->coco.info.contributor, COCO_MAX_FIELD)) {
+				notify_annotation_set_modified(annotation_set);
+			}
+			if (ImGui::InputText("Date created", annotation_set->coco.info.date_created, COCO_MAX_FIELD)) {
+				notify_annotation_set_modified(annotation_set);
+			}
 			// TODO: Image, license etc.
 		}
 
