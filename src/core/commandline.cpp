@@ -40,6 +40,7 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 		} else if (strcmp(arg, "--export") == 0) {
 			app_command.headless = true;
 			app_command.command = COMMAND_EXPORT;
+			app_command.export_command.with_annotations = true;
 			app_command.export_command.error = COMMAND_EXPORT_ERROR_NO_ROI;
 			// slidescape 1.tiff --export --roi "Annotation 0"
 			++arg_index;
@@ -52,6 +53,8 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 						app_command.export_command.roi = arg;
 						app_command.export_command.error = COMMAND_EXPORT_ERROR_NONE;
 					}
+				} else if (strcmp(arg, "--no-annotations") == 0) {
+					app_command.export_command.with_annotations = false;
 				}
 			}
 		} else {
@@ -129,7 +132,9 @@ int app_command_execute(app_state_t* app_state) {
 					if (image->backend == IMAGE_BACKEND_TIFF) {
 						u32 export_flags = 0;
 						// TODO: allow configuration
-						export_flags |= EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS;
+						if (command->export_command.with_annotations) {
+							export_flags |= EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS;
+						}
 						export_flags |= EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
 
 						annotation_set_t* annotation_set = &app_state->scene.annotation_set;
@@ -144,6 +149,10 @@ int app_command_execute(app_state_t* app_state) {
 								if (strncmp(annotation->name, command->export_command.roi, COUNT(annotation->name)-1) == 0) {
 									found_roi = true;
 									roi_annotation = annotation;
+									// Makes no sense to export the annotations if the only one existing is the one specifying what to export
+									if (annotation_set->active_annotation_count == 1 && annotation_set->active_group_count <= 1 && annotation_set->active_feature_count <= 1) {
+										export_flags &= ~EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS;
+									}
 									break;
 								}
 							}

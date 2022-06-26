@@ -418,6 +418,7 @@ struct app_command_t {
 	command_enum command;
 	struct app_command_export_t {
 		const char* roi;
+		bool with_annotations;
 		command_export_error_enum error;
 	} export_command;
 	const char** inputs; // array
