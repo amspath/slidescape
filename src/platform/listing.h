@@ -106,6 +106,7 @@ directory_listing_t* create_directory_listing_and_find_first_file(const char* di
 				data->found_filename = ep->d_name;
 				data->extension = extension;
 				ok = true;
+				break;
 			} else {
 				char *ext = strrchr(ep->d_name, '.');
 				if (ext != NULL && strcasecmp(ext+1, extension) == 0) {
