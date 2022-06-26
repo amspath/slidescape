@@ -83,7 +83,7 @@ file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
 
 void file_handle_close(file_handle_t file_handle) {
 	if (file_handle) {
-		CloseHandle(file_handle);
+		close(file_handle);
 	}
 }
 
