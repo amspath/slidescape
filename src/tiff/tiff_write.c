@@ -783,12 +783,18 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_compression); ++tag_count_for_ifd;
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_photometric_interpretation); ++tag_count_for_ifd;
 
+			// NOTE: For files cropped from Philips TIFF, ASAP will not correctly read the XResolution and YResolution tags
+			// if the ImageDescription exists (or, if the ImageDescription still contains a reference to the Philips metadata?)
+			// So for now, leave out the ImageDescription tag; it isn't really needed and only confuses some software.
+			/*
 			// Image description will be copied verbatim from the source
 			if (source_ifd->image_description != NULL && source_ifd->image_description_length > 0) {
 				add_large_bigtiff_tag(&tag_buffer, &small_data_buffer, &fixups_buffer, TIFF_TAG_IMAGE_DESCRIPTION,
 				                      TIFF_ASCII, source_ifd->image_description_length, source_ifd->image_description);
 				++tag_count_for_ifd;
 			}
+			*/
+
 			// unused tag: strip offsets
 
 			memrw_push_bigtiff_tag(&tag_buffer, &tag_orientation); ++tag_count_for_ifd;

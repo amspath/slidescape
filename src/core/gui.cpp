@@ -177,7 +177,7 @@ bool gui_draw_selected_annotation_submenu_section(app_state_t* app_state, scene_
 
 	// Option for setting the selection box around the selected annotation(s)
 	if (annotation_set->selection_count >= 1) {
-		if (ImGui::MenuItem("Set region")) {
+		if (ImGui::MenuItem("Set export region")) {
 			set_region_encompassing_selected_annotations(annotation_set, scene);
 		}
 
@@ -262,7 +262,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("Edit")) {
-			if (ImGui::BeginMenu("Select region", has_image_loaded)) {
+			if (ImGui::BeginMenu("Select export region", has_image_loaded)) {
 				if (ImGui::MenuItem("Draw selection box...", NULL, &menu_items_clicked.select_region_create_box)) {}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Set region to whole slide", NULL, &menu_items_clicked.select_region_whole_slide, has_image_loaded)) {}

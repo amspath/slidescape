@@ -173,6 +173,9 @@ void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->editing_annotation_index = active_index;
 
 	notify_annotation_set_modified(annotation_set);
+
+	// Creating an annotation implies that you might want to edit it as well
+	annotation_set->is_edit_mode = true;
 }
 
 void finalize_ellipse_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f pos) {
@@ -223,6 +226,9 @@ void create_rectangle_annotation(annotation_set_t* annotation_set, v2f pos) {
 	notify_annotation_set_modified(annotation_set);
 
 	annotation_set->editing_annotation_index = active_index;
+
+	// Creating an annotation implies that you might want to edit it as well
+	annotation_set->is_edit_mode = true;
 }
 
 void do_mouse_tool_create_rectangle(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set) {
@@ -274,6 +280,9 @@ void create_freeform_annotation(annotation_set_t* annotation_set, v2f pos) {
 	notify_annotation_set_modified(annotation_set);
 
 	annotation_set->editing_annotation_index = active_index;
+
+	// Creating an annotation implies that you might want to edit it as well
+	annotation_set->is_edit_mode = true;
 }
 
 void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set) {
@@ -394,6 +403,9 @@ void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->selected_coordinate_annotation_index = annotation_active_index;
 
 	notify_annotation_set_modified(annotation_set);
+
+	// Creating an annotation implies that you might want to edit it as well
+	annotation_set->is_edit_mode = true;
 }
 
 void do_mouse_tool_create_line(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set) {
@@ -433,6 +445,9 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->active_annotation_count++;
 
 	notify_annotation_set_modified(annotation_set);
+
+	// Creating an annotation implies that you might want to edit it as well
+	annotation_set->is_edit_mode = true;
 }
 
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
@@ -1353,8 +1368,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 							select_annotation(annotation_set, annotation);
 						}
 
-						if (ImGui::MenuItem("Allow editing coordinates", "E", &annotation_set->is_edit_mode)) {}
-						ImGui::Separator();
+						if (annotation_set->active_annotation_count > 0) {
+							if (ImGui::MenuItem("Allow editing coordinates", "E", &annotation_set->is_edit_mode, annotation_set->active_annotation_count > 0)) {}
+							ImGui::Separator();
+						}
 
 						if (ImGui::MenuItem("Delete coordinate", "C")) {
 							delete_coordinate(annotation_set, annotation_index, annotation_set->hovered_coordinate);
@@ -1465,8 +1482,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	if (!did_popup) {
 		if (ImGui::BeginPopupContextVoid()) {
 			did_popup = true;
-			if (ImGui::MenuItem("Allow editing coordinates", "E", &annotation_set->is_edit_mode)) {}
-			ImGui::Separator();
+			if (annotation_set->active_annotation_count > 0) {
+				if (ImGui::MenuItem("Allow editing coordinates", "E", &annotation_set->is_edit_mode)) {}
+				ImGui::Separator();
+			}
 
 			if (gui_draw_selected_annotation_submenu_section(app_state, scene, annotation_set)) {
 				ImGui::Separator();

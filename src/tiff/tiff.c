@@ -336,6 +336,9 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	// Read the tags
 	u64 tag_size = is_bigtiff ? 20 : 12;
 	u64 bytes_to_read = tag_count * tag_size;
+	if (bytes_to_read > tiff->filesize) {
+		return false; // sanity check
+	}
 	u8* raw_tags = (u8*) malloc(bytes_to_read);
 	if (file_stream_read(raw_tags, bytes_to_read, tiff->fp) != bytes_to_read) {
 		free(raw_tags);
