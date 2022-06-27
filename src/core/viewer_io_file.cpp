@@ -473,8 +473,6 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 		return true;
 
 	} else {
-		console_print_error("Could not load '%s'\n", file->filename);
-		gui_add_modal_message_popup("Error##load_generic_file", "Could not load '%s'.\n", file->filename);
 		return false;
 	}
 }
