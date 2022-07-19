@@ -687,7 +687,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 				} else {
 					u32 par = (u32)message.wParam;
 					i32 z_delta = GET_WHEEL_DELTA_WPARAM(message.wParam);
-					input->mouse_z = z_delta;
+					input->mouse_z = (float)z_delta / (WHEEL_DELTA);
 				}
 			} break;
 
@@ -1949,6 +1949,8 @@ int main() {
 
 	app_state_t* app_state = &global_app_state;
 	init_app_state(app_state, app_command);
+
+	is_vsync_enabled = true;
 
 	viewer_init_options(app_state);
 

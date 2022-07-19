@@ -1639,7 +1639,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Zoom in or out using the mouse wheel.
 			if (!gui_want_capture_mouse && input->mouse_z != 0) {
-				dlevel = (input->mouse_z > 0 ? -1.0f : 1.0f);
+				// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
+				// Pro: gives better control than zooming in whole levels; con: makes zooming in/out rather slow.
+				// Trick: advance the 'zoom target' in increments of ~0.75 levels, but round down to the nearest 0.5 once we are close by.
+				// This allows slow zooming (0.5 per mouse wheel tick), but if you move fast you can accelerate to ~0.75/tick.
+				dlevel = -input->mouse_z * 0.7499f;
 				used_mouse_to_zoom = true;
 			}
 
@@ -1703,16 +1707,20 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				integer_zoom = false;
 			}
 
-			if (dlevel != 0.0f) {
+			bool need_set_zoom_pivot = (dlevel != 0.0f);
+			float residual_dlevel = scene->zoom_target_state.pos - scene->zoom.pos;
+			if (dlevel != 0.0f || residual_dlevel != 0.0f) {
 //		        console_print("mouse_z = %d\n", input->mouse_z);
 
 				float new_level = scene->zoom.pos + dlevel;
 				if (scene->need_zoom_animation) {
-					float residual_dlevel = scene->zoom_target_state.pos - scene->zoom.pos;
 					new_level += residual_dlevel;
 				}
 				if (integer_zoom) {
-					new_level = roundf(new_level);
+					// snap to multiples of 0.5
+					if (fabs(residual_dlevel) < 0.75f) {
+						new_level = roundf(new_level * 2.0f) * 0.5f;
+					}
 				}
 
 				new_level = CLAMP(new_level, viewer_min_level, viewer_max_level);
@@ -1720,12 +1728,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				zoom_update_pos(&new_zoom, (float) new_level);
 
 				if (new_zoom.pos != old_zoom.pos) {
-					if (used_mouse_to_zoom) {
-						scene->zoom_pivot = scene->mouse;
-						scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, displayed_image->width_in_um);
-						scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, displayed_image->height_in_um);
-					} else {
-						scene->zoom_pivot = scene->camera;
+					if (need_set_zoom_pivot) {
+						if (used_mouse_to_zoom) {
+							scene->zoom_pivot = scene->mouse;
+							scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, displayed_image->width_in_um);
+							scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, displayed_image->height_in_um);
+						} else {
+							scene->zoom_pivot = scene->camera;
+						}
 					}
 					scene->zoom_target_state = new_zoom;
 					scene->need_zoom_animation = true;
@@ -1741,8 +1751,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->need_zoom_animation = false;
 				}
 				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-				float linear_catch_up_speed = 12.0f * delta_t;
-				float exponential_catch_up_speed = 15.0f * delta_t;
+				float linear_catch_up_speed = 5.0f * delta_t;
+				float exponential_catch_up_speed = 12.0f * delta_t;
 				if (abs_d_zoom > linear_catch_up_speed) {
 					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
 					         sign_d_zoom;
