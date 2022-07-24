@@ -537,6 +537,7 @@ bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_
 			dicom_instance_t* level_instance = dicom->wsi.level_instances[level_index];
 
 			level_image->exists = true;
+			level_image->needs_indexing = level_instance->is_pixel_data_encapsulated && !level_instance->are_all_offsets_read;
 			level_image->pyramid_image_index = level_index; // not used
 			level_image->downsample_factor = exp2f((float)level_index);
 			level_image->width_in_tiles = level_instance->width_in_tiles;
@@ -1021,6 +1022,9 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 				level_image_t *drawn_level = image->level_images + scale;
 				if (!drawn_level->exists) {
 					continue; // no image data
+				}
+				if (drawn_level->needs_indexing) {
+					continue;
 				}
 
 				bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles);

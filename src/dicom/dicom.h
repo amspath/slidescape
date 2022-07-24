@@ -231,6 +231,8 @@ typedef struct dicom_instance_t {
 	bool found_pixel_data;
 	bool is_pixel_data_encapsulated;
 	bool has_basic_offset_table;
+	bool are_all_offsets_read;
+	bool need_parse_abort;
 	dicom_data_element_t pixel_data;
 	u32* pixel_data_offsets; // malloc'ed
 	u32* pixel_data_sizes; // malloc'ed

@@ -169,6 +169,8 @@ typedef struct {
 	v2f origin_offset;
 	i32 pyramid_image_index;
 	bool exists;
+	bool needs_indexing; //TODO: implement
+	bool indexing_job_submitted;
 } level_image_t;
 
 typedef struct simple_image_t {

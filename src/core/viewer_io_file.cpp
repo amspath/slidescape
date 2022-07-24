@@ -310,8 +310,12 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 		} else if (strcasecmp(file->ext, "isyntax") == 0) {
 			return VIEWER_FILE_TYPE_ISYNTAX;
 		} else {
-			// TODO: this is a total guess, maybe flesh out more?
-			return VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE;
+			if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
+				return VIEWER_FILE_TYPE_DICOM;
+			} else {
+				// TODO: this is a total guess, maybe flesh out more?
+				return VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE;
+			}
 		}
 	}
 	return VIEWER_FILE_TYPE_UNKNOWN;

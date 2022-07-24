@@ -560,9 +560,9 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 					dicom_lossy_image_compression_method_enum method = DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_UNKNOWN;
 					static const char* possible_values[] = {"ISO_10918_1", "ISO_14495_1", "ISO_15444_1", "ISO_13818_2", "ISO_14496_10", "ISO_23008_2"};
 					ASSERT(COUNT(possible_values) == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_23008_2); // enum value equals index+1
-					size_t length = dicom_get_element_length_without_trailing_whitespace(data, element.length);
+					dicom_cs_t cs = dicom_parse_code_string((str_t){data_str, element.length}, NULL);
 					for (i32 i = 0; i < COUNT(possible_values); ++i) {
-						if (strncmp(data_str, possible_values[i], length) == 0) {
+						if (strcmp(cs.value, possible_values[i]) == 0) {
 							method = i + 1;
 							break;
 						}
@@ -610,6 +610,100 @@ static void dicom_finalize_sequence_item(dicom_instance_t* instance) {
 	}
 }
 
+bool dicom_read_encapsulated_pixel_data_item(dicom_instance_t* instance, dicom_data_element_t element, dicom_parser_pos_t* current_position, bool known_enough_bytes_left) {
+	ASSERT(instance->is_pixel_data_encapsulated);
+	ASSERT(instance->number_of_frames > 0);
+	if (current_position->item_number == 0) {
+		console_print_verbose("Found Basic Offset Table at offset=%d\n", element.data_offset);
+		if (known_enough_bytes_left && element.length % 4 == 0) {
+			instance->found_pixel_data = true;
+
+			u32 offset_count = element.length / 4;
+			if (offset_count > 0) {
+				instance->has_basic_offset_table = true;
+				instance->are_all_offsets_read = true;
+				instance->need_parse_abort = true; // no need to read further elements for now
+
+				// TODO: is it always true that the number of frames equals the number of items in the sequence?
+				// https://dicom.nema.org/dicom/2013/output/chtml/part05/sect_A.4.html
+				if (offset_count != instance->number_of_frames) {
+					console_print_error("DICOM: number of offsets in the basic offset table (%d) does not match number of frames (%d)\n", offset_count, instance->number_of_frames);
+					instance->is_image_invalid = true;
+					return false;
+				}
+
+				instance->pixel_data_offset_count = offset_count;
+				instance->pixel_data_start_offset = element.data_offset + element.length;
+				instance->pixel_data_offsets = malloc(offset_count * sizeof(u32));
+				ASSERT(offset_count == instance->number_of_frames);
+				ASSERT(instance->pixel_data_offsets != NULL);
+				ASSERT(offset_count * sizeof(u32) == element.length);
+				memcpy(instance->pixel_data_offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
+				instance->pixel_data_sizes = malloc(offset_count * sizeof(u32));
+				for (i32 i = 0; i < offset_count - 1; ++i) {
+					i64 size = instance->pixel_data_offsets[i + 1] - instance->pixel_data_offsets[i];
+					if (size > 0) {
+						instance->pixel_data_sizes[i] = size;
+					} else {
+						instance->pixel_data_sizes[i] = DICOM_UNDEFINED_LENGTH;
+						instance->is_image_invalid = true;
+					}
+				}
+				// the last frame size cannot be known, unfortunately, because we have no guarantee
+				// that there aren't additional data elements at the end of the file.
+				// We can however check that the amount of data is reasonable enough that we could
+				// easily read it in one go if we want.
+				i64 data_left = instance->total_bytes_in_stream - instance->pixel_data_offsets[offset_count-1];
+				if (data_left < MEGABYTES(2)) {
+					instance->pixel_data_sizes[offset_count-1] = data_left;
+				} else {
+					instance->pixel_data_sizes[offset_count-1] = DICOM_UNDEFINED_LENGTH;
+				}
+
+			} else {
+				// Basic offset table with length 0 means we unfortunately have to parse each item to get the offsets.
+				instance->has_basic_offset_table = false;
+
+				// TODO: is it always true that the number of frames equals the number of items in the sequence?
+				// https://dicom.nema.org/dicom/2013/output/chtml/part05/sect_A.4.html
+				instance->pixel_data_offset_count = instance->number_of_frames;
+				instance->pixel_data_start_offset = element.data_offset + element.length;
+				instance->pixel_data_offsets = calloc(1, instance->pixel_data_offset_count * sizeof(u32));
+				instance->pixel_data_sizes = calloc(1, instance->pixel_data_offset_count * sizeof(u32));
+
+				// We might be lucky if we have already read to the end of the file.
+				// In that case, we can continue parsing the rest of the items to fill out the offset table.
+				// Otherwise, abort reading further elements (we'll need to read them later).
+				if (instance->bytes_read_from_file < instance->total_bytes_in_stream) {
+					instance->need_parse_abort = true;
+				}
+			}
+
+		} else {
+			// TODO: handle error condition (malformed DICOM file?)
+			console_print_error("DICOM: basic offset table cannot be read or has unexpected length (%u)\n", element.length);
+			instance->is_image_invalid = true;
+		}
+	} else {
+		// Pixel Data Item: record offset
+		i64 frame_index = current_position->item_number - 1;
+//		console_print("DICOM: pixel data for frame %d\n", frame_index);
+		ASSERT(instance->pixel_data_offsets);
+		ASSERT(frame_index < instance->pixel_data_offset_count);
+		if (frame_index < instance->pixel_data_offset_count) {
+			// For a DICOM 'Basic Offset Table', the offset is expected point to the first byte of the Item Tag
+			// (counting from the start of the Pixel Data data start offset)
+			instance->pixel_data_offsets[frame_index] = current_position->offset - instance->pixel_data_start_offset;
+			instance->pixel_data_sizes[frame_index] = element.length + (element.data_offset - current_position->offset);
+		}
+		if (frame_index == instance->number_of_frames - 1) {
+			// This is the last frame (we're done).
+			instance->are_all_offsets_read = true;
+		}
+	}
+	return true;
+}
+
 bool dicom_read_chunk(dicom_instance_t* instance) {
 
 	for (;;) {
@@ -646,6 +740,8 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 			return false; // not enough bytes left for the tag/header of this element
 		}
 
+		// If the element has a defined length --> guarantee that the data is fully read from file, then interpret the element.
+		// If the length is undefined --> we cannot guarantee that the data is fully read, but proceed anyway (cautiously).
 		i64 data_bytes_left = instance->bytes_read_from_file - element.data_offset;
 		bool known_enough_bytes_left = false;
 		if (element.length != DICOM_UNDEFINED_LENGTH) {
@@ -750,60 +846,9 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 						// Maybe this is encapsulated pixel data -> no pushing needed
 						need_increment_item_number = true;
 						if (parent_element->tag.as_u32 == DICOM_PixelData) {
-							if (current_position->item_number == 0) {
-								console_print_verbose("Found Basic Offset Table at offset=%d\n", element.data_offset);
-								if (known_enough_bytes_left && element.length % 4 == 0) {
-									instance->found_pixel_data = true;
-									// TODO: is it always true that the number of frames equals the number of items in the sequence?
-									// https://dicom.nema.org/dicom/2013/output/chtml/part05/sect_A.4.html
-									u32 offset_count = element.length / 4;
-									if (offset_count > 0) {
-										instance->has_basic_offset_table = true;
-										instance->pixel_data_offset_count = offset_count;
-										instance->pixel_data_start_offset = element.data_offset + element.length;
-										instance->pixel_data_offsets = malloc(offset_count * sizeof(u32));
-										ASSERT(instance->pixel_data_offsets != NULL);
-										ASSERT(offset_count * sizeof(u32) == element.length);
-										memcpy(instance->pixel_data_offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
-										instance->pixel_data_sizes = malloc(offset_count * sizeof(u32));
-										for (i32 i = 0; i < offset_count - 1; ++i) {
-											i64 size = instance->pixel_data_offsets[i + 1] - instance->pixel_data_offsets[i];
-											if (size > 0) {
-												instance->pixel_data_sizes[i] = size;
-											} else {
-												//TODO: handle error condition
-												instance->pixel_data_sizes[i] = DICOM_UNDEFINED_LENGTH;
-											}
-										}
-										// the last frame size cannot be known, unfortunately, because we have no guarantee
-										// that there aren't additional data elements at the end of the file.
-										// We can however check that the amount of data is reasonable enough that we could
-										// easily read it in one go if we want.
-										i64 data_left = instance->total_bytes_in_stream - instance->pixel_data_offsets[offset_count-1];
-										if (data_left < MEGABYTES(2)) {
-											instance->pixel_data_sizes[offset_count-1] = data_left;
-										} else {
-											instance->pixel_data_sizes[offset_count-1] = DICOM_UNDEFINED_LENGTH;
-										}
-										// Patch the offsets so that they are from the beginning of the file
-										for (i32 i = 0; i < offset_count - 1; ++i) {
-											i64 size = instance->pixel_data_offsets[i + 1] - instance->pixel_data_offsets[i];
-											if (size > 0) {
-												instance->pixel_data_sizes[i] = size;
-											} else {
-												//TODO: handle error condition
-												instance->pixel_data_sizes[i] = DICOM_UNDEFINED_LENGTH;
-											}
-										}
+							dicom_read_encapsulated_pixel_data_item(instance, element, current_position,
+							                                        known_enough_bytes_left);
 
-									}
-
-								} else {
-									// TODO: handle error condition (malformed DICOM file?)
-								}
-							} else {
-								// pixel data
-							}
 						}
 					}
 				} else {
@@ -854,6 +899,11 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 			DUMMY_STATEMENT;
 			break; // reached end of file
 		}
+
+		if (instance->need_parse_abort) {
+			instance->need_parse_abort = false;
+			return false;
+		}
 	}
 	return true;
 
@@ -899,29 +949,58 @@ dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file
 					// This way we don't need to read the whole file initially.
 					for(;;) {
 						bool finished = dicom_read_chunk(&instance);
-						if (finished || instance.found_pixel_data) {
-							instance.is_valid = !instance.is_image_invalid; // TODO: what to do here?
-							break;
-						} else {
-							i64 bytes_left_in_file = file->filesize - instance.bytes_read_from_file;
-							if (bytes_left_in_file <= 0) {
-								// TODO: handle error condition
-							}
-							ASSERT(bytes_left_in_file > 0 && bytes_left_in_file < instance.total_bytes_in_stream);
-							bytes_to_read = MIN(chunk_size, bytes_left_in_file);
-							memrw_maybe_grow(&buffer, buffer.used_size + bytes_to_read);
-							bytes_read = file_stream_read(buffer.data + buffer.used_size, (size_t)bytes_to_read, fp);
-							buffer.used_size += bytes_read;
-							buffer.cursor += bytes_read;
-							instance.data = buffer.data + payload_offset; // need to update the pointer, maybe it moved due to resizing
-							instance.bytes_read_from_file += bytes_read;
 
-							bytes_left_in_file = file->filesize - instance.bytes_read_from_file;
-							if (bytes_left_in_file <= 0) {
-								DUMMY_STATEMENT;
+						bool stop_reading = finished;
+						if (!finished) {
+							if (instance.found_pixel_data) {
+								if (!instance.is_pixel_data_encapsulated) {
+									stop_reading = true;
+								} else {
+									if (instance.are_all_offsets_read) {
+										stop_reading = true;
+									} else {
+										ASSERT(!instance.has_basic_offset_table);
+										// There is no offset table, and we haven't read enough data yet to know all of the frame offsets.
+										// We can choose to read to the end of the file immediately if it isn't too large.
+										i64 bytes_left_to_read = instance.total_bytes_in_stream - instance.bytes_read_from_file;
+										i64 reasonable_size_to_read_immediately = MEGABYTES(4);
+										if (bytes_left_to_read < reasonable_size_to_read_immediately) {
+											chunk_size = bytes_left_to_read;
+											// continue reading
+										} else {
+											stop_reading = true;
+										}
+									}
+								}
 							}
 						}
+
+						if (stop_reading) {
+							break; // done
+						}
+
+						// Read an additional chunk
+						i64 bytes_left_in_file = instance.total_bytes_in_stream - instance.bytes_read_from_file;
+						if (bytes_left_in_file <= 0) {
+							// TODO: handle error condition
+						}
+						ASSERT(bytes_left_in_file > 0 && bytes_left_in_file < instance.total_bytes_in_stream);
+						bytes_to_read = MIN(chunk_size, bytes_left_in_file);
+						memrw_maybe_grow(&buffer, buffer.used_size + bytes_to_read);
+						bytes_read = file_stream_read(buffer.data + buffer.used_size, (size_t)bytes_to_read, fp);
+						buffer.used_size += bytes_read;
+						buffer.cursor += bytes_read;
+						instance.data = buffer.data + payload_offset; // need to update the pointer, maybe it moved due to resizing
+						instance.bytes_read_from_file += bytes_read;
+
+						bytes_left_in_file = instance.total_bytes_in_stream - instance.bytes_read_from_file;
+						if (bytes_left_in_file <= 0) {
+							DUMMY_STATEMENT;
+						}
+
 					}
+					instance.is_valid = !instance.is_image_invalid; // TODO: what to do here?
+
 
 				}
 			}
@@ -985,7 +1064,7 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 	}
 
 	// Sort levels (volumes) by descending image width to get the
-	indexed_value_t volume_image_widths[16] = {};
+	indexed_value_t* volume_image_widths = alloca(arrlen(dicom->instances) * sizeof(indexed_value_t));
 	i32 running_volume_index = 0;
 	for (i32 i = 0; i < arrlen(dicom->instances); ++i) {
 		dicom_instance_t* instance = dicom->instances + i;
@@ -1059,12 +1138,26 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 					// TODO: bounds check
 					tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[frame_index];
 					tile->data_size = instance->pixel_data_sizes[frame_index];
-				} else {
-					ASSERT(!"tile offset/size unknown");
 				}
 			}
 		} else {
-			success = false;
+			// We don't have tile position information -> guess that all tiles are present in the logical order
+			ASSERT(instance->number_of_frames == instance->tile_count);
+			for (i32 tile_y = 0; tile_y < instance->height_in_tiles; ++tile_y) {
+				for (i32 tile_x = 0; tile_x < instance->width_in_tiles; ++tile_x) {
+					i32 frame_index = tile_y * instance->width_in_tiles + tile_x;
+					dicom_tile_t* tile = instance->tiles + frame_index;
+					ASSERT(!tile->exists);
+					tile->exists = true;
+					tile->instance = instance;
+					tile->frame_index = frame_index;
+					if (instance->pixel_data_offsets && instance->pixel_data_sizes) {
+						// TODO: bounds check
+						tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[frame_index];
+						tile->data_size = instance->pixel_data_sizes[frame_index];
+					}
+				}
+			}
 		}
 
 	}
@@ -1300,3 +1393,20 @@ i64 dicom_defragment_encapsulated_pixel_data_frame(u8* data, i64 len) {
 	}
 	return current_dest_offset; // return size of defragmented data
 }
+
+#if 0
+void dicom_read_pixel_data_offsets(dicom_instance_t* instance) {
+	if (instance->is_pixel_data_encapsulated && instance->found_pixel_data) {
+
+		if (instance->file_handle) {
+			i64 chunk_size = MEGABYTES(4);
+			temp_memory_t temp = begin_temp_memory_on_local_thread();
+
+			size_t bytes_to_read = MIN(bytes_left_in_file, chunk_size);
+			file_handle_read_at_offset(chunk, instance->file_handle, offset, bytes_to_read);
+
+			release_temp_memory(&temp);
+		}
+	}
+}
+#endif
