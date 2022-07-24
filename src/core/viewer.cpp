@@ -723,7 +723,7 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
 
 	app_state->keyboard_base_panning_speed = 10.0f;
-	app_state->mouse_sensitivity = 10.0f;
+	app_state->mouse_sensitivity = 12.0f;
 	app_state->enable_autosave = true;
 
 	init_scene(app_state, &app_state->scene);
@@ -1634,16 +1634,28 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Zoom control
 			float dlevel = 0.0f;
+			float residual_dlevel = scene->zoom_target_state.pos - scene->zoom.pos; // how much the zoom is lagging behind
+			float abs_residual_dlevel = fabs(residual_dlevel);
 			bool integer_zoom = true; // can override later
+			bool use_zoom_animation = !use_fast_rendering;
 			bool32 used_mouse_to_zoom = false;
 
 			// Zoom in or out using the mouse wheel.
 			if (!gui_want_capture_mouse && input->mouse_z != 0) {
-				// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
-				// Pro: gives better control than zooming in whole levels; con: makes zooming in/out rather slow.
-				// Trick: advance the 'zoom target' in increments of ~0.75 levels, but round down to the nearest 0.5 once we are close by.
-				// This allows slow zooming (0.5 per mouse wheel tick), but if you move fast you can accelerate to ~0.75/tick.
-				dlevel = -input->mouse_z * 0.7499f;
+				if (use_zoom_animation) {
+					// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
+					// Pro: gives better control than zooming in whole levels; con: makes zooming in/out rather slow.
+					// Trick: advance the 'zoom target' in increments of ~0.75 or more levels, but round down to the nearest 0.5 once we are close by.
+					// This allows slow zooming (0.5 per mouse wheel tick), but if you move fast you can accelerate.
+					if (abs_residual_dlevel < 0.3f) {
+						dlevel = -input->mouse_z * 0.7499f;
+					} else {
+						dlevel = -input->mouse_z * 0.9999f;
+					}
+				} else {
+					dlevel = -input->mouse_z;
+				}
+
 				used_mouse_to_zoom = true;
 			}
 
@@ -1688,12 +1700,16 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			} else {
 				// non-integer zoom
+				float zoom_speed = 6.0f;
+				if (input->keyboard.key_shift.down) {
+					zoom_speed *= 2.0f;
+				}
 				if (zoom_out_button_held) {
-					dlevel += 6.0f * delta_t;
+					dlevel += zoom_speed * delta_t;
 					integer_zoom = false;
 				}
 				if (zoom_in_button_held) {
-					dlevel -= 6.0f * delta_t;
+					dlevel -= zoom_speed * delta_t;
 					integer_zoom = false;
 				}
 			}
@@ -1708,7 +1724,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			bool need_set_zoom_pivot = (dlevel != 0.0f);
-			float residual_dlevel = scene->zoom_target_state.pos - scene->zoom.pos;
 			if (dlevel != 0.0f || residual_dlevel != 0.0f) {
 //		        console_print("mouse_z = %d\n", input->mouse_z);
 
@@ -1744,6 +1759,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			if (scene->need_zoom_animation) {
+				if (!use_zoom_animation) {
+					// skip animation by jumping to the target state immediately
+					zoom_update_pos(&scene->zoom, scene->zoom_target_state.pos);
+				}
 				float d_zoom = scene->zoom_target_state.pos - scene->zoom.pos;
 
 				float abs_d_zoom = fabsf(d_zoom);
@@ -1751,8 +1770,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->need_zoom_animation = false;
 				}
 				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-				float linear_catch_up_speed = 5.0f * delta_t;
-				float exponential_catch_up_speed = 12.0f * delta_t;
+				float linear_catch_up_speed = 2.0f * delta_t;
+				float exponential_catch_up_speed = 16.0f * delta_t;
 				if (abs_d_zoom > linear_catch_up_speed) {
 					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
 					         sign_d_zoom;

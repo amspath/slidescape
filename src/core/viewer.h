@@ -544,6 +544,7 @@ extern i64 zoom_in_key_times_zoomed_while_holding;
 extern i64 zoom_out_key_hold_down_start_time;
 extern i64 zoom_out_key_times_zoomed_while_holding;
 extern bool prefer_integer_zoom INIT(= false);
+extern bool use_fast_rendering INIT(= false); // optimize for performance for e.g. remote desktop
 
 extern v2f simple_view_pos; // used by simple images (remove?)
 extern bool window_start_maximized INIT(=true);

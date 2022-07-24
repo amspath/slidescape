@@ -365,6 +365,11 @@ void init_layer_framebuffers(app_state_t* app_state) {
 
 void init_opengl_stuff(app_state_t* app_state) {
 
+	if (use_fast_rendering) {
+		default_texture_mag_filter = GL_NEAREST;
+		default_texture_min_filter = GL_NEAREST_MIPMAP_NEAREST;
+	}
+
 	for (i32 i = 0; i < COUNT(app_state->pixel_transfer_states); ++i) {
 		pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + i;
 		u32 pbo = 0;

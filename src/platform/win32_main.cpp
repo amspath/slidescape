@@ -1153,6 +1153,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 		strncpy(pos, "softwarerenderer", chars_left);
 		SetDllDirectoryA(dll_path);
 		opengl32_dll_handle = LoadLibraryA("opengl32software.dll");
+		use_fast_rendering = true;
 		// NOTE: We again need access to the extra dll file in win32_init_gui(),
 		// because ImGui has its own OpenGL loader code.
 		// So, don't call SetDllDirectoryA() which ordinarily we would want to do here.
