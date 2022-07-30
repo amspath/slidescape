@@ -333,7 +333,7 @@ file_info_t viewer_get_file_info(const char* filename) {
 	strncpy(file.ext, ext, sizeof(file.ext) - 1);
 
 	struct stat st;
-	if (stat(filename, &st) == 0) {
+	if (platform_stat(filename, &st) == 0) {
 		file.is_valid = true;
 		file.is_directory = S_ISDIR(st.st_mode);
 		file.is_regular_file = S_ISREG(st.st_mode);

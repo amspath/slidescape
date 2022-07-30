@@ -19,6 +19,10 @@
 #include "common.h"
 #include "platform.h"
 
+int platform_stat(const char* filename, struct stat* st) {
+	return stat(filename, st);
+}
+
 file_stream_t file_stream_open_for_reading(const char* filename) {
 	FILE* handle = fopen64(filename, "rb");
 	return handle;

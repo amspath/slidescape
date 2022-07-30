@@ -349,6 +349,7 @@ void set_window_title(window_handle_t window, const char* title);
 void reset_window_title(window_handle_t window);
 void message_box(app_state_t* app_state, const char* message);
 
+int platform_stat(const char* filename, struct stat* st);
 file_stream_t file_stream_open_for_reading(const char* filename);
 file_stream_t file_stream_open_for_writing(const char* filename);
 i64 file_stream_read(void* dest, size_t bytes_to_read, file_stream_t file_stream);

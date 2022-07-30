@@ -157,6 +157,11 @@ size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 off
 	return bytes_read;
 }
 
+int platform_stat(const char* filename, struct stat* st) {
+	size_t filename_len = strlen(filename) + 1;
+	wchar_t* wide_filename = win32_string_widen(filename, filename_len, (wchar_t*) alloca(2 * filename_len));
+	return _wstat64(wide_filename, st);
+}
 
 file_stream_t file_stream_open_for_reading(const char* filename) {
 //	console_print_verbose("Attempting CreateFile() for reading...\n");

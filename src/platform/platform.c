@@ -78,8 +78,8 @@ bool file_exists(const char* filename) {
 }
 
 bool is_directory(const char* path) {
-	struct stat st;
-	stat(path, &st);
+	struct stat st = {0};
+	platform_stat(path, &st);
 	return S_ISDIR(st.st_mode);
 }
 
