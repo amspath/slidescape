@@ -25,7 +25,7 @@ static bool32 rect_initialized;
 static u32 vbo_screen;
 static u32 vao_screen;
 
-u32 default_texture_mag_filter = GL_LINEAR;
+u32 default_texture_mag_filter = GL_NEAREST;
 u32 default_texture_min_filter = GL_LINEAR_MIPMAP_LINEAR;
 
 typedef struct framebuffer_t {
