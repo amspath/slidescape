@@ -29,8 +29,8 @@
 #include "dicom.h"
 
 #include "imgui.h"
-#include "imgui_impl_sdl.h"
-#include "imgui_impl_opengl3.h"
+#include "backends/imgui_impl_sdl.h"
+#include "backends/imgui_impl_opengl3.h"
 #include <stdio.h>
 
 #include "stb_image.h"
@@ -400,11 +400,22 @@ int main(int argc, const char** argv)
     add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)dicom_init, NULL, 0);
     linux_init_input();
 
+	/*i32 num_video_drivers = SDL_GetNumVideoDrivers();
+	const char* chosen_driver = NULL;
+	for (i32 i = 0; i < num_video_drivers; ++i) {
+		const char* driver = SDL_GetVideoDriver(i);
+		console_print("SDL video driver %d: %s\n", i, driver);
+		if (strcmp(driver, "wayland") == 0) {
+			chosen_driver = driver;
+		}
+	}*/
+	SDL_VideoInit(NULL);
+
     // Setup SDL
     // (Some versions of SDL before <2.0.10 appears to have performance/stalling issues on a minority of Windows systems,
     // depending on whether SDL_INIT_GAMECONTROLLER is enabled or disabled.. updating to latest version of SDL is recommended!)
 	i64 clock_sdl_begin = get_clock();
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
+	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
     {
         console_print_error("Error: %s\n", SDL_GetError());
         return -1;
