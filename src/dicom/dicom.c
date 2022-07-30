@@ -448,6 +448,12 @@ dicom_cs_t dicom_parse_code_string(str_t s, str_t* next) {
 		result.value[bytes_written++] = c;
 		if (bytes_written >= COUNT(result.value)-1) break;
 	}
+	// Strip trailing whitespace
+	i32 last_char = ATLEAST(0, bytes_written - 1);
+	while (result.value[last_char] == ' ') {
+		result.value[last_char--] = '\0';
+		if (last_char <= 0) break;
+	}
 	return result;
 }
 

@@ -368,6 +368,11 @@ file_info_t viewer_get_file_info(const char* filename) {
 	return file;
 }
 
+void viewer_directory_info_destroy(directory_info_t* info) {
+	arrfree(info->dicom_files);
+	info->is_valid = false;
+}
+
 directory_info_t viewer_get_directory_info(const char* path) {
 	directory_info_t directory = {};
 	directory_listing_t* listing = create_directory_listing_and_find_first_file(path, NULL);
@@ -380,7 +385,10 @@ directory_info_t viewer_get_directory_info(const char* path) {
 			file_info_t file = viewer_get_file_info(full_filename);
 			if (file.is_valid) {
 				if (file.is_directory) {
+					directory_info_t subdir_info = viewer_get_directory_info(full_filename);
 					// TODO: handle directory inside directory...
+
+					viewer_directory_info_destroy(&subdir_info);
 				} else if (file.is_regular_file) {
 					if (file.type == VIEWER_FILE_TYPE_DICOM) {
 						directory.contains_dicom_files = true;
@@ -515,16 +523,11 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 				if (directory.contains_dicom_files) {
 					file.type = VIEWER_FILE_TYPE_DICOM;
 					console_print("Trying to open a directory '%s'\n", filename);
-					dicom_series_t dicom = {};
 					success = viewer_load_new_image(app_state, &file, &directory, filetype_hint);
 
 				}
-				arrfree(directory.dicom_files); // TODO: transfer ownership?
 			}
-
-
-
-			success = true;
+			viewer_directory_info_destroy(&directory); // TODO: transfer ownership of directory structure info?
 		}
 	}
 
