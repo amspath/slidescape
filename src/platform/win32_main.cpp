@@ -90,6 +90,11 @@ WNDCLASSA main_window_class;
 platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
 
+static char g_exe_name[512];
+static char g_root_dir[512];
+static char g_appdata_path[MAX_PATH];
+
+
 
 HKEY win32_registry_create_empty_key(const char* key) {
 	HKEY hkey = NULL;
@@ -133,23 +138,17 @@ bool win32_registry_add_to_open_with_list(const char* ext) {
 
 void win32_set_file_type_associations() {
 
-	char exe_name[512];
-	GetModuleFileNameA(NULL, exe_name, sizeof(exe_name));
-	exe_name[sizeof(exe_name)-1] = '\0';
-
 	// We want to register the application, and set file type associations, but ONLY
 	// if the executable is located on a fixed drive or network location. This prevents the registry
 	// settings carrying over if the executable is in an 'unstable' location (e.g., on a USB drive)
-	char root_dir[512];
-	strncpy(root_dir, exe_name, sizeof(root_dir));
-	PathStripToRootA(root_dir);
 
-	UINT drive_type = GetDriveTypeA(root_dir);
+	UINT drive_type = GetDriveTypeA(g_root_dir);
+//	console_print("g_root_dir = %s, drive_type = %d\n", g_root_dir, drive_type);
 
 	if (drive_type == DRIVE_FIXED || drive_type == DRIVE_REMOTE) {
 		// "C:\path\to\slidescape.exe" "%1"
 		BYTE open_command[512];
-		snprintf((char*)open_command, sizeof(open_command) - 1, "\"%s\" \"%%1\"", exe_name);
+		snprintf((char*)open_command, sizeof(open_command) - 1, "\"%s\" \"%%1\"", g_exe_name);
 		open_command[sizeof(open_command) - 1] = '\0';
 		size_t open_command_length = strlen((char*)open_command) + 1;
 
@@ -173,7 +172,7 @@ void win32_set_file_type_associations() {
 			HKEY key = win32_registry_create_empty_key("Software\\Classes\\Applications\\slidescape.exe");
 			if (key) {
 				char friendly_app_name[512];
-				snprintf((char*)friendly_app_name, sizeof(friendly_app_name) - 1, "@\"%s\",-201", exe_name);
+				snprintf((char*)friendly_app_name, sizeof(friendly_app_name) - 1, "@\"%s\",-201", g_exe_name);
 				friendly_app_name[sizeof(friendly_app_name) - 1] = '\0';
 				if (RegSetValueExA(key, "FriendlyAppName", 0, REG_SZ, (BYTE*)friendly_app_name, strlen(friendly_app_name) + 1) != ERROR_SUCCESS) {
 					win32_diagnostic("RegSetValueExA");
@@ -244,7 +243,7 @@ void win32_set_file_type_associations() {
 				}
 
 				char friendly_type_name[512];
-				snprintf((char*)friendly_type_name, sizeof(friendly_type_name)-1, "@\"%s\",-202", exe_name);
+				snprintf((char*)friendly_type_name, sizeof(friendly_type_name)-1, "@\"%s\",-202", g_exe_name);
 				friendly_type_name[sizeof(friendly_type_name)-1] = '\0';
 				if (RegSetValueExA(hkey, "FriendlyTypeName", 0, REG_SZ, (BYTE*)friendly_type_name, strlen(friendly_type_name) + 1) != ERROR_SUCCESS) {
 					win32_diagnostic("RegSetValueExA");
@@ -319,20 +318,19 @@ void load_dicom_task(int logical_thread_index, void* userdata) {
 	is_dicom_loading_done = true;
 }
 
-static char appdata_path[MAX_PATH];
 
 void win32_setup_appdata() {
-	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appdata_path))) {
-		i32 appdata_path_len = strlen(appdata_path);
-		strncpy(appdata_path + appdata_path_len, "\\Slidescape", sizeof(appdata_path) - appdata_path_len);
+	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, g_appdata_path))) {
+		i32 appdata_path_len = strlen(g_appdata_path);
+		strncpy(g_appdata_path + appdata_path_len, "\\Slidescape", sizeof(g_appdata_path) - appdata_path_len);
 //		console_print("%s\n", path_buf);
-		if (!file_exists(appdata_path)) {
-			if (!CreateDirectoryA(appdata_path, 0)) {
+		if (!file_exists(g_appdata_path)) {
+			if (!CreateDirectoryA(g_appdata_path, 0)) {
 				win32_diagnostic("CreateDirectoryA");
 				return;
 			}
 		}
-		global_settings_dir = appdata_path;
+		global_settings_dir = g_appdata_path;
 	}
 }
 
@@ -1878,6 +1876,18 @@ void win32_init_cmdline() {
 
 	g_argc = argc;
 	g_argv = (const char**)argv;
+
+	GetModuleFileNameA(NULL, g_exe_name, sizeof(g_exe_name));
+	g_exe_name[sizeof(g_exe_name)-1] = '\0';
+
+	strncpy(g_root_dir, g_exe_name, sizeof(g_root_dir));
+	PathStripToRootA(g_root_dir);
+	// N.B. the root path requires a trailing backslash for e.g. GetDriveType to work:
+	// https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdrivetypea
+	i32 root_dir_len = strlen(g_root_dir);
+	if (root_dir_len > 0 && g_root_dir[root_dir_len-1] != '\\') {
+		g_root_dir[root_dir_len] = '\\';
+	}
 }
 
 static void win32_init_headless_console() {
