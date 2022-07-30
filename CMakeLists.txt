@@ -217,7 +217,7 @@ set(VIEWER_SOURCE_FILES
         imgui/imgui_draw.cpp
         imgui/imgui_widgets.cpp
         imgui/imgui_tables.cpp
-        imgui/imgui_impl_opengl3.cpp
+        imgui/backends/imgui_impl_opengl3.cpp
         imgui/misc/freetype/imgui_freetype.cpp
         utils/stringutils.c
         utils/mathutils.c
@@ -234,7 +234,7 @@ if (WIN32)
             platform/win32_utils.cpp
             platform/win32_gui.cpp
             platform/glad.c
-            imgui/imgui_impl_win32.cpp
+            imgui/backends/imgui_impl_win32.cpp
             )
 else()
     # Note: SDL2 is used for both Linux and macOS
@@ -242,7 +242,7 @@ else()
             platform/linux_main.cpp
             platform/linux_platform.cpp
             platform/linux_utils.cpp
-            imgui/imgui_impl_sdl.cpp
+            imgui/backends/imgui_impl_sdl.cpp
             imgui/ImGuiFileDialog.cpp
             )
 endif()
