@@ -1999,7 +1999,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				for(;;) {
 					// Peek ahead in the bitstream, grab any additional zero run symbols, and recalculate numzeroes.
 					blob = bitstream_lsb_read(compressed, bits_read);
-					u8 next_code = (blob & zerorun_code_mask);
+					u32 next_code = (blob & zerorun_code_mask);
 					if (next_code == zerorun_code) {
 						// The zero run continues
 						blob >>= zerorun_code_size;
