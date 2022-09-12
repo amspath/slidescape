@@ -78,13 +78,16 @@ void win32_init_gui(app_state_t* app_state) {
 //	font_config.OversampleH = 3;
 //	font_config.OversampleV = 2;
 //	font_config.RasterizerMultiply = 1.2f;
-	float system_font_size = 17.0f;
 	static const ImWchar ranges[] =
 	{
 			0x0020, 0x00FF, // Basic Latin + Latin Supplement
 			0x0370, 0x03FF, // Greek
 			0,
 	};
+
+	float dpi_scale = ImGui_ImplWin32_GetDpiScaleForHwnd(app_state->main_window);
+	float system_font_size = floorf(17.0f * dpi_scale);
+
 	const char* main_ui_font_filename = "c:\\Windows\\Fonts\\segoeui.ttf";
 	if (file_exists(main_ui_font_filename)) {
 		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, system_font_size, &font_config, ranges);
@@ -96,7 +99,7 @@ void win32_init_gui(app_state_t* app_state) {
 	const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
 	const char* icon_font_filename = "resources/FontAwesome4/font.ttf";
 	if (file_exists(icon_font_filename)) {
-		global_icon_font = io.Fonts->AddFontFromFileTTF(icon_font_filename, 40.0f, &font_config, icon_ranges);
+		global_icon_font = io.Fonts->AddFontFromFileTTF(icon_font_filename, 40.0f * dpi_scale, &font_config, icon_ranges);
 	}
 	if (!global_icon_font) {
 //		console_print_error("Icon font could not be loaded");
@@ -104,7 +107,7 @@ void win32_init_gui(app_state_t* app_state) {
 
 	const char* fixed_width_font_filename = "c:\\Windows\\Fonts\\consola.ttf";
 	if (file_exists(fixed_width_font_filename)) {
-		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f, &font_config, ranges);
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f * dpi_scale, &font_config, ranges);
 	}
 	if (!global_fixed_width_font) {
 		console_print_error("Fixed width font '%s' could not be loaded", fixed_width_font_filename);
@@ -114,7 +117,15 @@ void win32_init_gui(app_state_t* app_state) {
 	io.Fonts->AddFontDefault();
 //	IM_ASSERT(font != NULL);
 
-	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
+	if (system_font_size >= 25.0f) {
+		// If the font size is large, light hinting gives better results because the result better resembles
+		// the original shape (at the cost of a little bit of fuzziness).
+		io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
+	} else {
+		// If the font size is small, mono hinting seems to give the most crisp results for white text on a
+		// dark background.
+		io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
+	}
 	io.Fonts->Build();
 
 

@@ -43,6 +43,7 @@
 #include <GL/wgl.h>
 
 #include "imgui.h"
+#include "backends/imgui_impl_win32.h"
 #include "backends/imgui_impl_opengl3.h"
 
 #include "keycode.h"
@@ -1680,6 +1681,7 @@ void win32_init_multithreading() {
 }
 
 void win32_init_main_window(app_state_t* app_state) {
+	ImGui_ImplWin32_EnableDpiAwareness();
 	main_window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
 	main_window_class.lpfnWndProc = main_window_callback;
 	main_window_class.hInstance = g_instance;
