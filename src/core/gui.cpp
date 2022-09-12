@@ -424,6 +424,23 @@ static const char* get_image_type_name(image_t* image) {
 	return result;
 }
 
+// TODO
+typedef struct image_layer_t {
+	i32 index;
+	char name[512];
+	v2f origin_offset; // TODO: transfer from image->origin_offset
+	image_backend_enum backend;
+	bool is_loaded;
+	bool enabled;
+	bool is_mask;
+	bool uses_lut;
+} image_layer_t;
+
+typedef struct annotation_layer_t {
+	i32 index;
+	char name[512];
+} annotation_layer_t;
+
 void draw_layers_window(app_state_t* app_state) {
 	if (!show_layers_window) return;
 
@@ -440,23 +457,38 @@ void draw_layers_window(app_state_t* app_state) {
 
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
 
-	if (ImGui::BeginTable("layers_table", 2, flags)) {
+	if (ImGui::BeginTable("layers_table", 4, flags)) {
 		// The first column will use the default _WidthStretch when ScrollX is Off and _WidthFixed when ScrollX is On
+		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, 20.0f);
+		ImGui::TableSetupColumn("##layers_table_checkbox", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoResize, 25.0f);
 		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_NoHide);
-//		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 12.0f);
 		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
 		ImGui::TableHeadersRow();
 
 		for (i32 image_index = 0; image_index < image_count; ++image_index) {
 			image_t* image = app_state->loaded_images + image_index;
-			char name[256];
-			snprintf(name, sizeof(name)-1, "Layer %d", image_index);
-			const char* type = get_image_type_name(image);
 			ImGui::TableNextRow();
+
+			// Display index
 			ImGui::TableNextColumn();
+			ImGui::Text("%d", image_index);
+
+			// Display 'enabled' checkbox
+			ImGui::TableNextColumn();
+			char checkbox_label[32];
+			snprintf(checkbox_label, sizeof(checkbox_label), "##layers_checkbox_%d", image_index);
+			ImGui::Checkbox(checkbox_label, &image->is_enabled);
+
+			// Display layer name
+			ImGui::TableNextColumn();
+			char name[256];
+			snprintf(name, sizeof(name)-1, "%s", image->name);
 			bool selected = ImGui::Selectable(name);
-			if (selected) selected_image_index = image_index;
+
+			// Displayer layer type
 			ImGui::TableNextColumn();
+			const char* type = get_image_type_name(image);
+			if (selected) selected_image_index = image_index;
 			ImGui::TextUnformatted(type);
 		}
 
@@ -481,13 +513,26 @@ void draw_layers_window(app_state_t* app_state) {
 	if (selected_image_index < image_count) {
 		image_t* image = app_state->loaded_images + selected_image_index;
 		ImGui::Text("Adjust position offset for layer %d:", selected_image_index);
-		ImGui::DragFloat("Offset X", &image->origin_offset.x, image->mpp_x, 0.0f, 0.0f, "%g");
-		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g");
+		ASSERT(image->mpp_x != 0.0f);
+		ASSERT(image->mpp_y != 0.0f);
+		i32 px_x = roundf(image->origin_offset.x / image->mpp_x);
+		i32 px_y = roundf(image->origin_offset.y / image->mpp_y);
+		if (ImGui::DragInt("Offset X", &px_x, 1.0f, 0.0f, 0.0f, "%d px")) {
+			image->origin_offset.x = ((float)px_x * image->mpp_x);
+		}
+		if (ImGui::DragInt("Offset Y", &px_y, 1.0f, 0.0f, 0.0f, "%d px")) {
+			image->origin_offset.y = ((float)px_y * image->mpp_y);
+		}
+		if (ImGui::Button("Reset")) {
+			image->origin_offset.x = 0.0f;
+			image->origin_offset.y = 0.0f;
+		}
+//		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g px");
 	}
 	ImGui::NewLine();
-	ImGui::Text("Currently displayed layer: %d.\nPress Tab to toggle layers.", app_state->scene.active_layer);
+	ImGui::Text("Currently displayed layer: %d.\nPress Space or F5 to toggle layers.", app_state->scene.active_layer);
 
-	ImGui::SliderFloat("Layer transition", &target_layer_t, 0.0f, 1.0f);
+	ImGui::SliderFloat("Layer transition", &target_layer_time, 0.0f, 1.0f);
 
 	ImGui::End();
 }

@@ -1431,7 +1431,7 @@ void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 
 #define CLICK_DRAG_TOLERANCE 8.0f
 
-void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_t) {
+void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_time) {
 
 	i64 last_section = get_clock(); // start profiler section
 
@@ -1520,7 +1520,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (input->mouse_moved) {
 			app_state->seconds_without_mouse_movement = 0.0f;
 		} else {
-			app_state->seconds_without_mouse_movement += delta_t;
+			app_state->seconds_without_mouse_movement += delta_time;
 		}
 
 		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
@@ -1629,11 +1629,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene->control = get_2d_control_from_input(input, !gui_want_capture_keyboard);
 			float control_length = v2f_length(scene->control);
 			if (control_length > 0.0f) {
-				scene->time_since_control_start += delta_t;
+				scene->time_since_control_start += delta_time;
 			} else {
 				scene->time_since_control_start = 0.0f;
 			}
-			scene->panning_velocity = viewer_do_2d_control(scene->panning_velocity, scene->control, delta_t, scene->time_since_control_start, input->keyboard.key_shift.down);
+			scene->panning_velocity = viewer_do_2d_control(scene->panning_velocity, scene->control, delta_time, scene->time_since_control_start, input->keyboard.key_shift.down);
 
 
 			// Zoom control
@@ -1709,21 +1709,21 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					zoom_speed *= 2.0f;
 				}
 				if (zoom_out_button_held) {
-					dlevel += zoom_speed * delta_t;
+					dlevel += zoom_speed * delta_time;
 					integer_zoom = false;
 				}
 				if (zoom_in_button_held) {
-					dlevel -= zoom_speed * delta_t;
+					dlevel -= zoom_speed * delta_time;
 					integer_zoom = false;
 				}
 			}
 
 			if (controller->left_trigger.has_input) {
-				dlevel += controller->left_trigger.end * 7.0f * delta_t;
+				dlevel += controller->left_trigger.end * 7.0f * delta_time;
 				integer_zoom = false;
 			}
 			if (controller->right_trigger.has_input) {
-				dlevel -= controller->right_trigger.end * 7.0f * delta_t;
+				dlevel -= controller->right_trigger.end * 7.0f * delta_time;
 				integer_zoom = false;
 			}
 
@@ -1774,8 +1774,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->need_zoom_animation = false;
 				}
 				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
-				float linear_catch_up_speed = 2.0f * delta_t;
-				float exponential_catch_up_speed = 16.0f * delta_t;
+				float linear_catch_up_speed = 2.0f * delta_time;
+				float exponential_catch_up_speed = 16.0f * delta_time;
 				if (abs_d_zoom > linear_catch_up_speed) {
 					d_zoom = (linear_catch_up_speed + (abs_d_zoom - linear_catch_up_speed) * exponential_catch_up_speed) *
 					         sign_d_zoom;
@@ -1811,7 +1811,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
             panning_multiplier *= app_state->display_scale_factor;
 
 			// Panning using the arrow or WASD keys.
-			float panning_speed = app_state->keyboard_base_panning_speed * 100.0f * delta_t * panning_multiplier;
+			float panning_speed = app_state->keyboard_base_panning_speed * 100.0f * delta_time * panning_multiplier;
 			bool panning = false;
 			if (scene->panning_velocity.y != 0.0f) {
 				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.y;
@@ -2032,25 +2032,25 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 
-	if (was_key_pressed(input, KEY_F5) || was_key_pressed(input, KEY_Tab)) {
+	if (was_key_pressed(input, KEY_F5) || ((!gui_want_capture_keyboard) && (was_key_pressed(input, KEY_Space)))) {
 		scene->active_layer++;
 		if (scene->active_layer == image_count) {
 			scene->active_layer = 0;
 		}
 		if (scene->active_layer == 0) {
-			target_layer_t = 0.0f;
+			target_layer_time = 0.0f;
 		} else if (scene->active_layer == 1) {
-			target_layer_t = 1.0f;
+			target_layer_time = 1.0f;
 		}
 	}
 	{
-		float adjust_speed = 8.0f * delta_t;
-		if (layer_t < target_layer_t) {
-			float delta = MIN((target_layer_t - layer_t), adjust_speed);
-			layer_t += delta;
-		} else if (layer_t > target_layer_t) {
-			float delta = MIN((layer_t - target_layer_t), adjust_speed);
-			layer_t -= delta;
+		float adjust_speed = 8.0f * delta_time;
+		if (layer_time < target_layer_time) {
+			float delta = MIN((target_layer_time - layer_time), adjust_speed);
+			layer_time += delta;
+		} else if (layer_time > target_layer_time) {
+			float delta = MIN((layer_time - target_layer_time), adjust_speed);
+			layer_time -= delta;
 		}
 	}
 
@@ -2061,7 +2061,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 //		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 		image_t* image = app_state->loaded_images + 0;
-		update_and_render_image(app_state, input, delta_t, image);
+		update_and_render_image(app_state, input, delta_time, image);
 	} else {
 		// We are rendering the scene in two passes.
 		// 1: render to framebuffer
@@ -2081,7 +2081,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 //			if (image_index == scene->active_layer) {
 				image_t* image = app_state->loaded_images + image_index;
-				update_and_render_image(app_state, input, delta_t, image);
+				update_and_render_image(app_state, input, delta_time, image);
 //			}
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		}
@@ -2091,7 +2091,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
 		glUseProgram(finalblit_shader.program);
-		glUniform1f(finalblit_shader.u_t, layer_t);
+		glUniform1f(finalblit_shader.u_t, layer_time);
 		glBindVertexArray(vao_screen);
 		glDisable(GL_DEPTH_TEST); // because we want to make sure the quad always renders in front of everything else
 		glActiveTexture(GL_TEXTURE0);

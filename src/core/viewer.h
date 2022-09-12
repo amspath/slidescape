@@ -191,7 +191,10 @@ typedef struct image_t {
 	bool is_local; // i.e. not remote (accessed over network using client/server interface)
 	image_type_enum type;
 	image_backend_enum backend;
-	bool32 is_freshly_loaded; // TODO: remove or refactor, is this still needed?
+	bool is_freshly_loaded; // TODO: remove or refactor, is this still needed?
+	bool is_valid;
+	bool is_enabled;
+	bool is_overlay;
 	union {
 		simple_image_t simple;
 		tiff_t tiff;
@@ -212,12 +215,10 @@ typedef struct image_t {
 	float width_in_um;
 	i64 height_in_pixels;
 	float height_in_um;
-	bool is_overlay;
 	v2f origin_offset;
 	simple_image_t macro_image;
 	simple_image_t label_image;
 	i32 resource_id;
-	bool is_valid;
 } image_t;
 
 typedef enum load_tile_error_code_enum {
@@ -491,7 +492,7 @@ void autosave(app_state_t* app_state, bool force_ignore_delay);
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void scene_update_camera_pos(scene_t* scene, v2f pos);
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool);
-void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_t);
+void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_time);
 void do_after_scene_render(app_state_t* app_state, input_t* input);
 
 // viewer_opengl.cpp

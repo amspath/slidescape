@@ -109,8 +109,8 @@ extern ImFont* global_icon_font;
 
 extern i32 viewer_min_level INIT(= -1);
 extern i32 viewer_max_level INIT(= 10);
-extern float layer_t INIT(= 1.0f);
-extern float target_layer_t INIT(= 1.0f);
+extern float layer_time INIT(= 1.0f);
+extern float target_layer_time INIT(= 1.0f);
 
 // annotation.cpp
 extern bool auto_assign_last_group;

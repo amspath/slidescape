@@ -774,6 +774,9 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 				u32 vk_code = (u32) message.wParam;
 				u32 scancode = keycode_windows_from_lparam((u32)message.lParam);
 				u32 hid_code = keycode_windows_to_hid(scancode);
+				if (vk_code == VK_SPACE) {
+					hid_code = KEY_Space; // NOTE: for some reason, Space is missing from the table in keycode_windows_to_hid()
+				}
 				bool32 alt_down = message.lParam & (1 << 29);
 				bool32 is_down = ((message.lParam & (1 << 31)) == 0);
 				bool32 was_down = ((message.lParam & (1 << 30)) != 0);
