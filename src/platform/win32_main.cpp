@@ -2038,6 +2038,11 @@ int main() {
 		win32_window_dimension_t dimension = win32_get_window_dimension(app_state->main_window);
 		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
 
+		if (!is_program_running) {
+			ShowWindow(app_state->main_window, SW_HIDE);
+			break;
+		}
+
 		// Render the UI
 		ImGui::Render();
 		glViewport(0, 0, dimension.width, dimension.height);
