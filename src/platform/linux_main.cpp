@@ -298,7 +298,7 @@ bool linux_process_input() {
 
     ImGuiIO& io = ImGui::GetIO();
 	// Make sure we have the latest events processed
-	ImGui::UpdateInputEvents(io.ConfigInputTrickleEventQueue);
+	ImGui::UpdateInputEvents(false);
 
 	curr_input->mouse_xy = io.MousePos;
 

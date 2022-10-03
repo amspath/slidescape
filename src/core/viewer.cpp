@@ -1654,7 +1654,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			bool32 used_mouse_to_zoom = false;
 
 			// Zoom in or out using the mouse wheel.
-			if (!gui_want_capture_mouse && input->mouse_z != 0) {
+			if (!gui_want_capture_mouse && input->mouse_z != 0.0f) {
 				if (use_zoom_animation) {
 					// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
 					// Pro: gives better control than zooming in whole levels; con: makes zooming in/out rather slow.
