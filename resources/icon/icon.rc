@@ -25,14 +25,14 @@ STRINGTABLE
 
 #define VER_COMPANYNAME_STR         "Ectopic"
 #define VER_FILEDESCRIPTION_STR     "Slidescape"
-#define VER_FILEVERSION             0,44,0,0
-#define VER_FILEVERSION_STR         "0.44"
+#define VER_FILEVERSION             0,45,0,0
+#define VER_FILEVERSION_STR         "0.45"
 #define VER_INTERNALNAME_STR        "slidescape.exe"
 #define VER_LEGALCOPYRIGHT_STR      "(c) 2019-2022 Pieter Valkema"
 #define VER_ORIGINALFILENAME_STR    "slidescape.exe"
 #define VER_PRODUCTNAME_STR         "slidescape"
-#define VER_PRODUCTVERSION          0,44,0,0
-#define VER_PRODUCTVERSION_STR      "0.44"
+#define VER_PRODUCTVERSION          0,45,0,0
+#define VER_PRODUCTVERSION_STR      "0.45"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     VER_FILEVERSION
