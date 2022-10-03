@@ -624,6 +624,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	if (ifd->subimage_type == TIFF_UNKNOWN_SUBIMAGE /*0*/ && ifd->tile_width > 0) {
 		if (ifd->ifd_index == 0 /* main image */ || ifd->tiff_subfiletype & TIFF_FILETYPE_REDUCEDIMAGE) {
 			ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
+		} else if (ifd->tiff_subfiletype == 0) {
+			// Be lenient on incorrect implementations that don't set this tag properly for level subimages
+			// Example: files converted from Olympus VSI to TIFF using the ASAP converter
+			ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
 		}
 	}
 
@@ -650,7 +654,7 @@ void tiff_post_init(tiff_t* tiff) {
 	tiff->mpp_x = tiff->mpp_y = 0.25f;
 	tiff->is_mpp_known = true;
 	tiff_ifd_t* main_image = tiff->main_image_ifd;
-	if (main_image->x_resolution.b > 0 && main_image->y_resolution.b > 0) {
+	if (main_image->x_resolution.b != 0 && main_image->y_resolution.b != 0) {
 		if (main_image->resolution_unit == TIFF_RESUNIT_CENTIMETER) {
 			float pixels_per_centimeter_x = tiff_rational_to_float(main_image->x_resolution);
 			float pixels_per_centimeter_y = tiff_rational_to_float(main_image->y_resolution);
@@ -728,6 +732,51 @@ void tiff_post_init(tiff_t* tiff) {
 			ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
 			ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
 			DUMMY_STATEMENT;
+		}
+		DUMMY_STATEMENT;
+		// Some TIFF files may have the XResolution and YResolution tags coded incorrectly
+		// In the case of TIFF files converted from Olympus VSI using the ASAP converter, the X- and YResolution
+		// tags will contain the microns per pixel (mpp) instead of pixels per centimeter as the TIFF standard requires.
+		// Also, the order may be backward compared to what is expected (i.e. the lowest mpp value will be found in the last image)
+
+		// As a first screening check: bogus resolution tags tend to result in mpp being way higher than expected
+		if (tiff->mpp_x > 10.0f ) {
+
+			float highest_x = 0.0f;
+			float highest_y = 0.0f;
+			float lowest_x = 1e10f;
+			float lowest_y = 1e10f;
+
+			for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+				tiff_ifd_t* ifd = tiff->ifds + ifd_index;
+				if (ifd->x_resolution.b != 0 && ifd->y_resolution.b != 0) {
+					float res_x = tiff_rational_to_float(ifd->x_resolution);
+					float res_y = tiff_rational_to_float(ifd->y_resolution);
+					if (res_x > highest_x) highest_x = res_x;
+					if (res_y > highest_y) highest_y = res_y;
+					if (res_x < lowest_x) lowest_x = res_x;
+					if (res_y < lowest_y) lowest_y = res_y;
+				}
+			}
+
+			if (lowest_x < highest_x && lowest_y < highest_y) {
+				if (lowest_x < 100.0f && lowest_y < 100.0f) {
+					tiff->mpp_x = lowest_x;
+					tiff->mpp_y = lowest_y;
+					tiff->is_mpp_known = true;
+
+					// Update pixel and tile dimension information
+					for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+						tiff_ifd_t* ifd = tiff->ifds + ifd_index;
+						ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
+						ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
+						ifd->x_tile_side_in_um = ifd->um_per_pixel_x * (float)ifd->tile_width;
+						ifd->y_tile_side_in_um = ifd->um_per_pixel_y * (float)ifd->tile_height;
+					}
+				}
+			}
+
+
 		}
 	} else {
 		// In this case the main image is a regular image consisting of strips, not tiles.
@@ -1429,6 +1478,8 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 			}
 		} else if (level_ifd->compression == TIFF_COMPRESSION_LZW) {
 
+//			i64 start = get_clock();
+
 			size_t decompressed_size = level_ifd->tile_width * level_ifd->tile_height * level_ifd->samples_per_pixel;
 			u8* decompressed = (u8*)malloc(decompressed_size);
 
@@ -1451,6 +1502,9 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				free(decompressed);
 				return NULL;
 			}
+
+//			i64 decode_end = get_clock();
+//			console_print_verbose("[thread %d] decode  level %d, tile %d (%d, %d) took %g ms\n", logical_thread_index, level, tile_index, tile_x, tile_y, 1000.0f * get_seconds_elapsed(start, decode_end));
 
 			// Convert RGB to BGRA
 			if (level_ifd->samples_per_pixel == 4) {
@@ -1484,7 +1538,8 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 					}
 				} else {
 					for (u64 i = 0; i < pixel_count; ++i) {
-						u8 r = decompressed[source_pos]; // only the red channel is being used
+						// TODO: optimize?
+						u8 r = decompressed[source_pos];
 						u8 g = decompressed[source_pos+1];
 						u8 b = decompressed[source_pos+2];
 						pixels[i] = MAKE_BGRA(r, g, b, 255);
@@ -1493,6 +1548,9 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				}
 
 				free(decompressed);
+//				console_print_verbose("[thread %d] swizzle level %d, tile %d (%d, %d) took %g ms\n", logical_thread_index, level, tile_index, tile_x, tile_y, 1000.0f * get_seconds_elapsed(decode_end, get_clock()));
+
+				return (u8*)pixels;
 			} else if (level_ifd->samples_per_pixel == 1) {
 				// Grayscale image
 				u64 pixel_count = level_ifd->tile_width * level_ifd->tile_height;

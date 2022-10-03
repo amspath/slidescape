@@ -812,7 +812,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 				tag_x_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
 				++tag_count_for_ifd;
-			} else if (source_ifd->x_resolution.b > 0) {
+			} else if (source_ifd->x_resolution.b != 0) {
 				// TODO: remove this fallback?
 				tag_x_resolution.offset = *(u64*)(&source_ifd->x_resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution);
@@ -824,7 +824,7 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 				tag_y_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
 				++tag_count_for_ifd;
-			} else if (source_ifd->y_resolution.b > 0) {
+			} else if (source_ifd->y_resolution.b != 0) {
 				// TODO: remove this fallback?
 				tag_y_resolution.offset = *(u64*)(&source_ifd->y_resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution);
