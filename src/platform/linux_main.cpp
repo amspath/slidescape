@@ -113,6 +113,11 @@ void* worker_thread(void* parameter) {
 	atomic_increment(&global_worker_thread_idle_count);
 
 	for (;;) {
+		if (thread_info->logical_thread_index > active_worker_thread_count) {
+			// Worker is disabled, do nothing
+			platform_sleep(100);
+			continue;
+		}
         if (!is_queue_work_waiting_to_start(thread_info->queue)) {
             //platform_sleep(1);
             sem_wait(thread_info->queue->semaphore);
@@ -133,6 +138,7 @@ platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 void linux_init_multithreading() {
 	init_thread_memory(0);
     worker_thread_count = total_thread_count - 1;
+	active_worker_thread_count = worker_thread_count;
 
 	init_work_queue(&global_work_queue, "/worksem"); // Queue for newly submitted tasks
 	init_work_queue(&global_completion_queue, "/completionsem"); // Message queue for completed tasks

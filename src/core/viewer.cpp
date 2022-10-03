@@ -742,6 +742,13 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 }
 
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
+	i32 tasks_waiting = get_work_queue_task_count(&global_work_queue);
+	i32 max_acceptable_tasks = ATMOST(logical_cpu_count * 10, COUNT(global_work_queue.entries)-1);
+	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
+	if (tiles_to_load > usable_slots) {
+		tiles_to_load = usable_slots;
+	}
+
 	if (tiles_to_load > 0){
 		app_state->allow_idling_next_frame = false;
 
@@ -1204,7 +1211,9 @@ void update_and_render_image(app_state_t* app_state, input_t *input, float delta
 
 		// Draw tiles
 		// Draw all levels within the viewport, up to the current zoom factor
-		for (i32 level = lowest_visible_scale; level <= highest_visible_scale; ++level) {
+		i32 lowest_level_to_draw = ATLEAST(lowest_visible_scale, scene->lowest_scale_to_render);
+		i32 highest_level_to_draw = ATMOST(highest_visible_scale, scene->highest_scale_to_render);
+		for (i32 level = lowest_level_to_draw; level <= highest_level_to_draw; ++level) {
 			level_image_t *drawn_level = image->level_images + level;
 			if (!drawn_level->exists) {
 				continue;
@@ -2108,7 +2117,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	if (was_key_pressed(input, KEY_F1)) {
-		show_demo_window = !show_demo_window;
+		if (input->keyboard.modifiers & KMOD_CTRL) {
+			show_debugging_window = !show_debugging_window; // Ctrl+F1
+		} else {
+			show_demo_window = !show_demo_window; // F1
+		}
 	}
 	if (was_key_pressed(input, KEY_F3) || was_key_pressed(input, KEY_Grave)) {
 		show_console_window = !show_console_window;

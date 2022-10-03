@@ -309,6 +309,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Show console", "F3 or `", &show_console_window)) {}
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
+				if (ImGui::MenuItem("Show debugging window", "Ctrl+F1", &show_debugging_window)) {}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
 				ImGui::Separator();
@@ -941,6 +942,21 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	// 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
 	if (show_demo_window) {
 		ImGui::ShowDemoWindow(&show_demo_window);
+	}
+
+	if (show_debugging_window) {
+
+		ImGui::SetNextWindowPos(ImVec2(120,100), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(256,156), ImGuiCond_FirstUseEver);
+
+		if (ImGui::Begin("Debugging", &show_debugging_window)) {
+//			ImGui::TextUnformatted("Worker threads");
+			ImGui::SliderInt("Worker threads", &active_worker_thread_count, 1, worker_thread_count);
+			ImGui::SliderInt("Min level display", &app_state->scene.lowest_scale_to_render, 0, 16);
+			ImGui::SliderInt("Max level display", &app_state->scene.highest_scale_to_render, 0, 16);
+
+		}
+		ImGui::End();
 	}
 
 	if (show_image_options_window) {

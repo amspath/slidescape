@@ -81,6 +81,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 
 extern bool show_demo_window;
+extern bool show_debugging_window;
 extern bool show_image_options_window;
 extern bool show_open_remote_window;
 extern bool show_slide_list_window;

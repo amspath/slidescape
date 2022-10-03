@@ -342,6 +342,8 @@ typedef struct scene_t {
 	float r_minus_l;
 	float t_minus_b;
 	zoom_state_t zoom;
+	i32 lowest_scale_to_render;
+	i32 highest_scale_to_render;
 	bool8 need_zoom_reset;
 	bool8 need_zoom_animation;
 	v2f control;

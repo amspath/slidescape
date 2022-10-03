@@ -1646,6 +1646,11 @@ DWORD WINAPI thread_proc(void* parameter) {
 //	console_print("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
 	for (;;) {
+		if (thread_info->logical_thread_index > active_worker_thread_count) {
+			// Worker is disabled, do nothing
+			Sleep(100);
+			continue;
+		}
 		if (!is_queue_work_in_progress(thread_info->queue)) {
 			Sleep(1);
 			WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
@@ -1663,6 +1668,7 @@ void win32_init_multithreading() {
 	init_thread_memory(0);
 
 	worker_thread_count = total_thread_count - 1;
+	active_worker_thread_count = worker_thread_count;
 
 	init_work_queue(&global_work_queue, "/worksem"); // Queue for newly submitted tasks
 	init_work_queue(&global_completion_queue, "/completionsem"); // Message queue for completed tasks
