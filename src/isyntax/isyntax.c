@@ -156,6 +156,20 @@ static void parse_three_integers(const char* str, i32* first, i32* second, i32* 
 	atoi_and_advance(str, third);
 }
 
+static i32 parse_up_to_five_integers(const char* str, i32* array_of_five_integers) {
+	for (i32 i = 0; i < 5; ++i) {
+		if (*str == '\0') {
+			for (i32 j = i; i < 5; ++j) {
+				array_of_five_integers[j] = 0;
+				return i; // return number of valid integers
+			}
+		} else {
+			str = atoi_and_advance(str, array_of_five_integers + i);
+		}
+	}
+	return 5;
+}
+
 static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	switch(group) {
@@ -201,13 +215,13 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 				default: {
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
-				case 0x1001: /*PIM_DP_UFS_INTERFACE_VERSION*/          {} break; // "5.0"
-				case 0x1002: /*PIM_DP_UFS_BARCODE*/                    {} break; // "<base64-encoded barcode value>"
-				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                    {
-
+				case 0x1001: /*PIM_DP_UFS_INTERFACE_VERSION*/          {
+					// Value will likely be "5.0" for v1 iSyntax files, "100.5" for v2 iSyntax files
+					isyntax->data_model_major_version = atoi(value);
 				} break;
-				case 0x1010: /*PIM_DP_SCANNER_RACK_PRIORITY*/               {} break; // "<u16>"
-
+				case 0x1002: /*PIM_DP_UFS_BARCODE*/                    {} break; // "<base64-encoded barcode value>"
+				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                 {} break;
+				case 0x1010: /*PIM_DP_SCANNER_RACK_PRIORITY*/          {} break; // "<u16>"
 			}
 		} break;
 	}
@@ -244,15 +258,15 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				default: {
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
-				case 0x0002: /*DICOM_SAMPLES_PER_PIXEL*/     {} break;
-				case 0x0100: /*DICOM_BITS_ALLOCATED*/     {} break;
-				case 0x0101: /*DICOM_BITS_STORED*/     {} break;
-				case 0x0102: /*DICOM_HIGH_BIT*/     {} break;
-				case 0x0103: /*DICOM_PIXEL_REPRESENTATION*/     {} break;
-				case 0x2000: /*DICOM_ICCPROFILE*/     {} break;
-				case 0x2110: /*DICOM_LOSSY_IMAGE_COMPRESSION*/     {} break;
-				case 0x2112: /*DICOM_LOSSY_IMAGE_COMPRESSION_RATIO*/     {} break;
-				case 0x2114: /*DICOM_LOSSY_IMAGE_COMPRESSION_METHOD*/     {} break; // "PHILIPS_DP_1_0"
+				case 0x0002: /*DICOM_SAMPLES_PER_PIXEL*/                {} break;
+				case 0x0100: /*DICOM_BITS_ALLOCATED*/                   {} break;
+				case 0x0101: /*DICOM_BITS_STORED*/                      {} break;
+				case 0x0102: /*DICOM_HIGH_BIT*/                         {} break;
+				case 0x0103: /*DICOM_PIXEL_REPRESENTATION*/             {} break;
+				case 0x2000: /*DICOM_ICCPROFILE*/                       {} break;
+				case 0x2110: /*DICOM_LOSSY_IMAGE_COMPRESSION*/          {} break;
+				case 0x2112: /*DICOM_LOSSY_IMAGE_COMPRESSION_RATIO*/    {} break;
+				case 0x2114: /*DICOM_LOSSY_IMAGE_COMPRESSION_METHOD*/   {} break; // "PHILIPS_DP_1_0"
 			}
 		} break;
 		case 0x301D: {
@@ -260,7 +274,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				default: {
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
-				case 0x1004: /*PIM_DP_IMAGE_TYPE*/                     {         // "MACROIMAGE" or "LABELIMAGE" or "WSI"
+				case 0x1004: /*PIM_DP_IMAGE_TYPE*/         {         // "MACROIMAGE" or "LABELIMAGE" or "WSI"
 					if ((strcmp(value, "MACROIMAGE") == 0)) {
 						isyntax->macro_image_index = isyntax->parser.running_image_index;
 						isyntax->parser.current_image_type = ISYNTAX_IMAGE_TYPE_MACROIMAGE;
@@ -312,8 +326,12 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x101A: /*DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL*/    {} break;
 				case 0x101B: /*DP_WAVELET_QUANTIZER*/                       {} break;
 				case 0x101C: /*DP_WAVELET_DEADZONE*/                        {} break;
+				case 0x1025: /*UFS_IMAGE_OPP_EXTREME_VERTEX*/               {} break; // data model >= 100
 				case 0x2000: /*UFS_IMAGE_GENERAL_HEADERS*/                  {} break;
-				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {} break;
+				case 0x2001: /*UFS_IMAGE_NUMBER_OF_BLOCKS*/                 {
+					// NOTE: the actual number of stored codeblocks may be lower than this number.
+					image->number_of_blocks = atoi(value);
+				} break;
 				case 0x2002: /*UFS_IMAGE_DIMENSIONS_OVER_BLOCK*/            {} break;
 				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
 				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
@@ -338,7 +356,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					i32 step_nonzero = (range.step != 0) ? range.step : 1;
 					range.numsteps = ((range.end + range.step) - range.start) / step_nonzero;
 					if (isyntax->parser.data_object_flags & ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate) {
-						isyntax_header_template_t* template = isyntax->header_templates + isyntax->parser.header_template_index;
+						isyntax_block_header_template_t* template = isyntax->block_header_templates + isyntax->parser.block_header_template_index;
 						switch(isyntax->parser.dimension_index) {
 							default: break;
 							case 0: template->block_width = range.numsteps; break;
@@ -367,21 +385,63 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							case 4: break; // always 4 wavelet coefficients ("LL" "LH" "HL" "HH"), no need to check
 						}
 						DUMMY_STATEMENT;
+					} else if (isyntax->parser.data_object_flags & ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate) {
+						// The dimension range information within a cluster header template (specifically, the range.start)
+						// seems to provide the 'base values' for the dimension offsets for each of the codeblocks in the cluster template.
+						// To get the correct coordinate info for each codeblock, we need to add these 'base values'
+						// to the codeblock-specific coordinate values from the UFS_IMAGE_BLOCK_COORDINATE tags.
+						isyntax_cluster_header_template_t* template = isyntax->cluster_header_templates + isyntax->parser.cluster_header_template_index;
+						switch(isyntax->parser.dimension_index) {
+							default: break;
+							case 0: template->base_x = range.start; break;
+							case 1: template->base_y = range.start; break;
+							case 2: template->base_color_component = range.start; break;
+							case 3: template->base_scale = range.start; break;
+							case 4: template->base_waveletcoeff = range.start; break;
+						}
+
 					}
 					DUMMY_STATEMENT;
 				} break;
 				case 0x200C: /*UFS_IMAGE_DIMENSION_IN_BLOCK*/               {} break;
-				case 0x200F: /*UFS_IMAGE_BLOCK_COMPRESSION_METHOD*/         {} break;
+				case 0x200D: /*UFS_IMAGE_BLOCK_HEADERS*/                    {} break;
+				case 0x200E: /*UFS_IMAGE_BLOCK_COORDINATE*/                 {
+					if (isyntax->parser.data_object_flags & (ISYNTAX_OBJECT_UFSImageBlockHeader | ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate)) {
+						isyntax_cluster_header_template_t* template = isyntax->cluster_header_templates + isyntax->parser.cluster_header_template_index;
+						// NOTE: the order of the coordinates stored in UFS_IMAGE_BLOCK_COORDINATE is variable and depends on UFS_IMAGE_DIMENSIONS_IN_CLUSTER (which might be stored later in the file)
+						// So, all we can do at this point is read them as 'raw coordinates' and link them with the actual coordinate once we have the complete UFS_IMAGE_DIMENSIONS_IN_CLUSTER info
+						parse_up_to_five_integers(value, (i32*)template->relative_coords_for_codeblock_in_cluster[isyntax->parser.block_header_index_for_cluster].raw_coords);
+					}
+				} break;
+				case 0x200F: /*UFS_IMAGE_BLOCK_COMPRESSION_METHOD*/         {
+					i32 compression_method = atoi(value);
+					if (compression_method == 16) {
+						image->compressor_version = 1;
+					} else if (compression_method == 19) {
+						image->compressor_version = 2;
+					} else {
+						// unknown compressor version
+						success = false;
+					}
+				} break;
+				case 0x2012: /*UFS_IMAGE_BLOCK_HEADER_TEMPLATE_ID*/         {
+					if (isyntax->parser.data_object_flags & (ISYNTAX_OBJECT_UFSImageBlockHeader | ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate)) {
+						isyntax_cluster_header_template_t* template = isyntax->cluster_header_templates + isyntax->parser.cluster_header_template_index;
+						isyntax_cluster_relative_coords_t* relative_coords_for_codeblock_in_cluster = template->relative_coords_for_codeblock_in_cluster + isyntax->parser.block_header_index_for_cluster;
+						relative_coords_for_codeblock_in_cluster->block_header_template_id = atoi(value);
+					}
+				} break;
 				case 0x2013: /*UFS_IMAGE_PIXEL_TRANSFORMATION_METHOD*/      {} break;
-				case 0x2014: { /*UFS_IMAGE_BLOCK_HEADER_TABLE*/
+				case 0x2014: { /*UFS_IMAGE_BLOCK_HEADER_TABLE*/      // data model <100
+					// NOTE: mutually exclusive with UFS_IMAGE_BLOCK_HEADERS (either one or the other must be present)
 					size_t decoded_capacity = value_len;
 					size_t decoded_len = 0;
 					i32 last_char = value[value_len-1];
-#if 0
+/*
 					FILE* test_out = file_stream_open_for_writing("test_b64.out");
 					file_stream_write(value, value_len, test_out);
 					file_stream_close(test_out);
-#endif
+*/
 					if (last_char == '/') {
 						value_len--; // The last character may cause the base64 decoding to fail if invalid
 						last_char = value[value_len-1];
@@ -392,19 +452,16 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					}
 					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
 					if (decoded) {
-						image->block_header_table = decoded;
-						image->block_header_size = decoded_len;
 
 						u32 header_size = *(u32*) decoded + 0;
 						u8* block_header_start = decoded + 4;
-						dicom_tag_header_t sequence_element = *(dicom_tag_header_t*) (block_header_start);
+						isyntax_dicom_tag_header_t sequence_element = *(isyntax_dicom_tag_header_t*) (block_header_start);
 						if (sequence_element.size == 40) {
 							// We have a partial header structure, with 'Block Data Offset' and 'Block Size' missing (stored in Seektable)
 							// Full block header size (including the sequence element) is 48 bytes
 							u32 block_count = header_size / 48;
 							u32 should_be_zero = header_size % 48;
 							if (should_be_zero != 0) {
-								// TODO: handle error condition properly
 								success = false;
 							}
 
@@ -429,7 +486,6 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							u32 block_count = header_size / 80;
 							u32 should_be_zero = header_size % 80;
 							if (should_be_zero != 0) {
-								// TODO: handle error condition properly
 								success = false;
 							}
 
@@ -451,16 +507,218 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 								DUMMY_STATEMENT;
 							}
 						} else {
-							// TODO: handle error condition properly
 							success = false;
 						}
 
 						free(decoded);
 					} else {
-						//TODO: handle error condition properly
 						success = false;
 					}
 				} break;
+				case 0x2016: /*UFS_IMAGE_CLUSTER_HEADER_TEMPLATES*/ {} break; // data model >= 100
+				case 0x2017: /*UFS_IMAGE_DIMENSIONS_OVER_CLUSTER*/  {} break;
+				case 0x201F: /*UFS_IMAGE_CLUSTER_HEADER_TABLE*/ { // data model >= 100
+					size_t decoded_capacity = value_len;
+					size_t decoded_len = 0;
+					i32 last_char = value[value_len-1];
+/*
+					FILE* test_out = file_stream_open_for_writing("test_b64.out");
+					file_stream_write(value, value_len, test_out);
+					file_stream_close(test_out);
+*/
+					if (last_char == '/') {
+						value_len--; // The last character may cause the base64 decoding to fail if invalid
+						last_char = value[value_len-1];
+					}
+					while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
+						--value_len;
+						last_char = value[value_len-1];
+					}
+					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
+					if (decoded) {
+						u8* decoded_end = decoded + decoded_len;
+						u32 header_size = *(u32*) decoded + 0;
+						u8* block_header_start = decoded + 4;
+						u8* pos = block_header_start;
+						isyntax_dicom_tag_header_t sequence_element = *(isyntax_dicom_tag_header_t*) pos;
+
+						// first element should be a sequence tag
+						if (!(sequence_element.group == 0xfffe && sequence_element.element == 0xe000)) {
+							goto decoding_cluster_header_table_failed;
+						}
+						// pass 1: check how many clusters there are
+						i32 cluster_count = 0;
+						for (;;) {
+							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + ((isyntax_dicom_tag_header_t*)pos)->size;
+							isyntax_dicom_tag_header_t* next_sequence_element = (isyntax_dicom_tag_header_t*)next_sequence_element_pos;
+							if (next_sequence_element_pos >= decoded_end || next_sequence_element->element != 0xe000) {
+								break;
+							}
+							++cluster_count;
+							pos = next_sequence_element_pos;
+						}
+
+						// preallocate memory for codeblocks and clusters
+						if (image->data_chunks == NULL) {
+							image->data_chunk_count = cluster_count;
+							image->data_chunks = calloc(1, cluster_count * sizeof(isyntax_data_chunk_t));
+						}
+						ASSERT(image->number_of_blocks > 0); // TODO: handle error case
+						if (image->codeblocks == NULL) {
+							// NOTE: this value seems to be much larger than the actual number of codeblocks present in the file
+							image->codeblock_count = image->number_of_blocks; // from UFS_IMAGE_NUMBER_OF_BLOCKS attribute
+							image->codeblocks = calloc(1, image->codeblock_count * sizeof(isyntax_codeblock_t));
+						}
+
+						// pass 2: fill in all the information for each cluster
+						pos = block_header_start;
+						i32 running_codeblock_index = 0;
+						for (i32 i = 0; i < cluster_count; ++i) {
+
+							sequence_element = *(isyntax_dicom_tag_header_t*) pos;
+							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + ((isyntax_dicom_tag_header_t*)pos)->size;
+//							dicom_tag_header_t* next_sequence_element = (dicom_tag_header_t*)next_sequence_element_pos;
+
+							u32 cluster_block_size = sequence_element.size;
+							u8* cluster_block_end = pos + sizeof(isyntax_dicom_tag_header_t) + cluster_block_size;
+							if (cluster_block_end > decoded_end) {
+								goto decoding_cluster_header_table_failed; // prevent out-of-bounds reading
+							}
+
+							// advance to cluster coordinates
+							pos += sizeof(isyntax_dicom_tag_header_t);
+							isyntax_dicom_tag_header_t element = *(isyntax_dicom_tag_header_t*) pos;
+							u8* next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
+							if (next_element > cluster_block_end) {
+								goto decoding_cluster_header_table_failed;
+							}
+
+							i32 cluster_coordinate_count = element.size / 4;
+							i32* coordinates = (i32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							if (cluster_coordinate_count < 2) {
+								// Expect only X and Y coordinates (provides the X/Y coordinates of the cluster)
+								// Scale, coefficient and color component are not needed, these can be derived from the cluster header templates
+								// (even so, scale seems to be included: in the example files, cluster_coordinate_count is 3)
+								goto decoding_cluster_header_table_failed;
+							}
+							i32 cluster_x = coordinates[0];
+							i32 cluster_y = coordinates[1];
+
+							// read cluster header template ID
+							pos = next_element;
+							element = *(isyntax_dicom_tag_header_t*) pos;
+							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
+							if (next_element > cluster_block_end || element.size != 4) {
+								goto decoding_cluster_header_table_failed;
+							}
+							u32 cluster_header_template_id = *(u32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							if (cluster_header_template_id >= isyntax->cluster_header_template_count) {
+								goto decoding_cluster_header_table_failed;
+							}
+							isyntax_cluster_header_template_t* cluster_header_template = isyntax->cluster_header_templates + cluster_header_template_id;
+							if (cluster_coordinate_count >= 3) {
+								ASSERT(cluster_header_template->base_scale == coordinates[2]);
+							}
+
+							// read cluster data offset
+							pos = next_element;
+							element = *(isyntax_dicom_tag_header_t*) pos;
+							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
+							if (next_element > cluster_block_end || element.size != 8) {
+								goto decoding_cluster_header_table_failed;
+							}
+							u64 cluster_data_offset = *(u64*)(pos + sizeof(isyntax_dicom_tag_header_t));
+
+							// read cluster size
+							pos = next_element;
+							element = *(isyntax_dicom_tag_header_t*) pos;
+							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
+							if (next_element > cluster_block_end || element.size != 8) {
+								goto decoding_cluster_header_table_failed;
+							}
+							u64 cluster_size = *(u64*)(pos + sizeof(isyntax_dicom_tag_header_t));
+
+							// read cluster block data offsets
+							pos = next_element;
+							element = *(isyntax_dicom_tag_header_t*) pos;
+							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
+							if (next_element > cluster_block_end) {
+								goto decoding_cluster_header_table_failed;
+							}
+							u32 block_count = element.size / 4;
+							u32* cluster_block_data_offsets = (u32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+
+							// read cluster block sizes
+							pos = next_element;
+							element = *(isyntax_dicom_tag_header_t*) pos;
+							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
+							if (next_element > cluster_block_end || element.size / 4 != block_count) {
+								goto decoding_cluster_header_table_failed;
+							}
+							u32* cluster_block_sizes = (u32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+
+							i32 top_codeblock_index = running_codeblock_index;
+							bool has_ll = false;
+							i32 highest_scale = 0;
+							ASSERT(running_codeblock_index + block_count <= image->codeblock_count);
+							for (i32 j = 0; j < block_count; ++j) {
+								isyntax_codeblock_t* codeblock = image->codeblocks + running_codeblock_index;
+								isyntax_cluster_relative_coords_t* relative_codeblock_in_cluster_info = cluster_header_template->relative_coords_for_codeblock_in_cluster + j;
+								codeblock->x_coordinate = cluster_x + relative_codeblock_in_cluster_info->x;
+								codeblock->y_coordinate = cluster_y + relative_codeblock_in_cluster_info->y;
+								codeblock->color_component = relative_codeblock_in_cluster_info->color_component;
+								codeblock->scale = relative_codeblock_in_cluster_info->scale;
+								if (codeblock->scale > highest_scale) highest_scale = codeblock->scale;
+								// account for different wavelet coefficient encoding in iSyntax v2 / data model >= 100
+								codeblock->coefficient = (relative_codeblock_in_cluster_info->waveletcoeff == 3) ? 0 : 1;
+								if (codeblock->coefficient == 0) has_ll = true;
+								codeblock->block_data_offset = cluster_data_offset + cluster_block_data_offsets[j];
+								codeblock->block_size = cluster_block_sizes[j];
+								codeblock->block_header_template_id = relative_codeblock_in_cluster_info->block_header_template_id;
+								++running_codeblock_index;
+							}
+
+							isyntax_data_chunk_t* cluster = image->data_chunks + i;
+							cluster->offset = cluster_data_offset + cluster_block_data_offsets[0];
+							cluster->size = cluster_size;
+							cluster->top_codeblock_index = top_codeblock_index;
+							cluster->codeblock_count_per_color = block_count / 3;
+							cluster->scale = highest_scale;
+							ASSERT(cluster->codeblock_count_per_color == isyntax_get_chunk_codeblocks_per_color_for_level(highest_scale, has_ll));
+
+							pos = next_sequence_element_pos;
+						}
+
+						// TODO: prevent allocating too much memory in the first place?
+						if (running_codeblock_index < image->codeblock_count) {
+							// release excess allocated memory (there are fewer codeblocks present in the file than was anticipated)
+							image->codeblock_count = running_codeblock_index;
+							isyntax_codeblock_t* shrunk = realloc(image->codeblocks, image->codeblock_count * sizeof(isyntax_codeblock_t));
+							ASSERT(shrunk);
+							image->codeblocks = shrunk;
+						}
+
+						if (false) { decoding_cluster_header_table_failed:
+							success = false;
+						}
+						free(decoded);
+
+					} else {
+						// base64 decoding failed
+						success = false;
+					}
+				} break;
+				case 0x2021: /*UFS_IMAGE_DIMENSIONS_IN_CLUSTER*/            {
+					// NOTE: Philips' documentation says this should have element tag 1021, but the example files have 2021!
+					isyntax_cluster_header_template_t* template = isyntax->cluster_header_templates + isyntax->parser.cluster_header_template_index;
+					template->dimension_count = parse_up_to_five_integers(value, template->dimension_order);
+				} break; // data model >= 100
+				case 0x2023: /*UFS_IMAGE_VALID_DATA_ENVELOPES*/ {} break; // data model >= 100
+				case 0x2024: /*UFS_IMAGE_OPP_EXTREME_VERTICES*/ {} break; // data model >= 100
+				case 0x2025: /*UFS_IMAGE_OPP_EXTREME_VERTEX*/ {} break; // data model >= 100
+				case 0x2026: /*UFS_IMAGE_VALID_ENVELOPE_DIMENSIONS*/ {} break; // data model >= 100
+				case 0x2027: /*UFS_IMAGE_DIMENSION_ORIGIN*/ {} break; // data model >= 100
+				case 0x2029: /*UFS_IMAGE_PIXEL_TRANSFORM_METHOD*/ {} break; // data model >= 100
 			}
 		} break;
 	}
@@ -614,6 +872,10 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							case DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor; break;
 							case DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel; break;
 							case PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE: flags |= ISYNTAX_OBJECT_PixelDataRepresentation; break;
+							case UFS_IMAGE_BLOCK_HEADERS:                 flags |= ISYNTAX_OBJECT_UFSImageBlockHeader; break;
+							case UFS_IMAGE_CLUSTER_HEADER_TEMPLATES:      flags |= ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate; break;
+							case UFS_IMAGE_VALID_DATA_ENVELOPES:          flags |= ISYNTAX_OBJECT_UFSImageValidDataEnvelope; break;
+							case UFS_IMAGE_OPP_EXTREME_VERTICES:          flags |= ISYNTAX_OBJECT_UFSImageOppExtremeVertex; break;
 						}
 						parser->data_object_flags = flags;
 					} else if (strcmp(x->elem, "Array") == 0) {
@@ -727,14 +989,17 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 							switch(data_object.element) {
 								default: break;
 								case 0:                                       flags &= ~ISYNTAX_OBJECT_DPUfsImport; break;
-								case PIM_DP_SCANNED_IMAGES:                   flags &= ~ISYNTAX_OBJECT_DPScannedImage; break;
+								case PIM_DP_SCANNED_IMAGES: {
+									flags &= ~ISYNTAX_OBJECT_DPScannedImage;
+								} break;
 								case UFS_IMAGE_GENERAL_HEADERS: {
 									flags &= ~ISYNTAX_OBJECT_UFSImageGeneralHeader;
 									parser->dimension_index = 0;
 								} break;
 								case UFS_IMAGE_BLOCK_HEADER_TEMPLATES: {
 									flags &= ~ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate;
-									++parser->header_template_index;
+									++parser->block_header_template_index;
+									++isyntax->block_header_template_count; // TODO: refactor?
 									parser->dimension_index = 0;
 								} break;
 								case UFS_IMAGE_DIMENSIONS: {
@@ -749,6 +1014,47 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 								case DP_IMAGE_POST_PROCESSING:                flags &= ~ISYNTAX_OBJECT_DPImagePostProcessing; break;
 								case DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR: flags &= ~ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor; break;
 								case DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL: flags &= ~ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel; break;
+								case UFS_IMAGE_BLOCK_HEADERS: {
+									flags &= ~ISYNTAX_OBJECT_UFSImageBlockHeader;
+									if (flags & ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate) {
+										// NOTE: Within a UFSImageClusterHeaderTemplate, the UFSImageBlockHeader objects contain coordinate offset values that apply to that cluster template
+										// (Each UFSImageBlockHeader object corresponds to a codeblock in the cluster)
+										++parser->block_header_index_for_cluster;
+										if (parser->block_header_index_for_cluster >= MAX_CODEBLOCKS_PER_CLUSTER) {
+											panic(); // TODO: unexpected error condition, fail more gracefully?
+										}
+									}
+								} break;
+								case UFS_IMAGE_CLUSTER_HEADER_TEMPLATES: {
+									// Finalize cluster header template object: fix up relative codeblock coordinates within cluster
+									// using the information from UFS_IMAGE_DIMENSION_RANGES (=base value) // TODO: verify this
+									// combined with the UFS_IMAGE_BLOCK_COORDINATE values (=offsets) using the dimension ordering info provided by UFS_IMAGE_DIMENSIONS_IN_CLUSTER
+									isyntax_cluster_header_template_t* template = isyntax->cluster_header_templates + parser->cluster_header_template_index;
+									template->codeblock_in_cluster_count = parser->block_header_index_for_cluster;
+									for (i32 i = 0; i < template->codeblock_in_cluster_count; ++i) {
+										isyntax_cluster_relative_coords_t* relative = template->relative_coords_for_codeblock_in_cluster + i;
+										// apply base values from UFS_IMAGE_DIMENSION_RANGES
+										relative->x = template->base_x;
+										relative->y = template->base_y;
+										relative->color_component = template->base_color_component;
+										relative->scale = template->base_scale;
+										relative->waveletcoeff = template->base_waveletcoeff;
+										// apply offset from UFS_IMAGE_BLOCK_COORDINATE
+										u32* dimensions_to_fix[5] = {&relative->x, &relative->y, &relative->color_component, &relative->scale, &relative->waveletcoeff};
+										for (i32 dimension_index = 0; dimension_index < template->dimension_count; ++dimension_index) {
+											u32* to_fix = dimensions_to_fix[template->dimension_order[dimension_index]]; // get correct dimension from UFS_IMAGE_DIMENSIONS_IN_CLUSTER
+											*to_fix += relative->raw_coords[dimension_index]; // apply offset
+										}
+									}
+									// Pop flags and reset indices
+									flags &= ~ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate;
+									++parser->cluster_header_template_index;
+									++isyntax->cluster_header_template_count; // TODO: refactor?
+									parser->dimension_index = 0;
+									parser->block_header_index_for_cluster = 0;
+								} break;
+								case UFS_IMAGE_VALID_DATA_ENVELOPES:          flags &= ~ISYNTAX_OBJECT_UFSImageValidDataEnvelope; break;
+								case UFS_IMAGE_OPP_EXTREME_VERTICES:          flags &= ~ISYNTAX_OBJECT_UFSImageOppExtremeVertex; break;
 							}
 							parser->data_object_flags = flags;
 						} else if (parser->current_node_type == ISYNTAX_NODE_ARRAY) {
@@ -1676,11 +1982,11 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 // The above pattern repeats for the other 2 color channels (1 and 2).
 // The LL codeblock is only present at the highest scales.
 
-void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i16* out_buffer) {
+void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i32 compressor_version, i16* out_buffer) {
 	i64 offset_in_chunk = codeblock->block_data_offset - chunk_base_offset;
 	ASSERT(offset_in_chunk >= 0);
 	isyntax_hulsken_decompress(chunk + offset_in_chunk, codeblock->block_size,
-							   block_width, block_height, codeblock->coefficient, 1, out_buffer);
+							   block_width, block_height, codeblock->coefficient, compressor_version, out_buffer);
 }
 
 // Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant bit first).
@@ -1697,7 +2003,6 @@ static inline u64 bitstream_lsb_read_advance(u8* buffer, i32* bits_read, i32 bit
 	*bits_read += bits_to_read;
 	return raw;
 }
-
 
 // partly adapted from stb_image.h
 #define HUFFMAN_FAST_BITS 11   // optimal value may depend on various factors, CPU cache etc.
@@ -1724,10 +2029,46 @@ void save_code_in_huffman_fast_lookup_table(huffman_t* h, u32 code, u32 code_wid
 	}
 }
 
-static u32 max_code_size;
-static u32 symbol_counts[256];
-static u64 fast_count;
-static u64 nonfast_count;
+//static u32 max_code_size;
+//static u32 symbol_counts[256];
+//static u64 fast_count;
+//static u64 nonfast_count;
+
+/*
+static void dump_block(u8* compressed, size_t compressed_size) {
+#if 1 && DO_DEBUG
+	FILE* fp = fopen("dumped_codeblock.dat", "wb");
+	fwrite(compressed, compressed_size, 1, fp);
+	fclose(fp);
+#endif
+}
+*/
+
+/*
+void isyntax_test_decompress_block(const char* filename) {
+#if 1 && DO_DEBUG
+	mem_t* file = platform_read_entire_file(filename);
+	if (file) {
+		i32 block_width = 128;
+		i32 block_height = 128;
+		i32 coefficient = 1;
+		i32 coeff_count = (coefficient == 1) ? 3 : 1;
+		size_t coeff_buffer_size = coeff_count * block_width * block_height * sizeof(i16);
+		i16* coeff_buffer = calloc(1, coeff_buffer_size);
+		isyntax_hulsken_decompress(file->data, file->len, 128, 128, coefficient, 2, coeff_buffer);
+
+		char out_filename[256] = {};
+		snprintf(out_filename, sizeof(out_filename), "%s.raw", filename);
+		FILE* fp = fopen(out_filename, "wb");
+		fwrite(coeff_buffer, coeff_buffer_size, 1, fp);
+		fclose(fp);
+
+		free(coeff_buffer);
+		free(file);
+	}
+#endif
+}
+ */
 
 bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 block_width, i32 block_height,
 								i32 coefficient, i32 compressor_version, i16* out_buffer) {
@@ -1793,8 +2134,9 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	// Check that the serialized length is sane
 	if (serialized_length > 2 * coeff_buffer_size) {
-		ASSERT(!"serialized_length too large");
+//		dump_block(compressed, compressed_size);
 		console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, serialized_length too large (%d)\n", serialized_length);
+		ASSERT(!"serialized_length too large");
 		memset(out_buffer, 0, coeff_buffer_size);
 		release_temp_memory(&temp_memory);
 		return false;
@@ -1805,13 +2147,20 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	u8 zero_counter_size = *(u8*)byte_pos++;
 	bits_read += 8;
 
+	u32 bitplane_offsets[16] = {0};
 	if (compressor_version >= 2) {
-		// read bitplane seektable
-		i32 stored_bit_plane_count = total_mask_bits;
-		u32* bitplane_offsets = alloca(stored_bit_plane_count * sizeof(u32));
+		// Read bitplane seektable: a pointer is stored for a bit if it's represented in at least one of the bitmasks
+		u32 bitmasks_aggregate = 0;
+		for (i32 i = 0; i < coeff_count; ++i) {
+			bitmasks_aggregate |= bitmasks[i];
+		}
+		i32 bitplane_ptr_count = popcount(bitmasks_aggregate);
 		i32 bitplane_ptr_bits = (i32)(log2f(serialized_length)) + 5;
-		for (i32 i = 0; i < stored_bit_plane_count; ++i) {
-			bitplane_offsets[i] = bitstream_lsb_read_advance(compressed, &bits_read, bitplane_ptr_bits);
+		u32 bitplane_ptr_mask = (1u << (bitplane_ptr_bits)) - 1;
+		for (i32 i = 0; i < bitplane_ptr_count - 1; ++i) {
+			u64 blob = bitstream_lsb_read(compressed, bits_read);
+			bitplane_offsets[i] = blob & bitplane_ptr_mask;
+			bits_read += bitplane_ptr_bits;
 		}
 	}
 
@@ -1826,8 +2175,9 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		i32 nonfast_symbol_index = 0;
 		do {
 			if (bits_read >= block_size_in_bits) {
-				ASSERT(!"out of bounds");
+//				dump_block(compressed, compressed_size);
 				console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, Huffman table extends out of bounds (compressed_size=%d)\n", compressed_size);
+				ASSERT(!"out of bounds");
 				memset(out_buffer, 0, coeff_buffer_size);
 				release_temp_memory(&temp_memory);
 				return false;
@@ -1859,7 +2209,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				// We can accelerate decoding of small Huffman codes by storing them in a lookup table.
 				// However, for the longer codes this becomes inefficient so in those cases we need another method.
 				save_code_in_huffman_fast_lookup_table(&huffman, code, code_size, symbol);
-				++fast_count;
+//				++fast_count;
 			} else {
 				// Prepare the slow method for decoding Huffman codes that are too large to fit in the fast lookup table.
 				// (Slow method = iterating over possible symbols and checking if they match)
@@ -1874,13 +2224,13 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				huffman.nonfast_size[nonfast_symbol_index] = code_size;
 				huffman.nonfast_size_masks[nonfast_symbol_index] = size_bitmasks[code_size];
 				++nonfast_symbol_index;
-				++nonfast_count;
+//				++nonfast_count;
 			}
-			if (code_size > max_code_size) {
+			/*if (code_size > max_code_size) {
 				max_code_size = code_size;
 //			    console_print("found the biggest code size: %d\n", code_size);
-			}
-			symbol_counts[symbol]++;
+			}*/
+//			symbol_counts[symbol]++;
 
 			bits_to_advance += 8;
 			bits_read += bits_to_advance;
@@ -1903,7 +2253,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	}
 
 	// Decode the message
-	u8* decompressed_buffer = (u8*)arena_push_size(temp_memory.arena, serialized_length); // TODO: check that length is sane
+	u8* decompressed_buffer = (u8*)arena_push_size(temp_memory.arena, serialized_length);
 
 	u32 zerorun_code = huffman.code[zerorun_symbol];
 	u32 zerorun_code_size = huffman.size[zerorun_symbol];
@@ -1913,7 +2263,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	u32 zero_counter_mask = (1 << zero_counter_size) - 1;
 	i32 decompressed_length = 0;
 	while (bits_read < block_size_in_bits) {
-		if (decompressed_length >= serialized_length) {
+		if (decompressed_length >= serialized_length || bits_read >= block_size_in_bits) {
 			break; // done
 		}
 		i32 symbol = 0;
@@ -1965,8 +2315,9 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			DUMMY_STATEMENT;
 #endif
 			if (!match) {
-				ASSERT(!"out of bounds");
+//				dump_block(compressed, compressed_size);
 				console_print_error("Error: isyntax_hulsken_decompress(): error decoding Huffman message (unknown symbol)\n");
+				ASSERT(!"unknown symbol");
 				memset(out_buffer, 0, coeff_buffer_size);
 				release_temp_memory(&temp_memory);
 				return false;
@@ -1985,11 +2336,11 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			// A 'zero run' with length of zero means that this is not a zero run after all, but rather
 			// the 'escaped' zero run symbol itself which should be outputted.
 			if (numzeroes > 0) {
-				if (compressor_version == 2) ++numzeroes; // v2 stores actual count minus one
-				if (decompressed_length + numzeroes >= serialized_length) {
+				u32 actual_numzeroes = (compressor_version == 2) ? numzeroes + 1 : numzeroes; // v2 stores actual count minus one
+				if (decompressed_length + actual_numzeroes >= serialized_length || bits_read >= block_size_in_bits) {
 					// Reached the end, terminate
-					memset(decompressed_buffer + decompressed_length, 0, MIN(serialized_length - decompressed_length, numzeroes));
-					decompressed_length += numzeroes;
+					memset(decompressed_buffer + decompressed_length, 0, MIN(serialized_length - decompressed_length, actual_numzeroes));
+					decompressed_length += actual_numzeroes;
 					break;
 				}
 				// If the next Huffman symbol is also the zero run symbol, then their counters actually refer to the same zero run.
@@ -2004,23 +2355,24 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 						// The zero run continues
 						blob >>= zerorun_code_size;
 						u32 counter_extra_bits = blob & zero_counter_mask;
-						if (compressor_version == 2) ++counter_extra_bits; // v2 stores actual count minus one
 						numzeroes <<= zero_counter_size;
 						numzeroes |= (counter_extra_bits);
 						total_zero_counter_size += zero_counter_size;
 						bits_read += zerorun_code_size + zero_counter_size;
-						if (decompressed_length + numzeroes >= serialized_length) {
+						actual_numzeroes = (compressor_version == 2) ? numzeroes + 1 : numzeroes; // v2 stores actual count minus one
+						if (decompressed_length + actual_numzeroes >= serialized_length || bits_read >= block_size_in_bits) {
 							break; // Reached the end, terminate
 						}
 					} else {
+						actual_numzeroes = (compressor_version == 2) ? numzeroes + 1 : numzeroes; // v2 stores actual count minus one
 						break; // no next zero run symbol, the zero run is finished
 					}
 				}
 
-				i32 bytes_to_write = MIN(serialized_length - decompressed_length, numzeroes);
+				i32 bytes_to_write = MIN(serialized_length - decompressed_length, actual_numzeroes);
 				ASSERT(bytes_to_write > 0);
 				memset(decompressed_buffer + decompressed_length, 0, bytes_to_write);
-				decompressed_length += numzeroes;
+				decompressed_length += actual_numzeroes;
 			} else {
 				// This is not a 'zero run' after all, but an escaped symbol. So output the symbol.
 				decompressed_buffer[decompressed_length++] = symbol;
@@ -2032,9 +2384,10 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	}
 
 	if (serialized_length != decompressed_length) {
-		ASSERT(!"size mismatch");
+//		dump_block(compressed, compressed_size);
 		console_print("iSyntax: decompressed size mismatch (size=%d): expected %d observed %d\n",
 				 compressed_size, serialized_length, decompressed_length);
+		ASSERT(!"size mismatch");
 	}
 
 	i32 bytes_per_bitplane = (block_width * block_height) / 8;
@@ -2082,25 +2435,73 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	memset(coeff_buffer, 0, coeff_buffer_size);
 	memset(out_buffer, 0, coeff_buffer_size);
 
-	for (i32 coeff_index = 0; coeff_index < coeff_count; ++coeff_index) {
-		u16 bitmask = bitmasks[coeff_index];
-		u16* current_coeff_buffer = coeff_buffer + (coeff_index * (block_width * block_height));
-		u16* current_out_buffer = (u16*)out_buffer + (coeff_index * (block_width * block_height));
+	{
+		u32 running_bit_index = 0;
+		i32 running_coeff_index = 0;
+		u32 bitmasks_copy[3];
+		memcpy(bitmasks_copy, bitmasks, sizeof(bitmasks));
+		for (i32 bitplane_index = 0; bitplane_index < total_mask_bits; ++bitplane_index) {
+			u8* bitplane = decompressed_buffer + (bitplane_index * bytes_per_bitplane);
 
-		i32 bit = 0;
-		while (bitmask) {
-			if (bitmask & 1) {
-				ASSERT((block_width * block_height % 8) == 0);
-				u8* bitplane = decompressed_buffer + (compressed_bitplane_index * bytes_per_bitplane);
-				for (i32 i = 0; i < block_width * block_height; i += 8) {
-					i32 j = i/8;
-					// What is the order bitplanes are stored in, actually??
-					i32 shift_amount = (bit == 0) ? 15 : bit - 1; // bitplanes are stored sign, lsb ... msb
-//					i32 shift_amount = 15 - bit; // bitplanes are stored sign, msb ... lsb
-					u8 b = bitplane[j];
-					if (b == 0) continue;
+			// horribly complicated 'for loop'-style iteration, needed because v1 and v2 store bitplanes in a different order
+			// v1: iterate over the bitplanes (each coefficient separately)
+			// v2: for each bitplane, alternate the coefficients (striped)
+			// TODO: refactor?
+			if (compressor_version == 1) {
+				// find next bit for current coeff
+				for (;;) {
+					if (running_coeff_index >= coeff_count) {
+						panic("too many bitplanes");
+					}
+					u16 bitmask = bitmasks_copy[running_coeff_index];
+					if (bitmask) {
+						running_bit_index = bit_scan_forward(bitmask);
+						ASSERT(running_bit_index < 16);
+						bitmasks_copy[running_coeff_index] &= ~(1 << running_bit_index);
+						break; // success
+					} else {
+						++running_coeff_index;
+					}
+				}
+			} else {
+				// compressor version 2: alternating coefficients
+				for (;;) {
+					if (running_bit_index >= 16) {
+						panic("too many bitplanes");
+					}
+					if (running_coeff_index < coeff_count) {
+						u16 bitmask = bitmasks_copy[running_coeff_index];
+						if (bitmask & (1 << running_bit_index)) {
+							bitmasks_copy[running_coeff_index] &= ~(1 << running_bit_index);
+							break; // success
+						} else {
+							++running_coeff_index; // keep looking
+						}
+					} else {
+						running_coeff_index = 0;
+						++running_bit_index; // keep looking
+					}
+				}
+			}
+			// Now we figured out which coeff and bit number this bitplane belongs to
+
+			u16* current_coeff_buffer = coeff_buffer + (running_coeff_index * (block_width * block_height));
+			u16* current_out_buffer = (u16*)out_buffer + (running_coeff_index * (block_width * block_height));
+
+			// Do the bitplane unpacking
+			for (i32 i = 0; i < block_width * block_height; i += 8) {
+				i32 j = i/8;
+				// The order bitplanes are stored in depends on the compressor version
+				i32 shift_amount;
+				if (compressor_version == 1) {
+					shift_amount = (running_bit_index == 0) ? 15 : running_bit_index - 1; // bitplanes are stored sign, lsb ... msb
+				} else {
+					shift_amount = 15 - running_bit_index; // bitplanes are stored sign, msb ... lsb
+				}
+				u8 b = bitplane[j];
+				if (b == 0) continue;
 #if !defined(__SSE2__)
-					// Non-SIMD version
+				// Non-SIMD version
 					current_coeff_buffer[i+0] |= ((b >> 0) & 1) << shift_amount;
 					current_coeff_buffer[i+1] |= ((b >> 1) & 1) << shift_amount;
 					current_coeff_buffer[i+2] |= ((b >> 2) & 1) << shift_amount;
@@ -2110,26 +2511,34 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 					current_coeff_buffer[i+6] |= ((b >> 6) & 1) << shift_amount;
 					current_coeff_buffer[i+7] |= ((b >> 7) & 1) << shift_amount;
 #else
-					// This SIMD implementation is ~20% faster compared to the simple version above.
-					// Can it be made faster?
-					__m128i* dst = (__m128i*) (current_coeff_buffer+i);
-					uint64_t t = bswap_64(((0x8040201008040201ULL*b) & 0x8080808080808080ULL) >> 7);
-					__m128i v_t = _mm_set_epi64x(0, t);
-					__m128i array_of_bools = _mm_unpacklo_epi8(v_t, _mm_setzero_si128());
-					__m128i masks = _mm_slli_epi16(array_of_bools, shift_amount);
-					__m128i result = _mm_or_si128(*dst, masks);
-					*dst = result;
+				// This SIMD implementation is ~20% faster compared to the simple version above.
+				// Can it be made faster?
+				__m128i* dst = (__m128i*) (current_coeff_buffer+i);
+				uint64_t t = bswap_64(((0x8040201008040201ULL*b) & 0x8080808080808080ULL) >> 7);
+				__m128i v_t = _mm_set_epi64x(0, t);
+				__m128i array_of_bools = _mm_unpacklo_epi8(v_t, _mm_setzero_si128());
+				__m128i masks = _mm_slli_epi16(array_of_bools, shift_amount);
+				__m128i result = _mm_or_si128(*dst, masks);
+				*dst = result;
 #endif
-					DUMMY_STATEMENT;
-				}
-				++compressed_bitplane_index;
+				DUMMY_STATEMENT;
 			}
-			bitmask >>= 1;
-			++bit;
 
+			// finish iterating: basically, this is the '++i' part of the 'for loop' that got complicated because
+			// the v1 and v2 compressors store bitplanes in a different order
+			// TODO: refactor?
+			if (compressor_version == 2) {
+				++running_coeff_index;
+			}
 		}
+	}
 
-		if (bit > 0) {
+	// Reshuffle 4x2 snake-order and convert signed magnitude to twos complement
+	for (i32 coeff_index = 0; coeff_index < coeff_count; ++coeff_index) {
+		u16 bitmask = bitmasks[coeff_index];
+		u16* current_coeff_buffer = coeff_buffer + (coeff_index * (block_width * block_height));
+		u16* current_out_buffer = (u16*)out_buffer + (coeff_index * (block_width * block_height));
+		if (bitmask > 0) {
 			// Reshuffle snake-order
 			i32 area_stride_x = block_width / 4;
 			for (i32 area4x4_index = 0; area4x4_index < ((block_width * block_height) / 16); ++area4x4_index) {
@@ -2151,7 +2560,6 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			// Convert signed magnitude to twos complement (ex. 0x8002 becomes -2)
 			signed_magnitude_to_twos_complement_16_block(current_out_buffer, block_width * block_height);
 		}
-
 	}
 
 	release_temp_memory(&temp_memory); // frees coeff_buffer and decompressed_buffer
@@ -2361,8 +2769,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				isyntax->is_mpp_known = false;
 			}
 
-			isyntax->block_width = isyntax->header_templates[0].block_width;
-			isyntax->block_height = isyntax->header_templates[0].block_height;
+			isyntax->block_width = isyntax->block_header_templates[0].block_width;
+			isyntax->block_height = isyntax->block_header_templates[0].block_height;
 			isyntax->tile_width = isyntax->block_width * 2; // tile dimension AFTER inverse wavelet transform
 			isyntax->tile_height = isyntax->block_height * 2;
 
@@ -2440,8 +2848,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 				file_stream_set_pos(fp, isyntax_data_offset);
 				if (wsi_image->header_codeblocks_are_partial) {
 					// The seektable is required to be present, because the block header table did not contain all information.
-					dicom_tag_header_t seektable_header_tag = {0};
-					file_stream_read(&seektable_header_tag, sizeof(dicom_tag_header_t), fp);
+					isyntax_dicom_tag_header_t seektable_header_tag = {0};
+					file_stream_read(&seektable_header_tag, sizeof(isyntax_dicom_tag_header_t), fp);
 
 					io_ticks_elapsed += (get_clock() - io_begin);
 					parse_begin = get_clock();
@@ -2508,9 +2916,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						}
 						free(seektable);
 						seektable = NULL;
-#if 0
-						test_output_block_header(wsi_image);
-#endif
+
+//						test_output_block_header(wsi_image);
 
 						// Allocate enough space for the maximum number of codeblock 'chunks' we can expect
 						// (the actual number of chunks may be lower, because some tiles might not exist)
@@ -2560,6 +2967,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 								isyntax_data_chunk_t* chunk = wsi_image->data_chunks + current_data_chunk_index;
 								chunk->offset = codeblock->block_data_offset;
+								// TODO: record cluster size here?
 								chunk->top_codeblock_index = current_chunk_codeblock_index;
 								chunk->codeblock_count_per_color = chunk_codeblock_count_per_color;
 								chunk->scale = codeblock->scale;
@@ -2598,11 +3006,99 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 //						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 						isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());
 					} else {
+						// seektable invalid
 						goto failed;
 					}
-				}
+				} else if (isyntax->data_model_major_version >= 100) {
+					// Create tables for spatial lookup of codeblocks and codeblock chunks from tile coordinates
+					for (i32 i = 0; i < wsi_image->level_count; ++i) {
+						isyntax_level_t* level = wsi_image->levels + i;
+						// NOTE: Tile entry with codeblock_index == 0 will mean there is no codeblock for this tile (empty/background)
+						level->tiles = (isyntax_tile_t*) calloc(1, level->tile_count * sizeof(isyntax_tile_t));
+					}
+
+//					test_output_block_header(wsi_image);
+
+
+					// TODO: refactor code duplication: this is (probably) mostly wrong!
+					i32 current_chunk_codeblock_index = 0;
+					i32 next_chunk_codeblock_index = 0;
+					i32 current_data_chunk_index = 0;
+					i32 next_data_chunk_index = 0;
+					for (i32 i = 0; i < wsi_image->codeblock_count; ++i) {
+						isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
+						if (codeblock->color_component != 0) {
+							// Don't let color channels 1 and 2 overwrite what was already set
+							i = next_chunk_codeblock_index; // skip ahead
+							codeblock = wsi_image->codeblocks + i;
+							if (i >= wsi_image->codeblock_count) break;
+						}
+						// Keep track of where we are in the 'chunk' of codeblocks
+						if (i == next_chunk_codeblock_index) {
+							// This codeblock is the top of a new chunk
+							i32 chunk_codeblock_count_per_color;
+							if (codeblock->scale == wsi_image->max_scale) {
+								chunk_codeblock_count_per_color = isyntax_get_chunk_codeblocks_per_color_for_level(codeblock->scale, true);
+							} else {
+								chunk_codeblock_count_per_color = 21;
+							}
+							current_chunk_codeblock_index = i;
+							next_chunk_codeblock_index = i + (chunk_codeblock_count_per_color * 3);
+							current_data_chunk_index = next_data_chunk_index;
+							if (current_data_chunk_index >= wsi_image->data_chunk_count) {
+								console_print_error("iSyntax: encountered too many data chunks\n");
+								panic();
+							}
+
+							if (isyntax->data_model_major_version < 100) {
+								isyntax_data_chunk_t* chunk = wsi_image->data_chunks + current_data_chunk_index;
+								chunk->offset = codeblock->block_data_offset;
+								// TODO: record cluster size here
+								chunk->top_codeblock_index = current_chunk_codeblock_index;
+								chunk->codeblock_count_per_color = chunk_codeblock_count_per_color;
+								chunk->scale = codeblock->scale;
+								++wsi_image->data_chunk_count;
+							}
+
+							++next_data_chunk_index;
+						}
+						isyntax_level_t* level = wsi_image->levels + codeblock->scale;
+						i32 tile_index = codeblock->block_y * level->width_in_tiles + codeblock->block_x;
+						ASSERT(tile_index < level->tile_count);
+						level->tiles[tile_index].exists = true;
+						level->tiles[tile_index].codeblock_index = i;
+						level->tiles[tile_index].codeblock_chunk_index = current_chunk_codeblock_index;
+						level->tiles[tile_index].data_chunk_index = current_data_chunk_index;
+
+					}
+
+					// When recursively decoding the tiles, at each iteration the image is slightly offset
+					// to the top left.
+					// (Effectively the image seems to shift ~1.5 pixels, I am not sure why? Is this related to
+					// the per level padding of (3 >> level) pixels used in the wavelet transform?)
+					// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
+					// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
+					float offset_in_pixels = 1.5f;
+					for (i32 scale = 0; scale < wsi_image->max_scale; ++scale) {
+						isyntax_level_t* level = wsi_image->levels + scale;
+						level->origin_offset_in_pixels = offset_in_pixels;
+						float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
+						float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
+						level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
+						offset_in_pixels *= 2;
+					}
+
+					parse_ticks_elapsed += (get_clock() - parse_begin);
+//						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
+//						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
+//						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+					isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());
+				} else {
+					// non-partial header blocks are not supported
+					goto failed;
+				};
 			} else {
-				// non-partial header blocks are not supported
+				// non-WSI images are not supported
 				goto failed;
 			}
 

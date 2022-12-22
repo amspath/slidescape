@@ -177,9 +177,9 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 				ASSERT(color_channel->coeff_h == NULL);
 				ASSERT(color_channel->coeff_ll == NULL);
 				color_channel->coeff_h = (icoeff_t*)block_alloc(&isyntax->h_coeff_block_allocator);
-				isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, color_channel->coeff_h);
+				isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, wsi->compressor_version, color_channel->coeff_h);
 				color_channel->coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
-				isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, color_channel->coeff_ll);
+				isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, wsi->compressor_version, color_channel->coeff_ll);
 
 				// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 				color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x, tile_y);
@@ -226,7 +226,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 						color_channel->coeff_h = (icoeff_t*)block_alloc(&isyntax->h_coeff_block_allocator);
 						isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size,
 												   isyntax->block_width, isyntax->block_height,
-												   codeblock->coefficient, 1, color_channel->coeff_h);
+												   codeblock->coefficient, wsi->compressor_version, color_channel->coeff_h);
 
 						// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x_in_chunk, tile_y_in_chunk);
@@ -279,7 +279,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
 						color_channel->coeff_h = (icoeff_t*) block_alloc(&isyntax->h_coeff_block_allocator);
 						isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
-						                                                    isyntax->block_height, codeblock->coefficient, 1, color_channel->coeff_h); // TODO: free using _aligned_free()
+						                                                    isyntax->block_height, codeblock->coefficient, wsi->compressor_version, color_channel->coeff_h); // TODO: free using _aligned_free()
 
 						// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
 						color_channel->neighbors_loaded = isyntax_get_adjacent_tiles_mask(current_level, tile_x_in_chunk, tile_y_in_chunk);
@@ -423,7 +423,7 @@ void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* ws
 			isyntax_tile_channel_t* color_channel = tile->color_channels + color;
 			color_channel->coeff_h = (icoeff_t*) block_alloc(&isyntax->h_coeff_block_allocator);
 			isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
-									   isyntax->block_height, codeblock->coefficient, 1, color_channel->coeff_h);
+									   isyntax->block_height, codeblock->coefficient, wsi->compressor_version, color_channel->coeff_h);
 
 
 		}
@@ -842,6 +842,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 					u32 chunk_index = chunks_to_load[i].index;
 					isyntax_data_chunk_t * chunk = wsi->data_chunks + chunk_index;
 					if (!chunk->data) {
+						// TODO: use known cluster size instead of ad hoc computation here
 						isyntax_codeblock_t* last_codeblock = wsi->codeblocks + chunk->top_codeblock_index + (chunk->codeblock_count_per_color * 3) - 1;
 						u64 offset1 = last_codeblock->block_data_offset + last_codeblock->block_size;
 						u64 read_size = offset1 - chunk->offset;

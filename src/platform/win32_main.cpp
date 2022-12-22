@@ -215,6 +215,7 @@ void win32_set_file_type_associations() {
 			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\Applications\\slidescape.exe\\SupportedTypes");
 			if (hkey) {
 				if (!win32_registry_set_value(hkey, ".isyntax", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
+				if (!win32_registry_set_value(hkey, ".i2syntax", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
 				if (!win32_registry_set_value(hkey, ".tif", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
 				if (!win32_registry_set_value(hkey, ".tiff", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
 				if (!win32_registry_set_value(hkey, ".svs", REG_SZ, NULL, 0)) goto fail_SupportedTypes;
@@ -288,6 +289,7 @@ void win32_set_file_type_associations() {
 
 		// Create the filetype associations
 		if (!win32_registry_add_to_open_with_list("isyntax")) return;
+		if (!win32_registry_add_to_open_with_list("i2syntax")) return;
 		if (!win32_registry_add_to_open_with_list("tiff")) return;
 		if (!win32_registry_add_to_open_with_list("tif")) return;
 		if (!win32_registry_add_to_open_with_list("ptif")) return;

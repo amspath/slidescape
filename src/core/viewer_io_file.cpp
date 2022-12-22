@@ -307,7 +307,7 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 			return VIEWER_FILE_TYPE_JSON;
 		} else if (strcasecmp(file->ext, "dcm") == 0) {
 			return VIEWER_FILE_TYPE_DICOM;
-		} else if (strcasecmp(file->ext, "isyntax") == 0) {
+		} else if (strcasecmp(file->ext, "isyntax") == 0 || strcasecmp(file->ext, "i2syntax") == 0) {
 			return VIEWER_FILE_TYPE_ISYNTAX;
 		} else {
 			if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {

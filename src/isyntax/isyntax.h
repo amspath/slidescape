@@ -67,14 +67,18 @@ enum isyntax_node_type_enum {
 enum isyntax_group_data_object_dicom_element_enum {
 	// Group 0x301D
 	PIM_DP_SCANNED_IMAGES                   = 0x1003, // DPScannedImage
+	DP_IMAGE_POST_PROCESSING                = 0x1014, // DPImagePostProcessing
+	DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR = 0x1019, // DPWaveletQuantizerSeetingsPerColor
+	DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL = 0x101a, // DPWaveletQuantizerSeetingsPerLevel
 	UFS_IMAGE_GENERAL_HEADERS               = 0x2000, // UFSImageGeneralHeader
 	UFS_IMAGE_DIMENSIONS                    = 0x2003, // UFSImageDimension
 	UFS_IMAGE_BLOCK_HEADER_TEMPLATES        = 0x2009, // UFSImageBlockHeaderTemplate
 	UFS_IMAGE_DIMENSION_RANGES              = 0x200a, // UFSImageDimensionRange
 	DP_COLOR_MANAGEMENT                     = 0x200b, // DPColorManagement
-	DP_IMAGE_POST_PROCESSING                = 0x1014, // DPImagePostProcessing
-	DP_WAVELET_QUANTIZER_SETTINGS_PER_COLOR = 0x1019, // DPWaveletQuantizerSeetingsPerColor
-	DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL = 0x101a, // DPWaveletQuantizerSeetingsPerLevel
+	UFS_IMAGE_BLOCK_HEADERS                 = 0x200d, // UFSImageBlockHeader              // new in iSyntax v2
+	UFS_IMAGE_CLUSTER_HEADER_TEMPLATES      = 0x2016, // UFSImageClusterHeaderTemplate    // new in iSyntax v2
+	UFS_IMAGE_VALID_DATA_ENVELOPES          = 0x2023, // UFSImageValidDataEnvelope        // new in iSyntax v2
+	UFS_IMAGE_OPP_EXTREME_VERTICES          = 0x2024, // UFSImageOppExtremeVertex         // new in iSyntax v2
 	// Group 8B01
 	PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE = 0x1001, // PixelDataRepresentation
 };
@@ -91,24 +95,23 @@ enum isyntax_data_object_flag_enum {
 	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerColor = 0x100,
 	ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel = 0x200,
 	ISYNTAX_OBJECT_PixelDataRepresentation = 0x400,
+	ISYNTAX_OBJECT_UFSImageBlockHeader = 0x800,             // new in iSyntax v2
+	ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate = 0x1000,  // new in iSyntax v2
+	ISYNTAX_OBJECT_UFSImageValidDataEnvelope = 0x2000,      // new in iSyntax v2
+	ISYNTAX_OBJECT_UFSImageOppExtremeVertex = 0x4000,       // new in iSyntax v2
 };
 
 
 #pragma pack(push, 1)
-typedef struct dicom_tag_header_t {
+typedef struct isyntax_dicom_tag_header_t {
 	u16 group;
 	u16 element;
 	u32 size;
-} dicom_tag_header_t;
-
-typedef struct dicom_tag_id_t {
-	u16 group;
-	u16 element;
-} dicom_tag_id_t;
+} isyntax_dicom_tag_header_t;
 
 typedef struct isyntax_partial_block_header_t {
-	dicom_tag_header_t sequence_element_header;
-	dicom_tag_header_t block_coordinates_header;
+	isyntax_dicom_tag_header_t sequence_element_header;
+	isyntax_dicom_tag_header_t block_coordinates_header;
 	u32 x_coordinate;
 	u32 y_coordinate;
 	u32 color_component;
@@ -118,31 +121,31 @@ typedef struct isyntax_partial_block_header_t {
 	/* [MISSING] u64 block_data_offset; */
 	/* [MISSING] dicom_tag_header_t block_size_header; */
 	/* [MISSING] u64 block_size; */
-	dicom_tag_header_t block_header_template_id_header;
+	isyntax_dicom_tag_header_t block_header_template_id_header;
 	u32 block_header_template_id;
 } isyntax_partial_block_header_t;
 
 typedef struct isyntax_full_block_header_t {
-	dicom_tag_header_t sequence_element_header;
-	dicom_tag_header_t block_coordinates_header;
+	isyntax_dicom_tag_header_t sequence_element_header;
+	isyntax_dicom_tag_header_t block_coordinates_header;
 	u32 x_coordinate;
 	u32 y_coordinate;
 	u32 color_component;
 	u32 scale;
 	u32 coefficient;
-	dicom_tag_header_t block_data_offset_header;
+	isyntax_dicom_tag_header_t block_data_offset_header;
 	u64 block_data_offset;
-	dicom_tag_header_t block_size_header;
+	isyntax_dicom_tag_header_t block_size_header;
 	u64 block_size;
-	dicom_tag_header_t block_header_template_id_header;
+	isyntax_dicom_tag_header_t block_header_template_id_header;
 	u32 block_header_template_id;
 } isyntax_full_block_header_t;
 
 typedef struct isyntax_seektable_codeblock_header_t {
-	dicom_tag_header_t start_header;
-	dicom_tag_header_t block_data_offset_header;
+	isyntax_dicom_tag_header_t start_header;
+	isyntax_dicom_tag_header_t block_data_offset_header;
 	u64 block_data_offset;
-	dicom_tag_header_t block_size_header;
+	isyntax_dicom_tag_header_t block_size_header;
 	u64 block_size;
 } isyntax_seektable_codeblock_header_t;
 #pragma pack(pop)
@@ -154,13 +157,45 @@ typedef struct isyntax_image_dimension_range_t {
 	i32 numsteps;
 } isyntax_image_dimension_range_t;
 
-typedef struct isyntax_image_block_header_template_t {
+typedef struct isyntax_block_header_template_t {
 	u32 block_width;     // e.g. 128
 	u32 block_height;    // e.g. 128
 	u8 color_component;  // 0=Y 1=Co 2=Cg
 	u8 scale;            // range 0-8
 	u8 waveletcoeff;     // either 1 for LL, or 3 for LH+HL+HH
-} isyntax_header_template_t;
+} isyntax_block_header_template_t;
+
+typedef struct isyntax_cluster_block_header_t {
+	u32 x_coordinate;
+	u32 y_coordinate;
+	u32 color_component;
+	u32 scale;
+	u32 coefficient;
+} isyntax_cluster_block_header_t;
+
+typedef struct isyntax_cluster_relative_coords_t {
+	u32 raw_coords[5];
+	u32 block_header_template_id;
+	u32 x;
+	u32 y;
+	u32 color_component;
+	u32 scale;
+	u32 waveletcoeff;
+} isyntax_cluster_relative_coords_t;
+
+#define MAX_CODEBLOCKS_PER_CLUSTER 70 // NOTE: what is the actual maximum possible?
+
+typedef struct isyntax_cluster_header_template_t {
+	u32 base_x;
+	u32 base_y;
+	u8 base_scale;
+	u8 base_waveletcoeff;
+	u8 base_color_component;
+	isyntax_cluster_relative_coords_t relative_coords_for_codeblock_in_cluster[MAX_CODEBLOCKS_PER_CLUSTER];
+	i32 codeblock_in_cluster_count;
+	i32 dimension_order[5];
+	u8 dimension_count;
+} isyntax_cluster_header_template_t;
 
 typedef struct isyntax_codeblock_t {
 	u32 x_coordinate;
@@ -179,8 +214,8 @@ typedef struct isyntax_codeblock_t {
 } isyntax_codeblock_t;
 
 typedef struct isyntax_data_chunk_t {
-//	size_t size;
 	i64 offset;
+	u32 size;
 	i32 top_codeblock_index;
 	i32 codeblock_count_per_color;
 	i32 scale;
@@ -234,12 +269,10 @@ typedef struct isyntax_image_t {
 	i32 level_count;
 	i32 max_scale;
 	isyntax_level_t levels[16];
+	i32 compressor_version;
 	bool compression_is_lossy;
 	i32 lossy_image_compression_ratio;
-	u8* encoded_image_data;
-	size_t encoded_image_size;
-	u8* block_header_table;
-	size_t block_header_size;
+	i32 number_of_blocks;
 	i32 codeblock_count;
 	isyntax_codeblock_t* codeblocks;
 	i32 data_chunk_count;
@@ -284,7 +317,9 @@ typedef struct isyntax_xml_parser_t {
 	isyntax_parser_node_t data_object_stack[ISYNTAX_MAX_NODE_DEPTH];
 	i32 data_object_stack_index;
 	u32 data_object_flags;
-	i32 header_template_index;
+	i32 block_header_template_index;
+	i32 cluster_header_template_index;
+	i32 block_header_index_for_cluster;
 	i32 dimension_index;
 	bool initialized;
 } isyntax_xml_parser_t;
@@ -294,7 +329,10 @@ typedef struct isyntax_t {
 	file_handle_t file_handle;
 	isyntax_image_t images[16];
 	i32 image_count;
-	isyntax_header_template_t header_templates[64];
+	isyntax_block_header_template_t block_header_templates[64];
+	i32 block_header_template_count;
+	isyntax_cluster_header_template_t cluster_header_templates[8];
+	i32 cluster_header_template_count;
 	i32 macro_image_index;
 	i32 label_image_index;
 	i32 wsi_image_index;
@@ -312,6 +350,7 @@ typedef struct isyntax_t {
 	block_allocator_t h_coeff_block_allocator;
 	float loading_time;
 	i32 refcount;
+	i32 data_model_major_version; // <100 (usually 5) for iSyntax format v1, >= 100 for iSyntax format v2
 } isyntax_t;
 
 // function prototypes
@@ -324,7 +363,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 u32 isyntax_get_adjacent_tiles_mask_only_existing(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer);
-void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i16* out_buffer);
+void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 block_width, i32 block_height, u8* chunk, u64 chunk_base_offset, i32 compressor_version, i16* out_buffer);
 i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 
 // TODO: move this somewhere suitable
