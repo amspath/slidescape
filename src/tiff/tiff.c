@@ -86,6 +86,7 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_RESOLUTION_UNIT: result = "ResolutionUnit"; break;
 		case TIFF_TAG_PAGE_NUMBER: result = "PageNumber"; break;
 		case TIFF_TAG_SOFTWARE: result = "Software"; break;
+        case TIFF_TAG_PREDICTOR: result = "Predictor"; break;
 		case TIFF_TAG_WHITE_POINT: result = "WhitePoint"; break;
 		case TIFF_TAG_PRIMARY_CHROMACITIES: result = "PrimaryChromacities"; break;
 		case TIFF_TAG_TILE_WIDTH: result = "TileWidth"; break;
@@ -485,7 +486,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 					ifd->is_philips = true;
 					tiff->is_philips = true;
 				}
-			}
+			} break;
+            case TIFF_TAG_PREDICTOR: {
+                ifd->predictor = tag->data_u16;
+            } break;
 			case TIFF_TAG_TILE_WIDTH: {
 				ifd->tile_width = tag->data_u32;
 			} break;
@@ -546,6 +550,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				}
 			} break;
 			case TIFF_TAG_S_MAX_SAMPLE_VALUE: {
+                // todo: what to do if this tag is not present?
 				if (ifd->sample_format <= 2) {
 					u64 bytesize = get_tiff_field_size(tag->data_type);
 					if (bytesize == 1) {
@@ -557,6 +562,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 								console_print_verbose("   channel %d: SMaxSampleValue=%d\n", i, values[i]);
 							}
 							ifd->max_sample_value = highest;
+                            ifd->has_max_sample_value = true;
 							free(values);
 						}
 					}
@@ -1353,6 +1359,61 @@ static inline u32 lookup_color_from_lut(u8 index) {
 	return color;
 }
 
+// from libtiff: horizontal predictor decoder
+static int horAcc8(u32 stride, uint8* cp0, u32 cc) {
+    unsigned char* cp = (unsigned char*) cp0;
+    if((cc%stride)!=0) {
+//        TIFFErrorExt(tif->tif_clientdata, "horAcc8",
+//                     "%s", "(cc%stride)!=0");
+        return 0;
+    }
+    if (cc > stride) {
+        /*
+         * Pipeline the most common cases.
+         */
+        if (stride == 3)  {
+            unsigned int cr = cp[0];
+            unsigned int cg = cp[1];
+            unsigned int cb = cp[2];
+            cc -= 3;
+            cp += 3;
+            while (cc>0) {
+                cp[0] = (unsigned char) ((cr += cp[0]) & 0xff);
+                cp[1] = (unsigned char) ((cg += cp[1]) & 0xff);
+                cp[2] = (unsigned char) ((cb += cp[2]) & 0xff);
+                cc -= 3;
+                cp += 3;
+            }
+        } else if (stride == 4)  {
+            unsigned int cr = cp[0];
+            unsigned int cg = cp[1];
+            unsigned int cb = cp[2];
+            unsigned int ca = cp[3];
+            cc -= 4;
+            cp += 4;
+            while (cc>0) {
+                cp[0] = (unsigned char) ((cr += cp[0]) & 0xff);
+                cp[1] = (unsigned char) ((cg += cp[1]) & 0xff);
+                cp[2] = (unsigned char) ((cb += cp[2]) & 0xff);
+                cp[3] = (unsigned char) ((ca += cp[3]) & 0xff);
+                cc -= 4;
+                cp += 4;
+            }
+        } else  {
+            cc -= stride;
+            do {
+                for (i32 i = 0; i < stride; ++i) {
+                    cp[stride] = (unsigned char) ((cp[stride] + *cp) & 0xff);
+                    cp++;
+                }
+                cc -= stride;
+            } while (cc>0);
+        }
+    }
+    return 1;
+}
+
+
 u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_ifd, i32 tile_index, i32 level, i32 tile_x, i32 tile_y) {
 
 	u16 compression = level_ifd->compression;
@@ -1503,6 +1564,24 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				return NULL;
 			}
 
+            if (level_ifd->predictor > 1) {
+                if (level_ifd->predictor == 2 /* PREDICTOR_HORIZONTAL */ && level_ifd->samples_per_pixel <= 8) {
+                    // horizontal differencing
+                    u32 samples = level_ifd->samples_per_pixel;
+                    u32 subpixels_per_scanline = level_ifd->tile_width * samples;
+                    for (u32 y = 0; y < level_ifd->tile_height; ++y) {
+                        u8 prev[8] = {};
+                        u8* scanline = decompressed + y * subpixels_per_scanline;
+                        u8* pixel = scanline;
+                        horAcc8(samples, scanline, subpixels_per_scanline);
+                    }
+                } else {
+                    console_print_error("LZW decoding failed: unsupported predictor operator (%d)\n", level_ifd->predictor);
+                    free(decompressed);
+                    return NULL;
+                }
+            }
+
 //			i64 decode_end = get_clock();
 //			console_print_verbose("[thread %d] decode  level %d, tile %d (%d, %d) took %g ms\n", logical_thread_index, level, tile_index, tile_x, tile_y, 1000.0f * get_seconds_elapsed(start, decode_end));
 
@@ -1552,12 +1631,26 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 
 				return (u8*)pixels;
 			} else if (level_ifd->samples_per_pixel == 1) {
+
+
 				// Grayscale image
 				u64 pixel_count = level_ifd->tile_width * level_ifd->tile_height;
 				i32 source_pos = 0;
 				u32* pixels = (u32*)malloc(pixel_memory_size);
 
-				u8 output_for_min_value = 0;
+                // assume palettized
+                for (u64 i = 0; i < pixel_count; ++i) {
+                    u8 r = decompressed[source_pos]; // only the red channel is being used
+//						    u8 g = decompressed[source_pos+1];
+//					    	u8 b = decompressed[source_pos+2];
+//					    	pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
+                    u32 color = lookup_color_from_lut(r);
+//                    color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
+                    pixels[i] = color;
+                    source_pos+=1;
+                }
+
+				/*u8 output_for_min_value = 0;
 				u8 output_for_max_value = 255;
 				if (level_ifd->color_space == TIFF_PHOTOMETRIC_MINISBLACK) {
 					// no action
@@ -1579,7 +1672,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 						source_pos+=1;
 					}
 				} else {
-					if (level_ifd->max_sample_value == 0 /*assume not set*/ || level_ifd->max_sample_value == 255) {
+					if (level_ifd->max_sample_value == 0 *//*assume not set*//* || level_ifd->max_sample_value == 255) {
 						// output raw value as RGB value
 						for (u64 i = 0; i < pixel_count; ++i) {
 							u8 r = decompressed[source_pos];
@@ -1599,7 +1692,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 						}
 					}
 
-				}
+				}*/
 
 				free(decompressed);
 				return (u8*)pixels;

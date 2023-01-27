@@ -63,6 +63,7 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_RESOLUTION_UNIT = 296,
 	TIFF_TAG_PAGE_NUMBER = 297,
 	TIFF_TAG_SOFTWARE = 305,
+    TIFF_TAG_PREDICTOR = 317,
 	TIFF_TAG_WHITE_POINT = 318,
 	TIFF_TAG_PRIMARY_CHROMACITIES = 319,
 	TIFF_TAG_TILE_WIDTH = 322,
@@ -244,13 +245,15 @@ typedef struct tiff_ifd_t {
 	u16 samples_per_pixel;
 	u16 sample_format;
 	i64 min_sample_value;
-	i64 max_sample_value;
+	i64 max_sample_value; // TODO: use this field in a sensible way without requiring it being present
+    bool has_max_sample_value;
 	char* software;
 	u64 software_length;
 	char* image_description;
 	u64 image_description_length;
 	u8* jpeg_tables;
 	u64 jpeg_tables_length;
+    u16 predictor;
 	u16 compression; // 7 = JPEG
 	u16 color_space;
 	u32 tiff_subfiletype;
