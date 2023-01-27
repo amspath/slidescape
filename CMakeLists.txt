@@ -290,7 +290,7 @@ elseif(APPLE)
             COMMAND cp -f "${SDL2_PREFIX}/lib/libSDL2.dylib" "${BUNDLE_BINARY_DIR}/${ARCHITECTURE}/libSDL2.dylib"
             COMMAND cp -f "${CMAKE_SOURCE_DIR}/src/Info.plist" "${BUNDLE_BINARY_DIR}/../Info.plist"
             COMMAND install_name_tool -change `${FIND_LINKED_DYLIB_COMMAND}`
-            @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/slidescape")
+            @executable_path/${ARCHITECTURE}/libSDL2.dylib "${BUNDLE_BINARY_DIR}/Slidescape")
     if (WITH_CODESIGN)
         add_custom_command(TARGET slidescape POST_BUILD
                 COMMAND codesign --deep -s "Developer ID Application" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Slidescape.app)

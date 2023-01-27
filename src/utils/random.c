@@ -24,7 +24,7 @@ void random_init() {
 	pcg32_random_r(&global_rng);
 }
 
-u32 random() {
+u32 pcg_random() {
 	return pcg32_random_r(&global_rng);
 }
 

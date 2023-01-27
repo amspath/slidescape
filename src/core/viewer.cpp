@@ -940,7 +940,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 	}
 }
 
-void update_and_render_image(app_state_t* app_state, input_t *input, float delta_t, image_t* image) {
+void update_and_render_image(app_state_t* app_state, image_t* image) {
 	scene_t* scene = &app_state->scene;
 
 	i32 client_width = app_state->client_viewport.w;
@@ -2070,7 +2070,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 //		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 		image_t* image = app_state->loaded_images + 0;
-		update_and_render_image(app_state, input, delta_time, image);
+		update_and_render_image(app_state, image);
 	} else {
 		// We are rendering the scene in two passes.
 		// 1: render to framebuffer
@@ -2090,7 +2090,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 //			if (image_index == scene->active_layer) {
 				image_t* image = app_state->loaded_images + image_index;
-				update_and_render_image(app_state, input, delta_time, image);
+				update_and_render_image(app_state, image);
 //			}
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		}

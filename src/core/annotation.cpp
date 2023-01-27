@@ -450,17 +450,22 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->is_edit_mode = true;
 }
 
+// TODO: think about what we want to do with this functionality; remove?
+bool want_cycle_annotations = false;
+
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
 
 	// Pressing Tab or Shift+Tab cycles annotations within the currently selected group
-	if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_Tab)) {
-		i32 delta = (is_key_down(input, KEY_LeftShift) || is_key_down(input, KEY_RightShift)) ? -1 : +1;
-		i32 selected_index = annotation_cycle_selection_within_group(&app_state->scene.annotation_set, delta);
-		if (selected_index >= 0) {
-			center_scene_on_annotation(&app_state->scene, get_active_annotation(annotation_set, selected_index));
-		}
-	}
+    if (want_cycle_annotations) {
+        if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_Tab)) {
+            i32 delta = (is_key_down(input, KEY_LeftShift) || is_key_down(input, KEY_RightShift)) ? -1 : +1;
+            i32 selected_index = annotation_cycle_selection_within_group(&app_state->scene.annotation_set, delta);
+            if (selected_index >= 0) {
+                center_scene_on_annotation(&app_state->scene, get_active_annotation(annotation_set, selected_index));
+            }
+        }
+    }
 
 	// Pressing Escape deselects annotations
 	if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_Escape)) {
