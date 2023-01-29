@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2022  Pieter Valkema
+  Copyright (C) 2019-2023  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,13 +16,29 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef MACOS_MAIN_H
-#define MACOS_MAIN_H
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "common.h"
-#include "platform.h"
 
+i64 get_clock();
+float get_seconds_elapsed(i64 start, i64 end);
+void platform_sleep(u32 ms);
+void platform_sleep_ns(i64 ns);
 
+#if WINDOWS
 
+void win32_init_timer(); // call this once, before calling get_clock()
 
-#endif //MACOS_MAIN_H
+extern i64 performance_counter_frequency;
+extern bool is_sleep_granular;
+
+#endif
+
+#ifdef __cplusplus
+};
+#endif
+

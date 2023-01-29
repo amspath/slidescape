@@ -4,6 +4,10 @@
 #define DO_DEBUG 0
 #endif
 
+#if !IS_SERVER
+#define USE_CONSOLE_GUI 1
+#endif
+
 #define PANIC_DONT_INLINE 1
 
 #define USE_OPENGL_DEBUG_CONTEXT DO_DEBUG

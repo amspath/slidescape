@@ -18,12 +18,12 @@
 
 #include "common.h"
 #include "platform.h"
+#include "stringutils.h"
+#include "crc32.h"
 
 #include OPENGL_H
 
-#include "stringutils.h"
 #include "stringified_shaders.h"
-
 #include "shader.h"
 
 #if DO_DEBUG

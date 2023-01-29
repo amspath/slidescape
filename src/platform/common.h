@@ -20,7 +20,13 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#if __has_include("config.h")
 #include "config.h"
+#endif
+
+#ifndef APP_TITLE
+#define APP_TITLE "Application"
+#endif
 
 #ifndef _LARGEFILE64_SOURCE
 #define _LARGEFILE64_SOURCE
@@ -32,7 +38,9 @@
 // Platform detection
 #ifdef _WIN32
 #define WINDOWS 1
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600
+#endif
 #define WINVER 0x0600
 #define OPENGL_H <glad/glad.h>
 #define PATH_SEP "\\"
@@ -166,21 +174,30 @@ FORCE_INLINE void libc_free(void* memory) {
 }
 
 // Faster malloc(), realloc(), free()
-#include <ltalloc.h>
+#if __has_include("ltalloc.h")
+#define IS_LTALLOC_AVAILABLE 1
+#include "ltalloc.h"
 #if WINDOWS
 #define malloc ltmalloc
 #define calloc ltcalloc
 #define free ltfree
 #define realloc ltrealloc
 #endif
+#else
+#define IS_LTALLOC_AVAILABLE 0
+#endif
 
 // Typesafe dynamic array and hash tables for C
 // https://github.com/nothings/stb/blob/master/stb_ds.h
 // NOTE: need to define STB_DS_IMPLEMENTATION in one source file
+#if __has_include("stb_ds.h")
+#if IS_LTALLOC_AVAILABLE
 #define STBDS_REALLOC(context,ptr,size) ltrealloc((ptr),(size))
 #define STBDS_FREE(context,ptr) ltfree((ptr))
-#include <stb_ds.h>
+#endif
+#include "stb_ds.h"
 #define arrlastptr(a) ((a)+(stbds_header(a)->length-1))
+#endif
 
 // NOTE: need to define STB_SPRINTF_IMPLEMENTATION in one source file
 #include <stb_sprintf.h>
@@ -192,6 +209,28 @@ FORCE_INLINE void libc_free(void* memory) {
 #define snprintf  stbsp_snprintf
 #define vsprintf  stbsp_vsprintf
 #define vsnprintf stbsp_vsnprintf
+
+// Catch prints to the console so that we can also log them, display them in a GUI, etc.
+#ifndef USE_CONSOLE_GUI
+#define USE_CONSOLE_GUI 0
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+#if !USE_CONSOLE_GUI
+#define console_print printf
+#define console_print_error(...) fprintf(stderr, __VA_ARGS__)
+extern bool is_verbose_mode; // NOTE: necessary to define this variable somewhere
+#define console_print_verbose(...) do { if (is_verbose_mode) fprintf(stdout, __VA_ARGS__); } while(0)
+#else
+void console_print(const char *fmt, ...); // defined in console.cpp
+void console_print_verbose(const char *fmt, ...); // defined in console.cpp
+void console_print_error(const char *fmt, ...); // // defined in console.cpp
+#endif
+#ifdef __cplusplus
+}
+#endif
 
 // Typedef choices for numerical types
 typedef int8_t i8;
@@ -269,7 +308,7 @@ PANIC_INLINE_SPECIFIER void _panic(const char* source_filename, i32 line, const 
 	if (message[0] != '\0') fprintf(stderr, "Error: %s\n", message);
 	fprintf(stderr, "A fatal error occurred (aborting).\n");
 #if DO_DEBUG
-#if COMPILER_GCC
+	#if COMPILER_GCC
 	__builtin_trap();
 #endif
 #endif

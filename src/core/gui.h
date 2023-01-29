@@ -95,8 +95,6 @@ extern bool show_mouse_pos_overlay;
 extern bool show_console_window INIT(= DO_DEBUG);
 extern bool show_menu_bar INIT(= true);
 extern bool load_next_image_as_overlay;
-extern bool gui_want_capture_mouse;
-extern bool gui_want_capture_keyboard;
 extern gui_modal_popup_t* gui_modal_stack;
 extern float global_progress_bar_test_progress;
 extern char remote_hostname[64] INIT(= "localhost");

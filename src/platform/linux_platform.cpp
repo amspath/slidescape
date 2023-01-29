@@ -33,33 +33,7 @@
 
 SDL_Window* g_window;
 
-i64 get_clock() {
-    struct timespec t = {};
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return t.tv_nsec + 1e9 * t.tv_sec;
-}
-
-float get_seconds_elapsed(i64 start, i64 end) {
-    i64 elapsed_nanoseconds = end - start;
-    float elapsed_seconds = ((float)elapsed_nanoseconds) / 1e9f;
-    return elapsed_seconds;
-}
-
-void platform_sleep(u32 ms) {
-    struct timespec tim = {}, tim2 = {};
-    tim.tv_sec = 0;
-    tim.tv_nsec = ms * 1000000;
-    nanosleep(&tim, &tim2);
-}
-
-void platform_sleep_ns(i64 ns) {
-	struct timespec tim = {}, tim2 = {};
-	tim.tv_sec = 0;
-	tim.tv_nsec = ns;
-	nanosleep(&tim, &tim2);
-}
-
-void message_box(app_state_t *message, const char *string) {
+void message_box(window_handle_t window, const char* message) {
 //	NSRunAlertPanel(@"Title", @"This is your message.", @"OK", nil, nil);
 	console_print("[message box] %s\n", message);
     console_print_error("unimplemented: message_box()\n");

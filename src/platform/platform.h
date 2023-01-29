@@ -22,6 +22,7 @@
 #include "mathutils.h"
 #include "arena.h"
 #include "memrw.h"
+#include "timerutils.h"
 
 #include "keycode.h"
 #include "keytable.h"
@@ -248,48 +249,6 @@ typedef struct {
 #endif
 } io_operation_t;
 
-// See:
-// https://github.com/SasLuca/rayfork/blob/rayfork-0.9/source/core/rayfork-core.c
-
-enum allocator_mode {
-	ALLOCATOR_MODE_UNKNOWN = 0,
-	ALLOCATOR_MODE_ALLOC,
-	ALLOCATOR_MODE_REALLOC,
-	ALLOCATOR_MODE_FREE,
-};
-
-typedef struct allocator_t allocator_t;
-struct allocator_t {
-	void* userdata;
-	void* (*proc)(allocator_t* this_allocator, size_t size_to_allocate, u32 mode, void* ptr_to_free_or_realloc);
-};
-
-
-typedef struct block_allocator_item_t block_allocator_item_t;
-struct block_allocator_item_t {
-	i32 chunk_index;
-	i32 block_index;
-	block_allocator_item_t* next;
-};
-
-typedef struct block_allocator_chunk_t {
-	size_t used_blocks;
-	u8* memory;
-} block_allocator_chunk_t;
-
-typedef struct block_allocator_t {
-	size_t block_size;
-	i32 chunk_capacity_in_blocks;
-	size_t chunk_size;
-	i32 chunk_count;
-	i32 used_chunks;
-	block_allocator_chunk_t* chunks;
-	block_allocator_item_t* free_list_storage;
-	block_allocator_item_t* free_list;
-	i32 free_list_length;
-	benaphore_t lock;
-	bool is_valid;
-} block_allocator_t;
 
 typedef struct directory_listing_t directory_listing_t;
 
@@ -319,10 +278,6 @@ static inline void semaphore_wait(semaphore_handle_t semaphore) {
 // Platform specific function prototypes
 
 #if !IS_SERVER
-i64 get_clock();
-float get_seconds_elapsed(i64 start, i64 end);
-void platform_sleep(u32 ms);
-void platform_sleep_ns(i64 ns);
 i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
 void set_swap_interval(int interval);
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
@@ -347,7 +302,7 @@ void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);
 void set_window_title(window_handle_t window, const char* title);
 void reset_window_title(window_handle_t window);
-void message_box(app_state_t* app_state, const char* message);
+void message_box(window_handle_t window, const char* message);
 
 int platform_stat(const char* filename, struct stat* st);
 file_stream_t file_stream_open_for_reading(const char* filename);
@@ -386,27 +341,7 @@ void async_read_submit(io_operation_t* op);
 bool async_read_has_finished(io_operation_t* op);
 i64 async_read_finalize(io_operation_t* op);
 
-block_allocator_t block_allocator_create(size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size);
-void block_allocator_destroy(block_allocator_t* allocator);
-void* block_alloc(block_allocator_t* allocator);
-void block_free(block_allocator_t* allocator, void* ptr_to_free);
-
 void init_thread_memory(i32 logical_thread_index);
-
-unsigned int crc32(unsigned char* buffer, int len);
-unsigned int crc32_skip_carriage_return(unsigned char* buffer, int len);
-
-
-#if IS_SERVER
-#define console_print printf
-#define console_print_error(...) fprintf(stderr, __VA_ARGS__)
-#define console_print_verbose(...) do { if (is_verbose_mode) fprintf(stdout, __VA_ARGS__); } while(0)
-#else
-void console_print(const char* fmt, ...); // defined in console.cpp
-void console_print_verbose(const char* fmt, ...); // defined in console.cpp
-void console_print_error(const char* fmt, ...); // // defined in console.cpp
-#endif
-
 
 // globals
 #if defined(PLATFORM_IMPL)
@@ -449,7 +384,8 @@ extern bool cursor_hidden;
 extern const char* global_settings_dir;
 extern char global_export_save_as_filename[512];
 extern bool save_file_dialog_open;
-
+extern bool gui_want_capture_mouse;
+extern bool gui_want_capture_keyboard;
 extern float total_rgb_transform_time;
 
 extern bool is_dicom_available;

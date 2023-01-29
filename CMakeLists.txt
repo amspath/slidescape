@@ -83,6 +83,7 @@ include_directories("${CMAKE_SOURCE_DIR}/src/isyntax")
 include_directories("${CMAKE_SOURCE_DIR}/src/platform")
 include_directories("${CMAKE_SOURCE_DIR}/src/tiff")
 include_directories("${CMAKE_SOURCE_DIR}/src/utils")
+include_directories("${CMAKE_SOURCE_DIR}/src/third_party")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
 include_directories("${CMAKE_SOURCE_DIR}/deps/keycode")
@@ -219,18 +220,21 @@ set(VIEWER_SOURCE_FILES
         imgui/imgui_tables.cpp
         imgui/backends/imgui_impl_opengl3.cpp
         imgui/misc/freetype/imgui_freetype.cpp
+        third_party/lz4.c
+        third_party/yxml.c
+        third_party/ltalloc.cc
         utils/stringutils.c
         utils/mathutils.c
         utils/memrw.c
         utils/triangulate.c
-        utils/lz4.c
-        utils/yxml.c
         utils/jpeg_decoder.c
+        utils/crc32.c
+        utils/block_allocator.c
+        utils/timerutils.c
         )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/win32_main.cpp
-            platform/win32_platform.cpp
             platform/win32_utils.cpp
             platform/win32_gui.cpp
             platform/glad.c
@@ -240,7 +244,6 @@ else()
     # Note: SDL2 is used for both Linux and macOS
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/linux_main.cpp
-            platform/linux_platform.cpp
             platform/linux_utils.cpp
             imgui/backends/imgui_impl_sdl.cpp
             imgui/ImGuiFileDialog.cpp
@@ -252,8 +255,7 @@ set(LIBRARY_SOURCE_FILES
         ${JPEG_SOURCE_FILES}
         ${FREETYPE_SOURCE_FILES}
         ${MBEDTLS_SOURCE_FILES}
-        ${KEYCODE_SOURCE_FILES}
-        deps/ltalloc.cc)
+        ${KEYCODE_SOURCE_FILES})
 
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
@@ -321,7 +323,6 @@ target_compile_definitions(slidescape PRIVATE IS_SERVER=0)
 # Some files are always required for the separately compiled tools
 set(BASE_FILES
         src/platform/platform.c
-        deps/ltalloc.cc
         )
 if (WIN32)
     list(APPEND BASE_FILES src/platform/win32_utils.cpp)
@@ -334,11 +335,12 @@ set(SERVER_SOURCE_FILES
         src/server.c
         src/tiff/tiff.c
         src/utils/jpeg_decoder.c
-        src/utils/lz4.c
         src/utils/stringutils.c
         src/utils/memrw.c
-)
-add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES} deps/ltalloc.cc)
+        src/third_party/lz4.c
+        src/third_party/ltalloc.cc
+        )
+add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
 target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
 if (WIN32)
@@ -351,7 +353,8 @@ add_executable(dicom_dict_gen
         ${BASE_FILES}
         src/dicom/dicom_dict_gen.c
         src/utils/memrw.c
-        src/utils/yxml.c
-        src/utils/lz4.c
+        src/third_party/yxml.c
+        src/third_party/lz4.c
+        src/third_party/ltalloc.cc
         )
 target_compile_definitions(dicom_dict_gen PRIVATE IS_SERVER=1)

@@ -16,10 +16,10 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#pragma once
 #include "common.h"
+#define WIN32_MAIN_IMPL
 #include "win32_platform.h"
-#include "viewer.h"
-#include "gui.h"
 
 
 // Sources:
@@ -261,6 +261,7 @@ LPSTR* WINAPI CommandLineToArgvA(LPSTR lpCmdline, int* numargs)
 	return argv;
 }
 
+#if !IS_SERVER
 u8* platform_alloc(size_t size) {
 	u8* result = (u8*) VirtualAlloc(0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 	if (!result) {
@@ -269,13 +270,10 @@ u8* platform_alloc(size_t size) {
 	}
 	return result;
 }
+#endif
 
-void platform_sleep(u32 ms) {
-	Sleep(ms);
-}
-
-void message_box(app_state_t* app_state, const char* message) {
-	MessageBoxA(app_state->main_window, message, "Slidescape", MB_ICONERROR);
+void message_box(window_handle_t window, const char* message) {
+	MessageBoxA(window, message, APP_TITLE, MB_ICONERROR);
 }
 
 // Window related procecures
@@ -287,7 +285,7 @@ void set_window_title(window_handle_t window, const char* title) {
 }
 
 void reset_window_title(window_handle_t window) {
-	SetWindowTextA(window, "Slidescape");
+	SetWindowTextA(window, APP_TITLE);
 }
 
 POINT stored_mouse_pos;

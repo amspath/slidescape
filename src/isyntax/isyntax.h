@@ -24,6 +24,7 @@ extern "C" {
 
 #include "common.h"
 #include "platform.h"
+#include "block_allocator.h"
 
 #include "yxml.h"
 

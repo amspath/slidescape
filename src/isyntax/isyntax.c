@@ -43,9 +43,13 @@
 #include "jpeg_decoder.h"
 #include "stb_image.h"
 
+#define WANT_DEBUG_OUTPUT_PNG 0
+#if WANT_DEBUG_OUTPUT_PNG
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+// stb_image_write.h provides its own crc32() implementation, so we need to prevent a conflict if we already have it
 #define STBIW_CRC32 crc32
 #include <stb_image_write.h>
+#endif
 
 #include <ctype.h>
 
@@ -1262,6 +1266,7 @@ static void convert_to_absolute_value_16_block(i16* data, u32 len) {
 }
 
 
+#if WANT_DEBUG_OUTPUT_PNG
 void debug_convert_wavelet_coefficients_to_image2(icoeff_t* coefficients, i32 width, i32 height, const char* filename) {
 	if (coefficients) {
 		u8* decoded_8bit = (u8*)malloc(width*height);
@@ -1274,6 +1279,7 @@ void debug_convert_wavelet_coefficients_to_image2(icoeff_t* coefficients, i32 wi
 		free(decoded_8bit);
 	}
 }
+#endif
 
 #if (DWT_COEFF_BITS==16)
 static u32 wavelet_coefficient_to_color_value(icoeff_t coefficient) {
@@ -1365,11 +1371,13 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 	i32 full_height= quadrant_height * 2;
 	i32 idwt_stride = full_width;
 
+#if WANT_DEBUG_OUTPUT_PNG
 	if (output_steps_as_png) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "%s_step0.png", png_name);
 		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
 	}
+#endif
 
 	// Horizontal pass
 	opj_dwt_t h = {0};
@@ -1385,11 +1393,13 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 		opj_idwt53_h(&h, input_row);
 	}
 
+#if WANT_DEBUG_OUTPUT_PNG
 	if (output_steps_as_png) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "%s_step1.png", png_name);
 		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
 	}
+#endif
 
 	// Vertical pass
 	opj_dwt_t v = {0};
@@ -1407,11 +1417,13 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
 	}
 
+#if WANT_DEBUG_OUTPUT_PNG
 	if (output_steps_as_png) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "%s_step2.png", png_name);
 		debug_convert_wavelet_coefficients_to_image2(idwt, full_width, full_height, filename);
 	}
+#endif
 
 }
 
@@ -1490,60 +1502,6 @@ u32 isyntax_get_adjacent_tiles_mask_only_existing(isyntax_level_t* level, i32 ti
 		if (tile->exists) mask |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
 	}
 	return mask;
-}
-
-u32 isyntax_get_adjacent_tiles_mask_with_missing_ll_coeff(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
-	u32 adjacent = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
-	u32 mask = 0;
-	if (adjacent & ISYNTAX_ADJ_TILE_TOP_LEFT) {
-		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_TOP_LEFT;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_TOP_CENTER) {
-		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_TOP_CENTER;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
-		isyntax_tile_t* tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
-		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_CENTER) {
-		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_CENTER;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
-		isyntax_tile_t* tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
-		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
-		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
-	}
-	if (adjacent & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
-		isyntax_tile_t* tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
-		if (!tile->has_ll) mask |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
-	}
-	return mask;
-}
-
-static size_t get_idwt_buffer_size(i32 block_width, i32 block_height) {
-	i32 pad_l = ISYNTAX_IDWT_PAD_L;
-	i32 pad_r = ISYNTAX_IDWT_PAD_R;
-	i32 pad_l_plus_r = pad_l + pad_r;
-	i32 quadrant_width = block_width + pad_l_plus_r;
-	i32 quadrant_height = block_height + pad_l_plus_r;
-	i32 full_width = 2 * quadrant_width;
-	i32 full_height = 2 * quadrant_height;
-	size_t idwt_buffer_size = full_width * full_height * sizeof(icoeff_t);
-	return idwt_buffer_size;
 }
 
 u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer) {
@@ -2732,7 +2690,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					}
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 
-//					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
+					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
 //					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 //					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 //					console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
@@ -3001,7 +2959,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						}
 
 						parse_ticks_elapsed += (get_clock() - parse_begin);
-//						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
+						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
 //						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 //						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 						isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());

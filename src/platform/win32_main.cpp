@@ -21,7 +21,6 @@
 
 #include "common.h"
 
-#define WIN32_MAIN_IMPL
 #include "win32_platform.h"
 #include "win32_gui.h"
 
@@ -80,9 +79,6 @@ HINSTANCE g_instance;
 HINSTANCE g_prev_instance;
 LPSTR g_cmdline;
 int g_cmdshow;
-
-i64 performance_counter_frequency;
-bool32 is_sleep_granular;
 
 WINDOWPLACEMENT window_position = { sizeof(window_position) };
 
@@ -335,27 +331,6 @@ void win32_setup_appdata() {
 		}
 		global_settings_dir = g_appdata_path;
 	}
-}
-
-// Timer-related procedures
-
-void win32_init_timer() {
-	LARGE_INTEGER perf_counter_frequency_result;
-	QueryPerformanceFrequency(&perf_counter_frequency_result);
-	performance_counter_frequency = perf_counter_frequency_result.QuadPart;
-	// Make Sleep() more granular
-	UINT desired_scheduler_granularity_ms = 1;
-	is_sleep_granular = (timeBeginPeriod(desired_scheduler_granularity_ms) == TIMERR_NOERROR);
-}
-
-i64 get_clock() {
-	LARGE_INTEGER result;
-	QueryPerformanceCounter(&result);
-	return result.QuadPart;
-}
-
-float get_seconds_elapsed(i64 start, i64 end) {
-	return (float)(end - start) / (float)performance_counter_frequency;
 }
 
 void win32_init_cursor() {
@@ -1316,7 +1291,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 									   "Required: %d.%d\n\n"
 									   "Available on this system:\n%s", major_required, minor_required, version_string);
 			console_print_error("%s\n", buf);
-			message_box(&global_app_state, buf);
+			message_box(window, buf);
 			exit(0);
 		}
 		return success;
