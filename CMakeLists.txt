@@ -222,6 +222,7 @@ set(VIEWER_SOURCE_FILES
         imgui/misc/freetype/imgui_freetype.cpp
         third_party/lz4.c
         third_party/yxml.c
+        third_party/minfft.c
         third_party/ltalloc.cc
         utils/stringutils.c
         utils/mathutils.c
@@ -231,6 +232,7 @@ set(VIEWER_SOURCE_FILES
         utils/crc32.c
         utils/block_allocator.c
         utils/timerutils.c
+        utils/phasecorrelate.c
         )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}

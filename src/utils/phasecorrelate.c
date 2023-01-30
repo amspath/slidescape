@@ -1,0 +1,288 @@
+#include "common.h"
+#include "mathutils.h"
+
+#include <tgmath.h>
+#include <complex.h>
+#include "minfft.h"
+
+#include "phasecorrelate.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+
+void copy_make_border(buffer2d_t* src, buffer2d_t* dst, i32 top, i32 bottom, i32 left, i32 right, float fill) {
+	i32 dst_h = src->h + top + bottom;
+	i32 dst_w = src->w + left + right;
+	size_t total_size = dst_h * dst_w * sizeof(real_t);
+
+	if (dst->data) {
+		// already allocated memory, need to that sizes match!
+		if (!(dst->h == dst_h && dst->w == dst_w)) {
+			panic("size mismatch");
+		}
+//		memset(dst->data, 0, total_size);
+	} else {
+		dst->h = dst_h;
+		dst->w = dst_w;
+		dst->data = malloc(total_size);
+	}
+
+	for (i32 y = 0; y < dst_h; ++y) {
+		float* row = dst->data + y * dst_w;
+		for (i32 x = 0; x < dst_w; ++x) {
+			row[x] = fill;
+		}
+	}
+
+	size_t src_row_size = src->w * sizeof(real_t);
+	for (i32 y = 0; y < src->h; ++y) {
+		memcpy(dst->data + (y + top) * dst_w + left, src->data + y * src->w, src_row_size);
+	}
+}
+
+void debug_create_magnitude_plot(minfft_cmpl* src, i32 w, i32 h, real_t scale, const char* filename) {
+
+	u8* magnitudes = malloc(w * h * sizeof(u8));
+
+	for (i32 y = 0; y < h; ++y) {
+		minfft_cmpl* src_row = src + y * w ;
+		u8* dst_row = magnitudes + y * w;
+		for (i32 x = 0; x < w; ++x) {
+			real_t Re = creal(src_row[x]);
+			real_t Im = cimag(src_row[x]);
+			real_t mag = sqrt(Re * Re + Im * Im);
+			mag *= scale;
+			dst_row[x] = (u8)ATMOST(255, (mag));
+		}
+	}
+
+	stbi_write_png(filename, w, h, 1, magnitudes, w);
+	free(magnitudes);
+}
+
+
+void debug_create_luminance_png(real_t* src, i32 w, i32 h, real_t scale, const char* filename) {
+
+	u8* magnitudes = malloc(w * h * sizeof(u8));
+
+
+	for (i32 y = 0; y < h; ++y) {
+		real_t* src_row = src + y * w;
+		u8* dst_row = magnitudes + y * w;
+		for (i32 x = 0; x < w; ++x) {
+			real_t c = src_row[x];
+			c = c * scale * 255.0f;
+			dst_row[x] = (u8)CLAMP(c, 0, 255.0f);
+		}
+	}
+
+	stbi_write_png(filename, w, h, 1, magnitudes, w);
+	free(magnitudes);
+}
+
+void debug_create_luminance_png_complex(minfft_cmpl* src, i32 w, i32 h, real_t scale, const char* filename) {
+
+	u8* magnitudes = malloc(w * h * sizeof(u8));
+
+
+	for (i32 y = 0; y < h; ++y) {
+		minfft_cmpl* src_row = src + y * w;
+		u8* dst_row = magnitudes + y * w;
+		for (i32 x = 0; x < w; ++x) {
+			real_t c = creal(src_row[x]);
+			dst_row[x] = (u8)ATMOST(255, (c * scale * 255.0f));
+		}
+	}
+
+	stbi_write_png(filename, w, h, 1, magnitudes, w);
+	free(magnitudes);
+}
+
+v2i find_highest_peak(real_t* src, i32 w, i32 h, float* out_value) {
+	v2i point = {};
+	real_t highest = 0.0f;
+	for (i32 y = 0; y < h; ++y) {
+		real_t* row = src + y * w;
+		for (i32 x = 0; x < w; ++x) {
+			real_t value = row[x];
+			if (value > highest) {
+				highest = value;
+				point = (v2i){x, y};
+			}
+		}
+	}
+	if (out_value) *out_value = highest;
+	return point;
+}
+
+void fftshift_f(real_t* restrict src, real_t* restrict dst, i32 w, i32 h) {
+	// swap quadrants
+	ASSERT(w % 2 == 0);
+	ASSERT(h % 2 == 0);
+	i32 h_half = h / 2;
+	i32 w_half = w / 2;
+	size_t row_stride = w * sizeof(real_t);
+	size_t half_row_size = w_half * sizeof(real_t);
+	for (i32 y = 0; y < h_half; ++y) {
+		memcpy(dst + (h_half + y) * w + w_half, src + y * w,          half_row_size); // copy from top-left to bottom-right
+		memcpy(dst + (h_half + y) * w,          src + y * w + w_half, half_row_size); // copy from top-right to bottom-left
+	}
+	for (i32 y = 0; y < h_half; ++y) {
+		memcpy(dst + y * w + w_half, src + (h_half + y)*w,          half_row_size); // copy from bottom-left to top-right
+		memcpy(dst + y * w,          src + (h_half + y)*w + w_half, half_row_size); // copy from bottom-right to top-left
+	}
+}
+
+// background:
+// https://en.wikipedia.org/wiki/Phase_correlation
+// https://sthoduka.github.io/imreg_fmt/docs/phase-correlation/
+
+v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, float background, float* response) {
+
+//	debug_create_luminance_png(src1->data, src1->w, src1->h, 1.0f, "patch1_Y.png");
+//	debug_create_luminance_png(src2->data, src2->w, src2->h, 1.0f, "patch2_Y.png");
+
+	// Add enough padding so that we will be able to
+	i32 smallest_h = MIN(src1->h, src2->h);
+	i32 smallest_w = MIN(src1->w, src2->w);
+	i32 largest_h = MAX(src1->h, src2->h);
+	i32 largest_w = MAX(src1->w, src2->w);
+	i32 h = (i32)next_pow2(largest_h + smallest_h);
+	i32 w = (i32)next_pow2(largest_w + smallest_w);
+
+	buffer2d_t padded1 = {};
+	buffer2d_t padded2 = {};
+	buffer2d_t padded_win = {};
+
+	if(h != src1->h || w != src1->w) {
+		i32 total_hor_pad1 = w - src1->w;
+		i32 total_hor_pad2 = w - src2->w;
+		copy_make_border(src1, &padded1, 0, h - src1->h, 0, w - src1->w, background);
+		copy_make_border(src2, &padded2, 0, h - src2->h, 0, w - src2->w, background);
+
+		if(window) {
+			copy_make_border(window, &padded_win, 0, h - window->h, 0, w - window->w, background);
+		}
+	} else {
+		padded1 = *src1;
+		padded2 = *src2;
+		if (window) {
+			padded_win = *window;
+		}
+	}
+
+	ASSERT(padded1.w == w && padded1.h == h);
+	ASSERT(padded2.w == w && padded2.h == h);
+
+	// perform window multiplication if available
+	if (window) {
+//		buffer2d_multiply() // TODO: not implemented
+	}
+
+	// execute phase correlation equation
+	// Reference: http://en.wikipedia.org/wiki/Phase_correlation
+
+	size_t size = padded1.h * padded1.w * sizeof(minfft_cmpl);
+	minfft_cmpl* FFT1 = calloc(1, size);
+	minfft_cmpl* FFT2 = calloc(1, size);
+	minfft_cmpl* P = calloc(1, size);
+//	minfft_cmpl* C = calloc(1, size);
+	real_t* C = calloc(1, w * h * sizeof(real_t));
+	real_t* C_shifted = calloc(1, w * h * sizeof(real_t));
+
+	bool check = false;
+	bool create_debug_pngs = false;
+
+	if (create_debug_pngs) {
+		debug_create_luminance_png(padded1.data, padded1.w, padded1.h, 1.0f, "patch1_Y.png");
+		debug_create_luminance_png(padded2.data, padded2.w, padded2.h, 1.0f, "patch2_Y.png");
+	}
+
+
+
+	// convert to complex buffer
+/*	minfft_cmpl* cdata1 = calloc(1, size);
+	minfft_cmpl* cdata2 = calloc(1, size);
+	for (i32 y = 0; y < h; ++y) {
+		real_t* src_row1 = padded1.data + y * w;
+		real_t* src_row2 = padded2.data + y * w;
+		minfft_cmpl* dst_row1 = cdata1 + y * w;
+		minfft_cmpl* dst_row2 = cdata2 + y * w;
+		for (i32 x = 0; x < h; ++x) {
+			dst_row1[x] = src_row1[x];
+			dst_row2[x] = src_row2[x];
+		}
+	}*/
+
+//	minfft_aux* a = minfft_mkaux_dft_2d(w, h); // prepare aux data
+//	minfft_dft(cdata1, FFT1, a);
+//	minfft_dft(cdata2, FFT2, a);
+//	i32 fft_w = w;
+
+	minfft_aux* a = minfft_mkaux_realdft_2d(h, w); // prepare aux data
+	minfft_realdft(padded1.data, FFT1, a);
+	minfft_realdft(padded2.data, FFT2, a);
+	i32 fft_w = w / 2 + 1;
+
+	real_t scale = 1.0f / (real_t)(w * h);
+
+	if (create_debug_pngs) {
+		debug_create_magnitude_plot(FFT1, fft_w, h, 1.0f, "dft1.png");
+		debug_create_magnitude_plot(FFT2, fft_w, h, 1.0f, "dft2.png");
+	}
+
+	// calculate cross-power spectrum
+
+	for (i32 y = 0; y < h; ++y) {
+		minfft_cmpl* src_row1 = FFT1 + y * fft_w;
+		minfft_cmpl* src_row2 = FFT2 + y * fft_w;
+		minfft_cmpl* dst_row = P + y * fft_w;
+		for (i32 x = 0; x < fft_w; ++x) {
+			minfft_cmpl s1 = src_row1[x];
+			minfft_cmpl s2 = src_row2[x];
+			minfft_cmpl p = s1 * conj(s2);
+			p /= fabs(p) + 0.0001f;
+			dst_row[x] = p;
+		}
+	}
+
+//	minfft_mkaux_dft_2d()
+	if (create_debug_pngs) debug_create_magnitude_plot(P, fft_w, h, 100.0f, "cps.png");
+//	minfft_invdft(P, C, a);
+	minfft_invrealdft(P, C, a);
+	fftshift_f(C, C_shifted, w, h);
+	if (create_debug_pngs) debug_create_luminance_png(C, w, h, 10.0f * scale, "phasecorr_real.png");
+	if (create_debug_pngs) debug_create_luminance_png(C_shifted, w, h, 10.0f * scale, "phasecorr_real_shifted.png");
+//	debug_create_luminance_png_complex(C, w, h, 0.01f, "phasecorr_real.png");
+//	debug_create_magnitude_plot(C, w, h, 0.01f, "phasecorr.png");
+
+
+	real_t highest = 0.0f;
+	v2i peak = find_highest_peak(C_shifted, w, h, &highest);
+	peak.x -= (w/2);
+	peak.y -= (h/2);
+	printf("Phase correlation: highest peak at (%d, %d), value = %g\n", peak.x, peak.y, highest);
+
+	v2f peak_exact = {peak.x, peak.y};
+	// TODO: subpixel shift
+
+
+	if (check) {
+//		minfft_invdft(FFT1, cdata1, a);
+//		minfft_invdft(FFT2, cdata2, a);
+		minfft_invrealdft(FFT1, padded1.data, a);
+		minfft_invrealdft(FFT2, padded2.data, a);
+//		debug_create_luminance_png_complex(cdata1, w, h, scale, "patch1_Y_check.png");
+//		debug_create_luminance_png_complex(cdata2, w, h, scale, "patch2_Y_check.png");
+		if (create_debug_pngs) debug_create_luminance_png(padded1.data, w, h, scale, "patch1_Y_check.png");
+		if (create_debug_pngs) debug_create_luminance_png(padded2.data, w, h, scale, "patch2_Y_check.png");
+
+	}
+
+
+
+
+
+	return peak_exact;
+}
