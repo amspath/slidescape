@@ -53,10 +53,8 @@
 				<string>mrxs</string>
 				<string>bif</string>
 			</array>
-			<key>CFBundleTypeIconFile</key>
-			<string></string>
 			<key>CFBundleTypeName</key>
-			<string>JPEG</string>
+			<string>Whole slide image</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>

@@ -247,6 +247,7 @@ else()
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/linux_main.cpp
             platform/linux_utils.cpp
+            platform/linux_gui.cpp
             imgui/backends/imgui_impl_sdl.cpp
             imgui/ImGuiFileDialog.cpp
             )
