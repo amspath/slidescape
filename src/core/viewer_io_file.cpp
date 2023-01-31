@@ -90,7 +90,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		}
 
 	} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
-		wsi_t* wsi = &image->wsi.wsi;
+		wsi_t* wsi = &image->openslide_wsi.wsi;
 		i32 wsi_file_level = level_image->pyramid_image_index;
 		i64 x = (tile_x * level_image->tile_width) << level;
 		i64 y = (tile_y * level_image->tile_height) << level;
@@ -157,7 +157,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 }
 
-void load_wsi(wsi_t* wsi, const char* filename) {
+void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 	if (!is_openslide_loading_done) {
 #if DO_DEBUG
 		console_print("Waiting for OpenSlide to finish loading...\n");
@@ -168,14 +168,14 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 	}
 
 	// TODO: check if necessary anymore?
-	unload_wsi(wsi);
+    unload_openslide_wsi(wsi);
 
 	wsi->osr = openslide.openslide_open(filename);
 	if (wsi->osr) {
 		const char* error_string = openslide.openslide_get_error(wsi->osr);
 		if (error_string != NULL) {
 			console_print_error("OpenSlide error: %s\n", error_string);
-			unload_wsi(wsi);
+            unload_openslide_wsi(wsi);
 			return;
 		}
 
@@ -185,7 +185,7 @@ void load_wsi(wsi_t* wsi, const char* filename) {
 		if (wsi->level_count == -1) {
 			error_string = openslide.openslide_get_error(wsi->osr);
 			console_print_error("OpenSlide error: %s\n", error_string);
-			unload_wsi(wsi);
+            unload_openslide_wsi(wsi);
 			return;
 		}
 		console_print_verbose("OpenSlide: WSI has %d levels\n", wsi->level_count);
@@ -424,7 +424,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 	load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
 	image_t image = load_image_from_file(app_state, file, directory, filetype_hint);
 	if (image.is_valid) {
-		add_image(app_state, image, is_base_image);
+		add_image(app_state, image, is_base_image, !is_base_image);
 
 		annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 		unload_and_reinit_annotations(annotation_set);
@@ -559,8 +559,12 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 	image.resource_id = global_next_resource_id++;
 
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
-	const char* filename = file->filename;
+    image_t* parent_image = NULL;
+    if (is_overlay && arrlen(app_state->loaded_images)) {
+        parent_image = app_state->loaded_images + 0;
+    }
 
+	const char* filename = file->filename;
 	size_t filename_len = strlen(filename);
 	const char* name = one_past_last_slash(filename, filename_len);
 	strncpy(image.name, name, sizeof(image.name)-1);
@@ -583,7 +587,7 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 
 			image.is_freshly_loaded = true;
 			image.is_valid = true;
-			init_image_from_stbi(app_state, &image, &image.simple, is_overlay);
+			init_image_from_stbi(&image, &image.simple, is_overlay);
 			return image;
 
 			//stbi_image_free(image->stbi.pixels);
@@ -593,7 +597,7 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			init_image_from_tiff(app_state, &image, tiff, is_overlay);
+			init_image_from_tiff(&image, tiff, is_overlay, parent_image);
 			return image;
 		} else {
 			tiff_destroy(&tiff);
@@ -604,7 +608,7 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 		// Try to open as iSyntax
 		isyntax_t isyntax = {0};
 		if (isyntax_open(&isyntax, filename)) {
-			init_image_from_isyntax(app_state, &image, &isyntax, is_overlay);
+			init_image_from_isyntax(&image, &isyntax, is_overlay);
 			return image;
 		}
 	} else if (file->type == VIEWER_FILE_TYPE_DICOM) {
@@ -618,7 +622,7 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 		} else if (file->is_directory && directory) {
 			dicom_series_t dicom = {};
 			if (dicom_open_from_directory(&dicom, directory)) {
-				init_image_from_dicom(app_state, &image, &dicom, is_overlay);
+				init_image_from_dicom(&image, &dicom, is_overlay);
 				return image;
 			} else {
 				dicom_destroy(&dicom);
@@ -645,117 +649,19 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 		// TODO: fix code duplication from init_image_from_tiff()
 		image.type = IMAGE_TYPE_WSI;
 		image.backend = IMAGE_BACKEND_OPENSLIDE;
-		wsi_t* wsi = &image.wsi.wsi;
-		load_wsi(wsi, filename);
-		if (wsi->osr) {
-			image.is_freshly_loaded = true;
-			image.mpp_x = wsi->mpp_x;
-			image.mpp_y = wsi->mpp_y;
-			image.is_mpp_known = wsi->is_mpp_known;
-			image.tile_width = wsi->tile_width;
-			image.tile_height = wsi->tile_height;
-			image.width_in_pixels = wsi->width;
-			image.width_in_um = wsi->width * wsi->mpp_x;
-			image.height_in_pixels = wsi->height;
-			image.height_in_um = wsi->height * wsi->mpp_y;
-			ASSERT(wsi->levels[0].x_tile_side_in_um > 0);
-			if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
-				ASSERT(wsi->max_downsample_level >= 0);
-
-				memset(image.level_images, 0, sizeof(image.level_images));
-				image.level_count = wsi->max_downsample_level + 1;
-
-				// TODO: check against downsample level, see init_image_from_tiff()
-				if (wsi->level_count > image.level_count) {
-					panic();
-				}
-				if (image.level_count > WSI_MAX_LEVELS) {
-					panic();
-				}
-
-				i32 wsi_level_index = 0;
-				i32 next_wsi_level_index_to_check_for_match = 0;
-				wsi_level_t* wsi_file_level = wsi->levels + wsi_level_index;
-				for (i32 downsample_level = 0; downsample_level < image.level_count; ++downsample_level) {
-					level_image_t* downsample_level_image = image.level_images + downsample_level;
-					i32 wanted_downsample_level = downsample_level;
-					bool found_wsi_level_for_downsample_level = false;
-					for (wsi_level_index = next_wsi_level_index_to_check_for_match; wsi_level_index < wsi->level_count; ++wsi_level_index) {
-						wsi_file_level = wsi->levels + wsi_level_index;
-						if (wsi_file_level->downsample_level == wanted_downsample_level) {
-							// match!
-							found_wsi_level_for_downsample_level = true;
-							next_wsi_level_index_to_check_for_match = wsi_level_index + 1; // next iteration, don't reuse the same WSI level!
-							break;
-						}
-					}
-
-					if (found_wsi_level_for_downsample_level) {
-						// The current downsampling level is backed by a corresponding IFD level image in the TIFF.
-						downsample_level_image->exists = true;
-						downsample_level_image->pyramid_image_index = wsi_level_index;
-						downsample_level_image->downsample_factor = wsi_file_level->downsample_factor;
-						downsample_level_image->tile_count = wsi_file_level->tile_count;
-						downsample_level_image->width_in_tiles = wsi_file_level->width_in_tiles;
-						ASSERT(downsample_level_image->width_in_tiles > 0);
-						downsample_level_image->height_in_tiles = wsi_file_level->height_in_tiles;
-						downsample_level_image->tile_width = wsi_file_level->tile_width;
-						downsample_level_image->tile_height = wsi_file_level->tile_height;
-#if DO_DEBUG
-						if (downsample_level_image->tile_width != image.tile_width) {
-							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, image.tile_width);
-						}
-						if (downsample_level_image->tile_height != image.tile_height) {
-							console_print("Warning: level image %d (WSI level #%d) tile width (%d) does not match base level (%d)\n", downsample_level, wsi_level_index, downsample_level_image->tile_width, image.tile_width);
-						}
-#endif
-						downsample_level_image->um_per_pixel_x = wsi_file_level->um_per_pixel_x;
-						downsample_level_image->um_per_pixel_y = wsi_file_level->um_per_pixel_y;
-						downsample_level_image->x_tile_side_in_um = wsi_file_level->x_tile_side_in_um;
-						downsample_level_image->y_tile_side_in_um = wsi_file_level->y_tile_side_in_um;
-						ASSERT(downsample_level_image->x_tile_side_in_um > 0);
-						ASSERT(downsample_level_image->y_tile_side_in_um > 0);
-						downsample_level_image->tiles = (tile_t*) calloc(1, wsi_file_level->tile_count * sizeof(tile_t));
-						// Note: OpenSlide doesn't allow us to quickly check if tiles are empty or not.
-						for (i32 tile_index = 0; tile_index < downsample_level_image->tile_count; ++tile_index) {
-							tile_t* tile = downsample_level_image->tiles + tile_index;
-							// Facilitate some introspection by storing self-referential information
-							// in the tile_t struct. This is needed for some specific cases where we
-							// pass around pointers to tile_t structs without caring exactly where they
-							// came from.
-							// (Specific example: we use this when exporting a selected region as BigTIFF)
-							tile->tile_index = tile_index;
-							tile->tile_x = tile_index % downsample_level_image->width_in_tiles;
-							tile->tile_y = tile_index / downsample_level_image->width_in_tiles;
-						}
-					} else {
-						// The current downsampling level has no corresponding IFD level image :(
-						// So we need only some placeholder information.
-						downsample_level_image->exists = false;
-						downsample_level_image->downsample_factor = exp2f((float)wanted_downsample_level);
-						// Just in case anyone tries to divide by zero:
-						downsample_level_image->tile_width = image.tile_width;
-						downsample_level_image->tile_height = image.tile_height;
-						downsample_level_image->um_per_pixel_x = image.mpp_x * downsample_level_image->downsample_factor;
-						downsample_level_image->um_per_pixel_y = image.mpp_y * downsample_level_image->downsample_factor;
-						downsample_level_image->x_tile_side_in_um = downsample_level_image->um_per_pixel_x * (float)wsi->levels[0].tile_width;
-						downsample_level_image->y_tile_side_in_um = downsample_level_image->um_per_pixel_y * (float)wsi->levels[0].tile_height;
-					}
-
-				}
-
-			}
-			ASSERT(image.level_count > 0);
-			image.is_valid = true;
-
-		}
+		wsi_t wsi = {};
+        load_openslide_wsi(&wsi, filename);
+        if (wsi.osr) {
+            init_image_from_openslide(&image, &wsi, is_overlay);
+            return image;
+        }
 	}
 	return image;
 
 }
 
 
-void unload_wsi(wsi_t* wsi) {
+void unload_openslide_wsi(wsi_t* wsi) {
 	if (wsi->osr) {
 		openslide.openslide_close(wsi->osr);
 		wsi->osr = NULL;

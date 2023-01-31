@@ -24,12 +24,11 @@
 extern "C" {
 #endif
 
-typedef struct image_t image_t;
-
 #include "common.h"
 #include "platform.h"
 #include "mathutils.h"
 #include "arena.h"
+#include "image.h"
 #include "tiff.h"
 #include "isyntax.h"
 #include "dicom.h"
@@ -68,59 +67,7 @@ typedef struct directory_info_t {
 	bool is_valid;
 } directory_info_t;
 
-
-#define WSI_TILE_DIM 512
 #define BYTES_PER_PIXEL 4
-
-typedef struct {
-	i64 width;
-	i64 height;
-	i64 width_in_tiles;
-	i64 height_in_tiles;
-	u32 tile_width;
-	u32 tile_height;
-	i32 tile_count;
-	float um_per_pixel_x;
-	float um_per_pixel_y;
-	float x_tile_side_in_um;
-	float y_tile_side_in_um;
-	i32 downsample_level;
-	float downsample_factor;
-} wsi_level_t;
-
-#define WSI_MAX_LEVELS 16
-
-typedef struct wsi_t {
-	i64 width;
-	i64 height;
-	i32 level_count;
-	openslide_t* osr;
-	const char* barcode;
-	float mpp_x;
-	float mpp_y;
-	bool is_mpp_known;
-	i32 max_downsample_level;
-	u32 tile_width;
-	u32 tile_height;
-
-	wsi_level_t levels[WSI_MAX_LEVELS];
-} wsi_t;
-
-typedef enum {
-	IMAGE_TYPE_NONE,
-//	IMAGE_TYPE_SIMPLE,
-//	IMAGE_TYPE_TIFF,
-	IMAGE_TYPE_WSI,
-} image_type_enum;
-
-typedef enum {
-	IMAGE_BACKEND_NONE,
-	IMAGE_BACKEND_STBI,
-	IMAGE_BACKEND_TIFF,
-	IMAGE_BACKEND_OPENSLIDE,
-	IMAGE_BACKEND_ISYNTAX,
-	IMAGE_BACKEND_DICOM,
-} image_backend_enum;
 
 typedef enum filetype_hint_enum {
 	FILETYPE_HINT_NONE = 0,
@@ -134,92 +81,6 @@ typedef enum task_type_enum {
 	TASK_NONE = 0,
 	TASK_LOAD_TILE = 0,
 } task_type_enum;
-
-typedef struct tile_t {
-	u32 tile_index;
-	i32 tile_x;
-	i32 tile_y;
-	u8* pixels;
-	u32 texture;
-	bool8 is_submitted_for_loading;
-	bool8 is_empty;
-	bool8 is_cached;
-	bool8 need_keep_in_cache;
-	bool8 need_gpu_residency; // TODO: revise: still needed?
-	i64 time_last_drawn;
-} tile_t;
-
-typedef struct cached_tile_t {
-	i32 tile_width;
-	u8* pixels;
-} cached_tile_t;
-
-typedef struct {
-	tile_t* tiles;
-	u64 tile_count;
-	u32 width_in_tiles;
-	u32 height_in_tiles;
-	u32 tile_width;
-	u32 tile_height;
-	float x_tile_side_in_um;
-	float y_tile_side_in_um;
-	float um_per_pixel_x;
-	float um_per_pixel_y;
-	float downsample_factor;
-	v2f origin_offset;
-	i32 pyramid_image_index;
-	bool exists;
-	bool needs_indexing; //TODO: implement
-	bool indexing_job_submitted;
-} level_image_t;
-
-typedef struct simple_image_t {
-	i32 channels_in_file;
-	i32 channels;
-	i32 width;
-	i32 height;
-	u8* pixels;
-	u32 texture;
-	float mpp;
-	v2f world_pos;
-	bool is_valid;
-} simple_image_t;
-
-typedef struct image_t {
-	char name[512];
-	char directory[512];
-	bool is_local; // i.e. not remote (accessed over network using client/server interface)
-	image_type_enum type;
-	image_backend_enum backend;
-	bool is_freshly_loaded; // TODO: remove or refactor, is this still needed?
-	bool is_valid;
-	bool is_enabled;
-	bool is_overlay;
-	union {
-		simple_image_t simple;
-		tiff_t tiff;
-		isyntax_t isyntax;
-		struct {
-			wsi_t wsi;
-		} wsi;
-		dicom_series_t dicom;
-	};
-	i32 level_count;
-	u32 tile_width;
-	u32 tile_height;
-	level_image_t level_images[WSI_MAX_LEVELS];
-	float mpp_x;
-	float mpp_y;
-	bool is_mpp_known;
-	i64 width_in_pixels;
-	float width_in_um;
-	i64 height_in_pixels;
-	float height_in_um;
-	v2f origin_offset;
-	simple_image_t macro_image;
-	simple_image_t label_image;
-	i32 resource_id;
-} image_t;
 
 typedef enum load_tile_error_code_enum {
 	LOAD_TILE_SUCCESS,
@@ -473,17 +334,13 @@ typedef struct app_state_t {
 //  prototypes
 tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
 tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 tile_index);
-void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset);
+void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool need_image_registration);
 void unload_all_images(app_state_t* app_state);
-bool init_image_from_tiff(app_state_t* app_state, image_t* image, tiff_t tiff, bool is_overlay);
-bool init_image_from_isyntax(app_state_t* app_state, image_t* image, isyntax_t* isyntax, bool is_overlay);
-bool init_image_from_dicom(app_state_t* app_state, image_t* image, dicom_series_t* dicom, bool is_overlay);
-bool init_image_from_stbi(app_state_t* app_state, image_t* image, simple_image_t* simple, bool is_overlay);
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 image_t load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);
-void load_wsi(wsi_t* wsi, const char* filename);
-void unload_wsi(wsi_t* wsi);
+void load_openslide_wsi(wsi_t* wsi, const char* filename);
+void unload_openslide_wsi(wsi_t* wsi);
 void tile_release_cache(tile_t* tile);
 bool was_button_pressed(button_state_t* button);
 bool was_button_released(button_state_t* button);
@@ -558,9 +415,8 @@ extern i32 desired_window_height INIT(=720);
 extern bool draw_macro_image_in_background;
 extern bool draw_label_image_in_background; // TODO: implement
 
-extern benaphore_t tile_streamer_benaphore;
-extern bool32 is_tile_stream_task_in_progress;
-extern bool32 is_tile_streamer_frame_boundary_passed;
+extern bool is_tile_stream_task_in_progress;
+extern bool is_tile_streamer_frame_boundary_passed;
 
 extern i32 global_next_resource_id INIT(= 1000);
 

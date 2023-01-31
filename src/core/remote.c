@@ -442,8 +442,8 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 
 			unload_all_images(app_state);
 			image_t image = {0};
-			bool is_valid = init_image_from_tiff(app_state, &image, tiff, false);
-			add_image(app_state, image, true);
+			bool is_valid = init_image_from_tiff(&image, tiff, false, NULL);
+			add_image(app_state, image, true, false);
 			success = is_valid;
 		} else {
 			tiff_destroy(&tiff);
