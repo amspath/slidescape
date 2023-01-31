@@ -90,11 +90,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		}
 
 	} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
-		wsi_t* wsi = &image->openslide_wsi.wsi;
+		wsi_t* wsi = &image->openslide_wsi;
 		i32 wsi_file_level = level_image->pyramid_image_index;
 		i64 x = (tile_x * level_image->tile_width) << level;
 		i64 y = (tile_y * level_image->tile_height) << level;
-		openslide.openslide_read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
+		openslide.read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
 	} else if (image->backend == IMAGE_BACKEND_DICOM) {
 		u8* pixels = dicom_wsi_decode_tile_to_bgra(&image->dicom, level, tile_index);
 		if (pixels) {
@@ -170,9 +170,9 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 	// TODO: check if necessary anymore?
     unload_openslide_wsi(wsi);
 
-	wsi->osr = openslide.openslide_open(filename);
+	wsi->osr = openslide.open(filename);
 	if (wsi->osr) {
-		const char* error_string = openslide.openslide_get_error(wsi->osr);
+		const char* error_string = openslide.get_error(wsi->osr);
 		if (error_string != NULL) {
 			console_print_error("OpenSlide error: %s\n", error_string);
             unload_openslide_wsi(wsi);
@@ -181,9 +181,9 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 
 		console_print_verbose("OpenSlide: opened '%s'\n", filename);
 
-		wsi->level_count = openslide.openslide_get_level_count(wsi->osr);
+		wsi->level_count = openslide.get_level_count(wsi->osr);
 		if (wsi->level_count == -1) {
-			error_string = openslide.openslide_get_error(wsi->osr);
+			error_string = openslide.get_error(wsi->osr);
 			console_print_error("OpenSlide error: %s\n", error_string);
             unload_openslide_wsi(wsi);
 			return;
@@ -193,7 +193,7 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 			panic();
 		}
 
-		openslide.openslide_get_level0_dimensions(wsi->osr, &wsi->width, &wsi->height);
+		openslide.get_level0_dimensions(wsi->osr, &wsi->width, &wsi->height);
 		ASSERT(wsi->width > 0);
 		ASSERT(wsi->height > 0);
 
@@ -201,12 +201,12 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 		wsi->tile_height = WSI_TILE_DIM;
 
 
-		const char* const* wsi_properties = openslide.openslide_get_property_names(wsi->osr);
+		const char* const* wsi_properties = openslide.get_property_names(wsi->osr);
 		if (wsi_properties) {
 			i32 property_index = 0;
 			const char* property = wsi_properties[0];
 			for (; property != NULL; property = wsi_properties[++property_index]) {
-				const char* property_value = openslide.openslide_get_property_value(wsi->osr, property);
+				const char* property_value = openslide.get_property_value(wsi->osr, property);
 				console_print_verbose("%s = %s\n", property, property_value);
 
 			}
@@ -215,8 +215,8 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 		wsi->mpp_x = 1.0f; // microns per pixel (default)
 		wsi->mpp_y = 1.0f; // microns per pixel (default)
 		wsi->is_mpp_known = false;
-		const char* mpp_x_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-x");
-		const char* mpp_y_string = openslide.openslide_get_property_value(wsi->osr, "openslide.mpp-y");
+		const char* mpp_x_string = openslide.get_property_value(wsi->osr, "openslide.mpp-x");
+		const char* mpp_y_string = openslide.get_property_value(wsi->osr, "openslide.mpp-y");
 		if (mpp_x_string) {
 			float mpp = atof(mpp_x_string);
 			if (mpp > 0.0f) {
@@ -235,7 +235,7 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 		for (i32 i = 0; i < wsi->level_count; ++i) {
 			wsi_level_t* level = wsi->levels + i;
 
-			openslide.openslide_get_level_dimensions(wsi->osr, i, &level->width, &level->height);
+			openslide.get_level_dimensions(wsi->osr, i, &level->width, &level->height);
 			ASSERT(level->width > 0);
 			ASSERT(level->height > 0);
 			i64 partial_block_x = level->width % WSI_TILE_DIM;
@@ -245,7 +245,7 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 			level->tile_width = WSI_TILE_DIM;
 			level->tile_height = WSI_TILE_DIM;
 
-			float raw_downsample_factor = openslide.openslide_get_level_downsample(wsi->osr, i);
+			float raw_downsample_factor = openslide.get_level_downsample(wsi->osr, i);
 			float raw_downsample_level = log2f(raw_downsample_factor);
 			i32 downsample_level = (i32) roundf(raw_downsample_level);
 
@@ -261,19 +261,19 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 //			level->tiles = calloc(1, level->num_tiles * sizeof(wsi_tile_t));
 		}
 
-		const char* barcode = openslide.openslide_get_property_value(wsi->osr, "philips.PIM_DP_UFS_BARCODE");
+		const char* barcode = openslide.get_property_value(wsi->osr, "philips.PIM_DP_UFS_BARCODE");
 		if (barcode) {
 			wsi->barcode = barcode;
 		}
 
-		const char* const* wsi_associated_image_names = openslide.openslide_get_associated_image_names(wsi->osr);
+		const char* const* wsi_associated_image_names = openslide.get_associated_image_names(wsi->osr);
 		if (wsi_associated_image_names) {
 			i32 name_index = 0;
 			const char* name = wsi_associated_image_names[0];
 			for (; name != NULL; name = wsi_associated_image_names[++name_index]) {
 				i64 w = 0;
 				i64 h = 0;
-				openslide.openslide_get_associated_image_dimensions(wsi->osr, name, &w, &h);
+				openslide.get_associated_image_dimensions(wsi->osr, name, &w, &h);
 				console_print_verbose("%s : w=%lld h=%lld\n", name, w, h);
 
 			}
@@ -663,7 +663,7 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 
 void unload_openslide_wsi(wsi_t* wsi) {
 	if (wsi->osr) {
-		openslide.openslide_close(wsi->osr);
+		openslide.close(wsi->osr);
 		wsi->osr = NULL;
 	}
 

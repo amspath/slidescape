@@ -70,26 +70,26 @@ bool init_openslide() {
 	if (library_handle) {
 
 #ifdef _WIN32
-#define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(library_handle, #proc))) goto failed;
+#define GET_PROC(proc) if (!(openslide.proc = (void*) GetProcAddress(library_handle, "openslide_" #proc))) goto failed;
 #else
-#define GET_PROC(proc) if (!(openslide.proc = (void*) dlsym(library_handle, #proc))) goto failed;
+#define GET_PROC(proc) if (!(openslide.proc = (void*) dlsym(library_handle, "openslide_" #proc))) goto failed;
 #endif
-		GET_PROC(openslide_detect_vendor);
-		GET_PROC(openslide_open);
-		GET_PROC(openslide_get_level_count);
-		GET_PROC(openslide_get_level0_dimensions);
-		GET_PROC(openslide_get_level_dimensions);
-		GET_PROC(openslide_get_level_downsample);
-		GET_PROC(openslide_get_best_level_for_downsample);
-		GET_PROC(openslide_read_region);
-		GET_PROC(openslide_close);
-		GET_PROC(openslide_get_error);
-		GET_PROC(openslide_get_property_names);
-		GET_PROC(openslide_get_property_value);
-		GET_PROC(openslide_get_associated_image_names);
-		GET_PROC(openslide_get_associated_image_dimensions);
-		GET_PROC(openslide_read_associated_image);
-		GET_PROC(openslide_get_version);
+		GET_PROC(detect_vendor);
+		GET_PROC(open);
+		GET_PROC(get_level_count);
+		GET_PROC(get_level0_dimensions);
+		GET_PROC(get_level_dimensions);
+		GET_PROC(get_level_downsample);
+		GET_PROC(get_best_level_for_downsample);
+		GET_PROC(read_region);
+		GET_PROC(close);
+		GET_PROC(get_error);
+		GET_PROC(get_property_names);
+		GET_PROC(get_property_value);
+		GET_PROC(get_associated_image_names);
+		GET_PROC(get_associated_image_dimensions);
+		GET_PROC(read_associated_image);
+		GET_PROC(get_version);
 #undef GET_PROC
 
 		float seconds = get_seconds_elapsed(debug_start, get_clock());

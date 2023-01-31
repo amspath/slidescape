@@ -95,6 +95,7 @@ extern bool show_mouse_pos_overlay;
 extern bool show_console_window INIT(= DO_DEBUG);
 extern bool show_menu_bar INIT(= true);
 extern bool load_next_image_as_overlay;
+extern i32 layers_window_selected_image_index; // TODO: make this a property of scene_t?
 extern gui_modal_popup_t* gui_modal_stack;
 extern float global_progress_bar_test_progress;
 extern char remote_hostname[64] INIT(= "localhost");

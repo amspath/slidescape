@@ -31,6 +31,12 @@
 extern "C" {
 #endif
 
+typedef enum pixel_format_enum {
+    PIXEL_FORMAT_UNDEFINED = 0,
+    PIXEL_FORMAT_U8_BGRA = 1,
+    PIXEL_FORMAT_U8_RGBA = 2,
+    PIXEL_FORMAT_F32_Y = 3,
+} pixel_format_enum;
 
 #define WSI_TILE_DIM 512
 
@@ -112,6 +118,8 @@ typedef struct cached_tile_t {
 } cached_tile_t;
 
 typedef struct {
+    i64 width_in_pixels;
+    i64 height_in_pixels;
     tile_t* tiles;
     u64 tile_count;
     u32 width_in_tiles;
@@ -156,9 +164,7 @@ typedef struct image_t {
         simple_image_t simple;
         tiff_t tiff;
         isyntax_t isyntax;
-        struct {
-            wsi_t wsi;
-        } openslide_wsi;
+        wsi_t openslide_wsi;
         dicom_series_t dicom;
     };
     i32 level_count;
@@ -178,13 +184,17 @@ typedef struct image_t {
     i32 resource_id;
 } image_t;
 
+float f32_rgb_to_f32_y(float R, float G, float B);
+void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components);
 
-
+const char* get_image_backend_name(image_t* image);
+const char* get_image_descriptive_type_name(image_t* image);
 bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t* parent_image);
 bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay);
 bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overlay);
 bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overlay);
 void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay);
+bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format);
 
 #ifdef __cplusplus
 }

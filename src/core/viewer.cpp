@@ -53,6 +53,7 @@
 #include "annotation.h"
 #include "shader.h"
 #include "ini.h"
+#include "image_registration.h"
 
 #include "viewer_opengl.cpp"
 #include "viewer_io_file.cpp"
@@ -89,7 +90,7 @@ void unload_image(image_t* image) {
 	if (image) {
 		if (image->type == IMAGE_TYPE_WSI) {
 			if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
-                unload_openslide_wsi(&image->openslide_wsi.wsi);
+                unload_openslide_wsi(&image->openslide_wsi);
 			} else if (image->backend == IMAGE_BACKEND_TIFF) {
 				tiff_destroy(&image->tiff);
 			} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
@@ -145,11 +146,23 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool
 	arrput(app_state->loaded_images, image);
 	arrput(app_state->active_resources, image.resource_id);
 	app_state->scene.active_layer = arrlen(app_state->loaded_images)-1;
+    layers_window_selected_image_index = app_state->scene.active_layer;
+    layer_time = 0.0f;
+    target_layer_time = 0.0f;
 	if (need_zoom_reset) {
 		app_state->scene.need_zoom_reset = true;
 	}
-    if (need_image_registration) {
-        // TODO: implement this
+    image_t* added_image = arrlastptr(app_state->loaded_images);
+    if (need_image_registration && arrlen(app_state->loaded_images) > 1) {
+        target_layer_time = 1.0f;
+        image_t* parent_image = app_state->loaded_images + 0;
+        image_transform_t transform = do_image_registration(parent_image, added_image);
+        if (transform.is_valid) {
+            // apply translation
+            if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {
+                added_image->origin_offset = transform.translate;
+            }
+        }
     }
 }
 
@@ -223,7 +236,8 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 	app_state->clear_color = V4F(1.0f, 1.0f, 1.0f, 1.00f);
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
-	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
+    // TODO: switch back to builtin TIFF backend once read_region() works
+	app_state->use_builtin_tiff_backend = false; // If disabled, revert to OpenSlide when loading TIFF files.
 
 	app_state->keyboard_base_panning_speed = 10.0f;
 	app_state->mouse_sensitivity = 12.0f;
@@ -1542,18 +1556,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		draw_scale_bar(&scene->scale_bar);
 	}
 
+    //  TODO: refactor, maybe split as scene_control_layers()?
+    if (image_count > 1) {
+        if (was_key_pressed(input, KEY_F5) || ((!gui_want_capture_keyboard) && (was_key_pressed(input, KEY_Space)))) {
+            scene->active_layer++;
+            if (scene->active_layer == image_count) {
+                scene->active_layer = 0;
+            }
+            if (scene->active_layer == 0) {
+                target_layer_time = 0.0f;
+            } else if (scene->active_layer == 1) {
+                target_layer_time = 1.0f;
+            }
+        }
+        if (was_key_pressed(input, KEY_M)) {
+            target_layer_time = 0.5f;
+        }
+        if (is_key_down(input, KEY_M)) {
 
-	if (was_key_pressed(input, KEY_F5) || ((!gui_want_capture_keyboard) && (was_key_pressed(input, KEY_Space)))) {
-		scene->active_layer++;
-		if (scene->active_layer == image_count) {
-			scene->active_layer = 0;
-		}
-		if (scene->active_layer == 0) {
-			target_layer_time = 0.0f;
-		} else if (scene->active_layer == 1) {
-			target_layer_time = 1.0f;
-		}
-	}
+        }
+    }
 	{
 		float adjust_speed = 8.0f * delta_time;
 		if (layer_time < target_layer_time) {

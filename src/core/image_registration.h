@@ -25,7 +25,12 @@
 extern "C" {
 #endif
 
+typedef struct image_transform_t {
+    bool is_valid;
+    v2f translate;
+} image_transform_t;
 
+image_transform_t do_image_registration(image_t* image1, image_t* image2);
 
 
 #ifdef __cplusplus

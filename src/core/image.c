@@ -19,6 +19,42 @@
 #include "common.h"
 #include "image.h"
 
+const char* get_image_backend_name(image_t* image) {
+    const char* result = "--";
+    if (image->backend == IMAGE_BACKEND_TIFF) {
+        result = "TIFF";
+    } else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+        result = "OpenSlide";
+    } else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+        result = "iSyntax";
+    } else if (image->backend == IMAGE_BACKEND_DICOM) {
+        result = "DICOM";
+    } else if (image->backend == IMAGE_BACKEND_STBI) {
+        result = "stb_image";
+    }
+    return result;
+}
+
+const char* get_image_descriptive_type_name(image_t* image) {
+    const char* result = "--";
+    if (image->type == IMAGE_TYPE_WSI) {
+        if (image->backend == IMAGE_BACKEND_TIFF) {
+            result = "WSI (TIFF)";
+        } else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+            result = "WSI (OpenSlide)";
+        } else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+            result = "WSI (iSyntax)";
+        } else if (image->backend == IMAGE_BACKEND_DICOM) {
+            result = "WSI (DICOM)";
+        } else if (image->backend == IMAGE_BACKEND_STBI) {
+            result = "Simple image";
+        }
+    } else {
+        result = "Unknown";
+    }
+    return result;
+}
+
 static void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
     image->mpp_x = mpp_x;
     image->mpp_y = mpp_y;
@@ -28,7 +64,7 @@ static void image_change_resolution(image_t* image, float mpp_x, float mpp_y) {
     if (image->type == IMAGE_TYPE_WSI) {
         // shorthand pointers for backend-specific data structure
         tiff_t* tiff = &image->tiff;
-        wsi_t* openslide_image = &image->openslide_wsi.wsi;
+        wsi_t* openslide_image = &image->openslide_wsi;
         isyntax_t* isyntax = &image->isyntax;
 
 
@@ -139,6 +175,8 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
                     level_image->exists = true;
                     level_image->pyramid_image_index = ifd_index;
                     level_image->downsample_factor = ifd->downsample_factor;
+                    level_image->width_in_pixels = ifd->image_width;
+                    level_image->height_in_pixels = ifd->image_height;
                     level_image->tile_count = ifd->tile_count;
                     level_image->width_in_tiles = ifd->width_in_tiles;
                     ASSERT(level_image->width_in_tiles > 0);
@@ -202,6 +240,8 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
             level_image->exists = true;
             level_image->pyramid_image_index = 0;
             level_image->downsample_factor = ifd->downsample_factor;
+            level_image->width_in_pixels = ifd->image_width;
+            level_image->height_in_pixels = ifd->image_height;
             level_image->tile_count = 1;
             level_image->width_in_tiles = 1;
             ASSERT(level_image->width_in_tiles > 0);
@@ -277,6 +317,8 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
             level_image->exists = true;
             level_image->pyramid_image_index = level_index; // not used
             level_image->downsample_factor = exp2f((float)level_index);
+            level_image->width_in_pixels = isyntax_level->width_in_tiles * isyntax->tile_width; // TODO: check that this is right...
+            level_image->height_in_pixels = isyntax_level->height_in_tiles * isyntax->tile_height; // TODO: check that this is right...
             level_image->tile_count = isyntax_level->tile_count;
             level_image->width_in_tiles = isyntax_level->width_in_tiles;
             ASSERT(level_image->width_in_tiles > 0);
@@ -388,6 +430,8 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
             level_image->needs_indexing = level_instance->is_pixel_data_encapsulated && !level_instance->are_all_offsets_read;
             level_image->pyramid_image_index = level_index; // not used
             level_image->downsample_factor = exp2f((float)level_index);
+            level_image->width_in_pixels = level_instance->total_pixel_matrix_columns; // TODO: check that this is right
+            level_image->height_in_pixels = level_instance->total_pixel_matrix_rows; // TODO: check that this is right
             level_image->width_in_tiles = level_instance->width_in_tiles;
             ASSERT(level_image->width_in_tiles > 0);
             level_image->height_in_tiles = level_instance->height_in_tiles;
@@ -488,6 +532,8 @@ bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overla
     level_image->exists = true;
     level_image->pyramid_image_index = 0; // not used
     level_image->downsample_factor = 1.0f;
+    level_image->width_in_pixels = image->width_in_pixels;
+    level_image->height_in_pixels = image->height_in_pixels;
     level_image->tile_count = 1;
     level_image->width_in_tiles = 1;
     ASSERT(level_image->width_in_tiles > 0);
@@ -524,7 +570,7 @@ bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overla
 void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
     image->type = IMAGE_TYPE_WSI;
     image->backend = IMAGE_BACKEND_OPENSLIDE;
-    image->openslide_wsi.wsi = *wsi;
+    image->openslide_wsi = *wsi;
     image->is_freshly_loaded = true;
     image->mpp_x = wsi->mpp_x;
     image->mpp_y = wsi->mpp_y;
@@ -558,7 +604,7 @@ void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
             i32 wanted_downsample_level = downsample_level;
             bool found_wsi_level_for_downsample_level = false;
             for (wsi_level_index = next_wsi_level_index_to_check_for_match;
-                 wsi_level_index < wsi->level_count; ++wsi_level_index) {
+                wsi_level_index < wsi->level_count; ++wsi_level_index) {
                 wsi_file_level = wsi->levels + wsi_level_index;
                 if (wsi_file_level->downsample_level == wanted_downsample_level) {
                     // match!
@@ -575,6 +621,8 @@ void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
                 downsample_level_image->pyramid_image_index = wsi_level_index;
                 downsample_level_image->downsample_factor = wsi_file_level->downsample_factor;
                 downsample_level_image->tile_count = wsi_file_level->tile_count;
+                downsample_level_image->width_in_pixels = wsi_file_level->width;
+                downsample_level_image->height_in_pixels = wsi_file_level->height;
                 downsample_level_image->width_in_tiles = wsi_file_level->width_in_tiles;
                 ASSERT(downsample_level_image->width_in_tiles > 0);
                 downsample_level_image->height_in_tiles = wsi_file_level->height_in_tiles;
@@ -630,3 +678,77 @@ void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
     image->is_valid = true;
 
 }
+
+// TODO: optimize?
+float f32_rgb_to_f32_y(float R, float G, float B) {
+    float Co  = R - B;
+    float tmp = B + Co/2;
+    float Cg  = G - tmp;
+    float Y   = tmp + Cg/2;
+    return Y;
+}
+
+// TODO: optimize?
+void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components) {
+    if (components == 3 || components == 4) {
+        i32 row_elements = w * components;
+        for (i32 y = 0; y < h; ++y) {
+            u8* src_pixel = src + y * row_elements;
+            float* dst_pixel = dest + y * w;
+            for (i32 x = 0; x < w; ++x) {
+                float r = (float)(src_pixel[0]) * (1.0f/255.0f);
+                float g = (float)(src_pixel[1]) * (1.0f/255.0f);
+                float b = (float)(src_pixel[2]) * (1.0f/255.0f);
+                float luminance = f32_rgb_to_f32_y(r, g, b);
+                *dst_pixel++ = luminance;
+                src_pixel += components;
+            }
+        }
+    } else {
+        printf("number of components (%d) not supported\n", components);
+        exit(1);
+    }
+}
+
+bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format) {
+    ASSERT(dest != NULL);
+    pixel_format_enum intermediate_pixel_format = PIXEL_FORMAT_UNDEFINED;
+    void* intermediate_pixel_buffer = NULL;
+
+    switch (image->backend) {
+        default: {
+            console_print_error("image_read_region(): not implemented for backend '%s'", get_image_backend_name(image));
+            return false;
+        } break;
+        case IMAGE_BACKEND_OPENSLIDE: {
+            intermediate_pixel_format = PIXEL_FORMAT_U8_RGBA;
+            if (desired_pixel_format == intermediate_pixel_format) {
+                intermediate_pixel_buffer = (uint32_t*) dest;
+            } else {
+                intermediate_pixel_buffer = malloc(w * h * sizeof(uint32_t));
+            }
+            openslide.read_region(image->openslide_wsi.osr, intermediate_pixel_buffer, x, y, level, w, h);
+        } break;
+    }
+
+    bool success = true;
+    if (intermediate_pixel_format == desired_pixel_format) {
+        return true; // we're already done!
+    } else {
+        // need to convert between pixel formats
+        if (intermediate_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+            if (desired_pixel_format == PIXEL_FORMAT_F32_Y) {
+                image_convert_u8_rgba_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
+            } else {
+                console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented", intermediate_pixel_format, desired_pixel_format);
+                success = false;
+            }
+        } else {
+            console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented", intermediate_pixel_format, desired_pixel_format);
+            success = false;
+        }
+        if (intermediate_pixel_buffer) free(intermediate_pixel_buffer);
+    }
+    return success;
+}
+

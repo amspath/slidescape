@@ -407,24 +407,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 }
 
-static const char* get_image_type_name(image_t* image) {
-	const char* result = "--";
-	if (image->type == IMAGE_TYPE_WSI) {
-		if (image->backend == IMAGE_BACKEND_TIFF) {
-			result = "WSI (TIFF)";
-		} else if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
-			result = "WSI (OpenSlide)";
-		} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
-			result = "WSI (iSyntax)";
-		} else if (image->backend == IMAGE_BACKEND_STBI) {
-			result = "Simple image";
-		}
-	} else {
-		result = "Unknown";
-	}
-	return result;
-}
-
 // TODO
 typedef struct image_layer_t {
 	i32 index;
@@ -452,9 +434,8 @@ void draw_layers_window(app_state_t* app_state) {
 
 	const float TEXT_BASE_WIDTH = ImGui::CalcTextSize("A").x;
 
-	static i32 selected_image_index = 0;
 	i32 image_count = arrlen(app_state->loaded_images);
-	if (selected_image_index >= image_count) selected_image_index = 0;
+	if (layers_window_selected_image_index >= image_count) layers_window_selected_image_index = 0;
 
 	static ImGuiTableFlags flags = ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody;
 
@@ -488,8 +469,8 @@ void draw_layers_window(app_state_t* app_state) {
 
 			// Displayer layer type
 			ImGui::TableNextColumn();
-			const char* type = get_image_type_name(image);
-			if (selected) selected_image_index = image_index;
+			const char* type = get_image_descriptive_type_name(image);
+			if (selected) layers_window_selected_image_index = image_index;
 			ImGui::TextUnformatted(type);
 		}
 
@@ -511,9 +492,9 @@ void draw_layers_window(app_state_t* app_state) {
 	}
 
 	ImGui::NewLine();
-	if (selected_image_index < image_count) {
-		image_t* image = app_state->loaded_images + selected_image_index;
-		ImGui::Text("Adjust position offset for layer %d:", selected_image_index);
+	if (layers_window_selected_image_index < image_count) {
+		image_t* image = app_state->loaded_images + layers_window_selected_image_index;
+		ImGui::Text("Adjust position offset for layer %d:", layers_window_selected_image_index);
 		ASSERT(image->mpp_x != 0.0f);
 		ASSERT(image->mpp_y != 0.0f);
 		i32 px_x = roundf(image->origin_offset.x / image->mpp_x);
@@ -531,9 +512,17 @@ void draw_layers_window(app_state_t* app_state) {
 //		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g px");
 	}
 	ImGui::NewLine();
+
+    bool disable_layer_transition_control = (image_count < 2);
+    if (disable_layer_transition_control) {
+        ImGui::BeginDisabled();
+    }
 	ImGui::Text("Currently displayed layer: %d.\nPress Space or F5 to toggle layers.", app_state->scene.active_layer);
 
 	ImGui::SliderFloat("Layer transition", &target_layer_time, 0.0f, 1.0f);
+    if (disable_layer_transition_control) {
+        ImGui::EndDisabled();
+    }
 
 	ImGui::End();
 }

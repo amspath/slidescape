@@ -99,7 +99,7 @@ void debug_create_luminance_png_complex(minfft_cmpl* src, i32 w, i32 h, real_t s
 	free(magnitudes);
 }
 
-v2i find_highest_peak(real_t* src, i32 w, i32 h, float* out_value) {
+static v2i find_highest_peak(real_t* src, i32 w, i32 h, float* out_value) {
 	v2i point = {};
 	real_t highest = 0.0f;
 	for (i32 y = 0; y < h; ++y) {
@@ -116,7 +116,7 @@ v2i find_highest_peak(real_t* src, i32 w, i32 h, float* out_value) {
 	return point;
 }
 
-void fftshift_f(real_t* restrict src, real_t* restrict dst, i32 w, i32 h) {
+static void fftshift_f(real_t* restrict src, real_t* restrict dst, i32 w, i32 h) {
 	// swap quadrants
 	ASSERT(w % 2 == 0);
 	ASSERT(h % 2 == 0);
@@ -143,21 +143,20 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 //	debug_create_luminance_png(src1->data, src1->w, src1->h, 1.0f, "patch1_Y.png");
 //	debug_create_luminance_png(src2->data, src2->w, src2->h, 1.0f, "patch2_Y.png");
 
-	// Add enough padding so that we will be able to
+	// Add padding
 	i32 smallest_h = MIN(src1->h, src2->h);
 	i32 smallest_w = MIN(src1->w, src2->w);
 	i32 largest_h = MAX(src1->h, src2->h);
 	i32 largest_w = MAX(src1->w, src2->w);
-	i32 h = (i32)next_pow2(largest_h + smallest_h);
-	i32 w = (i32)next_pow2(largest_w + smallest_w);
+	i32 h = (i32)next_pow2(largest_h /*+ smallest_h*/);
+	i32 w = (i32)next_pow2(largest_w /*+ smallest_w*/);
 
 	buffer2d_t padded1 = {};
 	buffer2d_t padded2 = {};
 	buffer2d_t padded_win = {};
 
 	if(h != src1->h || w != src1->w) {
-		i32 total_hor_pad1 = w - src1->w;
-		i32 total_hor_pad2 = w - src2->w;
+        // TODO: fix memory leak
 		copy_make_border(src1, &padded1, 0, h - src1->h, 0, w - src1->w, background);
 		copy_make_border(src2, &padded2, 0, h - src2->h, 0, w - src2->w, background);
 
@@ -187,7 +186,6 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 	minfft_cmpl* FFT1 = calloc(1, size);
 	minfft_cmpl* FFT2 = calloc(1, size);
 	minfft_cmpl* P = calloc(1, size);
-//	minfft_cmpl* C = calloc(1, size);
 	real_t* C = calloc(1, w * h * sizeof(real_t));
 	real_t* C_shifted = calloc(1, w * h * sizeof(real_t));
 
@@ -198,27 +196,6 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 		debug_create_luminance_png(padded1.data, padded1.w, padded1.h, 1.0f, "patch1_Y.png");
 		debug_create_luminance_png(padded2.data, padded2.w, padded2.h, 1.0f, "patch2_Y.png");
 	}
-
-
-
-	// convert to complex buffer
-/*	minfft_cmpl* cdata1 = calloc(1, size);
-	minfft_cmpl* cdata2 = calloc(1, size);
-	for (i32 y = 0; y < h; ++y) {
-		real_t* src_row1 = padded1.data + y * w;
-		real_t* src_row2 = padded2.data + y * w;
-		minfft_cmpl* dst_row1 = cdata1 + y * w;
-		minfft_cmpl* dst_row2 = cdata2 + y * w;
-		for (i32 x = 0; x < h; ++x) {
-			dst_row1[x] = src_row1[x];
-			dst_row2[x] = src_row2[x];
-		}
-	}*/
-
-//	minfft_aux* a = minfft_mkaux_dft_2d(w, h); // prepare aux data
-//	minfft_dft(cdata1, FFT1, a);
-//	minfft_dft(cdata2, FFT2, a);
-//	i32 fft_w = w;
 
 	minfft_aux* a = minfft_mkaux_realdft_2d(h, w); // prepare aux data
 	minfft_realdft(padded1.data, FFT1, a);
@@ -247,42 +224,84 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 		}
 	}
 
-//	minfft_mkaux_dft_2d()
 	if (create_debug_pngs) debug_create_magnitude_plot(P, fft_w, h, 100.0f, "cps.png");
-//	minfft_invdft(P, C, a);
 	minfft_invrealdft(P, C, a);
 	fftshift_f(C, C_shifted, w, h);
 	if (create_debug_pngs) debug_create_luminance_png(C, w, h, 10.0f * scale, "phasecorr_real.png");
 	if (create_debug_pngs) debug_create_luminance_png(C_shifted, w, h, 10.0f * scale, "phasecorr_real_shifted.png");
-//	debug_create_luminance_png_complex(C, w, h, 0.01f, "phasecorr_real.png");
-//	debug_create_magnitude_plot(C, w, h, 0.01f, "phasecorr.png");
-
 
 	real_t highest = 0.0f;
 	v2i peak = find_highest_peak(C_shifted, w, h, &highest);
+
+    // Subpixel shifting using method by Foroosh et al., see:
+    // https://en.wikipedia.org/wiki/Phase_correlation#cite_note-1
+    // https://www.cs.ucf.edu/~foroosh/subreg.pdf
+
+    float dx = 0.0f;
+    float dy = 0.0f;
+    if (peak.x > 0 && peak.x < w - 1 && peak.y > 0 && peak.y < h - 1) {
+        i32 center_pixel_index = w * peak.y + peak.x;
+
+        // horizontal subpixel shift
+        {
+            float dx_sign = 0.0f;
+            float second_highest = 0.0f;
+            if (C_shifted[center_pixel_index + 1] > C_shifted[center_pixel_index - 1]) {
+                second_highest = C_shifted[center_pixel_index + 1];
+                dx_sign = 1.0f;
+            } else {
+                second_highest = C_shifted[center_pixel_index - 1];
+                dx_sign = -1.0f;
+            }
+            float dx_first_solution = second_highest / (second_highest + highest);
+            float dx_second_solution = second_highest / (second_highest - highest);
+            if (dx_first_solution >= 0.0f && dx_first_solution < 1.0f) {
+                dx = dx_sign * dx_first_solution;
+            } else if (dx_second_solution >= 0.0f && dx_second_solution < 1.0f) {
+                dx = dx_sign * dx_second_solution;
+            }
+        }
+
+        // vertical subpixel shift
+        {
+            float dy_sign = 0.0f;
+            float second_highest = 0.0f;
+            if (C_shifted[center_pixel_index + w] > C_shifted[center_pixel_index - w]) {
+                second_highest = C_shifted[center_pixel_index + w];
+                dy_sign = 1.0f;
+            } else {
+                second_highest = C_shifted[center_pixel_index - w];
+                dy_sign = -1.0f;
+            }
+            float dy_first_solution = second_highest / (second_highest + highest);
+            float dy_second_solution = second_highest / (second_highest - highest);
+            if (dy_first_solution >= 0.0f && dy_first_solution < 1.0f) {
+                dy = dy_sign * dy_first_solution;
+            } else if (dy_second_solution >= 0.0f && dy_second_solution < 1.0f) {
+                dy = dy_sign * dy_second_solution;
+            }
+        }
+    }
+
 	peak.x -= (w/2);
 	peak.y -= (h/2);
-	printf("Phase correlation: highest peak at (%d, %d), value = %g\n", peak.x, peak.y, highest);
-
-	v2f peak_exact = {peak.x, peak.y};
-	// TODO: subpixel shift
-
+    v2f peak_exact = {(float)peak.x + dx, (float)peak.y + dy};
+	console_print("Phase correlation: highest peak (%d, %d), value = %g; subpixel shift (%g, %g)\n", peak.x, peak.y, highest, peak_exact.x, peak_exact.y);
 
 	if (check) {
-//		minfft_invdft(FFT1, cdata1, a);
-//		minfft_invdft(FFT2, cdata2, a);
+        // NOTE: the inverse DFT should give the original grayscale image back (sanity check)
 		minfft_invrealdft(FFT1, padded1.data, a);
 		minfft_invrealdft(FFT2, padded2.data, a);
-//		debug_create_luminance_png_complex(cdata1, w, h, scale, "patch1_Y_check.png");
-//		debug_create_luminance_png_complex(cdata2, w, h, scale, "patch2_Y_check.png");
 		if (create_debug_pngs) debug_create_luminance_png(padded1.data, w, h, scale, "patch1_Y_check.png");
 		if (create_debug_pngs) debug_create_luminance_png(padded2.data, w, h, scale, "patch2_Y_check.png");
-
 	}
 
-
-
-
+    free(a);
+    free(FFT1);
+    free(FFT2);
+    free(P);
+    free(C);
+    free(C_shifted);
 
 	return peak_exact;
 }
