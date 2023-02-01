@@ -156,7 +156,7 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool
     if (need_image_registration && arrlen(app_state->loaded_images) > 1) {
         target_layer_time = 1.0f;
         image_t* parent_image = app_state->loaded_images + 0;
-        image_transform_t transform = do_image_registration(parent_image, added_image);
+        image_transform_t transform = do_image_registration(parent_image, added_image, 2);
         if (transform.is_valid) {
             // apply translation
             if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {
@@ -956,6 +956,57 @@ void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 
 #define CLICK_DRAG_TOLERANCE 8.0f
 
+bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input, float delta_time) {
+    bool consume_directional_control = false;
+    i32 image_count = arrlen(app_state->loaded_images);
+    if (image_count > 1) {
+        if (was_key_pressed(input, KEY_F5) || ((!gui_want_capture_keyboard) && (was_key_pressed(input, KEY_Space)))) {
+            if (target_layer_time == 0.5f) {
+                target_layer_time += 0.001f;
+            }
+            target_layer_time = roundf(1.0f - target_layer_time);
+        }
+        if (!gui_want_capture_keyboard) {
+            if (was_key_pressed(input, KEY_B)) {
+                target_layer_time = 0.5f;
+            }
+            if (is_key_down(input, KEY_B)) {
+                if (scene->control.y != 0.0f | scene->control.x != 0.0f) {
+                    scene->panning_velocity = V2F(0.0f,0.0f);
+                    target_layer_time += delta_time * scene->control.x * 1.0f;
+                    target_layer_time = CLAMP(target_layer_time, 0.0f, 1.0f);
+                    consume_directional_control = true;
+                }
+            }
+            if (is_key_down(input, KEY_N)) {
+                if (scene->control.y != 0.0f | scene->control.x != 0.0f) {
+                    i32 overlay_image_index = 1;
+                    image_t* image_to_nudge = app_state->loaded_images + overlay_image_index;
+                    v2f delta = v2f_scale(delta_time * 10.0f, scene->control);
+                    image_to_nudge->origin_offset = v2f_add(image_to_nudge->origin_offset, delta);
+                    scene->panning_velocity = V2F(0.0f,0.0f);
+                    consume_directional_control = true;
+                }
+            }
+        }
+    }
+
+    // TODO: change active layer
+    scene->active_layer = (i32)roundf(target_layer_time);
+
+    {
+        float adjust_speed = 8.0f * delta_time;
+        if (layer_time < target_layer_time) {
+            float delta = MIN((target_layer_time - layer_time), adjust_speed);
+            layer_time += delta;
+        } else if (layer_time > target_layer_time) {
+            float delta = MIN((layer_time - target_layer_time), adjust_speed);
+            layer_time -= delta;
+        }
+    }
+    return consume_directional_control; // directional input not consumed
+}
+
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_time) {
 
 	i64 last_section = get_clock(); // start profiler section
@@ -1331,24 +1382,28 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				app_state->allow_idling_next_frame = false;
 			}
 
+            bool is_directional_input_consumed = scene_control_layers(app_state, scene, input, delta_time);
+
 			// Panning should be faster when zoomed in very far.
 			float panning_multiplier = 1.0f + 3.0f * ((float) viewer_max_level - scene->zoom.pos) / (float) viewer_max_level;
             panning_multiplier *= app_state->display_scale_factor;
 
-			// Panning using the arrow or WASD keys.
-			float panning_speed = app_state->keyboard_base_panning_speed * 100.0f * delta_time * panning_multiplier;
-			bool panning = false;
-			if (scene->panning_velocity.y != 0.0f) {
-				scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.y;
-				panning = true;
-			}
-			if (scene->panning_velocity.x != 0.0f) {
-				scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.x;
-				panning = true;
-			}
-			if (panning && app_state->seconds_without_mouse_movement > 0.25f) {
-				mouse_hide();
-			}
+            if (!is_directional_input_consumed) {
+                // Panning using the arrow or WASD keys.
+                float panning_speed = app_state->keyboard_base_panning_speed * 100.0f * delta_time * panning_multiplier;
+                bool panning = false;
+                if (scene->panning_velocity.y != 0.0f) {
+                    scene->camera.y += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.y;
+                    panning = true;
+                }
+                if (scene->panning_velocity.x != 0.0f) {
+                    scene->camera.x += scene->zoom.pixel_height * panning_speed * scene->panning_velocity.x;
+                    panning = true;
+                }
+                if (panning && app_state->seconds_without_mouse_movement > 0.25f) {
+                    mouse_hide();
+                }
+            }
 
 			// camera has been updated (now we need to recalculate some things)
 			scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
@@ -1555,39 +1610,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		draw_selection_box(scene);
 		draw_scale_bar(&scene->scale_bar);
 	}
-
-    //  TODO: refactor, maybe split as scene_control_layers()?
-    if (image_count > 1) {
-        if (was_key_pressed(input, KEY_F5) || ((!gui_want_capture_keyboard) && (was_key_pressed(input, KEY_Space)))) {
-            scene->active_layer++;
-            if (scene->active_layer == image_count) {
-                scene->active_layer = 0;
-            }
-            if (scene->active_layer == 0) {
-                target_layer_time = 0.0f;
-            } else if (scene->active_layer == 1) {
-                target_layer_time = 1.0f;
-            }
-        }
-        if (was_key_pressed(input, KEY_M)) {
-            target_layer_time = 0.5f;
-        }
-        if (is_key_down(input, KEY_M)) {
-
-        }
-    }
-	{
-		float adjust_speed = 8.0f * delta_time;
-		if (layer_time < target_layer_time) {
-			float delta = MIN((target_layer_time - layer_time), adjust_speed);
-			layer_time += delta;
-		} else if (layer_time > target_layer_time) {
-			float delta = MIN((layer_time - target_layer_time), adjust_speed);
-			layer_time -= delta;
-		}
-	}
-
-
 
 	if (image_count <= 1) {
 		// Render everything at once

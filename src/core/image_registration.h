@@ -30,7 +30,7 @@ typedef struct image_transform_t {
     v2f translate;
 } image_transform_t;
 
-image_transform_t do_image_registration(image_t* image1, image_t* image2);
+image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top);
 
 
 #ifdef __cplusplus

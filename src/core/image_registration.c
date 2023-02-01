@@ -115,7 +115,7 @@ static void set_black_level(float* pixels, i32 pixel_count, float black) {
     }
 }
 
-image_transform_t do_image_registration(image_t* image1, image_t* image2) {
+image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top) {
     image_transform_t result = {};
 
     if (!(image1->backend == IMAGE_BACKEND_OPENSLIDE && image2->backend == IMAGE_BACKEND_OPENSLIDE)) {
@@ -125,8 +125,8 @@ image_transform_t do_image_registration(image_t* image1, image_t* image2) {
 
     i64 start = get_clock();
 
-    i32 thumb_level1 = ATLEAST(0, image1->level_count - 2);
-    i32 thumb_level2 = ATLEAST(0, image2->level_count - 2);
+    i32 thumb_level1 = ATLEAST(0, image1->level_count - levels_from_top - 1);
+    i32 thumb_level2 = ATLEAST(0, image2->level_count - levels_from_top - 1);
 
     if (thumb_level1 != thumb_level2) {
         console_print("Image registration not possible: number of levels differs (%d vs %d)\n", image1->level_count, image2->level_count);
