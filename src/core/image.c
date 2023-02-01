@@ -721,7 +721,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
             return false;
         } break;
         case IMAGE_BACKEND_OPENSLIDE: {
-            intermediate_pixel_format = PIXEL_FORMAT_U8_RGBA;
+            intermediate_pixel_format = PIXEL_FORMAT_U8_BGRA;
             if (desired_pixel_format == intermediate_pixel_format) {
                 intermediate_pixel_buffer = (uint32_t*) dest;
             } else {
@@ -736,7 +736,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
         return true; // we're already done!
     } else {
         // need to convert between pixel formats
-        if (intermediate_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+        if (intermediate_pixel_format == PIXEL_FORMAT_U8_BGRA) {
             if (desired_pixel_format == PIXEL_FORMAT_F32_Y) {
                 image_convert_u8_rgba_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
             } else {

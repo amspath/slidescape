@@ -115,6 +115,151 @@ static void set_black_level(float* pixels, i32 pixel_count, float black) {
     }
 }
 
+static float max3(float a, float b, float c) {
+    return ((a > b)? (a > c ? a : c) : (b > c ? b : c));
+}
+static float min3(float a, float b, float c) {
+    return ((a < b)? (a < c ? a : c) : (b < c ? b : c));
+}
+
+typedef struct hsv_t {
+    float h, s, v;
+} hsv_t;
+
+// https://www.tutorialspoint.com/c-program-to-change-rgb-color-model-to-hsv-color-model
+hsv_t rgb_to_hsv(float r, float g, float b) {
+    // R, G, B values are divided by 255
+    // to change the range from 0..255 to 0..1:
+    hsv_t hsv;
+    float cmax = max3(r, g, b); // maximum of r, g, b
+    float cmin = min3(r, g, b); // minimum of r, g, b
+    float diff = cmax-cmin; // diff of cmax and cmin.
+    if (cmax == cmin)
+        hsv.h = 0.0f;
+    else if (cmax == r)
+        hsv.h = fmodf((60.0f * ((g - b) / diff) + 360.0f), 360.0f);
+    else if (cmax == g)
+        hsv.h = fmodf((60.0f * ((b - r) / diff) + 120.0f), 360.0f);
+    else if (cmax == b)
+        hsv.h = fmodf((60.0f * ((r - g) / diff) + 240.0f), 360.0f);
+    if (cmax == 0)
+        hsv.s = 0;
+    else
+        hsv.s = (diff / cmax) * 100.0f;
+    hsv.v = cmax * 100;
+    return hsv;
+}
+
+static void isolate_hematoxylin_signal(uint32_t* pixels, float* dest, i32 pixel_count, float bg_value) {
+    // convert bgr to rgb
+    u8* p = (u8*)pixels;
+    for (i32 i=0; i < pixel_count; ++i) {
+        hsv_t hsv = rgb_to_hsv((float)p[0] * (1.0f / 255.0f),
+                             (float)p[1] * (1.0f / 255.0f),
+                             (float)p[2] * (1.0f / 255.0f));
+        if (hsv.h > 90 && hsv.h < 235) {
+//            dest[i] = hsv.v * (1.0f / 255.0f);
+        } else {
+            dest[i] = bg_value;
+        }
+        p += 4;
+    }
+}
+
+image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width) {
+    image_transform_t result = {};
+
+    if (!(image1->backend == IMAGE_BACKEND_OPENSLIDE && image2->backend == IMAGE_BACKEND_OPENSLIDE)) {
+        // TODO: implement read_region() for other image backends
+        return result;
+    }
+
+    i64 start = get_clock();
+
+    i32 w = patch_width;
+    i32 h = patch_width;
+    i32 half_patch_width_global = (patch_width / 2) << level;
+
+    i32 x1 = (i32) ((center_point.x - image1->origin_offset.x) / image1->mpp_x);
+    i32 x2 = (i32) ((center_point.x - image2->origin_offset.x) / image2->mpp_x);
+    x1 -= half_patch_width_global;
+    x2 -= half_patch_width_global;
+    i32 y1 = (i32) ((center_point.y - image1->origin_offset.y) / image1->mpp_y);
+    i32 y2 = (i32) ((center_point.y - image2->origin_offset.y) / image2->mpp_y);
+    y1 -= half_patch_width_global;
+    y2 -= half_patch_width_global;
+
+    level_image_t* level_image1 = image1->level_images + level;
+    level_image_t* level_image2 = image2->level_images + level;
+
+    float* region1 = calloc(1, w * h * sizeof(float));
+    float* region2 = calloc(1, w * h * sizeof(float));
+
+    // TODO: fix levels > 0 giving incorrect result
+    bool ok = image_read_region(image1, 0, x1, y1, w, h, region1, PIXEL_FORMAT_F32_Y);
+    ok = ok && image_read_region(image2, 0, x2, y2, w, h, region2, PIXEL_FORMAT_F32_Y);
+    if (!ok) {
+        console_print("Image registration not possible: image_read_region() failed\n");
+        return result;
+    }
+
+    // TODO: make configurable
+    bool need_isolate_hematoxylin = true;
+    if (need_isolate_hematoxylin) {
+        uint32_t* rgb_region1 = calloc(1, w * h * sizeof(float));
+        uint32_t* rgb_region2 = calloc(1, w * h * sizeof(float));
+
+        ok = image_read_region(image1, 0, x1, y1, w, h, rgb_region1, PIXEL_FORMAT_U8_BGRA);
+        ok = ok && image_read_region(image2, 0, x2, y2, w, h, rgb_region2, PIXEL_FORMAT_U8_BGRA);
+        if (!ok) {
+            console_print("Image registration not possible: image_read_region() failed\n");
+            return result;
+        }
+
+        convert_bgra_to_rgba(rgb_region1, w * h);
+        convert_bgra_to_rgba(rgb_region2, w * h);
+
+//    stbi_write_jpg("rgb_thumb1.jpg", w, h, 4, rgb_region1, 80);
+//    stbi_write_jpg("rgb_thumb2.jpg", w, h, 4, rgb_region2, 80);
+
+//    isolate_hematoxylin_signal(rgb_region1, region1, w * h, 230.0f / 255.0f);
+        isolate_hematoxylin_signal(rgb_region2, region2, w * h, 230.0f / 255.0f);
+
+        free(rgb_region1);
+        free(rgb_region2);
+    }
+
+
+    i64 clock_after_read = get_clock();
+
+    set_white_level(region1, w * h, 230.0f / 255.0f);
+    set_white_level(region2, w * h, 230.0f / 255.0f);
+
+    set_black_level(region2, w * h, 150.0f / 255.0f);
+
+//    void debug_create_luminance_png(real_t* src, i32 w, i32 h, real_t scale, const char* filename);
+//    debug_create_luminance_png(region1, w, h, 1.0f, "thumb1.png");
+//    debug_create_luminance_png(region2, w, h, 1.0f, "thumb2.png");
+
+    buffer2d_t input1 = { .w = w, .h = h, .data = region1};
+    buffer2d_t input2 = { .w = w, .h = h, .data = region2};
+
+    v2f pixel_shift = phase_correlate(&input1, &input2, NULL, 1.0f, NULL);
+    pixel_shift.x *= image2->mpp_x ;//* level_image2->downsample_factor;
+    pixel_shift.y *= image2->mpp_y ;//* level_image2->downsample_factor;
+
+    result.translate = pixel_shift;
+    result.is_valid = true;
+
+    console_print("Local image registration (on level 0): level0 pixel offset = (%.0f, %.0f), io time = %g seconds, processing time = %g seconds\n",
+                  level, pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
+                  get_seconds_elapsed(start, clock_after_read), get_seconds_elapsed(clock_after_read, get_clock()));
+
+    free(region1);
+    free(region2);
+    return result;
+}
+
 image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top) {
     image_transform_t result = {};
 

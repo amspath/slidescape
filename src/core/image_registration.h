@@ -31,7 +31,7 @@ typedef struct image_transform_t {
 } image_transform_t;
 
 image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top);
-
+image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width);
 
 #ifdef __cplusplus
 }

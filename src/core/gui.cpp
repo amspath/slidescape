@@ -522,6 +522,16 @@ void draw_layers_window(app_state_t* app_state) {
                     }
                 }
             }
+            ImGui::SameLine();
+            if (ImGui::Button("Re-register (local)")) {
+                image_transform_t transform = do_local_image_registration(app_state->loaded_images + 0, image, app_state->scene.camera, app_state->scene.zoom.level, 1024);
+                if (transform.is_valid) {
+                    // apply differential translation
+                    if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {
+                        image->origin_offset = v2f_add(image->origin_offset, transform.translate);
+                    }
+                }
+            }
         }
 //		ImGui::DragFloat("Offset Y", &image->origin_offset.y, image->mpp_y, 0.0f, 0.0f, "%g px");
 	}

@@ -224,7 +224,6 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 		}
 	}
 
-	if (create_debug_pngs) debug_create_magnitude_plot(P, fft_w, h, 100.0f, "cps.png");
 	minfft_invrealdft(P, C, a);
 	fftshift_f(C, C_shifted, w, h);
 	if (create_debug_pngs) debug_create_luminance_png(C, w, h, 10.0f * scale, "phasecorr_real.png");
