@@ -40,8 +40,12 @@ typedef struct _openslide openslide_t;
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_WIDTH "openslide.bounds-width"
 #define OPENSLIDE_PROPERTY_NAME_BOUNDS_HEIGHT "openslide.bounds-height"
 
-#if !defined(_WIN32) && !defined(WINAPI)
+#if !defined(WINAPI)
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #define WINAPI
+#endif
 #endif
 
 typedef struct openslide_api {

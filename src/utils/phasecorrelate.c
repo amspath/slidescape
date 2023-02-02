@@ -295,7 +295,7 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 		if (create_debug_pngs) debug_create_luminance_png(padded2.data, w, h, scale, "patch2_Y_check.png");
 	}
 
-    free(a);
+    libc_free(a);
     free(FFT1);
     free(FFT2);
     free(P);

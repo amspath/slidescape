@@ -514,7 +514,7 @@ void draw_layers_window(app_state_t* app_state) {
         if (layers_window_selected_image_index > 0) {
             ImGui::SameLine();
             if (ImGui::Button("Re-register")) {
-                image_transform_t transform = do_image_registration(app_state->loaded_images + 0, image, 3);
+                image_transform_t transform = do_image_registration(app_state->loaded_images + 0, image, 2);
                 if (transform.is_valid) {
                     // apply translation
                     if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {

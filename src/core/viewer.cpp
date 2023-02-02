@@ -156,7 +156,7 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool
     if (need_image_registration && arrlen(app_state->loaded_images) > 1) {
         target_layer_time = 1.0f;
         image_t* parent_image = app_state->loaded_images + 0;
-        image_transform_t transform = do_image_registration(parent_image, added_image, 2);
+        image_transform_t transform = do_image_registration(parent_image, added_image, 1);
         if (transform.is_valid) {
             // apply translation
             if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {
@@ -971,7 +971,7 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
                 target_layer_time = 0.5f;
             }
             if (is_key_down(input, KEY_B)) {
-                if (scene->control.y != 0.0f | scene->control.x != 0.0f) {
+                if (scene->control.y != 0.0f || scene->control.x != 0.0f) {
                     scene->panning_velocity = V2F(0.0f,0.0f);
                     target_layer_time += delta_time * scene->control.x * 1.0f;
                     target_layer_time = CLAMP(target_layer_time, 0.0f, 1.0f);
@@ -979,7 +979,7 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
                 }
             }
             if (is_key_down(input, KEY_N)) {
-                if (scene->control.y != 0.0f | scene->control.x != 0.0f) {
+                if (scene->control.y != 0.0f || scene->control.x != 0.0f) {
                     i32 overlay_image_index = 1;
                     image_t* image_to_nudge = app_state->loaded_images + overlay_image_index;
                     v2f delta = v2f_scale(delta_time * 10.0f, scene->control);
