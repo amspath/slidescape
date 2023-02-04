@@ -102,6 +102,9 @@ directory_listing_t* create_directory_listing_and_find_first_file(const char* di
 	if (data->dp != NULL) {
 		struct dirent* ep;
 		while ((ep = readdir(data->dp))) {
+            if (ep->d_name[0] == '.') {
+                continue;
+            }
 			if (extension == NULL) {
 				data->found_filename = ep->d_name;
 				data->extension = extension;
