@@ -524,11 +524,15 @@ void draw_layers_window(app_state_t* app_state) {
             }
             ImGui::SameLine();
             if (ImGui::Button("Re-register (local)")) {
-                image_transform_t transform = do_local_image_registration(app_state->loaded_images + 0, image, app_state->scene.camera, app_state->scene.zoom.level, 1024);
-                if (transform.is_valid) {
+                console_print("\nLocal image registration:\n");
+                image_transform_t transform1 = do_local_image_registration(app_state->loaded_images + 0, image, app_state->scene.camera, app_state->scene.zoom.level, 2048, REGISTER_PREPROCESS_NONE);
+                image_transform_t transform2 = do_local_image_registration(app_state->loaded_images + 0, image, app_state->scene.camera, app_state->scene.zoom.level, 2048, REGISTER_PREPROCESS_ISOLATE_HEMATOXYLIN);
+                image_transform_t best_transform = (transform1.response > transform2.response) ? transform1 : transform2;
+//                image_transform_t best_transform = transform1;
+                if (best_transform.is_valid) {
                     // apply differential translation
-                    if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {
-                        image->origin_offset = v2f_add(image->origin_offset, transform.translate);
+                    if (best_transform.translate.x != 0.0f || best_transform.translate.y != 0.0f) {
+                        image->origin_offset = v2f_add(image->origin_offset, best_transform.translate);
                     }
                 }
             }

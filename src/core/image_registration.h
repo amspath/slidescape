@@ -25,13 +25,20 @@
 extern "C" {
 #endif
 
+typedef enum image_register_preprocess_method_enum {
+    REGISTER_PREPROCESS_UNDEFINED = 0,
+    REGISTER_PREPROCESS_NONE = 1,
+    REGISTER_PREPROCESS_ISOLATE_HEMATOXYLIN = 2,
+} image_register_preprocess_method_enum;
+
 typedef struct image_transform_t {
     bool is_valid;
     v2f translate;
+    float response;
 } image_transform_t;
 
 image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top);
-image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width);
+image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width, image_register_preprocess_method_enum preprocess_method);
 
 #ifdef __cplusplus
 }

@@ -156,7 +156,7 @@ static void fftshift_f(real_t* restrict src, real_t* restrict dst, i32 w, i32 h)
 // https://en.wikipedia.org/wiki/Phase_correlation
 // https://sthoduka.github.io/imreg_fmt/docs/phase-correlation/
 
-v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, float background, float* response) {
+v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, float background, float* response, i32 offset_limit) {
 
 //	debug_create_luminance_png(src1->data, src1->w, src1->h, 1.0f, "patch1_Y.png");
 //	debug_create_luminance_png(src2->data, src2->w, src2->h, 1.0f, "patch2_Y.png");
@@ -247,8 +247,49 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 	if (create_debug_pngs) debug_create_luminance_png(C, w, h, 10.0f * scale, "phasecorr_real.png");
 	if (create_debug_pngs) debug_create_luminance_png(C_shifted, w, h, 10.0f * scale, "phasecorr_real_shifted.png");
 
+    // find highest and second highest peak
 	real_t highest = 0.0f;
-	v2i peak = find_highest_peak(C_shifted, w, h, &highest);
+    real_t lowest = -0.01f;
+	v2i peak = {};//find_highest_peak(C_shifted, w, h, &highest);
+    real_t second_highest = 0.0f;
+    v2i second_highest_peak = {};
+
+    bounds2i search_bounds = {0, 0, w, h};
+    if (offset_limit > 0) {
+        search_bounds.min.x = ATLEAST(0, w/2 - offset_limit);
+        search_bounds.min.y = ATLEAST(0, h/2 - offset_limit);
+        search_bounds.max.x = ATMOST(w, w/2 + offset_limit);
+        search_bounds.max.y = ATMOST(h, h/2 + offset_limit);
+    }
+
+    for (i32 y = search_bounds.min.y; y < search_bounds.max.y; ++y) {
+        real_t* row = C_shifted + y * w;
+        for (i32 x = search_bounds.min.x; x < search_bounds.max.x; ++x) {
+            real_t value = row[x];
+            if (value > highest) {
+                // NOTE: we require the second highest peak to be separated by some distance from the first peak
+                i32 manhattan_distance_from_last_highest = abs(peak.x - x) + abs(peak.y - y);
+                if (manhattan_distance_from_last_highest > 4) {
+                    second_highest = highest;
+                    second_highest_peak = peak;
+                }
+                highest = value;
+                peak = (v2i){x, y};
+            } else if (value > second_highest) {
+                i32 manhattan_distance_from_last_highest = abs(peak.x - x) + abs(peak.y - y);
+                if (manhattan_distance_from_last_highest > 4) {
+                    second_highest = value;
+                    second_highest_peak = (v2i){x, y};
+                }
+            }
+            if (value < lowest) {
+                lowest = value;
+            }
+        }
+    }
+    float ratio_between_peaks = (highest - lowest) / (second_highest - lowest);
+    float dist_sq = SQUARE(peak.x - second_highest_peak.x) + SQUARE(peak.y - second_highest_peak.y);
+    float distance_between_peaks = sqrtf(dist_sq);
 
     // Subpixel shifting using method by Foroosh et al., see:
     // https://en.wikipedia.org/wiki/Phase_correlation#cite_note-1
@@ -303,7 +344,9 @@ v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, floa
 	peak.x -= (w/2);
 	peak.y -= (h/2);
     v2f peak_exact = {(float)peak.x + dx, (float)peak.y + dy};
-	console_print("Phase correlation: highest peak (%d, %d), value = %g; subpixel shift (%g, %g)\n", peak.x, peak.y, highest, peak_exact.x, peak_exact.y);
+    highest *= scale;
+    if (response) *response = highest;
+	console_print("Phase correlation: highest peak (%d, %d), value = %g, ratio between peaks = %g; dist between peaks = %g; subpixel shift (%g, %g)\n", peak.x, peak.y, highest, ratio_between_peaks, distance_between_peaks, peak_exact.x, peak_exact.y);
 
 	if (check) {
         // NOTE: the inverse DFT should give the original grayscale image back (sanity check)

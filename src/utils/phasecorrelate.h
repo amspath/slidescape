@@ -29,5 +29,5 @@ typedef struct buffer2d_t {
 } buffer2d_t;
 
 
-v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, float background, float* response);
+v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, float background, float* response, i32 offset_limit);
 

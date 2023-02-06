@@ -166,7 +166,10 @@ static void isolate_hematoxylin_signal(uint32_t* pixels, float* dest, i32 pixel_
     }
 }
 
-image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width) {
+
+
+image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width,
+                                              image_register_preprocess_method_enum preprocess_method) {
     image_transform_t result = {};
 
     if (!(image1->backend == IMAGE_BACKEND_OPENSLIDE && image2->backend == IMAGE_BACKEND_OPENSLIDE)) {
@@ -203,9 +206,7 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
         return result;
     }
 
-    // TODO: make configurable
-    bool need_isolate_hematoxylin = true;
-    if (need_isolate_hematoxylin) {
+    if (preprocess_method == REGISTER_PREPROCESS_ISOLATE_HEMATOXYLIN) {
         uint32_t* rgb_region1 = calloc(1, w * h * sizeof(float));
         uint32_t* rgb_region2 = calloc(1, w * h * sizeof(float));
 
@@ -219,11 +220,11 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
         convert_bgra_to_rgba(rgb_region1, w * h);
         convert_bgra_to_rgba(rgb_region2, w * h);
 
-//    stbi_write_jpg("rgb_thumb1.jpg", w, h, 4, rgb_region1, 80);
-//    stbi_write_jpg("rgb_thumb2.jpg", w, h, 4, rgb_region2, 80);
+//        stbi_write_jpg("rgb_thumb1.jpg", w, h, 4, rgb_region1, 80);
+//        stbi_write_jpg("rgb_thumb2.jpg", w, h, 4, rgb_region2, 80);
 
-//    isolate_hematoxylin_signal(rgb_region1, region1, w * h, 230.0f / 255.0f);
-        isolate_hematoxylin_signal(rgb_region2, region2, w * h, 230.0f / 255.0f);
+//        isolate_hematoxylin_signal(rgb_region1, region1, w * h, 1.0f);
+        isolate_hematoxylin_signal(rgb_region2, region2, w * h, 1.0f);
 
         free(rgb_region1);
         free(rgb_region2);
@@ -244,7 +245,13 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
     buffer2d_t input1 = { .w = w, .h = h, .data = region1};
     buffer2d_t input2 = { .w = w, .h = h, .data = region2};
 
-    v2f pixel_shift = phase_correlate(&input1, &input2, NULL, 1.0f, NULL);
+    // mistrust large offsets (somewhat arbitrary values!)
+    i32 offset_limit = 500;
+    if (preprocess_method == REGISTER_PREPROCESS_ISOLATE_HEMATOXYLIN) {
+        offset_limit = 200;
+    }
+
+    v2f pixel_shift = phase_correlate(&input1, &input2, NULL, 1.0f, &result.response, offset_limit);
     pixel_shift.x *= image2->mpp_x ;//* level_image2->downsample_factor;
     pixel_shift.y *= image2->mpp_y ;//* level_image2->downsample_factor;
 
@@ -252,7 +259,7 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
     result.is_valid = true;
 
     console_print("Local image registration (on level 0): level0 pixel offset = (%.0f, %.0f), io time = %g seconds, processing time = %g seconds\n",
-                  level, pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
+                  pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
                   get_seconds_elapsed(start, clock_after_read), get_seconds_elapsed(clock_after_read, get_clock()));
 
     free(region1);
@@ -310,7 +317,7 @@ image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 le
     buffer2d_t input1 = { .w = w1, .h = h1, .data = region1};
     buffer2d_t input2 = { .w = w2, .h = h2, .data = region2};
 
-    v2f pixel_shift = phase_correlate(&input1, &input2, NULL, 1.0f, NULL);
+    v2f pixel_shift = phase_correlate(&input1, &input2, NULL, 1.0f, &result.response, 0);
     pixel_shift.x *= image2->mpp_x * level_image2->downsample_factor;
     pixel_shift.y *= image2->mpp_y * level_image2->downsample_factor;
 
