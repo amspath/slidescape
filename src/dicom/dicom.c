@@ -16,6 +16,8 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#define DICOM_IMPL
+
 #include "common.h"
 #include "platform.h"
 #include "mathutils.h"
@@ -172,24 +174,33 @@ void lookup_tester() {
 }
 #endif
 
-static dicom_uid_enum dicom_uid_lookup(const char* uid, i32 len) {
+
+static dicom_uid_enum dicom_uid_lookup(const char* uid_str, u32 len) {
 	// TODO: hash table
-	if (len > 14 && strncmp(uid, "1.2.840.10008.", 14) == 0) {
+	if (len > 14 && strncmp(uid_str, "1.2.840.10008.", 14) == 0) {
 		for (i32 i = 1; i < COUNT(dicom_dict_uid_entries); ++i) {
 			dicom_dict_uid_entry_t* entry = dicom_dict_uid_entries + i;
-			if (strncmp(uid+14, entry->uid_last_part, len - 14) == 0) {
+			if (strncmp(uid_str + 14, entry->uid_last_part, len - 14) == 0) {
 				return i;
 			}
 		}
-		char uid_copy[65] = {};
-		strncpy(uid_copy, uid, MIN(len, sizeof(uid_copy)-1));
-		console_print("DICOM UID not found: %s\n", uid_copy);
+		console_print("DICOM UID not found: %s\n", uid_str);
 	}
 	return 0;
 }
 
-static dicom_dict_uid_entry_t* dicom_uid_get_entry(const char* uid, i32 len) {
-	dicom_uid_enum uid_index = dicom_uid_lookup(uid, len);
+dicom_ui_t dicom_parse_uid(str_t s) {
+    dicom_ui_t ui = {};
+    i32 len = ATMOST(s.len, sizeof(ui.value)-1);
+    strncpy(ui.value, s.s, len);
+    ui.value[len] = '\0';
+    ui.len = strlen(ui.value);
+    ui.as_enum = dicom_uid_lookup(ui.value, ui.len);
+    return ui;
+}
+
+static dicom_dict_uid_entry_t* dicom_uid_get_entry(const dicom_ui_t* uid) {
+	dicom_uid_enum uid_index = uid->as_enum;
 	if (uid_index > 0) {
 		return dicom_dict_uid_entries + uid_index;
 	} else {
@@ -300,10 +311,11 @@ static void debug_print_dicom_element(dicom_instance_t* instance, dicom_data_ele
 			if (length > 0) {
 				memrw_printf(&string_builder, " - \"%s\"", identifier);
 				if (element.vr == DICOM_VR_UI) {
-					dicom_dict_uid_entry_t* uid_entry = dicom_uid_get_entry(identifier, length);
+                    dicom_ui_t ui = dicom_parse_uid((str_t){(const char*) element_data, length});
+					dicom_dict_uid_entry_t* uid_entry = dicom_uid_get_entry(&ui);
 					if (uid_entry) {
-						const char* keyword = dicom_dict_string_pool + uid_entry->keyword_offset;
-						memrw_printf(&string_builder, " - %s", keyword);
+						const char* uid_keyword = dicom_dict_string_pool + uid_entry->keyword_offset;
+						memrw_printf(&string_builder, " - %s", uid_keyword);
 					}
 				}
 			}
@@ -454,25 +466,105 @@ dicom_cs_t dicom_parse_code_string(str_t s, str_t* next) {
 		result.value[last_char--] = '\0';
 		if (last_char <= 0) break;
 	}
+    result.present = true;
 	return result;
 }
 
+dicom_sh_t dicom_parse_short_string(str_t s) {
+    dicom_sh_t result = {};
+    i32 bytes_written = 0;
+    bool in_leading_section = true;
+    for (i32 i = 0; i < s.len; ++i) {
+        char c = s.s[i];
+        if (c == '\0') break;
+        if (in_leading_section && c == ' ') continue;
+        in_leading_section = false;
+        if (c == '\\') {
+            break;
+        }
+        result.value[bytes_written++] = c;
+        if (bytes_written >= COUNT(result.value)-1) break;
+    }
+    // Strip trailing whitespace
+    i32 last_char = ATLEAST(0, bytes_written - 1);
+    while (result.value[last_char] == ' ') {
+        result.value[last_char--] = '\0';
+        if (last_char <= 0) break;
+    }
+    result.present = true;
+    return result;
+}
+
+// similar to atoi(), but for non-zero-terminated strings
+static i32 antoi(const char* str, i32 len) {
+    i32 num = 0;
+    bool neg = false;
+    while (isspace(*str)) {
+        ++str;
+        --len;
+    }
+    if (*str == '-') {
+        neg = true;
+        ++str;
+        --len;
+    }
+    while (len > 0 && isdigit(*str)) {
+        num = 10*num + (*str - '0');
+        ++str;
+        --len;
+    }
+    if (neg) num = -num;
+    return num;
+}
+
+dicom_da_t dicom_parse_date(str_t s) {
+    dicom_da_t result = {};
+    if (s.len == 8) {
+        // YYYYMMDD
+        result.day = antoi(s.s+6, 2);
+        result.month = antoi(s.s+4, 2);
+        result.year = antoi(s.s, 4);
+    }
+    result.present = true;
+    return result;
+}
+
+dicom_tm_t dicom_parse_time(str_t s) {
+    dicom_tm_t result = {};
+    u32 len = dicom_get_element_length_without_trailing_whitespace((u8*)s.s, s.len);
+    if (len >= 2) {
+        result.hours = antoi(s.s, 2);
+    }
+    if (len >= 4) {
+        result.minutes = antoi(s.s+2, 2);
+    }
+    if (len >= 6) {
+        result.seconds = antoi(s.s+4, 2);
+    }
+    if (len >= 8 && len <= 14) {
+        result.fractional_part = antoi(s.s+7, (i32)len - 7);
+    }
+    result.present = true;
+    return result;
+}
 
 static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, dicom_data_element_t element) {
 	u8* data = instance->data + element.data_offset;
 	char* data_str = (char*)data;
+    str_t str = {(char*)data, element.length};
 
 	switch(element.tag.group) {
 		default: break;
 		case 0x0002: {
 			if (element.vr == DICOM_VR_UI) {
 				if (element.tag.as_enum == DICOM_MediaStorageSOPClassUID) {
-					dicom_uid_enum uid = dicom_uid_lookup(data_str, element.length);
-					instance->media_storage_sop_class_uid = uid;
-					if (uid == DICOM_VLWholeSlideMicroscopyImageStorage) {
-
+                    instance->sop_class_uid = dicom_parse_uid(str);
+					if (instance->sop_class_uid.as_enum == DICOM_VLWholeSlideMicroscopyImageStorage) {
+                        //?
 					}
-				}
+				} else if (element.tag.as_enum == DICOM_MediaStorageSOPInstanceUID) {
+                    instance->sop_instance_uid = dicom_parse_uid(str);
+                }
 			}
 		} break;
 		case 0x0008: {
@@ -482,28 +574,66 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 					// Handled by SOP class
 				} break;
 				case DICOM_SOPClassUID: {
-					// TODO
+                    // NOTE: should be identical to DICOM_MediaStorageSOPClassUID, ignore if already present
+                    if (instance->sop_class_uid.len == 0) {
+                        instance->sop_class_uid = dicom_parse_uid(str);
+                    }
 				} break;
+                case DICOM_SOPInstanceUID: {
+                    // NOTE: should be identical to DICOM_MediaStorageSOPInstanceUID, ignore if already present
+                    if (instance->sop_instance_uid.len == 0) {
+                        instance->sop_instance_uid = dicom_parse_uid(str);
+                    }
+                } break;
+
+                    // Module: General Study
+                case DICOM_StudyDate: {
+                    instance->general_study.StudyDate = dicom_parse_date(str);
+                } break;
+                case DICOM_StudyTime: {
+                    instance->general_study.StudyTime = dicom_parse_time(str);
+                } break;
+                case DICOM_AccessionNumber: {
+                    instance->general_study.AccessionNumber = dicom_parse_short_string(str);
+                } break;
+                case DICOM_ReferringPhysicianName: {
+//                    instance->general_study.ReferringPhysicianName.value = dicom_parse_person_name(str);
+                    instance->general_study.ReferringPhysicianName.present = true;
+                } break;
+
+                // Module: General Series
+                case DICOM_Modality: {
+                    instance->general_series.Modality = dicom_parse_code_string(str, NULL);
+                } break;
+
+                case DICOM_ContentDate: {
+                    // not handled right now
+                } break;
+                case DICOM_ContentTime: {
+                    // not handled right now
+                } break;
 			}
 		} break;
 		case 0x0020: {
 			switch(element.tag.as_u32) {
 				default: break;
-				case DICOM_StudyInstanceUID: {
-					// TODO
 
-				} break;
-				case DICOM_SeriesInstanceUID: {
-					// TODO
-				} break;
-				case DICOM_StudyID: {
-					// TODO
-				} break;
+                // Module: General Study
+                case DICOM_StudyInstanceUID: {
+                    instance->general_study.StudyInstanceUID = dicom_parse_uid(str);
+                } break;
+                case DICOM_StudyID: {
+                    instance->general_study.StudyID = dicom_parse_short_string(str);
+                } break;
+
+                case DICOM_SeriesInstanceUID: {
+                    // TODO
+                } break;
 				case DICOM_SeriesNumber: {
 					// TODO
 				} break;
 				case DICOM_InstanceNumber: {
-					instance->instance_number = dicom_parse_integer_string((str_t){data_str, element.length}, NULL);
+					instance->instance_number = dicom_parse_integer_string(str, NULL);
 				} break;
 				case DICOM_PatientOrientation: {
 					// TODO
@@ -514,7 +644,23 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 				case DICOM_PositionReferenceIndicator: {
 					// TODO
 				} break;
-
+                case DICOM_SOPInstanceUIDOfConcatenationSource: {
+                    // not handled for now
+                } break;
+                case DICOM_ConcatenationUID: {
+                    // NOTE: if this is present, we are dealing with a concatenation
+                    instance->concatenation_uid = dicom_parse_uid(str);
+                } break;
+                case DICOM_InConcatenationNumber: {
+                    instance->in_concatenation_number = *(u16*)data;
+                } break;
+                case DICOM_InConcatenationTotalNumber: {
+                    // value is optional; don't assume present
+                } break;
+                case DICOM_ConcatenationFrameOffsetNumber: {
+                    // NOTE: If this is part of a concatenation, add this to the frame number in the file to get the actual frame number
+                    instance->concatenation_frame_offset_number = *(u32*)data;
+                } break;
 			}
 		} break;
 		case 0x0028: {
@@ -545,7 +691,7 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 				} break;
 				case DICOM_PlanarConfiguration: { instance->planar_configuration = *(u16*)data; } break;
 				case DICOM_NumberOfFrames: {
-					instance->number_of_frames = dicom_parse_integer_string((str_t){data_str, element.length}, NULL);
+					instance->number_of_frames = dicom_parse_integer_string(str, NULL);
 				} break;
 				case DICOM_Rows:                instance->rows = *(u16*)data; break;
 				case DICOM_Columns:             instance->columns = *(u16*)data; break;
@@ -564,11 +710,10 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 				} break;
 				case DICOM_LossyImageCompressionMethod: {
 					dicom_lossy_image_compression_method_enum method = DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_UNKNOWN;
-					static const char* possible_values[] = {"ISO_10918_1", "ISO_14495_1", "ISO_15444_1", "ISO_13818_2", "ISO_14496_10", "ISO_23008_2"};
-					ASSERT(COUNT(possible_values) == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_23008_2); // enum value equals index+1
-					dicom_cs_t cs = dicom_parse_code_string((str_t){data_str, element.length}, NULL);
-					for (i32 i = 0; i < COUNT(possible_values); ++i) {
-						if (strcmp(cs.value, possible_values[i]) == 0) {
+					ASSERT(COUNT(dicom_lossy_image_compression_method_strings) == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_23008_2); // enum value equals index+1
+					dicom_cs_t cs = dicom_parse_code_string(str, NULL);
+					for (i32 i = 0; i < COUNT(dicom_lossy_image_compression_method_strings); ++i) {
+						if (strcmp(cs.value, dicom_lossy_image_compression_method_strings[i]) == 0) {
 							method = i + 1;
 							break;
 						}
@@ -579,14 +724,14 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 		} break;
 	}
 
-	if (instance->media_storage_sop_class_uid == DICOM_VLWholeSlideMicroscopyImageStorage) {
+	if (instance->sop_class_uid.as_enum == DICOM_VLWholeSlideMicroscopyImageStorage) {
 		dicom_wsi_interpret_top_level_data_element(instance, element);
 	}
 }
 
 static void dicom_interpret_nested_data_element(dicom_instance_t* instance, dicom_data_element_t element) {
 
-	if (instance->media_storage_sop_class_uid == DICOM_VLWholeSlideMicroscopyImageStorage) {
+	if (instance->sop_class_uid.as_enum == DICOM_VLWholeSlideMicroscopyImageStorage) {
 		dicom_wsi_interpret_nested_data_element(instance, element);
 	}
 }
@@ -604,15 +749,9 @@ static void dicom_parser_pop_nesting_level(dicom_instance_t* instance, dicom_par
 		instance->nested_item_numbers[0] = 0;
 	} else if (instance->nesting_level >= 2 && parent_element->vr == DICOM_VR_SQ) {
 		// NOTE: Sequence data elements are always 2 nesting levels apart, in between them will be Items.
-		ASSERT((instance->pos_stack + instance->nesting_level - 1)->element.tag.as_enum == DICOM_Item);
+//		ASSERT((instance->pos_stack + instance->nesting_level - 1)->element.tag.as_enum == DICOM_Item);
 		dicom_data_element_t* parent_sequence = &(instance->pos_stack + instance->nesting_level - 2)->element;
 
-	}
-}
-
-static void dicom_finalize_sequence_item(dicom_instance_t* instance) {
-	if (instance->media_storage_sop_class_uid == DICOM_VLWholeSlideMicroscopyImageStorage) {
-		dicom_wsi_finalize_sequence_item(instance);
 	}
 }
 
@@ -640,11 +779,13 @@ bool dicom_read_encapsulated_pixel_data_item(dicom_instance_t* instance, dicom_d
 
 				instance->pixel_data_offset_count = offset_count;
 				instance->pixel_data_start_offset = element.data_offset + element.length;
+                ASSERT(instance->pixel_data_offsets == NULL);
 				instance->pixel_data_offsets = malloc(offset_count * sizeof(u32));
 				ASSERT(offset_count == instance->number_of_frames);
 				ASSERT(instance->pixel_data_offsets != NULL);
 				ASSERT(offset_count * sizeof(u32) == element.length);
 				memcpy(instance->pixel_data_offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
+                ASSERT(instance->pixel_data_sizes == NULL);
 				instance->pixel_data_sizes = malloc(offset_count * sizeof(u32));
 				for (i32 i = 0; i < offset_count - 1; ++i) {
 					i64 size = instance->pixel_data_offsets[i + 1] - instance->pixel_data_offsets[i];
@@ -674,6 +815,8 @@ bool dicom_read_encapsulated_pixel_data_item(dicom_instance_t* instance, dicom_d
 				// https://dicom.nema.org/dicom/2013/output/chtml/part05/sect_A.4.html
 				instance->pixel_data_offset_count = instance->number_of_frames;
 				instance->pixel_data_start_offset = element.data_offset + element.length;
+                ASSERT(instance->pixel_data_offsets == NULL);
+                ASSERT(instance->pixel_data_sizes == NULL);
 				instance->pixel_data_offsets = calloc(1, instance->pixel_data_offset_count * sizeof(u32));
 				instance->pixel_data_sizes = calloc(1, instance->pixel_data_offset_count * sizeof(u32));
 
@@ -726,7 +869,6 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 					// Advance position
 					current_position->offset = parent_element->data_offset + parent_element->length;
 					if (parent_element->tag.as_u32 == DICOM_Item) {
-						dicom_finalize_sequence_item(instance);
 
 						++current_position->item_number;
 						instance->nested_item_numbers[(instance->nesting_level + 1) / 2] = current_position->item_number;
@@ -915,6 +1057,62 @@ bool dicom_read_chunk(dicom_instance_t* instance) {
 
 }
 
+bool dicom_instance_index_pixel_data(dicom_instance_t* instance) {
+    bool success = false;
+    if (instance->is_pixel_data_encapsulated && !instance->are_all_offsets_read) {
+
+        size_t chunk_size = MEGABYTES(4);
+        temp_memory_t temp = begin_temp_memory_on_local_thread();
+        void* chunk = arena_push_size(temp.arena, chunk_size);
+        size_t filesize = instance->total_bytes_in_stream  + (i64)sizeof(dicom_header_t);
+
+        bool finished = false;
+        do {
+            dicom_parser_pos_t* current_position = instance->pos_stack + instance->nesting_level;
+            i64 file_offset = current_position->element.data_offset + (i64)sizeof(dicom_header_t);
+            size_t bytes_left_in_file = filesize - file_offset;
+            ASSERT(bytes_left_in_file >= 0);
+            size_t bytes_to_read = MIN(chunk_size, bytes_left_in_file);
+
+            size_t bytes_read = file_handle_read_at_offset(chunk, instance->file_handle, file_offset, bytes_to_read);
+
+            if (bytes_read == bytes_to_read) {
+                // Hack: trick the parser into thinking the data buffer actually starts at the start of the DICOM stream,
+                // even though we are skipping that and really starting where we left off previously
+                // NOTE: this means that instance->data now points to an invalid memory location (caution!)
+                instance->data = (u8*)chunk - current_position->element.data_offset;
+                instance->bytes_read_from_file = current_position->element.data_offset + (i64)bytes_to_read;
+
+                finished = dicom_read_chunk(instance);
+
+            } else {
+                console_print_error("dicom_instance_index_pixel_data(): error reading DICOM instance from file\n");
+                break;
+            }
+        } while (!finished);
+        success = finished;
+
+        release_temp_memory(&temp);
+    }
+
+    if (!instance->are_all_offsets_read) {
+        console_print_error("dicom_instance_index_pixel_data(): frame offsets could not be read\n");
+        success = false;
+    }
+
+    // update tiles
+    if (success) {
+        for (i32 i = 0; i < instance->tile_count; ++i) {
+            dicom_tile_t* tile = instance->tiles + i;
+            tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[tile->frame_index];
+            tile->data_size = instance->pixel_data_sizes[tile->frame_index];
+            tile->is_offset_known = true;
+        }
+    }
+
+    return success;
+}
+
 dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file) {
 
 	dicom_instance_t instance = {};
@@ -930,7 +1128,7 @@ dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file
 
 		if (file->filesize > sizeof(dicom_header_t)) {
 			memrw_t buffer = memrw_create(bytes_to_read);
-			size_t bytes_read = file_stream_read(buffer.data, (size_t)bytes_to_read, fp);
+			i64 bytes_read = file_stream_read(buffer.data, (size_t)bytes_to_read, fp);
 			buffer.used_size = bytes_read;
 
 			if (bytes_read == bytes_to_read) {
@@ -940,7 +1138,7 @@ dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file
 					if (dicom_series->debug_output_file) {
 						fprintf(dicom_series->debug_output_file, "\nFile: %s\n\n", file->filename);
 					}
-					i64 payload_bytes = (buffer.used_size - payload_offset);
+					i64 payload_bytes = ((i64)buffer.used_size - payload_offset);
 					ASSERT(payload_bytes > 0);
 					i64 total_bytes_in_stream = file->filesize - payload_offset;
 					ASSERT(total_bytes_in_stream >= payload_bytes);
@@ -1026,7 +1224,7 @@ typedef struct indexed_value_t {
 
 // for qsort
 static int compare_indexed_value (const void* a, const void* b) {
-	return ( ((indexed_value_t*)b)->value - ((indexed_value_t*)a)->value );
+	return (int)( ((indexed_value_t*)b)->value - ((indexed_value_t*)a)->value );
 }
 
 bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* directory) {
@@ -1124,6 +1322,7 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 	for (i32 i = 0; i < dicom->wsi.level_count; ++i) {
 		dicom_instance_t* instance = dicom->wsi.level_instances[i];
 
+        ASSERT(instance->tiles == NULL);
 		instance->width_in_tiles = (instance->total_pixel_matrix_columns + instance->columns - 1) / instance->columns;
 		instance->height_in_tiles = (instance->total_pixel_matrix_rows + instance->rows - 1) / instance->rows;
 		instance->tile_count = instance->width_in_tiles * instance->height_in_tiles;
@@ -1140,10 +1339,11 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 				tile->exists = true;
 				tile->instance = instance; //NOTE: points to element in dicom_series->instances array
 				tile->frame_index = frame_index;
-				if (instance->pixel_data_offsets && instance->pixel_data_sizes) {
+				if (instance->pixel_data_offsets && instance->pixel_data_sizes && instance->are_all_offsets_read) {
 					// TODO: bounds check
 					tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[frame_index];
 					tile->data_size = instance->pixel_data_sizes[frame_index];
+                    tile->is_offset_known = true;
 				}
 			}
 		} else {
@@ -1157,10 +1357,11 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 					tile->exists = true;
 					tile->instance = instance;
 					tile->frame_index = frame_index;
-					if (instance->pixel_data_offsets && instance->pixel_data_sizes) {
+					if (instance->pixel_data_offsets && instance->pixel_data_sizes && instance->are_all_offsets_read) {
 						// TODO: bounds check
 						tile->data_offset_in_file = sizeof(dicom_header_t) + instance->pixel_data_start_offset + instance->pixel_data_offsets[frame_index];
 						tile->data_size = instance->pixel_data_sizes[frame_index];
+                        tile->is_offset_known = true;
 					}
 				}
 			}
@@ -1352,10 +1553,16 @@ void dicom_instance_destroy(dicom_instance_t* instance) {
 		platform_sleep(1);
 		do_worker_work(&global_work_queue, 0);
 	}
+    // TODO: use pool/arena allocator so we can free everything in one go?
 	if (instance->pixel_data_offsets) free(instance->pixel_data_offsets);
 	if (instance->pixel_data_sizes) free(instance->pixel_data_sizes);
 	if (instance->tiles) free(instance->tiles);
 	arrfree(instance->per_frame_plane_position_slide);
+    for (i32 i = 0; i < arrlen(instance->optical_paths); ++i) {
+        dicom_optical_path_t* optical_path = instance->optical_paths + i;
+        if (optical_path->icc_profile) free(optical_path->icc_profile);
+    }
+    arrfree(instance->optical_paths);
 	if (instance->file_handle) file_handle_close(instance->file_handle);
 }
 
@@ -1364,6 +1571,7 @@ void dicom_destroy(dicom_series_t* dicom_series) {
 		dicom_instance_t* instance = dicom_series->instances + i;
 		dicom_instance_destroy(instance);
 	}
+    arrfree(dicom_series->instances);
 }
 
 // Undo the encapsulation of encoded pixel data

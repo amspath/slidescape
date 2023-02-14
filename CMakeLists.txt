@@ -118,7 +118,10 @@ function(prepend_path SOURCE_FILES PREFIX)
 endfunction()
 prepend_path(JPEG_SOURCE_FILES deps/jpeg)
 
-set(WITH_SIMD 1) # Set to 0 to disable the SIMD code for libjpeg-turbo
+#set(WITH_SIMD 1) # Set to 0 to disable the SIMD code for libjpeg-turbo
+if (NOT DEFINED WITH_SIMD)
+    set(WITH_SIMD 1)
+endif()
 if (WITH_SIMD EQUAL 1)
     # requirements for deps/jpeg/simd/CMakeLists.txt
     include(CheckCSourceCompiles) # for check_c_source_compiles()

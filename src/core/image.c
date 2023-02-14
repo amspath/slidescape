@@ -466,8 +466,8 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
                 tile->tile_x = tile_index % level_image->width_in_tiles;
                 tile->tile_y = tile_index / level_image->width_in_tiles;
 
-                dicom_tile_t* isyntax_tile = level_instance->tiles + tile_index;
-                if (!isyntax_tile->exists) {
+                dicom_tile_t* dicom_tile = level_instance->tiles + tile_index;
+                if (!dicom_tile->exists) {
                     tile->is_empty = true;
                 }
             }
@@ -750,5 +750,15 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
         if (intermediate_pixel_buffer) free(intermediate_pixel_buffer);
     }
     return success;
+}
+
+void do_level_image_indexing(image_t* image, level_image_t* level_image, i32 scale) {
+    if (image->backend == IMAGE_BACKEND_DICOM) {
+        if (dicom_instance_index_pixel_data(image->dicom.wsi.level_instances[scale])) {
+            level_image->needs_indexing = false;
+
+
+        }
+    }
 }
 

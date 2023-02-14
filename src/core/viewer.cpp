@@ -499,6 +499,17 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			}
 		}
 
+        // Check if some levels still need indexing, and if so, start doing that in the background
+        for (i32 scale = highest_visible_scale; scale >= 0; --scale) {
+            ASSERT(scale >= 0 && scale < COUNT(image->level_images));
+            level_image_t *drawn_level = image->level_images + scale;
+            if (drawn_level->needs_indexing) {
+                do_level_image_indexing(image, drawn_level, scale);
+                break; // only do one at a time
+            }
+        }
+
+        // Start pulling image data from the WSI
 		if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 			isyntax_t* isyntax = &image->isyntax;
 			isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
@@ -570,6 +581,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 					for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
 
 						tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
+                        // TODO: check that the file offset is actually known (level might need indexing)
 						if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
 							continue; // nothing needs to be done with this tile
 						}

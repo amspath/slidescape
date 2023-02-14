@@ -121,6 +121,11 @@ void* worker_thread(void* parameter) {
         if (!is_queue_work_waiting_to_start(thread_info->queue)) {
             //platform_sleep(1);
             sem_wait(thread_info->queue->semaphore);
+            if (thread_info->logical_thread_index > active_worker_thread_count) {
+                // Worker is disabled, do nothing
+                platform_sleep(100);
+                continue;
+            }
         }
         do_worker_work(thread_info->queue, thread_info->logical_thread_index);
     }

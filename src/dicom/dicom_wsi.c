@@ -22,12 +22,19 @@
 
 #include "jpeg_decoder.h"
 
+
+#define array_last_maybe_expand(array, index) \
+  (((arrlen((array)) <= (index))              \
+       ? (arraddnptr((array), 1), memset((array) + (index), 0, sizeof((array)[0])), 0)         \
+       : 0), \
+   (array) + (index))
+
 // C.8.12.6.1 Plane Position (Slide) Macro
 // https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.8.12.6.html#sect_C.8.12.6.1
 
 
 void dicom_interpret_data_element_in_plane_position_slide_sq_item(dicom_instance_t* instance, dicom_data_element_t element) {
-	dicom_plane_position_slide_t* plane_position_slide = &instance->current_plane_position_slide;
+	dicom_plane_position_slide_t* plane_position_slide = array_last_maybe_expand(instance->per_frame_plane_position_slide, instance->pos_stack[2].item_number);
 	u8* data = instance->data + element.data_offset;
 	const char* data_str = (const char*)data;
 
@@ -62,8 +69,6 @@ void dicom_interpret_data_element_in_plane_position_slide_sq_item(dicom_instance
 		} break;
 	}
 }
-
-
 
 void dicom_interpret_data_element_in_shared_functional_groups(dicom_instance_t* instance, dicom_data_element_t element) {
 	u8* data = instance->data + element.data_offset;
@@ -295,15 +300,50 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 	}
 }
 
+
 void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_data_element_t element) {
+    u8* data = instance->data + element.data_offset;
 	switch(instance->nested_sequences[0].as_u32) {
 		default: break;
+        case DICOM_OpticalPathSequence: {
+            dicom_optical_path_t* optical_path = array_last_maybe_expand(instance->optical_paths, instance->pos_stack[1].item_number);
+            // TODO: why doesn't instance->nested_sequences[0].as_u32 work properly?
+            switch(instance->pos_stack[2].element.tag.as_enum) {
+                default: break;
+                case DICOM_IlluminationTypeCodeSequence: {
+                    //TODO
+                } break;
+                    // Either IlluminationWaveLength or IlluminationColorCodeSequence is required to be present
+                case DICOM_IlluminationWaveLength: {
+                    optical_path->illumination_wavelength = *(float*)data;
+                } break;
+                case DICOM_IlluminationColorCodeSequence: {
+                    // TODO
+                } break;
+                case DICOM_ICCProfile: {
+                    optical_path->icc_profile = malloc(element.length);
+                    optical_path->icc_profile_size = element.length;
+                    memcpy(optical_path->icc_profile, data, element.length);
+                } break;
+                case DICOM_OpticalPathIdentifier: {
+                    optical_path->OpticalPathIdentifier = dicom_parse_short_string((str_t){(char*)data, element.length});
+                } break;
+            }
+        } break;
 		case DICOM_PerFrameFunctionalGroupsSequence: {
 			switch(instance->nested_sequences[1].as_u32) {
 				default: break;
 				case DICOM_PlanePositionSlideSequence: {
 					dicom_interpret_data_element_in_plane_position_slide_sq_item(instance, element);
 				} break;
+                case DICOM_OpticalPathIdentificationSequence: {
+                    switch(instance->nested_sequences[2].as_u32) {
+                        default: break;
+                        case DICOM_OpticalPathIdentifier: {
+                            // TODO: split frames over each optical path
+                        } break;
+                    }
+                } break;
 			}
 		} break;
 		case DICOM_SharedFunctionalGroupsSequence: {
@@ -318,7 +358,7 @@ void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_d
 
 						} break;
 						case DICOM_PixelSpacing: {
-							str_t next = {(const char*)instance->data + element.data_offset, element.length};
+							str_t next = {(const char*)data, element.length};
 							v2f pixel_spacing = {};
 							pixel_spacing.x = dicom_parse_decimal_string(next, &next);
 							if (next.s) {
@@ -332,22 +372,6 @@ void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_d
 				} break;
 			}
 		} break;
-	}
-}
-
-void dicom_wsi_finalize_sequence_item(dicom_instance_t* instance) {
-	switch(instance->nested_sequences[0].as_u32) {
-		default: break;
-		case DICOM_PerFrameFunctionalGroupsSequence: {
-			switch(instance->nested_sequences[1].as_u32) {
-				default: break;
-				case DICOM_PlanePositionSlideSequence: {
-					arrput(instance->per_frame_plane_position_slide, instance->current_plane_position_slide);
-					instance->current_plane_position_slide = (dicom_plane_position_slide_t){};
-				} break;
-			}
-		} break;
-
 	}
 }
 
@@ -391,7 +415,13 @@ u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 t
 				if (pixels) free(pixels);
 				return NULL;
 			}
-		}
+		} else {
+            const char* method = "unknown";
+            if (instance->lossy_image_compression_method >= 1) {
+                method = dicom_lossy_image_compression_method_strings[instance->lossy_image_compression_method - 1];
+            }
+            console_print_error("DICOM tile decode: unsupported lossy image compression method (%s)\n", method);
+        }
 	}
 	return NULL;
 }

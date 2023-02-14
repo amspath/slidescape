@@ -118,6 +118,90 @@ typedef enum dicom_image_flavor_enum {
 	DICOM_IMAGE_FLAVOR_THUMBNAIL,
 } dicom_image_flavor_enum;
 
+typedef enum dicom_modality_enum {
+    DICOM_MODALITY_UNKNOWN = 0,
+    // NOTE: we resolve by linear string lookup; 'cheat' by putting our favorite modality first in the list (which we expect to use most often anyway)
+    DICOM_MODALITY_SM = 1,  // Slide Microscopy
+    // The rest of the modalities in alphabetical order
+    DICOM_MODALITY_ANN,     // Annotation
+    DICOM_MODALITY_AR,      // Autorefraction
+    DICOM_MODALITY_ASMT,    // Content Assessment Results
+    DICOM_MODALITY_AU,      // Audio
+    DICOM_MODALITY_BDUS,    // Bone Densitometry (ultrasound)
+    DICOM_MODALITY_BI,      // Biomagnetic imaging
+    DICOM_MODALITY_BMD,     // Bone Densitometry (X-Ray)
+    DICOM_MODALITY_CR,      // Computed Radiography
+    DICOM_MODALITY_CT,      // Computed Tomography
+    DICOM_MODALITY_CTPROTOCOL, // CT Protocol (Performed)
+    DICOM_MODALITY_DMS,     // Dermoscopy
+    DICOM_MODALITY_DG,      // Diaphanography
+    DICOM_MODALITY_DOC,     // Document
+    DICOM_MODALITY_DX,      // Digital Radiography
+    DICOM_MODALITY_ECG,     // Electrocardiography
+    DICOM_MODALITY_EEG,     // Electroencephalography
+    DICOM_MODALITY_EMG,     // Electromyography
+    DICOM_MODALITY_EOG,     // Electrooculography
+    DICOM_MODALITY_EPS,     // Cardiac Electrophysiology
+    DICOM_MODALITY_ES,      // Endoscopy
+    DICOM_MODALITY_FID,     // Fiducials
+    DICOM_MODALITY_GM,      // General Microscopy
+    DICOM_MODALITY_HC,      // Hard Copy
+    DICOM_MODALITY_HD,      // Hemodynamic Waveform
+    DICOM_MODALITY_IO,      // Intra-Oral Radiography
+    DICOM_MODALITY_IOL,     // Intraocular Lens Data
+    DICOM_MODALITY_IVOCT,   // Intravascular Optical Coherence Tomography
+    DICOM_MODALITY_IVUS,    // Intravascular Ultrasound
+    DICOM_MODALITY_KER,     // Keratometry
+    DICOM_MODALITY_KO,      // Key Object Selection
+    DICOM_MODALITY_LEN,     // Lensometry
+    DICOM_MODALITY_LS,      // Laser surface scan
+    DICOM_MODALITY_MG,      // Mammography
+    DICOM_MODALITY_MR,      // Magnetic Resonance
+    DICOM_MODALITY_M3D,     // Model for 3D Manufacturing
+    DICOM_MODALITY_NM,      // Nuclear Medicine
+    DICOM_MODALITY_OAM,     // Ophthalmic Axial Measurements
+    DICOM_MODALITY_OCT,     // Optical Coherence Tomography (non-Ophthalmic)
+    DICOM_MODALITY_OP,      // Ophthalmic Photography
+    DICOM_MODALITY_OPM,     // Ophthalmic Mapping
+    DICOM_MODALITY_OPT,     // Ophthalmic Tomography
+    DICOM_MODALITY_OPTBSV,  // Ophthalmic Tomography B-scan Volume Analysis
+    DICOM_MODALITY_OPTENF,  // Ophthalmic Tomography En Face
+    DICOM_MODALITY_OPV,     // Ophthalmic Visual Field
+    DICOM_MODALITY_OSS,     // Optical Surface Scan
+    DICOM_MODALITY_OT,      // Other
+    DICOM_MODALITY_PLAN,    // Plan
+    DICOM_MODALITY_POS,     // Position Sensor
+    DICOM_MODALITY_PR,      // Presentation State
+    DICOM_MODALITY_PT,      // Positron emission tomography (PET)
+    DICOM_MODALITY_PX,      // Panoramic X-Ray
+    DICOM_MODALITY_REG,     // Registration
+    DICOM_MODALITY_RESP,    // Respiratory Waveform
+    DICOM_MODALITY_RF,      // Radio Fluoroscopy
+    DICOM_MODALITY_RG,      // Radiographic imaging (conventional film/screen)
+    DICOM_MODALITY_RTDOSE,  // Radiotherapy Dose
+    DICOM_MODALITY_RTIMAGE, // Radiotherapy Image
+    DICOM_MODALITY_RTINTENT,// Radiotherapy Intent
+    DICOM_MODALITY_RTPLAN,  // Radiotherapy Plan
+    DICOM_MODALITY_RTRAD,   // RT Radiation
+    DICOM_MODALITY_RTRECORD,// RT Treatment Record
+    DICOM_MODALITY_RTSEGANN,// Radiotherapy Segment Annotation
+    DICOM_MODALITY_RTSTRUCT,// Radiotherapy Structure Set
+    DICOM_MODALITY_RWV,     // Real World Value Map
+    DICOM_MODALITY_SEG,     // Segmentation
+    DICOM_MODALITY_SMR,     // Stereometric Relationship
+    DICOM_MODALITY_SR,      // SR Document
+    DICOM_MODALITY_SRF,     // Subjective Refraction
+    DICOM_MODALITY_STAIN,   // Automated Slide Stainer
+    DICOM_MODALITY_TEXTUREMAP, // Texture Map
+    DICOM_MODALITY_TG,      // Thermography
+    DICOM_MODALITY_US,      // Ultrasound
+    DICOM_MODALITY_VA,      // Visual Acuity
+    DICOM_MODALITY_XA,      // X-Ray Angiography
+    DICOM_MODALITY_XAPROTOCOL, // XA Protocol (Performed)
+    DICOM_MODALITY_XC,      // External-camera Photography
+
+} dicom_modality_enum;
+
 typedef struct dicom_header_t {
 	u8 preamble[128]; // the preamble will be all zeroes, if not used by a specific application/implementation
 	union {
@@ -172,15 +256,82 @@ typedef struct dicom_data_element_t {
 	i64 data_offset;
 } dicom_data_element_t;
 
+typedef struct dicom_da_t {
+    u16 year;
+    u8 month;
+    u8 day;
+    bool present;
+} dicom_da_t;
 
 typedef struct dicom_cs_t {
 	char value[17]; // 16 bytes maximum, plus an extra byte to zero-terminate the string
+    bool present;
 } dicom_cs_t;
+
+typedef struct dicom_lo_t {
+    char value[65]; // 64 bytes maximum, plus an extra byte to zero-terminate the string
+    bool present;
+} dicom_lo_t;
+
+typedef struct dicom_pn_t {
+    dicom_lo_t components[5];
+    u8 component_count;
+    bool present;
+} dicom_pn_t;
+
+typedef struct dicom_sh_t {
+    char value[17]; // 16 bytes maximum, plus an extra byte to zero-terminate the string
+    bool present;
+} dicom_sh_t;
+
+typedef struct dicom_tm_t {
+    u8 hours;
+    u8 minutes;
+    u8 seconds;
+    bool present;
+    u32 fractional_part;
+} dicom_tm_t;
+
+typedef struct dicom_ui_t {
+    char value[65]; // 64 bytes maximum, plus an extra byte to zero-terminate the string
+    bool present;
+    u16 len;
+    dicom_uid_enum as_enum;
+} dicom_ui_t;
 
 typedef struct dicom_sq_t {
 	dicom_data_element_t element;
 } dicom_sq_t;
 
+// Patient module for Composite Image IODs
+// https://dicom.nema.org/medical/dicom/current/output/chtml/part03/sect_C.7.html#table_C.7-1
+typedef struct dicom_patient_t {
+    dicom_pn_t PatientName;
+    dicom_lo_t PatientID;
+    dicom_da_t PatientBirthDate;
+    dicom_cs_t PatientSex;
+} dicom_patient_t;
+
+typedef struct dicom_general_study_t {
+    dicom_da_t StudyDate;
+    dicom_tm_t StudyTime;
+    dicom_sh_t AccessionNumber;
+    dicom_pn_t ReferringPhysicianName;
+    dicom_ui_t StudyInstanceUID;
+    dicom_sh_t StudyID;
+} dicom_general_study_t;
+
+typedef struct dicom_general_series_t {
+    dicom_cs_t Modality;
+} dicom_general_series_t;
+
+typedef struct dicom_optical_path_t {
+    i32 illumination_type; // TODO: implement
+    float illumination_wavelength;
+    u8* icc_profile;
+    u32 icc_profile_size;
+    dicom_sh_t OpticalPathIdentifier;
+} dicom_optical_path_t;
 
 typedef struct dicom_series_t dicom_series_t; // fwd declaration
 typedef struct dicom_instance_t dicom_instance_t; // fwd declaration
@@ -198,6 +349,7 @@ typedef struct dicom_tile_t {
 	u32 frame_index;
 	u32 data_offset_in_file;
 	u32 data_size;
+    bool is_offset_known;
 	bool exists;
 	u8* data;
 } dicom_tile_t;
@@ -224,6 +376,10 @@ typedef struct dicom_instance_t {
 	i32 nested_item_numbers[8];
 //	u32 current_item_number;
 	dicom_transfer_syntax_enum encoding;
+    dicom_general_study_t general_study;
+    dicom_general_series_t general_series;
+    dicom_optical_path_t current_optical_path;
+    dicom_optical_path_t* optical_paths; // array
 	u8* data;
 	i64 bytes_read_from_file;
 	i64 total_bytes_in_stream;
@@ -238,8 +394,12 @@ typedef struct dicom_instance_t {
 	u32* pixel_data_sizes; // malloc'ed
 	u32 pixel_data_start_offset;
 	u32 pixel_data_offset_count;
-	dicom_uid_enum media_storage_sop_class_uid;
-	dicom_uid_enum transfer_syntax_uid;
+    dicom_ui_t sop_class_uid;
+    dicom_ui_t sop_instance_uid;
+    dicom_ui_t transfer_syntax_uid;
+    dicom_ui_t concatenation_uid;
+    u16 in_concatenation_number;
+    u32 concatenation_frame_offset_number;
 	bool is_image_original;
 	dicom_cs_t image_flavor_cs;
 	dicom_image_flavor_enum image_flavor;
@@ -267,7 +427,6 @@ typedef struct dicom_instance_t {
 	i32 height_in_tiles;
 	v2f origin_offset;
 	dicom_tile_t* tiles; // malloc'ed
-	dicom_plane_position_slide_t current_plane_position_slide; // for parsing only
 	dicom_plane_position_slide_t* per_frame_plane_position_slide; // array
 } dicom_instance_t;
 
@@ -301,10 +460,29 @@ bool is_file_a_dicom_file(u8* file_header_data, size_t file_header_data_len);
 bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* directory);
 bool dicom_open_from_file(dicom_series_t* dicom, file_info_t* file);
 dicom_data_element_t dicom_read_data_element(u8* data_start, i64 data_offset, dicom_transfer_syntax_enum encoding, i64 bytes_available);
+dicom_ui_t dicom_parse_uid(str_t s);
 i64 dicom_parse_integer_string(str_t s, str_t* next);
-dicom_cs_t dicom_parse_code_string(str_t s, str_t* next);
 float dicom_parse_decimal_string(str_t s, str_t* next);
+dicom_cs_t dicom_parse_code_string(str_t s, str_t* next);
+dicom_sh_t dicom_parse_short_string(str_t s);
+dicom_da_t dicom_parse_date(str_t s);
+dicom_tm_t dicom_parse_time(str_t s);
 i64 dicom_defragment_encapsulated_pixel_data_frame(u8* data, i64 len);
+bool dicom_instance_index_pixel_data(dicom_instance_t* instance);
+
+// globals
+#if defined(DICOM_IMPL)
+#define INIT(...) __VA_ARGS__
+#define extern
+#else
+#define INIT(...)
+#undef extern
+#endif
+
+extern const char* dicom_lossy_image_compression_method_strings[6] INIT(= {"ISO_10918_1", "ISO_14495_1", "ISO_15444_1", "ISO_13818_2", "ISO_14496_10", "ISO_23008_2"});
+
+#undef INIT
+#undef extern
 
 #ifdef __cplusplus
 }
