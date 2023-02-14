@@ -28,6 +28,7 @@ i32 get_work_queue_task_count(work_queue_t* queue) {
 	return count;
 }
 
+// TODO: add optional refcount increment
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
 	if (userdata_size > sizeof(((work_queue_entry_t*)0)->userdata)) {
 		ASSERT(!"userdata_size overflows available space");

@@ -107,6 +107,7 @@ HKEY win32_registry_create_empty_key(const char* key) {
 
 bool win32_registry_set_value(HKEY hkey, const char* key, DWORD type, const char* value, DWORD size) {
 	if (RegSetValueExA(hkey, key, 0, type, (const BYTE*)value, size) != ERROR_SUCCESS) {
+
 		win32_diagnostic("RegSetValueExA");
 		return false;
 	}

@@ -756,9 +756,34 @@ void do_level_image_indexing(image_t* image, level_image_t* level_image, i32 sca
     if (image->backend == IMAGE_BACKEND_DICOM) {
         if (dicom_instance_index_pixel_data(image->dicom.wsi.level_instances[scale])) {
             level_image->needs_indexing = false;
-
-
         }
     }
 }
 
+typedef struct level_indexing_task_t {
+	image_t* image;
+	level_image_t* level_image;
+	i32 scale;
+} level_indexing_task_t;
+
+
+void level_image_indexing_task_func(i32 logical_thread_index, void* userdata) {
+	level_indexing_task_t* task = (level_indexing_task_t*) userdata;
+	do_level_image_indexing(task->image, task->level_image, task->scale);
+	atomic_decrement(&task->image->refcount); // release
+}
+
+void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 scale) {
+	ASSERT(!level_image->indexing_job_submitted);
+	level_indexing_task_t task = {0};
+	task.image = image;
+	task.level_image = level_image;
+	task.scale = scale;
+
+	level_image->indexing_job_submitted = true;
+	atomic_increment(&image->refcount); // retain
+	if (!add_work_queue_entry(&global_work_queue, level_image_indexing_task_func, &task, sizeof(task))) {
+		atomic_decrement(&image->refcount); // chicken out
+		level_image->indexing_job_submitted = false;
+	};
+}

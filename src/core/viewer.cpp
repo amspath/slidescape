@@ -504,7 +504,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
             ASSERT(scale >= 0 && scale < COUNT(image->level_images));
             level_image_t *drawn_level = image->level_images + scale;
             if (drawn_level->needs_indexing) {
-                do_level_image_indexing(image, drawn_level, scale);
+				if (!drawn_level->indexing_job_submitted) {
+					begin_level_image_indexing(image, drawn_level, scale);
+				}
                 break; // only do one at a time
             }
         }

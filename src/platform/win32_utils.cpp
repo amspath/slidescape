@@ -138,10 +138,12 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 	if (!GetOverlappedResult(file_handle, &overlapped, &bytes_read, TRUE)) {
 		win32_diagnostic("GetOverlappedResult");
 	}
+
 	// This should not be strictly necessary, but do it just in case GetOverlappedResult exits early (paranoia)
-	if(WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
-		win32_diagnostic("WaitForSingleObject");
-	}
+	// NOTE: this seems to sometimes return an error 0x6 (handle invalid) if used in quick successive calls... (?)
+//	if(WaitForSingleObject(overlapped.hEvent, INFINITE) != WAIT_OBJECT_0) {
+//		win32_diagnostic("WaitForSingleObject");
+//	}
 
 	memcpy(dest, temp_dest + align_delta, read_size);
 

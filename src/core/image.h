@@ -182,6 +182,7 @@ typedef struct image_t {
     simple_image_t macro_image;
     simple_image_t label_image;
     i32 resource_id;
+	i32 refcount;
 } image_t;
 
 float f32_rgb_to_f32_y(float R, float G, float B);
@@ -195,7 +196,7 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
 bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overlay);
 void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay);
 bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format);
-void do_level_image_indexing(image_t* image, level_image_t* level_image, i32 scale);
+void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 scale);
 
 #ifdef __cplusplus
 }

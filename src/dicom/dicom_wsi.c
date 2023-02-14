@@ -22,10 +22,10 @@
 
 #include "jpeg_decoder.h"
 
-
+// Returns either &array[index] if it already exists, or a newly added and zeroed element at the end of the array
 #define array_last_maybe_expand(array, index) \
   (((arrlen((array)) <= (index))              \
-       ? (arraddnptr((array), 1), memset((array) + (index), 0, sizeof((array)[0])), 0)         \
+       ? (arraddn((array), 1), memset((array) + (index), 0, sizeof((array)[0])), 0)         \
        : 0), \
    (array) + (index))
 
