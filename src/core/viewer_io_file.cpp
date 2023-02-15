@@ -426,20 +426,21 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 	if (image.is_valid) {
 		add_image(app_state, image, is_base_image, !is_base_image);
 
-		annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-		unload_and_reinit_annotations(annotation_set);
-		annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
+        if (is_base_image) {
+            annotation_set_t* annotation_set = &app_state->scene.annotation_set;
+//            unload_and_reinit_annotations(annotation_set); // no need, already unloaded!
+            annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
 
-		// Check if there is an associated ASAP XML or COCO JSON annotations file
-		size_t filename_len = strlen(file->filename);
-		size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
-		char* temp_filename = (char*) alloca(temp_size);
-		strncpy(temp_filename, file->filename, temp_size);
-		bool were_annotations_loaded = false;
+            // Check if there is an associated ASAP XML or COCO JSON annotations file
+            size_t filename_len = strlen(file->filename);
+            size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
+            char* temp_filename = (char*) alloca(temp_size);
+            strncpy(temp_filename, file->filename, temp_size);
+            bool were_annotations_loaded = false;
 
-		// Load JSON first
+            // Load JSON first
 #if 0
-		replace_file_extension(temp_filename, temp_size, "json");
+            replace_file_extension(temp_filename, temp_size, "json");
 			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
 			if (file_exists(temp_filename)) {
 				console_print("Found JSON annotations: '%s'\n", temp_filename);
@@ -459,24 +460,25 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 				coco_init_main_image(&annotation_set->coco, &image);
 			}
 #else
-		// TODO: remove?
-		coco_init_main_image(&annotation_set->coco, &image);
+            // TODO: remove?
+            coco_init_main_image(&annotation_set->coco, &image);
 #endif
 
-		// TODO: use most recently updated annotations?
-		replace_file_extension(temp_filename, temp_size, "xml");
-		if (file_exists(temp_filename)) {
-			console_print("Found XML annotations: '%s'\n", temp_filename);
-			if (!were_annotations_loaded) {
-				load_asap_xml_annotations(app_state, temp_filename);
-			}
-		}
+            // TODO: use most recently updated annotations?
+            replace_file_extension(temp_filename, temp_size, "xml");
+            if (file_exists(temp_filename)) {
+                console_print("Found XML annotations: '%s'\n", temp_filename);
+                if (!were_annotations_loaded) {
+                    load_asap_xml_annotations(app_state, temp_filename);
+                }
+            }
 
 
-		// TODO: only save/convert COCO, not the XML as well!
-		if (annotation_set->export_as_asap_xml) {
+            // TODO: only save/convert COCO, not the XML as well!
+            if (annotation_set->export_as_asap_xml) {
 //				annotation_set->modified = true; // to force export in COCO as well
-		}
+            }
+        }
 
 		console_print("Loaded '%s'\n", file->filename);
 		if (image.backend == IMAGE_BACKEND_ISYNTAX) {

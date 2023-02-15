@@ -131,7 +131,7 @@ static void feature_set_attribute(annotation_set_t* annotation_set, annotation_f
 
 #define ASAP_XML_PARSER_MAX_STACK 16
 
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
+bool load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 	annotation_group_t current_group = {};

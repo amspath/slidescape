@@ -230,7 +230,7 @@ annotation_t duplicate_annotation(annotation_t* annotation);
 void destroy_annotation(annotation_t* annotation);
 void destroy_annotation_set(annotation_set_t* annotation_set);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
-bool32 load_asap_xml_annotations(app_state_t* app_state, const char* filename);
+bool load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
 void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
 void recount_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
