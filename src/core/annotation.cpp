@@ -31,19 +31,19 @@
 
 #include "annotation_asap_xml.cpp"
 
-u32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
+i32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 	annotation_group_t new_group = {};
 	strncpy(new_group.name, name, sizeof(new_group.name));
 	arrput(annotation_set->stored_groups, new_group);
-	u32 new_stored_group_index = annotation_set->stored_group_count++;
+	i32 new_stored_group_index = annotation_set->stored_group_count++;
 
 	arrput(annotation_set->active_group_indices, new_stored_group_index);
-	u32 new_active_group_index = annotation_set->active_group_count++;
+	i32 new_active_group_index = annotation_set->active_group_count++;
 
 	return new_active_group_index;
 }
 
-u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
+i32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
 	annotation_feature_t new_feature = {};
 	strncpy(new_feature.name, name, sizeof(new_feature.name));
 	i32 new_stored_feature_index = annotation_set->stored_feature_count++;
@@ -51,7 +51,7 @@ u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
 	arrput(annotation_set->stored_features, new_feature);
 
 	arrput(annotation_set->active_feature_indices, new_stored_feature_index);
-	u32 new_active_feature_index = annotation_set->active_feature_count++;
+	i32 new_active_feature_index = annotation_set->active_feature_count++;
 
 	return new_active_feature_index;
 }
@@ -2533,6 +2533,45 @@ annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* anno
 	}
 
 	return result_set;
+}
+
+
+void annotation_set_template_destroy(annotation_set_template_t* template_) {
+    arrfree(template_->groups);
+    arrfree(template_->features);
+}
+
+annotation_set_template_t create_annotation_set_template(annotation_set_t* annotation_set) {
+    annotation_set_template_t result = {};
+    arrsetlen(result.groups, annotation_set->active_group_count);
+    arrsetlen(result.features, annotation_set->active_feature_count);
+    for (i32 i = 0; i < annotation_set->active_group_count; ++i) {
+        result.groups[i] = *get_active_annotation_group(annotation_set, i);
+    }
+    for (i32 i = 0; i < annotation_set->active_feature_count; ++i) {
+        result.features[i] = *get_active_annotation_feature(annotation_set, i);
+    }
+    result.is_valid = true;
+    return result;
+}
+
+void annotation_set_init_from_template(annotation_set_t* annotation_set, annotation_set_template_t* template_) {
+    arrfree(annotation_set->stored_groups);
+    arrfree(annotation_set->active_group_indices);
+    arrfree(annotation_set->stored_features);
+    arrfree(annotation_set->active_feature_indices);
+    annotation_set->stored_group_count = 0;
+    annotation_set->active_group_count = 0;
+    annotation_set->stored_feature_count = 0;
+    annotation_set->stored_feature_count = 0;
+    for (i32 i = 0; i < arrlen(template_->groups); ++i) {
+        annotation_group_t* new_group = get_active_annotation_group(annotation_set, add_annotation_group(annotation_set, ""));
+        *new_group = *(template_->groups + i);
+    }
+    for (i32 i = 0; i < arrlen(template_->features); ++i) {
+        annotation_feature_t* new_feature = get_active_annotation_feature(annotation_set, add_annotation_feature(annotation_set, ""));
+        *new_feature = *(template_->features + i);
+    }
 }
 
 

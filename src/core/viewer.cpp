@@ -164,6 +164,7 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool
             }
         }
     }
+    strncpy(app_state->last_active_directory, image.directory, COUNT(app_state->last_active_directory));
 }
 
 // TODO: make this based on scene (allow loading multiple images independently side by side)
@@ -252,9 +253,26 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 
 void autosave(app_state_t* app_state, bool force_ignore_delay) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
-	if (app_state->enable_autosave) {
-		save_annotations(app_state, annotation_set, force_ignore_delay);
-	}
+
+    bool proceed = force_ignore_delay;
+    if (!force_ignore_delay) {
+        float seconds_since_last_modified = get_seconds_elapsed(annotation_set->last_modification_time, get_clock());
+        // only autosave if there haven't been any additional changes for some time (don't do it too often)
+        if (seconds_since_last_modified > 2.0f) {
+            proceed = true;
+        }
+    }
+
+    if (proceed) {
+        if (app_state->enable_autosave) {
+            save_annotations(app_state, annotation_set, force_ignore_delay);
+        }
+        if (app_state->remember_annotation_groups_as_template) {
+            annotation_set_template_destroy(&app_state->scene.annotation_set_template);
+            app_state->scene.annotation_set_template = create_annotation_set_template(annotation_set);
+        }
+    }
+
 }
 
 void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {

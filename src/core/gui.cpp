@@ -292,6 +292,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Assign group/feature...", NULL, &show_annotation_group_assignment_window)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Autosave", NULL, &app_state->enable_autosave)) {}
+			if (ImGui::MenuItem("Remember groups/features", NULL, &app_state->remember_annotation_groups_as_template)) {}
 			ImGui::EndMenu();
 		}
 		if (ImGui::BeginMenu("View")) {
@@ -328,7 +329,11 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Show mouse position", NULL, &show_mouse_pos_overlay)) {}
-				ImGui::EndMenu();
+//                ImGui::Separator();
+//                if (ImGui::MenuItem("Set working directory...")) {
+//
+//                }
+                ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
 		}

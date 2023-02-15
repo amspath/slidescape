@@ -470,9 +470,13 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
                 console_print("Found XML annotations: '%s'\n", temp_filename);
                 if (!were_annotations_loaded) {
                     load_asap_xml_annotations(app_state, temp_filename);
+                    were_annotations_loaded = true;
                 }
             }
 
+            if (!were_annotations_loaded) {
+                annotation_set_init_from_template(annotation_set, &app_state->scene.annotation_set_template);
+            }
 
             // TODO: only save/convert COCO, not the XML as well!
             if (annotation_set->export_as_asap_xml) {
@@ -549,7 +553,11 @@ const char* get_active_directory(app_state_t* app_state) {
 				return image->directory;
 			}
 		}
-	}
+	} else {
+        if (strlen(app_state->last_active_directory) > 0) {
+            return app_state->last_active_directory;
+        }
+    }
 	return get_default_save_directory();
 }
 

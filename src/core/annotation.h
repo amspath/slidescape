@@ -163,6 +163,12 @@ typedef struct annotation_set_t {
 	bool annotations_were_loaded_from_file;
 } annotation_set_t;
 
+typedef struct annotation_set_template_t {
+    annotation_group_t* groups; // array
+    annotation_feature_t* features; // array
+    bool is_valid;
+} annotation_set_template_t;
+
 
 static inline bool coordinate_index_valid_for_annotation(i32 coordinate_index, annotation_t* annotation) {
 	bool result = (coordinate_index >= 0 && coordinate_index < annotation->coordinate_count);
@@ -184,8 +190,8 @@ static inline annotation_feature_t* get_active_annotation_feature(annotation_set
 	return annotation_set->stored_features + annotation_set->active_feature_indices[active_index];
 }
 
-u32 add_annotation_group(annotation_set_t* annotation_set, const char* name);
-u32 add_annotation_feature(annotation_set_t* annotation_set, const char* name);
+i32 add_annotation_group(annotation_set_t* annotation_set, const char* name);
+i32 add_annotation_feature(annotation_set_t* annotation_set, const char* name);
 i32 find_annotation_group(annotation_set_t* annotation_set, const char* group_name);
 i32 find_annotation_group_or_create_if_not_found(annotation_set_t* annotation_set, const char* group_name);
 i32 find_annotation_feature(annotation_set_t* annotation_set, const char* feature_name);
@@ -235,6 +241,9 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay);
 void recount_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area, bool push_coordinates_inward);
+annotation_set_template_t create_annotation_set_template(annotation_set_t* annotation_set);
+void annotation_set_template_destroy(annotation_set_template_t* template_);
+void annotation_set_init_from_template(annotation_set_t* annotation_set, annotation_set_template_t* template_);
 
 #ifdef __cplusplus
 }

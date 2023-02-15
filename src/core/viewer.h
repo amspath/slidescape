@@ -218,6 +218,7 @@ typedef struct scene_t {
 	entity_t entities[MAX_ENTITIES];
 	i32 active_layer;
 	annotation_set_t annotation_set;
+    annotation_set_template_t annotation_set_template;
 	bool8 clicked;
 	bool8 right_clicked;
 	bool8 drag_started;
@@ -327,7 +328,9 @@ typedef struct app_state_t {
 	bool is_export_in_progress;
 	bool export_as_coco;
 	bool enable_autosave;
+    bool remember_annotation_groups_as_template;
 	bool headless;
+    char last_active_directory[512];
 } app_state_t;
 
 
