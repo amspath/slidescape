@@ -19,6 +19,7 @@
 
 #include "common.h"
 #include "platform.h"
+#include "stringutils.h"
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl.h"
@@ -94,13 +95,15 @@ void set_cursor_crosshair() {
 }
 
 bool need_open_file_dialog = false;
-u32 open_file_filetype_hint;
+open_file_dialog_action_enum open_file_dialog_action;
+filetype_hint_enum open_file_filetype_hint;
 bool open_file_dialog_open = false;
 
-void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
+void open_file_dialog(app_state_t* app_state, u32 action, u32 filetype_hint) {
     if (!open_file_dialog_open) {
         need_open_file_dialog = true;
-        open_file_filetype_hint = filetype_hint;
+        open_file_dialog_action = (open_file_dialog_action_enum)action;
+        open_file_filetype_hint = (filetype_hint_enum)filetype_hint;
     }
 }
 
@@ -114,11 +117,19 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
     min_size.y *= 0.5f;
 
     if (need_open_file_dialog) {
-        const char* filters = ".*,WSI files (*.tiff *.ptif){.tiff,.ptif}";
-        IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "ChooseFileDlgKey",
-                                                 (const std::string &) "Choose File", filters,
-                                                 (const std::string &) get_active_directory(app_state),
-                                                 (const std::string &) "", 1, nullptr, 0);
+        if (open_file_dialog_action == OPEN_FILE_DIALOG_LOAD_GENERIC_FILE) {
+            const char* filters = ".*,WSI files (*.tiff *.ptif){.tiff,.ptif}";
+            IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "ChooseFileDlgKey",
+                                                     (const std::string &) "Choose file", filters,
+                                                     (const std::string &) get_active_directory(app_state),
+                                                     (const std::string &) "", 1, nullptr, 0);
+        } else if (open_file_dialog_action == OPEN_FILE_DIALOG_CHOOSE_DIRECTORY) {
+            IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "ChooseFileDlgKey",
+                                                     (const std::string &) "Choose annotation directory",nullptr,
+                                                     (const std::string &) get_active_directory(app_state),
+                                                     (const std::string &) "", 1, nullptr, 0);
+        }
+
         need_open_file_dialog = false;
         open_file_dialog_open = true;
     }
@@ -129,11 +140,51 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
         if (IGFD::FileDialog::Instance()->IsOk() == true) {
             auto selection = IGFD::FileDialog::Instance()->GetSelection();
             auto it = selection.begin();
-            for (auto element : selection) {
-                std::string file_path_name = element.second;
-                load_generic_file(app_state, file_path_name.c_str(), open_file_filetype_hint);
-                break;
+            if (open_file_dialog_action == OPEN_FILE_DIALOG_LOAD_GENERIC_FILE) {
+                for (auto element : selection) {
+                    std::string file_path_name = element.second;
+                    load_generic_file(app_state, file_path_name.c_str(), open_file_filetype_hint);
+                    break;
+                }
+            } else if (open_file_dialog_action == OPEN_FILE_DIALOG_CHOOSE_DIRECTORY) {
+#if 0
+                if (selection.size() > 0) {
+                    for (auto element : selection) {
+                        // NOTE: there seems to be a bug where if you selected a folder and then click OK, the folder name will be appended twice.
+                        std::string file_path_name = element.second;
+                        strncpy(app_state->annotation_directory, file_path_name.c_str(), COUNT(app_state->annotation_directory)-2);                        break;
+                    }
+                } else {
+                    std::string path = IGFD::FileDialog::Instance()->GetCurrentPath();
+                    strncpy(app_state->annotation_directory, path.c_str(), COUNT(app_state->annotation_directory)-2);
+                }
+#else
+                std::string path = IGFD::FileDialog::Instance()->GetCurrentPath();
+                strncpy(app_state->annotation_directory, path.c_str(), COUNT(app_state->annotation_directory)-2);
+#endif
+
+                i32 prefix_len = (i32)strlen(app_state->annotation_directory);
+                if (prefix_len > 0) {
+                    // discard folder names "." and ".."
+                    char* folder_name = (char*)one_past_last_slash(app_state->annotation_directory, prefix_len);
+                    if (strcmp(folder_name, ".") == 0) {
+                        folder_name[0] = '\0';
+                        prefix_len -= 1;
+                    } else if (strcmp(folder_name, "..") == 0) {
+                        folder_name[0] = '\0';
+                        prefix_len -= 2;
+                    }
+                }
+                if (prefix_len > 0) {
+                    // add trailing slash
+                    if (app_state->annotation_directory[prefix_len-1] != '/' && app_state->annotation_directory[prefix_len-1] != '\\') {
+                        app_state->annotation_directory[prefix_len++] = PATH_SEP[0];
+                    }
+                }
+                app_state->is_annotation_directory_set = true;
+
             }
+
         }
         // close
         IGFD::FileDialog::Instance()->Close();

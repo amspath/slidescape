@@ -1578,13 +1578,28 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
 
+        const char* annotation_filename = "";
 		if (app_state->export_as_coco) {
-			ImGui::Text("Annotation filename: %s\n", annotation_set->coco_filename);
+            annotation_filename = annotation_set->coco_filename;
 		} else if (annotation_set->export_as_asap_xml) {
-			ImGui::Text("Annotation filename: %s\n", annotation_set->asap_xml_filename);
-		} else {
-			ImGui::TextUnformatted("Annotation filename: (none)\n");
+            annotation_filename = annotation_set->asap_xml_filename;
 		}
+        if (annotation_filename[0] != '\0') {
+            ImGui::TextWrapped("Annotation filename: %s\n", annotation_filename);
+        } else {
+            ImGui::TextUnformatted("Annotation filename: (none)\n");
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, (ImVec2){});
+        ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4) {});
+        if (ImGui::SmallButton("Annotation directory: ")) {
+            open_file_dialog(app_state, OPEN_FILE_DIALOG_CHOOSE_DIRECTORY, 0);
+        }
+        ImGui::PopStyleColor(1);
+        ImGui::PopStyleVar(1);
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s\n", get_annotation_directory(app_state));
+
 		ImGui::Text("Number of annotations active: %d\n", annotation_set->active_annotation_count);
 		ImGui::Spacing();
 
@@ -2432,7 +2447,7 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 					strncpy(image_name_buf, "unknown_image", sizeof(image_name_buf));
 				}
 				replace_file_extension(image_name_buf, sizeof(image_name_buf), "xml");
-				snprintf(annotation_set->asap_xml_filename, sizeof(annotation_set->asap_xml_filename), "%s%s", get_active_directory(app_state), image_name_buf);
+				snprintf(annotation_set->asap_xml_filename, sizeof(annotation_set->asap_xml_filename), "%s%s", get_annotation_directory(app_state), image_name_buf);
 				annotation_set->asap_xml_filename[sizeof(annotation_set->asap_xml_filename)-1] = '\0';
 
 			}
@@ -2571,6 +2586,9 @@ void annotation_set_init_from_template(annotation_set_t* annotation_set, annotat
     for (i32 i = 0; i < arrlen(template_->features); ++i) {
         annotation_feature_t* new_feature = get_active_annotation_feature(annotation_set, add_annotation_feature(annotation_set, ""));
         *new_feature = *(template_->features + i);
+    }
+    if (annotation_set->active_group_count == 0) {
+        add_annotation_group(annotation_set, "None");
     }
 }
 

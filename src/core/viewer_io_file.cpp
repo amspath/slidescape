@@ -331,6 +331,12 @@ file_info_t viewer_get_file_info(const char* filename) {
 	memcpy(file.filename, filename, filename_len);
 	const char* ext = get_file_extension(filename);
 	strncpy(file.ext, ext, sizeof(file.ext) - 1);
+    const char* basename = one_past_last_slash(filename, filename_len);
+    strncpy(file.basename, basename, filename_len);
+    i64 prefix_len = basename - filename;
+    if (prefix_len > 0 && prefix_len < filename_len) {
+        strncpy(file.dirname_with_trailing_slash, filename, prefix_len);
+    }
 
 	struct stat st;
 	if (platform_stat(filename, &st) == 0) {
@@ -432,10 +438,10 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
             annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
 
             // Check if there is an associated ASAP XML or COCO JSON annotations file
-            size_t filename_len = strlen(file->filename);
-            size_t temp_size = filename_len + 6; // add 5 so that we can always append ".xml\0" or ".json\0"
-            char* temp_filename = (char*) alloca(temp_size);
-            strncpy(temp_filename, file->filename, temp_size);
+            char temp_filename[512];
+            temp_filename[0] = '\0';
+            const char* prefix = (app_state->annotation_directory[0] != '\0') ? app_state->annotation_directory : file->dirname_with_trailing_slash;
+            snprintf(temp_filename, sizeof(temp_filename), "%s%s", prefix, file->basename);
             bool were_annotations_loaded = false;
 
             // Load JSON first
@@ -465,7 +471,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 #endif
 
             // TODO: use most recently updated annotations?
-            replace_file_extension(temp_filename, temp_size, "xml");
+            replace_file_extension(temp_filename, sizeof(temp_filename), "xml");
             if (file_exists(temp_filename)) {
                 console_print("Found XML annotations: '%s'\n", temp_filename);
                 if (!were_annotations_loaded) {
@@ -474,7 +480,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
                 }
             }
 
-            if (!were_annotations_loaded) {
+            if (!were_annotations_loaded && app_state->scene.annotation_set_template.is_valid) {
                 annotation_set_init_from_template(annotation_set, &app_state->scene.annotation_set_template);
             }
 
@@ -559,6 +565,14 @@ const char* get_active_directory(app_state_t* app_state) {
         }
     }
 	return get_default_save_directory();
+}
+
+const char* get_annotation_directory(app_state_t* app_state) {
+    if (app_state->is_annotation_directory_set) {
+        return app_state->annotation_directory;
+    } else {
+        return get_active_directory(app_state);
+    }
 }
 
 //TODO: refactor

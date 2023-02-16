@@ -250,6 +250,12 @@ typedef struct {
 } io_operation_t;
 
 
+typedef enum open_file_dialog_action_enum {
+    OPEN_FILE_DIALOG_LOAD_GENERIC_FILE = 0,
+    OPEN_FILE_DIALOG_CHOOSE_DIRECTORY,
+} open_file_dialog_action_enum;
+
+
 typedef struct directory_listing_t directory_listing_t;
 
 // Inline procedures as wrappers for system routines
@@ -296,7 +302,7 @@ void set_cursor_default();
 void set_cursor_crosshair();
 
 const char* get_default_save_directory();
-void open_file_dialog(app_state_t* app_state, u32 filetype_hint);
+void open_file_dialog(app_state_t* app_state, u32 action, u32 filetype_hint);
 bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string, const char* filename_hint);
 void toggle_fullscreen(window_handle_t window);
 bool check_fullscreen(window_handle_t window);

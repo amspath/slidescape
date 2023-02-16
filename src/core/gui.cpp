@@ -329,10 +329,10 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Show mouse position", NULL, &show_mouse_pos_overlay)) {}
-//                ImGui::Separator();
-//                if (ImGui::MenuItem("Set working directory...")) {
-//
-//                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Set working directory...")) {
+                    open_file_dialog(app_state, OPEN_FILE_DIALOG_CHOOSE_DIRECTORY, 0);
+                }
                 ImGui::EndMenu();
 			}
 			ImGui::EndMenu();
@@ -348,8 +348,8 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 		if (menu_items_clicked.exit_program) {
 			is_program_running = false;
 		} else if (menu_items_clicked.open_file) {
-			u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
-			open_file_dialog(app_state, filetype_hint);
+            u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+			open_file_dialog(app_state, OPEN_FILE_DIALOG_LOAD_GENERIC_FILE, filetype_hint);
 		} else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.save) {
@@ -489,7 +489,7 @@ void draw_layers_window(app_state_t* app_state) {
 		ImGui::BeginDisabled();
 	}
 	if (ImGui::ButtonEx("Load paired image...", ImVec2(0,0))) {
-		open_file_dialog(app_state, FILETYPE_HINT_OVERLAY);
+		open_file_dialog(app_state, OPEN_FILE_DIALOG_LOAD_GENERIC_FILE,FILETYPE_HINT_OVERLAY);
 	}
 	ImGui::SameLine();
 	ImGui::Checkbox("Load next image as overlay (F6)", &load_next_image_as_overlay);

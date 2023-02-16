@@ -50,6 +50,8 @@ typedef enum viewer_file_type_enum {
 
 typedef struct file_info_t {
 	char filename[512];
+    char dirname_with_trailing_slash[512];
+    char basename[512];
 	char ext[16];
 	i64 filesize;
 	viewer_file_type_enum type;
@@ -331,6 +333,8 @@ typedef struct app_state_t {
     bool remember_annotation_groups_as_template;
 	bool headless;
     char last_active_directory[512];
+    char annotation_directory[512];
+    bool is_annotation_directory_set;
 } app_state_t;
 
 
@@ -364,6 +368,7 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 
 // viewer_io_file.cpp
 const char* get_active_directory(app_state_t* app_state);
+const char* get_annotation_directory(app_state_t* app_state);
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
 file_info_t viewer_get_file_info(const char* filename);
