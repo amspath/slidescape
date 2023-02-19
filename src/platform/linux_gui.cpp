@@ -152,36 +152,18 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
                     for (auto element : selection) {
                         // NOTE: there seems to be a bug where if you selected a folder and then click OK, the folder name will be appended twice.
                         std::string file_path_name = element.second;
-                        strncpy(app_state->annotation_directory, file_path_name.c_str(), COUNT(app_state->annotation_directory)-2);                        break;
+						set_annotation_directory(file_path_name.c_str());
+						break;
                     }
                 } else {
                     std::string path = IGFD::FileDialog::Instance()->GetCurrentPath();
-                    strncpy(app_state->annotation_directory, path.c_str(), COUNT(app_state->annotation_directory)-2);
+					set_annotation_directory(path.c_str());
+
                 }
 #else
                 std::string path = IGFD::FileDialog::Instance()->GetCurrentPath();
-                strncpy(app_state->annotation_directory, path.c_str(), COUNT(app_state->annotation_directory)-2);
+	            set_annotation_directory(path.c_str());
 #endif
-
-                i32 prefix_len = (i32)strlen(app_state->annotation_directory);
-                if (prefix_len > 0) {
-                    // discard folder names "." and ".."
-                    char* folder_name = (char*)one_past_last_slash(app_state->annotation_directory, prefix_len);
-                    if (strcmp(folder_name, ".") == 0) {
-                        folder_name[0] = '\0';
-                        prefix_len -= 1;
-                    } else if (strcmp(folder_name, "..") == 0) {
-                        folder_name[0] = '\0';
-                        prefix_len -= 2;
-                    }
-                }
-                if (prefix_len > 0) {
-                    // add trailing slash
-                    if (app_state->annotation_directory[prefix_len-1] != '/' && app_state->annotation_directory[prefix_len-1] != '\\') {
-                        app_state->annotation_directory[prefix_len++] = PATH_SEP[0];
-                    }
-                }
-                app_state->is_annotation_directory_set = true;
 
             }
 

@@ -575,6 +575,30 @@ const char* get_annotation_directory(app_state_t* app_state) {
     }
 }
 
+void set_annotation_directory(app_state_t* app_state, const char* path) {
+	strncpy(app_state->annotation_directory, path, COUNT(app_state->annotation_directory)-2);
+	i32 prefix_len = (i32)strlen(app_state->annotation_directory);
+	if (prefix_len > 0) {
+		// discard folder names "." and ".."
+		char* folder_name = (char*)one_past_last_slash(app_state->annotation_directory, prefix_len);
+		if (strcmp(folder_name, ".") == 0) {
+			folder_name[0] = '\0';
+			prefix_len -= 1;
+		} else if (strcmp(folder_name, "..") == 0) {
+			folder_name[0] = '\0';
+			prefix_len -= 2;
+		}
+	}
+	if (prefix_len > 0) {
+		// add trailing slash
+		if (app_state->annotation_directory[prefix_len-1] != '/' && app_state->annotation_directory[prefix_len-1] != '\\') {
+			app_state->annotation_directory[prefix_len++] = PATH_SEP[0];
+		}
+	}
+	app_state->is_annotation_directory_set = true;
+}
+
+
 //TODO: refactor
 image_t load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint) {
 

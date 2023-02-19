@@ -369,6 +369,7 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 // viewer_io_file.cpp
 const char* get_active_directory(app_state_t* app_state);
 const char* get_annotation_directory(app_state_t* app_state);
+void set_annotation_directory(app_state_t* app_state, const char* path);
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
 file_info_t viewer_get_file_info(const char* filename);

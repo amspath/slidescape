@@ -423,33 +423,73 @@ void toggle_fullscreen(window_handle_t window) {
 	}
 }
 
-void open_file_dialog(app_state_t* app_state, u32 filetype_hint) {
+INT CALLBACK BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM lp, LPARAM pData) {
+	// SHBrowseForFolder doesn't give an option for setting the initial selected directory, we need a callback for this
+	if (uMsg==BFFM_INITIALIZED) {
+		SendMessageW(hwnd, BFFM_SETEXPANDED, FALSE, pData);
+	}
+	return 0;
+}
+
+void open_file_dialog(app_state_t* app_state, u32 action, u32 filetype_hint) {
 	// Adapted from https://docs.microsoft.com/en-us/windows/desktop/dlgbox/using-common-dialog-boxes#open_file
 	OPENFILENAMEW ofn = {};       // common dialog box structure
 	wchar_t filename[2048];       // buffer for file name
 	filename[0] = '\0';
 
-	console_print("Attempting to open a file\n");
+	if (action == OPEN_FILE_DIALOG_LOAD_GENERIC_FILE) {
+		console_print("Attempting to open a file\n");
 
-	// Initialize OPENFILENAME
-	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = app_state->main_window;
-	ofn.lpstrFile = filename;
-	ofn.nMaxFile = sizeof(filename);
-	ofn.lpstrFilter = L"All\0*.*\0Text\0*.TXT\0";
-	ofn.nFilterIndex = 1;
-	ofn.lpstrFileTitle = NULL;
-	ofn.nMaxFileTitle = 0;
-	ofn.lpstrInitialDir = NULL;
-	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+		// Initialize OPENFILENAME
+		ofn.lStructSize = sizeof(ofn);
+		ofn.hwndOwner = app_state->main_window;
+		ofn.lpstrFile = filename;
+		ofn.nMaxFile = sizeof(filename);
+		ofn.lpstrFilter = L"All\0*.*\0Text\0*.TXT\0";
+		ofn.nFilterIndex = 1;
+		ofn.lpstrFileTitle = NULL;
+		ofn.nMaxFileTitle = 0;
+		ofn.lpstrInitialDir = win32_string_widen(get_active_directory(app_state), 1024, (wchar_t*)alloca(1024 * sizeof(wchar_t)));
+		ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
-	// Display the Open dialog box.
-	mouse_show();
-	if (GetOpenFileNameW(&ofn)==TRUE) {
-		char narrow_filename[4096];
-		win32_string_narrow(filename, narrow_filename, sizeof(narrow_filename));
-		load_generic_file(&global_app_state, narrow_filename, filetype_hint);
+		// Display the Open dialog box.
+		mouse_show();
+		if (GetOpenFileNameW(&ofn)==TRUE) {
+			char narrow_filename[4096];
+			win32_string_narrow(filename, narrow_filename, sizeof(narrow_filename));
+			load_generic_file(&global_app_state, narrow_filename, filetype_hint);
+		}
+	} else if (action == OPEN_FILE_DIALOG_CHOOSE_DIRECTORY) {
+		console_print("Attempting to choose a directory\n");
+
+		// Convert the initial directory to display to the right format
+		ITEMIDLIST * root = 0;
+		wchar_t root_path[512];
+		root_path[0] = '\0';
+		win32_string_widen(get_annotation_directory(app_state), COUNT(root_path), root_path);
+		SHParseDisplayName(root_path, NULL, &root, 0, NULL);
+
+		BROWSEINFOW browse_info = {};
+		browse_info.hwndOwner = app_state->main_window;
+		browse_info.pidlRoot = NULL;
+		browse_info.pszDisplayName = filename;
+		browse_info.lpszTitle = L"Select annotation directory";
+		browse_info.ulFlags = BIF_NEWDIALOGSTYLE | BIF_EDITBOX ;
+		browse_info.lpfn = BrowseCallbackProc;
+		browse_info.lParam = (LPARAM)root; // passed to BrowseCallbackProc to set initial directory
+		browse_info.iImage = 0;
+		PIDLIST_ABSOLUTE pidlist = SHBrowseForFolderW(&browse_info);
+		if (pidlist) {
+			wchar_t path[MAX_PATH];
+			if (SHGetPathFromIDListW(pidlist, path)) {
+				char narrow_filename[1024];
+				win32_string_narrow(path, narrow_filename, sizeof(narrow_filename));
+				set_annotation_directory(app_state, narrow_filename);
+			}
+		}
 	}
+
+
 }
 
 bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string, const char* filename_hint) {
@@ -774,7 +814,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 
 					case 'O': {
 						if (is_down && ctrl_down) {
-							open_file_dialog(&global_app_state, 0);
+							open_file_dialog(&global_app_state, OPEN_FILE_DIALOG_LOAD_GENERIC_FILE, 0);
 						}
 					} break;
 
