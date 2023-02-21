@@ -480,7 +480,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
                 }
             }
 
-            if (!were_annotations_loaded && app_state->scene.annotation_set_template.is_valid) {
+            if (app_state->remember_annotation_groups_as_template && !were_annotations_loaded && app_state->scene.annotation_set_template.is_valid) {
                 annotation_set_init_from_template(annotation_set, &app_state->scene.annotation_set_template);
             }
 

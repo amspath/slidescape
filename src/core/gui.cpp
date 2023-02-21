@@ -63,6 +63,9 @@ void menu_close_file(app_state_t* app_state) {
 	unload_all_images(app_state);
 	reset_global_caselist(app_state);
 	unload_and_reinit_annotations(&app_state->scene.annotation_set);
+	if (app_state->remember_annotation_groups_as_template && app_state->scene.annotation_set_template.is_valid) {
+		annotation_set_init_from_template(&app_state->scene.annotation_set, &app_state->scene.annotation_set_template);
+	}
 }
 
 void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness) {

@@ -157,12 +157,12 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
                     }
                 } else {
                     std::string path = IGFD::FileDialog::Instance()->GetCurrentPath();
-					set_annotation_directory(path.c_str());
+					set_annotation_directory(app_state, path.c_str());
 
                 }
 #else
                 std::string path = IGFD::FileDialog::Instance()->GetCurrentPath();
-	            set_annotation_directory(path.c_str());
+	            set_annotation_directory(app_state, path.c_str());
 #endif
 
             }
