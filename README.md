@@ -15,6 +15,7 @@ The viewer has built-in support for:
 * Tiled TIFF and BigTIFF (including generic and Philips TIFF variants).
 * Philips iSyntax.
 * Simple images (JPEG, PNG).
+* DICOM (work-in-progress).
 
 Slidescape can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime.
 If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana formats can additionally be loaded.
@@ -107,6 +108,8 @@ Slidescape embeds code from the following projects, under their respective licen
 * [glad](https://github.com/Dav1dde/glad) (OpenGL loader)
 * [Keycode](https://github.com/depp/keycode) (library for platform-independent keyboard input handling)
 * [ImGuiFileDialog](https://github.com/aiekick/ImGuiFileDialog) (file dialog for dear ImGui)
+* [libtiff](https://gitlab.com/libtiff/libtiff) (LZW decoder from libtiff)
+* [minfft](https://github.com/aimukhin/minfft) (Fast Fourier Transform library)
 
 Uses [SDL2](https://www.libsdl.org/download-2.0.php) and [GLEW](http://glew.sourceforge.net/) on Linux/macOS.
 
