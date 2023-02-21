@@ -117,7 +117,8 @@ typedef struct work_queue_t {
 	i32 volatile completion_goal;
 	i32 volatile start_count;
 	i32 volatile start_goal;
-	work_queue_entry_t entries[1024];
+	i32 entry_count;
+	work_queue_entry_t* entries;
 } work_queue_t;
 
 typedef struct benaphore_t {
@@ -323,6 +324,8 @@ file_handle_t open_file_handle_for_simultaneous_access(const char* filename);
 void file_handle_close(file_handle_t file_handle);
 size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read);
 
+work_queue_t create_work_queue(const char* name, i32 entry_count);
+void destroy_work_queue(work_queue_t* queue);
 i32 get_work_queue_task_count(work_queue_t* queue);
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool is_queue_work_in_progress(work_queue_t* queue);
@@ -331,6 +334,7 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
 void mark_queue_entry_completed(work_queue_t* queue);
 bool do_worker_work(work_queue_t* queue, int logical_thread_index);
 void drain_work_queue(work_queue_t* queue); // NOTE: only use this on the main thread
+void dummy_work_queue_callback(int logical_thread_index, void* userdata);
 void test_multithreading_work_queue();
 
 bool file_exists(const char* filename);

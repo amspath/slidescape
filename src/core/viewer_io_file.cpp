@@ -147,9 +147,11 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.want_gpu_residency = true;
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	ASSERT(task->completion_callback);
 	if (task->completion_callback) {
 		task->completion_callback(logical_thread_index, &completion_task);
+	}
+	if (task->completion_queue) {
+		add_work_queue_entry(task->completion_queue, dummy_work_queue_callback, &completion_task, sizeof(completion_task));
 	}
 
 #endif
@@ -715,12 +717,4 @@ void unload_openslide_wsi(wsi_t* wsi) {
 		wsi->osr = NULL;
 	}
 
-}
-
-void tile_release_cache(tile_t* tile) {
-	ASSERT(tile);
-	if (tile->pixels) free(tile->pixels);
-	tile->pixels = NULL;
-	tile->is_cached = false;
-	tile->need_keep_in_cache = false;
 }

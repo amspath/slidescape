@@ -172,13 +172,14 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
                                               image_register_preprocess_method_enum preprocess_method) {
     image_transform_t result = {};
 
-    if (!(image1->backend == IMAGE_BACKEND_OPENSLIDE && image2->backend == IMAGE_BACKEND_OPENSLIDE)) {
-        // TODO: implement read_region() for other image backends
+    if (image1->backend == IMAGE_BACKEND_ISYNTAX || image2->backend == IMAGE_BACKEND_ISYNTAX) {
+        // TODO: implement read_region() for iSyntax backend
         return result;
     }
 
     i64 start = get_clock();
 
+	level = 0;
     i32 w = patch_width;
     i32 h = patch_width;
     i32 half_patch_width_global = (patch_width / 2) << level;
@@ -258,8 +259,8 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
     result.translate = pixel_shift;
     result.is_valid = true;
 
-    console_print("Local image registration (on level 0): level0 pixel offset = (%.0f, %.0f), io time = %g seconds, processing time = %g seconds\n",
-                  pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
+    console_print("Local image registration (on level 0) using method %d: level0 pixel offset = (%.0f, %.0f), io time = %g seconds, processing time = %g seconds\n",
+                  preprocess_method, pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
                   get_seconds_elapsed(start, clock_after_read), get_seconds_elapsed(clock_after_read, get_clock()));
 
     free(region1);
@@ -270,10 +271,10 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
 image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top) {
     image_transform_t result = {};
 
-    if (!(image1->backend == IMAGE_BACKEND_OPENSLIDE && image2->backend == IMAGE_BACKEND_OPENSLIDE)) {
-        // TODO: implement read_region() for other image backends
-        return result;
-    }
+	if (image1->backend == IMAGE_BACKEND_ISYNTAX || image2->backend == IMAGE_BACKEND_ISYNTAX) {
+		// TODO: implement read_region() for iSyntax backend
+		return result;
+	}
 
     i64 start = get_clock();
 

@@ -61,86 +61,7 @@
 #include "viewer_options.cpp"
 #include "commandline.cpp"
 
-tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
-	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
-	ASSERT(tile_index >= 0 && tile_index < image_level->tile_count);
-	tile_t* result = image_level->tiles + tile_index;
-	return result;
-}
 
-tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 tile_index) {
-	ASSERT(image);
-	ASSERT(scale < image->level_count);
-	level_image_t* level_image = image->level_images + scale;
-	tile_t* tile = level_image->tiles + tile_index;
-	return tile;
-}
-
-u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
-	level_image_t* level_image = image->level_images + level;
-
-	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
-	ASSERT(tile_index >= 0 && tile_index < level_image->tile_count);
-	tile_t* tile = level_image->tiles + tile_index;
-
-	return tile->texture;
-}
-
-void unload_image(image_t* image) {
-	if (image) {
-		if (image->type == IMAGE_TYPE_WSI) {
-			if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
-                unload_openslide_wsi(&image->openslide_wsi);
-			} else if (image->backend == IMAGE_BACKEND_TIFF) {
-				tiff_destroy(&image->tiff);
-			} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
-				isyntax_destroy(&image->isyntax);
-			} else if (image->backend == IMAGE_BACKEND_DICOM) {
-				dicom_destroy(&image->dicom);
-			} else if (image->backend == IMAGE_BACKEND_STBI) {
-				if (image->simple.pixels) {
-					stbi_image_free(image->simple.pixels);
-					image->simple.pixels = NULL;
-				}
-				if (image->simple.texture != 0) {
-					unload_texture(image->simple.texture);
-					image->simple.texture = 0;
-				}
-				image->simple.is_valid = false;
-			} else {
-				panic("invalid image backend");
-			}
-		} else {
-			panic("invalid image type");
-		}
-
-		for (i32 i = 0; i < image->level_count; ++i) {
-			level_image_t* level_image = image->level_images + i;
-			if (level_image->tiles) {
-				for (i32 j = 0; j < level_image->tile_count; ++j) {
-					tile_t* tile = level_image->tiles + j;
-					if (tile->texture != 0) {
-						unload_texture(tile->texture);
-					}
-				}
-			}
-			free(level_image->tiles);
-			level_image->tiles = NULL;
-		}
-
-		if (image->macro_image.is_valid) {
-			if (image->macro_image.pixels) stbi_image_free(image->simple.pixels);
-			if (image->macro_image.texture) unload_texture(image->macro_image.texture);
-			memset(&image->macro_image, 0, sizeof(image->macro_image));
-		}
-		if (image->label_image.is_valid) {
-			if (image->label_image.pixels) stbi_image_free(image->simple.pixels);
-			if (image->label_image.texture) unload_texture(image->label_image.texture);
-			memset(&image->label_image, 0, sizeof(image->label_image));
-		}
-
-	}
-}
 
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool need_image_registration) {
 	arrput(app_state->loaded_images, image);
@@ -176,7 +97,7 @@ void unload_all_images(app_state_t *app_state) {
 		ASSERT(app_state->loaded_images);
 		for (i32 i = 0; i < current_image_count; ++i) {
 			image_t* old_image = app_state->loaded_images + i;
-			unload_image(old_image);
+			image_destroy(old_image);
 		}
 		arrfree(app_state->loaded_images);
 		arrfree(app_state->active_resources);
@@ -238,7 +159,7 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
     // TODO: switch back to builtin TIFF backend once read_region() works
-	app_state->use_builtin_tiff_backend = false; // If disabled, revert to OpenSlide when loading TIFF files.
+	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
 
 	app_state->keyboard_base_panning_speed = 10.0f;
 	app_state->mouse_sensitivity = 12.0f;
@@ -275,17 +196,15 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 
 }
 
-void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
+void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
 	i32 tasks_waiting = get_work_queue_task_count(&global_work_queue);
-	i32 max_acceptable_tasks = ATMOST(logical_cpu_count * 10, COUNT(global_work_queue.entries)-1);
+	i32 max_acceptable_tasks = ATMOST(logical_cpu_count * 10, global_work_queue.entry_count-1);
 	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
 	if (tiles_to_load > usable_slots) {
 		tiles_to_load = usable_slots;
 	}
 
 	if (tiles_to_load > 0){
-		app_state->allow_idling_next_frame = false;
-
 		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) {
 			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
 			// (to reduce load on the server)
@@ -486,6 +405,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		// IO
 
+		benaphore_lock(&image->lock);
+
 		// Upload macro and label images (just-in-time)
 		simple_image_t* macro_image = &image->macro_image;
 		simple_image_t* label_image = &image->label_image;
@@ -627,6 +548,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.need_gpu_residency = true,
 								.need_keep_in_cache = tile->need_keep_in_cache,
 								.completion_callback = viewer_notify_load_tile_completed,
+//								.completion_queue = &global_completion_queue,
 						};
 						tile_wishlist[num_tasks_on_wishlist++] = task;
 					}
@@ -643,8 +565,13 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) ? 3 : 10;
 			i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
-			request_tiles(app_state, image, tile_wishlist, tiles_to_load);
+			if (tiles_to_load > 0) {
+				request_tiles(image, tile_wishlist, tiles_to_load);
+				app_state->allow_idling_next_frame = false;
+			}
 		}
+
+		benaphore_unlock(&image->lock);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 

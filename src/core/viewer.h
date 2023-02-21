@@ -102,6 +102,7 @@ typedef struct load_tile_task_t {
 	bool8 need_gpu_residency;
 	bool8 need_keep_in_cache;
 	work_queue_callback_t* completion_callback;
+	work_queue_t* completion_queue;
 } load_tile_task_t;
 
 typedef struct viewer_notify_tile_completed_task_t {
@@ -339,8 +340,6 @@ typedef struct app_state_t {
 
 
 //  prototypes
-tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y);
-tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 tile_index);
 void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool need_image_registration);
 void unload_all_images(app_state_t* app_state);
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
@@ -348,14 +347,13 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_openslide_wsi(wsi_t* wsi, const char* filename);
 void unload_openslide_wsi(wsi_t* wsi);
-void tile_release_cache(tile_t* tile);
 bool was_button_pressed(button_state_t* button);
 bool was_button_released(button_state_t* button);
 bool was_key_pressed(input_t* input, i32 keycode);
 bool is_key_down(input_t* input, i32 keycode);
 void init_app_state(app_state_t* app_state, app_command_t command);
 void autosave(app_state_t* app_state, bool force_ignore_delay);
-void request_tiles(app_state_t* app_state, image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
+void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void scene_update_camera_pos(scene_t* scene, v2f pos);
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_time);
@@ -363,6 +361,7 @@ void do_after_scene_render(app_state_t* app_state, input_t* input);
 
 // viewer_opengl.cpp
 u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
+void unload_texture(u32 texture);
 void init_opengl_stuff(app_state_t* app_state);
 void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height);
 

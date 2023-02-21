@@ -703,7 +703,11 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 
 				} break;
 				case DICOM_LossyImageCompression: {
-
+					dicom_cs_t cs = dicom_parse_code_string(str, NULL);
+					if (strcmp(cs.value, "00") == 0) {
+						instance->uncompressed = true;
+					}
+					// assume compressed otherwise
 				} break;
 				case DICOM_LossyImageCompressionRatio: {
 

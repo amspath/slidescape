@@ -60,6 +60,14 @@ bool is_point_inside_rect2i(rect2i rect, v2i point) {
 	return result;
 }
 
+bool is_point_inside_bounds2i(bounds2i bounds, v2i point) {
+	bool result = true;
+	if (point.x < bounds.min.x || point.x >= bounds.max.x || point.y < bounds.min.y || point.y >= bounds.max.y) {
+		result = false;
+	}
+	return result;
+}
+
 v2i rect2i_center_point(rect2i rect) {
 	v2i result = {
 			.x = rect.x + rect.w / 2,

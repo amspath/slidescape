@@ -415,6 +415,7 @@ typedef struct dicom_instance_t {
 	u16 bits_stored;
 	u16 high_bit;
 	u16 pixel_representation;
+	bool uncompressed;
 	dicom_lossy_image_compression_method_enum lossy_image_compression_method;
 	float imaged_volume_width;
 	float imaged_volume_height;

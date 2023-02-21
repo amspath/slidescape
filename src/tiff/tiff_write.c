@@ -391,6 +391,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 
 		i64 read_time_start = get_clock();
 
+		benaphore_lock(&image->lock);
 		for (i32 tile_index = 0; tile_index <= last_source_tile_needed; ++tile_index) {
 			tile_t* tile = level_task->source_tiles[tile_index];
 			if (tile_index < first_source_tile_needed) {
@@ -421,7 +422,9 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 			}
 		}
 
-		request_tiles(app_state, image, wishlist, tiles_to_load);
+		request_tiles(image, wishlist, tiles_to_load);
+		benaphore_unlock(&image->lock);
+
 		free(wishlist);
 		wishlist = NULL;
 
@@ -434,6 +437,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 				mark_queue_entry_completed(&global_export_completion_queue);
 
 				if (entry.callback == export_notify_load_tile_completed) {
+					benaphore_lock(&image->lock);
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 					if (task->pixel_memory) {
 						bool need_free_pixel_memory = true;
@@ -461,6 +465,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 							free(task->pixel_memory);
 						}
 					}
+					benaphore_unlock(&image->lock);
 
 //					free(entry.data);
 				} /*else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {

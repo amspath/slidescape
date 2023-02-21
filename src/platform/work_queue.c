@@ -20,10 +20,37 @@
 #include <semaphore.h>
 #endif
 
+work_queue_t create_work_queue(const char* semaphore_name, i32 entry_count) {
+	work_queue_t queue = {};
+
+	i32 semaphore_initial_count = 0;
+#if WINDOWS
+	queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, semaphore_name, 0, SEMAPHORE_ALL_ACCESS);
+#else
+	queue->semaphore = sem_open(semaphore_name, O_CREAT, 0644, semaphore_initial_count);
+#endif
+	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
+	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));
+	return queue;
+}
+
+void destroy_work_queue(work_queue_t* queue) {
+	if (queue->entries) {
+		free(queue->entries);
+		queue->entries = NULL;
+	}
+#if WINDOWS
+	CloseHandle(queue->semaphore);
+#else
+	sem_close(queue->semaphore);
+#endif
+	queue->semaphore = NULL;
+}
+
 i32 get_work_queue_task_count(work_queue_t* queue) {
 	i32 count = queue->next_entry_to_submit - queue->next_entry_to_execute;
 	while (count < 0) {
-		count += COUNT(queue->entries);
+		count += queue->entry_count;
 	}
 	return count;
 }
@@ -37,7 +64,7 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer
 		i32 entry_to_submit = queue->next_entry_to_submit;
-		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % COUNT(queue->entries);
+		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % queue->entry_count;
 		if (new_next_entry_to_submit == queue->next_entry_to_execute) {
 			// TODO: fix multithreading problem: completion queue overflowing
 			console_print_error("Warning: work queue is overflowing - job is cancelled\n");
@@ -77,7 +104,7 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {0};
 
 	i32 entry_to_execute = queue->next_entry_to_execute;
-	i32 new_next_entry_to_execute = (entry_to_execute + 1) % COUNT(queue->entries);
+	i32 new_next_entry_to_execute = (entry_to_execute + 1) % queue->entry_count;
 
 	// don't even try to execute a task if it is not yet submitted, or not yet fully submitted
 	if ((entry_to_execute != queue->next_entry_to_submit) && (queue->entries[entry_to_execute].is_valid)) {
@@ -152,6 +179,8 @@ void drain_work_queue(work_queue_t* queue) {
 		do_worker_work(&global_work_queue, 0);
 	}
 }
+
+void dummy_work_queue_callback(int logical_thread_index, void* userdata) {}
 
 //#define TEST_THREAD_QUEUE
 #ifdef TEST_THREAD_QUEUE

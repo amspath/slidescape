@@ -1677,20 +1677,15 @@ DWORD WINAPI thread_proc(void* parameter) {
 	}
 }
 
-void init_work_queue(work_queue_t* queue, const char* name) {
-	i32 semaphore_initial_count = 0;
-	queue->semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, name, 0, SEMAPHORE_ALL_ACCESS);
-}
-
 void win32_init_multithreading() {
 	init_thread_memory(0);
 
 	worker_thread_count = total_thread_count - 1;
 	active_worker_thread_count = worker_thread_count;
 
-	init_work_queue(&global_work_queue, "/worksem"); // Queue for newly submitted tasks
-	init_work_queue(&global_completion_queue, "/completionsem"); // Message queue for completed tasks
-	init_work_queue(&global_export_completion_queue, "/exportcompletionsem"); // Message queue for export task
+	global_work_queue = create_work_queue("/worksem", 1024); // Queue for newly submitted tasks
+	global_completion_queue = create_work_queue("/completionsem", 1024); // Message queue for completed tasks
+	global_export_completion_queue = create_work_queue("/exportcompletionsem", 1024); // Message queue for export task
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < total_thread_count; ++i) {

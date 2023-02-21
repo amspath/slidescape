@@ -183,11 +183,38 @@ typedef struct image_t {
     simple_image_t label_image;
     i32 resource_id;
 	i32 refcount;
+	benaphore_t lock;
 } image_t;
+
+
+static inline tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
+	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
+	ASSERT(tile_index >= 0 && tile_index < image_level->tile_count);
+	tile_t* result = image_level->tiles + tile_index;
+	return result;
+}
+
+static inline tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 tile_index) {
+	ASSERT(image);
+	ASSERT(scale < image->level_count);
+	level_image_t* level_image = image->level_images + scale;
+	tile_t* tile = level_image->tiles + tile_index;
+	return tile;
+}
+
+static inline u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
+	level_image_t* level_image = image->level_images + level;
+
+	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
+	ASSERT(tile_index >= 0 && tile_index < level_image->tile_count);
+	tile_t* tile = level_image->tiles + tile_index;
+
+	return tile->texture;
+}
 
 float f32_rgb_to_f32_y(float R, float G, float B);
 void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components);
-
+void tile_release_cache(tile_t* tile);
 const char* get_image_backend_name(image_t* image);
 const char* get_image_descriptive_type_name(image_t* image);
 bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t* parent_image);
@@ -197,6 +224,7 @@ bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overla
 void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay);
 bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format);
 void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 scale);
+void image_destroy(image_t* image);
 
 #ifdef __cplusplus
 }

@@ -17,7 +17,23 @@
 */
 
 #include "common.h"
+#include "platform.h"
 #include "image.h"
+
+#define STBI_ASSERT(x) ASSERT(x)
+#include "stb_image.h" // for stbi_image_free()
+
+#include "viewer.h" // for unload_texture()
+
+// TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
+void tile_release_cache(tile_t* tile) {
+	ASSERT(tile);
+	if (tile->pixels) free(tile->pixels);
+	tile->pixels = NULL;
+	tile->is_cached = false;
+	tile->need_keep_in_cache = false;
+}
+
 
 const char* get_image_backend_name(image_t* image) {
     const char* result = "--";
@@ -712,12 +728,21 @@ void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 comp
 
 bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format) {
     ASSERT(dest != NULL);
+
+	if (w <= 0 || h <= 0) {
+		return false;
+	}
+	if (level < 0 || level >= image->level_count) {
+		console_print_error("image_read_region(): level %d out of bounds (valid range 0-%d)\n", level, image->level_count-1);
+		return false;
+	}
+
     pixel_format_enum intermediate_pixel_format = PIXEL_FORMAT_UNDEFINED;
     void* intermediate_pixel_buffer = NULL;
 
     switch (image->backend) {
         default: {
-            console_print_error("image_read_region(): not implemented for backend '%s'", get_image_backend_name(image));
+            console_print_error("image_read_region(): not implemented for backend '%s'\n", get_image_backend_name(image));
             return false;
         } break;
         case IMAGE_BACKEND_OPENSLIDE: {
@@ -729,6 +754,180 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
             }
             openslide.read_region(image->openslide_wsi.osr, intermediate_pixel_buffer, x, y, level, w, h);
         } break;
+		case IMAGE_BACKEND_TIFF:
+		case IMAGE_BACKEND_DICOM:
+		case IMAGE_BACKEND_STBI:{
+			level_image_t* level_image = image->level_images + level;
+
+			bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)level_image->width_in_tiles, (i32)level_image->height_in_tiles);
+			i32 local_x = x << level;
+			i32 local_y = y << level;
+			i32 tile_width = level_image->tile_width;
+			i32 tile_height = level_image->tile_height;
+			i32 tile_x0 = local_x / tile_width;
+			i32 tile_y0 = local_y / tile_height;
+			i32 tile_x1 = (local_x + w - 1) / tile_width + 1;
+			i32 tile_y1 = (local_y + h - 1) / tile_height + 1;
+			bounds2i region_tiles = BOUNDS2I(tile_x0, tile_y0, tile_x1, tile_y1);
+			bounds2i tiles_within_level_bounds = clip_bounds2i(region_tiles, level_tiles_bounds);
+
+			i32 width_in_tiles = tiles_within_level_bounds.right - tiles_within_level_bounds.left;
+			i32 height_in_tiles = tiles_within_level_bounds.bottom - tiles_within_level_bounds.top;
+
+			if (width_in_tiles > 0 && height_in_tiles > 0) {
+				load_tile_task_t* wishlist = calloc(width_in_tiles * height_in_tiles, sizeof(load_tile_task_t));
+				i32 tiles_to_load = 0;
+
+				work_queue_t read_completion_queue = create_work_queue("/imagereadregionsem", width_in_tiles * height_in_tiles);
+
+				// request tiles
+				benaphore_lock(&image->lock);
+				for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
+					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
+						tile_t* tile = get_tile(level_image, tile_x, tile_y);
+						if (tile->is_empty) continue; // no need to load empty tiles
+						if (tile->is_cached && tile->pixels) {
+							//TODO: retain
+							continue; // already cached
+						}
+						tile->need_keep_in_cache = true;
+						wishlist[tiles_to_load++] = (load_tile_task_t){
+							.resource_id = image->resource_id,
+							.image = image, .tile = tile, .level = level,
+							.tile_x = tile->tile_x,
+							.tile_y = tile->tile_y,
+							.need_gpu_residency = tile->need_gpu_residency,
+							.need_keep_in_cache = true,
+							.completion_queue = &read_completion_queue,
+						};
+
+					}
+				}
+
+				request_tiles(image, wishlist, tiles_to_load);
+				benaphore_unlock(&image->lock);
+
+				// retrieve all requested tiles
+				while (read_completion_queue.completion_count < tiles_to_load) {
+					if (is_queue_work_in_progress(&read_completion_queue)) {
+						work_queue_entry_t entry = get_next_work_queue_entry(&read_completion_queue);
+						if (entry.is_valid) {
+							benaphore_lock(&image->lock);
+							mark_queue_entry_completed(&read_completion_queue);
+							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
+							if (task->pixel_memory) {
+								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+								ASSERT(tile->pixels == NULL);
+								if (task->pixel_memory) {
+									tile->pixels = task->pixel_memory; // TODO: retain
+									tile->is_cached = true;
+								}
+							}
+							benaphore_unlock(&image->lock);
+						}
+					} else if (is_queue_work_waiting_to_start(&global_work_queue)) {
+						do_worker_work(&global_work_queue, 0);
+					} else {
+						platform_sleep(1);
+					}
+				}
+				destroy_work_queue(&read_completion_queue);
+			}
+
+
+			intermediate_pixel_format = PIXEL_FORMAT_U8_BGRA;
+			if (desired_pixel_format == intermediate_pixel_format) {
+				intermediate_pixel_buffer = (uint32_t*) dest;
+			} else {
+				intermediate_pixel_buffer = malloc(w * h * sizeof(uint32_t));
+			}
+
+
+			// reconstruct the tiles into the requested region
+			i32 x0_tile_offset = local_x % tile_width;
+			i32 y0_tile_offset = local_y % tile_height;
+			i32 x1_tile_offset = ((local_x + w - 1) % tile_width) + 1;
+			i32 y1_tile_offset = ((local_y + h - 1) % tile_height) + 1;
+			int bg_value = 0xFF; // for memset() (white)
+			for (i32 tile_y = region_tiles.min.y; tile_y < region_tiles.max.y; ++tile_y) {
+				i32 dest_y = (tile_y - region_tiles.min.y) * tile_height;
+				if (tile_y > region_tiles.min.y) {
+					dest_y -= y1_tile_offset;
+				}
+
+				i32 copy_height = tile_height;
+				i32 copy_y0 = 0;
+				i32 copy_y1 = tile_height;
+				if (tile_y == region_tiles.min.y) {
+					copy_height -= y0_tile_offset;
+					copy_y0 = y0_tile_offset;
+				}
+				if (tile_y == region_tiles.max.y-1) {
+					copy_height -= (tile_height - y1_tile_offset);
+					copy_y1 = y1_tile_offset;
+				}
+
+				for (i32 tile_x = region_tiles.min.x; tile_x < region_tiles.max.x; ++tile_x) {
+					i32 dest_x = (tile_x - region_tiles.min.x) * tile_width;
+					if (tile_x > region_tiles.min.x) {
+						dest_x -= x1_tile_offset;
+					}
+
+					i32 copy_width = tile_width;
+					i32 copy_x0 = 0;
+					i32 copy_x1 = tile_width;
+					if (tile_x == region_tiles.min.x) {
+						copy_width -= x0_tile_offset;
+						copy_x0 = x0_tile_offset;
+					}
+					if (tile_x == region_tiles.max.x-1) {
+						copy_width -= (tile_width - x1_tile_offset);
+						copy_x1 = x1_tile_offset;
+					}
+
+					bool copied = false;
+					if (tile_x >= 0 && tile_y >= 0 && tile_x < level_image->width_in_tiles && tile_y < level_image->height_in_tiles) {
+						// fill the area covered by this tile (if it exists)
+						tile_t* tile = get_tile(level_image, tile_x, tile_y);
+						if (!tile->is_empty && tile->is_cached && tile->pixels) {
+							uint32_t* row = (uint32_t*)intermediate_pixel_buffer + dest_y * w + dest_x;
+							for (i32 src_y = copy_y0; src_y < copy_y1; ++src_y) {
+								memcpy(row, (uint32_t*)tile->pixels + src_y * tile_width + copy_x0, copy_width * sizeof(uint32_t));
+								row += w;
+							}
+							copied = true;
+						}
+					}
+					if (!copied) {
+						// if the tile does not exist, fill the area with white
+						uint32_t* row = (uint32_t*)intermediate_pixel_buffer + dest_y * w + dest_x;
+						for (i32 src_y = copy_y0; src_y < copy_y1; ++src_y) {
+							memset(row, bg_value, copy_width * sizeof(uint32_t));
+							row += w;
+						}
+					}
+				}
+			}
+
+			// release tiles
+			benaphore_lock(&image->lock);
+			for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
+				for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
+					tile_t* tile = get_tile(level_image, tile_x, tile_y);
+					if (tile->is_empty) continue; // no need to load empty tiles
+					if (tile->is_cached && tile->pixels) {
+						free(tile->pixels);
+						tile->pixels = NULL;
+						tile->is_cached = false;
+					}
+					tile->need_keep_in_cache = false;
+				}
+			}
+			benaphore_unlock(&image->lock);
+
+
+
+		} break;
     }
 
     bool success = true;
@@ -740,11 +939,11 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
             if (desired_pixel_format == PIXEL_FORMAT_F32_Y) {
                 image_convert_u8_rgba_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
             } else {
-                console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented", intermediate_pixel_format, desired_pixel_format);
+                console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented\n", intermediate_pixel_format, desired_pixel_format);
                 success = false;
             }
         } else {
-            console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented", intermediate_pixel_format, desired_pixel_format);
+            console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented\n", intermediate_pixel_format, desired_pixel_format);
             success = false;
         }
         if (intermediate_pixel_buffer) free(intermediate_pixel_buffer);
@@ -787,3 +986,60 @@ void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 
 		level_image->indexing_job_submitted = false;
 	};
 }
+
+void image_destroy(image_t* image) {
+	if (image) {
+		if (image->type == IMAGE_TYPE_WSI) {
+			if (image->backend == IMAGE_BACKEND_OPENSLIDE) {
+				unload_openslide_wsi(&image->openslide_wsi);
+			} else if (image->backend == IMAGE_BACKEND_TIFF) {
+				tiff_destroy(&image->tiff);
+			} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+				isyntax_destroy(&image->isyntax);
+			} else if (image->backend == IMAGE_BACKEND_DICOM) {
+				dicom_destroy(&image->dicom);
+			} else if (image->backend == IMAGE_BACKEND_STBI) {
+				if (image->simple.pixels) {
+					stbi_image_free(image->simple.pixels);
+					image->simple.pixels = NULL;
+				}
+				if (image->simple.texture != 0) {
+					unload_texture(image->simple.texture);
+					image->simple.texture = 0;
+				}
+				image->simple.is_valid = false;
+			} else {
+				panic("invalid image backend");
+			}
+		} else {
+			panic("invalid image type");
+		}
+
+		for (i32 i = 0; i < image->level_count; ++i) {
+			level_image_t* level_image = image->level_images + i;
+			if (level_image->tiles) {
+				for (i32 j = 0; j < level_image->tile_count; ++j) {
+					tile_t* tile = level_image->tiles + j;
+					if (tile->texture != 0) {
+						unload_texture(tile->texture);
+					}
+				}
+			}
+			free(level_image->tiles);
+			level_image->tiles = NULL;
+		}
+
+		if (image->macro_image.is_valid) {
+			if (image->macro_image.pixels) stbi_image_free(image->simple.pixels);
+			if (image->macro_image.texture) unload_texture(image->macro_image.texture);
+			memset(&image->macro_image, 0, sizeof(image->macro_image));
+		}
+		if (image->label_image.is_valid) {
+			if (image->label_image.pixels) stbi_image_free(image->simple.pixels);
+			if (image->label_image.texture) unload_texture(image->label_image.texture);
+			memset(&image->label_image, 0, sizeof(image->label_image));
+		}
+
+	}
+}
+
