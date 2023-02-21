@@ -15,17 +15,17 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleLongVersionString</key>
-	<string>0.45</string>
+	<string>0.46</string>
 	<key>CFBundleName</key>
 	<string>Slidescape</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.45</string>
+	<string>0.46</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>0.45</string>
+	<string>0.46</string>
 	<key>CSResourcesFileMapped</key>
 	<true/>
 	<key>NSSupportsSuddenTermination</key>
@@ -46,6 +46,7 @@
 				<string>ptif</string>
 				<string>tif</string>
 				<string>isyntax</string>
+				<string>i2syntax</string>
 				<string>svs</string>
 				<string>ndpi</string>
 				<string>vms</string>
