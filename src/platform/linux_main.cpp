@@ -560,27 +560,40 @@ int main(int argc, const char** argv)
 			0,
 	};
 #if LINUX
+
+	// Query default monitor resolution
+	float ddpi, hdpi, vdpi;
+	if (SDL_GetDisplayDPI(0, &ddpi, &hdpi, &vdpi) != 0) {
+		fprintf(stderr, "Failed to obtain DPI information for display 0: %s\n", SDL_GetError());
+		exit(1);
+	}
+	float dpi_scaling = ddpi / 72.f;
+	float font_scale_factor = 1.0f;
+	if (dpi_scaling > 1.0f) {
+		font_scale_factor += ((dpi_scaling - 1.0f) * 0.5f);
+	}
+
 	const char* main_ui_font_filename = "/usr/share/fonts/noto/NotoSans-Regular.ttf";
 	if (file_exists(main_ui_font_filename)) {
-		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, 17.0f, NULL, ranges);
+		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, 17.0f * font_scale_factor, NULL, ranges);
 	} else {
 		main_ui_font_filename = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 		if (file_exists(main_ui_font_filename)) {
-			global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, 16.0f, NULL, ranges);
+			global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, 16.0f * font_scale_factor, NULL, ranges);
 		}
 	}
 
 	const char* fixed_width_font_filename = "/usr/share/fonts/noto/NotoMono-Regular.ttf/NotoMono-Regular.ttf";
 	if (file_exists(fixed_width_font_filename)) {
-		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f, NULL, ranges);
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f * font_scale_factor, NULL, ranges);
 	} else {
 		fixed_width_font_filename = "/usr/share/fonts/noto/NotoMono-Regular.ttf";
 		if (file_exists(fixed_width_font_filename)) {
-			global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f, NULL, ranges);
+			global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f * font_scale_factor, NULL, ranges);
 		} else {
 			fixed_width_font_filename = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf";
 			if (file_exists(fixed_width_font_filename)) {
-				global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f, NULL, ranges);
+				global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 15.0f * font_scale_factor, NULL, ranges);
 			}
 		}
 	}
