@@ -27,7 +27,7 @@ work_queue_t create_work_queue(const char* semaphore_name, i32 entry_count) {
 #if WINDOWS
 	queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, semaphore_name, 0, SEMAPHORE_ALL_ACCESS);
 #else
-	queue->semaphore = sem_open(semaphore_name, O_CREAT, 0644, semaphore_initial_count);
+	queue.semaphore = sem_open(semaphore_name, O_CREAT, 0644, semaphore_initial_count);
 #endif
 	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
 	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));

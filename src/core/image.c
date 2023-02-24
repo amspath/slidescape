@@ -852,7 +852,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			for (i32 tile_y = region_tiles.min.y; tile_y < region_tiles.max.y; ++tile_y) {
 				i32 dest_y = (tile_y - region_tiles.min.y) * tile_height;
 				if (tile_y > region_tiles.min.y) {
-					dest_y -= y1_tile_offset;
+					dest_y -= y0_tile_offset;
 				}
 
 				i32 copy_height = tile_height;
@@ -870,7 +870,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				for (i32 tile_x = region_tiles.min.x; tile_x < region_tiles.max.x; ++tile_x) {
 					i32 dest_x = (tile_x - region_tiles.min.x) * tile_width;
 					if (tile_x > region_tiles.min.x) {
-						dest_x -= x1_tile_offset;
+						dest_x -= x0_tile_offset;
 					}
 
 					i32 copy_width = tile_width;
