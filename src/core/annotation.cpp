@@ -679,11 +679,21 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			}
 
 			// Delete a coordinate by pressing 'C' while hovering over the coordinate
+			static i64 key_hold_down_time_start;
+			static i32 repeat_counter;
+			if (was_key_pressed(input, KEY_C)) {
+				key_hold_down_time_start = get_clock();
+				repeat_counter = 0;
+			}
 			if (is_key_down(input, KEY_C) && annotation_set->is_edit_mode) {
-				if (hit_result.annotation_index >= 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
-					annotation_t* hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
-					if (hit_annotation->selected) {
-						delete_coordinate(annotation_set, hit_result.annotation_index, annotation_set->hovered_coordinate);
+				// can delete a coordinate every frame, but only after the initial 0.25 s delay
+				if (repeat_counter == 0 || get_seconds_elapsed(key_hold_down_time_start, get_clock()) > 0.25f) {
+					++repeat_counter;
+					if (hit_result.annotation_index >= 0 && annotation_set->hovered_coordinate >= 0 && annotation_set->hovered_coordinate_pixel_distance < annotation_hover_distance) {
+						annotation_t* hit_annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
+						if (hit_annotation->selected) {
+							delete_coordinate(annotation_set, hit_result.annotation_index, annotation_set->hovered_coordinate);
+						}
 					}
 				}
 			}
