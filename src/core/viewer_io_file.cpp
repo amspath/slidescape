@@ -522,7 +522,12 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 					// Maybe a placeholder value, which gets updated based on the scale of the scene image?
 					annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 					unload_and_reinit_annotations(annotation_set);
-					annotation_set->mpp = V2F(0.25f, 0.25f);
+					if (arrlen(app_state->loaded_images) > 0) {
+						image_t* image = app_state->loaded_images + 0;
+						annotation_set->mpp = V2F(image->mpp_x, image->mpp_y);
+					} else {
+						annotation_set->mpp = V2F(0.25f, 0.25f);
+					}
 					success = load_asap_xml_annotations(app_state, filename);
 				} else if (file.type == VIEWER_FILE_TYPE_JSON) {
 					// TODO: disambiguate between COCO annotations and case lists
