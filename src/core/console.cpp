@@ -172,7 +172,7 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 			gui_add_modal_message_popup("Modal test", "This is a modal message test.");
 		} else if (strcmp(cmd, "tiff_save_description") == 0) {
 			if (arrlen(app_state->loaded_images) > 0) {
-				image_t* image = app_state->loaded_images + 0;
+				image_t* image = app_state->loaded_images[0];
 				if (image->backend == IMAGE_BACKEND_TIFF) {
 					tiff_ifd_t* ifd = image->tiff.main_image_ifd;
 					if (ifd && ifd->image_description != NULL) {

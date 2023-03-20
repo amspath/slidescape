@@ -79,7 +79,7 @@ void export_region_get_name_hint(app_state_t* app_state, char* output_buffer, si
 	const char* name_hint = "output";
 	if (arrlen(app_state->loaded_images) > 0) {
 		for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
-			image_t* image = app_state->loaded_images + i;
+			image_t* image = app_state->loaded_images[i];
 			if (image->name[0] != '\0') {
 				size_t buffer_size = sizeof(image->name);
 				char* new_name_hint = (char*)alloca(buffer_size);
@@ -128,7 +128,7 @@ int app_command_execute(app_state_t* app_state) {
 			const char* filename = command->inputs[input_index];
 			if (load_generic_file(app_state, filename, 0)) {
 				if (arrlen(app_state->loaded_images) > 0) {
-					image_t* image = app_state->loaded_images;
+					image_t* image = app_state->loaded_images[0];
 					if (image->backend == IMAGE_BACKEND_TIFF) {
 						u32 export_flags = 0;
 						// TODO: allow configuration

@@ -53,6 +53,14 @@ static inline i32 atomic_decrement(volatile i32* x) {
 	return InterlockedDecrement((volatile long*)x);
 }
 
+static inline i32 atomic_add(volatile i32* x, i32 amount) {
+	return InterlockedAdd((volatile long*)x, (long)amount);
+}
+
+static inline i32 atomic_subtract(volatile i32* x, i32 amount) {
+	return InterlockedAdd((volatile long*)x, (long)(-amount));
+}
+
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
 	i32 read_value = InterlockedCompareExchange((volatile long*)destination, exchange, comparand);
 	return (read_value == comparand);
@@ -79,6 +87,14 @@ static inline i32 atomic_decrement(volatile i32* x) {
 	return OSAtomicDecrement32(x);
 }
 
+static inline i32 atomic_add(volatile i32* x, i32 amount) {
+    return OSAtomicAdd32(amount, x);
+}
+
+static inline i32 atomic_subtract(volatile i32* x, i32 amount) {
+    return OSAtomicAdd32(-amount, x);
+}
+
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {
 	bool result = OSAtomicCompareAndSwap32(comparand, exchange, destination);
 	return result;
@@ -99,6 +115,14 @@ static inline i32 atomic_increment(volatile i32* x) {
 
 static inline i32 atomic_decrement(volatile i32* x) {
     return __sync_sub_and_fetch(x, 1);
+}
+
+static inline i32 atomic_add(volatile i32* x, i32 amount) {
+    return __sync_add_and_fetch(x, amount);
+}
+
+static inline i32 atomic_subtract(volatile i32* x, i32 amount) {
+    return __sync_sub_and_fetch(x, amount);
 }
 
 static inline bool atomic_compare_exchange(volatile i32* destination, i32 exchange, i32 comparand) {

@@ -799,6 +799,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							.need_gpu_residency = tile->need_gpu_residency,
 							.need_keep_in_cache = true,
 							.completion_queue = &read_completion_queue,
+                            .refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
 						};
 
 					}
@@ -988,6 +989,12 @@ void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 
 }
 
 void image_destroy(image_t* image) {
+    image->is_deleted = true;
+    while (image->refcount > 0) {
+//		console_print_error("refcount = %d\n", image->refcount);
+        platform_sleep(1);
+        do_worker_work(&global_work_queue, 0);
+    }
 	if (image) {
 		if (image->type == IMAGE_TYPE_WSI) {
 			if (image->backend == IMAGE_BACKEND_OPENSLIDE) {

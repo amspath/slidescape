@@ -153,11 +153,12 @@ typedef struct simple_image_t {
 typedef struct image_t {
     char name[512];
     char directory[512];
-    bool is_local; // i.e. not remote (accessed over network using client/server interface)
     image_type_enum type;
     image_backend_enum backend;
     bool is_freshly_loaded; // TODO: remove or refactor, is this still needed?
+    bool is_local; // i.e. not remote (accessed over network using client/server interface)
     bool is_valid;
+    bool is_deleted; // TODO: prevent delay due to refcount > 0 when closing WSI (garbage collect off the main thread)
     bool is_enabled;
     bool is_overlay;
     union {
@@ -182,7 +183,7 @@ typedef struct image_t {
     simple_image_t macro_image;
     simple_image_t label_image;
     i32 resource_id;
-	i32 refcount;
+	volatile i32 refcount;
 	benaphore_t lock;
 } image_t;
 

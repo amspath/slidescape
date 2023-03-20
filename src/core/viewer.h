@@ -103,6 +103,7 @@ typedef struct load_tile_task_t {
 	bool8 need_keep_in_cache;
 	work_queue_callback_t* completion_callback;
 	work_queue_t* completion_queue;
+    i32 refcount_to_decrement;
 } load_tile_task_t;
 
 typedef struct viewer_notify_tile_completed_task_t {
@@ -306,7 +307,7 @@ typedef struct app_state_t {
 	v4f clear_color;
 	float black_level;
 	float white_level;
-	image_t* loaded_images; // array
+	image_t** loaded_images; // array
 	i32 displayed_image;
 	bool is_any_image_loaded;
 	caselist_t caselist;
@@ -341,10 +342,10 @@ typedef struct app_state_t {
 
 
 //  prototypes
-void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool need_image_registration);
+void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration);
 void unload_all_images(app_state_t* app_state);
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
-image_t load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
+image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_openslide_wsi(wsi_t* wsi, const char* filename);
 void unload_openslide_wsi(wsi_t* wsi);

@@ -21,6 +21,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
 	load_tile_task_t* first_task = batch->tile_tasks;
 	image_t* image = first_task->image;
+    i32 refcount_decrement_amount = 0;
 
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
@@ -59,6 +60,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				chunk_offsets[i] = tile_offset;
 				chunk_sizes[i] = chunk_size;
 				total_read_size += chunk_size;
+
+                refcount_decrement_amount += task->refcount_to_decrement;
 			}
 
 
@@ -147,5 +150,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 	}
 
+    // NOTE: we guarantee existence of image_t until the jobs submitted from the main thread are done.
+    // However, we will NOT wait for the completion queues to also be finished (usually the responsibility of the main thread).
+    // This means that when we receive the completion tasks on the main thread, we have to check if the image is still valid.
+    atomic_subtract(&image->refcount, refcount_decrement_amount);
 
 }

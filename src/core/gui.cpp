@@ -372,7 +372,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			set_region_encompassing_selected_annotations(&scene->annotation_set, scene);
 		} else if (menu_items_clicked.select_region_whole_slide) {
 			if (arrlen(app_state->loaded_images) > 0) {
-				image_t* image = app_state->loaded_images + 0;
+				image_t* image = app_state->loaded_images[0];
 				// TODO: what to do if there are multiple layers?
 				set_region_for_whole_slide(scene, image);
 				scene->need_zoom_reset = true;
@@ -458,7 +458,7 @@ void draw_layers_window(app_state_t* app_state) {
 		ImGui::TableHeadersRow();
 
 		for (i32 image_index = 0; image_index < image_count; ++image_index) {
-			image_t* image = app_state->loaded_images + image_index;
+			image_t* image = app_state->loaded_images[image_index];
 			ImGui::TableNextRow();
 
 			// Display index
@@ -503,7 +503,7 @@ void draw_layers_window(app_state_t* app_state) {
 
 	ImGui::NewLine();
 	if (layers_window_selected_image_index < image_count) {
-		image_t* image = app_state->loaded_images + layers_window_selected_image_index;
+		image_t* image = app_state->loaded_images[layers_window_selected_image_index];
 		ImGui::Text("Adjust position offset for layer %d:", layers_window_selected_image_index);
 		ASSERT(image->mpp_x != 0.0f);
 		ASSERT(image->mpp_y != 0.0f);
@@ -522,7 +522,7 @@ void draw_layers_window(app_state_t* app_state) {
         if (layers_window_selected_image_index > 0) {
             ImGui::SameLine();
             if (ImGui::Button("Re-register")) {
-                image_transform_t transform = do_image_registration(app_state->loaded_images + 0, image, 2);
+                image_transform_t transform = do_image_registration(app_state->loaded_images[0], image, 2);
                 if (transform.is_valid) {
                     // apply translation
                     if (transform.translate.x != 0.0f || transform.translate.y != 0.0f) {
@@ -533,8 +533,8 @@ void draw_layers_window(app_state_t* app_state) {
             ImGui::SameLine();
             if (ImGui::Button("Re-register (local)")) {
                 console_print("\nLocal image registration:\n");
-                image_transform_t transform1 = do_local_image_registration(app_state->loaded_images + 0, image, app_state->scene.camera, app_state->scene.zoom.level, 2048, REGISTER_PREPROCESS_NONE);
-                image_transform_t transform2 = do_local_image_registration(app_state->loaded_images + 0, image, app_state->scene.camera, app_state->scene.zoom.level, 2048, REGISTER_PREPROCESS_ISOLATE_HEMATOXYLIN);
+                image_transform_t transform1 = do_local_image_registration(app_state->loaded_images[0], image, app_state->scene.camera, app_state->scene.zoom.level, 2048, REGISTER_PREPROCESS_NONE);
+                image_transform_t transform2 = do_local_image_registration(app_state->loaded_images[0], image, app_state->scene.camera, app_state->scene.zoom.level, 2048, REGISTER_PREPROCESS_ISOLATE_HEMATOXYLIN);
                 image_transform_t best_transform = (transform1.response > transform2.response) ? transform1 : transform2;
 //                image_transform_t best_transform = transform1;
                 if (best_transform.is_valid) {
@@ -574,7 +574,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 	if (ImGui::BeginPopupModal("Export region", NULL, 0/*ImGuiWindowFlags_AlwaysAutoResize*/)) {
 		scene_t* scene = &app_state->scene;
-		image_t* image = app_state->loaded_images + 0;
+		image_t* image = app_state->loaded_images[0];
 
 		bool display_export_annotations_checkbox = (scene->annotation_set.active_annotation_count > 0);
 		i32 lines_at_bottom = 2;
@@ -666,7 +666,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		const char* name_hint = "output";
 		if (arrlen(app_state->loaded_images) > 0) {
 			for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
-				image_t* image = app_state->loaded_images + i;
+				image_t* image = app_state->loaded_images[i];
 				if (image->name[0] != '\0') {
 					size_t buffer_size = sizeof(image->name);
 					char* new_name_hint = (char*)alloca(buffer_size);
@@ -835,7 +835,7 @@ static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
 		// TODO: how to check if a scene is enabled?
 		if (arrlen(app_state->loaded_images) > 0) {
 			ImGui::Text("Scene Position: (%.1f,%.1f)", scene->mouse.x, scene->mouse.y);
-            image_t* image = app_state->loaded_images + 0;
+            image_t* image = app_state->loaded_images[0];
             v2i pixel_pos = world_pos_to_pixel_pos(scene->mouse, image->mpp_x, level);
             ImGui::Text("Pixel Position: (%d,%d)", pixel_pos.x, pixel_pos.y);
             v2i clicked_pixel_pos = world_pos_to_pixel_pos(scene->left_clicked_pos, image->mpp_x, level);

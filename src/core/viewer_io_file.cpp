@@ -49,7 +49,6 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
-	thread_memory_t* thread_memory = local_thread_memory;
 	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 	u8* temp_memory = (u8*)malloc(pixel_memory_size);
 	memset(temp_memory, 0xFF, pixel_memory_size);
@@ -134,7 +133,6 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	task->tile->texture = texture;
 #endif
 
-
 #else//USE_MULTIPLE_OPENGL_CONTEXTS
 
 	viewer_notify_tile_completed_task_t completion_task = {};
@@ -155,6 +153,12 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	}
 
 #endif
+
+    // NOTE: we guarantee existence of image_t until the jobs submitted from the main thread are done.
+    // However, we will NOT wait for the completion queues to also be finished (usually the responsibility of the main thread).
+    // This means that when we receive the completion tasks on the main thread, we have to check if the image is still valid.
+    atomic_subtract(&image->refcount, task->refcount_to_decrement);
+
 //	console_print_verbose("[thread %d] tile load done\n", logical_thread_index);
 
 }
@@ -430,14 +434,14 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 		unload_and_reinit_annotations(&app_state->scene.annotation_set);
 	}
 	load_next_image_as_overlay = false; // reset after use (don't keep stacking on more overlays unintendedly)
-	image_t image = load_image_from_file(app_state, file, directory, filetype_hint);
-	if (image.is_valid) {
+	image_t* image = load_image_from_file(app_state, file, directory, filetype_hint);
+	if (image->is_valid) {
 		add_image(app_state, image, is_base_image, !is_base_image);
 
         if (is_base_image) {
             annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 //            unload_and_reinit_annotations(annotation_set); // no need, already unloaded!
-            annotation_set->mpp = V2F(image.mpp_x, image.mpp_y);
+            annotation_set->mpp = V2F(image->mpp_x, image->mpp_y);
 
             // Check if there is an associated ASAP XML or COCO JSON annotations file
             char temp_filename[512];
@@ -469,7 +473,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 			}
 #else
             // TODO: remove?
-            coco_init_main_image(&annotation_set->coco, &image);
+            coco_init_main_image(&annotation_set->coco, image);
 #endif
 
             // TODO: use most recently updated annotations?
@@ -493,8 +497,8 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
         }
 
 		console_print("Loaded '%s'\n", file->filename);
-		if (image.backend == IMAGE_BACKEND_ISYNTAX) {
-			console_print("   iSyntax: loading took %g seconds\n", image.isyntax.loading_time);
+		if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+			console_print("   iSyntax: loading took %g seconds\n", image->isyntax.loading_time);
 		}
 		return true;
 
@@ -523,7 +527,7 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 					annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 					unload_and_reinit_annotations(annotation_set);
 					if (arrlen(app_state->loaded_images) > 0) {
-						image_t* image = app_state->loaded_images + 0;
+						image_t* image = app_state->loaded_images[0];
 						annotation_set->mpp = V2F(image->mpp_x, image->mpp_y);
 					} else {
 						annotation_set->mpp = V2F(0.25f, 0.25f);
@@ -561,7 +565,7 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 const char* get_active_directory(app_state_t* app_state) {
 	if (arrlen(app_state->loaded_images) > 0) {
 		for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
-			image_t* image = app_state->loaded_images + i;
+			image_t* image = app_state->loaded_images[i];
 			if (image->is_local) {
 				return image->directory;
 			}
@@ -607,26 +611,26 @@ void set_annotation_directory(app_state_t* app_state, const char* path) {
 
 
 //TODO: refactor
-image_t load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint) {
+image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint) {
 
-	image_t image = {};
-	image.is_local = true;
-	image.resource_id = global_next_resource_id++;
+	image_t* image = (image_t*)calloc(1, sizeof(image_t));
+	image->is_local = true;
+	image->resource_id = global_next_resource_id++;
 
 	bool is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
     image_t* parent_image = NULL;
     if (is_overlay && arrlen(app_state->loaded_images)) {
-        parent_image = app_state->loaded_images + 0;
+        parent_image = app_state->loaded_images[0];
     }
 
 	const char* filename = file->filename;
 	size_t filename_len = strlen(filename);
 	const char* name = one_past_last_slash(filename, filename_len);
-	strncpy(image.name, name, sizeof(image.name)-1);
+	strncpy(image->name, name, sizeof(image->name)-1);
 
 	if (name > filename) {
 		size_t directory_len = (u64)name - (u64)filename;
-		memcpy(image.directory, filename, ATMOST(directory_len, sizeof(image.directory)));
+		memcpy(image->directory, filename, ATMOST(directory_len, sizeof(image->directory)));
 	}
 
 	const char* ext = get_file_extension(filename);
@@ -634,15 +638,15 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 	if (file->type == VIEWER_FILE_TYPE_SIMPLE_IMAGE) {
 		// Load using stb_image
 
-		image.type = IMAGE_TYPE_WSI;
-		image.backend = IMAGE_BACKEND_STBI;
-		image.simple.channels = 4; // desired: RGBA
-		image.simple.pixels = stbi_load(filename, &image.simple.width, &image.simple.height, &image.simple.channels_in_file, 4);
-		if (image.simple.pixels) {
+		image->type = IMAGE_TYPE_WSI;
+		image->backend = IMAGE_BACKEND_STBI;
+		image->simple.channels = 4; // desired: RGBA
+		image->simple.pixels = stbi_load(filename, &image->simple.width, &image->simple.height, &image->simple.channels_in_file, 4);
+		if (image->simple.pixels) {
 
-			image.is_freshly_loaded = true;
-			image.is_valid = true;
-			init_image_from_stbi(&image, &image.simple, is_overlay);
+			image->is_freshly_loaded = true;
+			image->is_valid = true;
+			init_image_from_stbi(image, &image->simple, is_overlay);
 			return image;
 
 			//stbi_image_free(image->stbi.pixels);
@@ -652,18 +656,18 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {
-			init_image_from_tiff(&image, tiff, is_overlay, parent_image);
+			init_image_from_tiff(image, tiff, is_overlay, parent_image);
 			return image;
 		} else {
 			tiff_destroy(&tiff);
-			image.is_valid = false;
+			image->is_valid = false;
 			return image;
 		}
 	} else if (file->type == VIEWER_FILE_TYPE_ISYNTAX) {
 		// Try to open as iSyntax
 		isyntax_t isyntax = {0};
 		if (isyntax_open(&isyntax, filename)) {
-			init_image_from_isyntax(&image, &isyntax, is_overlay);
+			init_image_from_isyntax(image, &isyntax, is_overlay);
 			return image;
 		}
 	} else if (file->type == VIEWER_FILE_TYPE_DICOM) {
@@ -677,7 +681,7 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 		} else if (file->is_directory && directory) {
 			dicom_series_t dicom = {};
 			if (dicom_open_from_directory(&dicom, directory)) {
-				init_image_from_dicom(&image, &dicom, is_overlay);
+				init_image_from_dicom(image, &dicom, is_overlay);
 				return image;
 			} else {
 				dicom_destroy(&dicom);
@@ -696,18 +700,18 @@ image_t load_image_from_file(app_state_t* app_state, file_info_t* file, director
 			}
 			if (!is_openslide_available) {
 				console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
-				image.is_valid = false;
+				image->is_valid = false;
 				return image;
 			}
 		}
 
 		// TODO: fix code duplication from init_image_from_tiff()
-		image.type = IMAGE_TYPE_WSI;
-		image.backend = IMAGE_BACKEND_OPENSLIDE;
+		image->type = IMAGE_TYPE_WSI;
+		image->backend = IMAGE_BACKEND_OPENSLIDE;
 		wsi_t wsi = {};
         load_openslide_wsi(&wsi, filename);
         if (wsi.osr) {
-            init_image_from_openslide(&image, &wsi, is_overlay);
+            init_image_from_openslide(image, &wsi, is_overlay);
             return image;
         }
 	}

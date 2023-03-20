@@ -2451,7 +2451,7 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				char image_name_buf[512];
 				// TODO: which image to associate the annotations with?
 				if (arrlen(app_state->loaded_images) > 0) {
-					image_t* image = app_state->loaded_images;
+					image_t* image = app_state->loaded_images[0];
 					strncpy(image_name_buf, image->name, MIN(sizeof(image_name_buf), sizeof(image->name)));
 				} else {
 					strncpy(image_name_buf, "unknown_image", sizeof(image_name_buf));

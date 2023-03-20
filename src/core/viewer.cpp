@@ -63,9 +63,9 @@
 
 
 
-void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool need_image_registration) {
+void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration) {
 	arrput(app_state->loaded_images, image);
-	arrput(app_state->active_resources, image.resource_id);
+	arrput(app_state->active_resources, image->resource_id);
 	app_state->scene.active_layer = arrlen(app_state->loaded_images)-1;
     layers_window_selected_image_index = app_state->scene.active_layer;
     layer_time = 0.0f;
@@ -73,10 +73,10 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool
 	if (need_zoom_reset) {
 		app_state->scene.need_zoom_reset = true;
 	}
-    image_t* added_image = arrlastptr(app_state->loaded_images);
+    image_t* added_image = arrlast(app_state->loaded_images);
     if (need_image_registration && arrlen(app_state->loaded_images) > 1) {
         target_layer_time = 1.0f;
-        image_t* parent_image = app_state->loaded_images + 0;
+        image_t* parent_image = app_state->loaded_images[0];
         image_transform_t transform = do_image_registration(parent_image, added_image, 1);
         if (transform.is_valid) {
             // apply translation
@@ -85,7 +85,7 @@ void add_image(app_state_t* app_state, image_t image, bool need_zoom_reset, bool
             }
         }
     }
-    strncpy(app_state->last_active_directory, image.directory, COUNT(app_state->last_active_directory));
+    strncpy(app_state->last_active_directory, image->directory, COUNT(app_state->last_active_directory));
 }
 
 // TODO: make this based on scene (allow loading multiple images independently side by side)
@@ -96,11 +96,12 @@ void unload_all_images(app_state_t *app_state) {
 	if (current_image_count > 0) {
 		ASSERT(app_state->loaded_images);
 		for (i32 i = 0; i < current_image_count; ++i) {
-			image_t* old_image = app_state->loaded_images + i;
+			image_t* old_image = app_state->loaded_images[i];
 			image_destroy(old_image);
+            free(old_image);
 		}
 		arrfree(app_state->loaded_images);
-		arrfree(app_state->active_resources);
+		arrfree(app_state->active_resources); // TODO: now that image_t pointers are stable, can active_resources be removed?
 	}
 	mouse_show();
 	app_state->scene.is_cropped = false;
@@ -224,6 +225,7 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task->need_gpu_residency;
 						tile->need_keep_in_cache = task->need_keep_in_cache;
+                        atomic_add(&image->refcount, task->refcount_to_decrement);
 					}
 				}
 			}
@@ -246,6 +248,7 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task.need_gpu_residency;
 						tile->need_keep_in_cache = task.need_keep_in_cache;
+                        atomic_add(&image->refcount, task.refcount_to_decrement);
 					}
 				}
 			}
@@ -265,7 +268,7 @@ bool is_resource_valid(app_state_t* app_state, i32 resource_id) {
 image_t* get_image_from_resource_id(app_state_t* app_state, i32 resource_id) {
 	i32 image_index = 0;
 	for (; image_index < arrlen(app_state->loaded_images); ++image_index) {
-		image_t* image = app_state->loaded_images + image_index;
+		image_t* image = app_state->loaded_images[image_index];
 		if (image->resource_id == resource_id) {
 			return image;
 		}
@@ -549,6 +552,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.need_keep_in_cache = tile->need_keep_in_cache,
 								.completion_callback = viewer_notify_load_tile_completed,
 //								.completion_queue = &global_completion_queue,
+                                .refcount_to_decrement = 1, // will be decremented at and of thread proc load_tile_func()
 						};
 						tile_wishlist[num_tasks_on_wishlist++] = task;
 					}
@@ -940,7 +944,7 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
             if (is_key_down(input, KEY_N)) {
                 if (scene->control.y != 0.0f || scene->control.x != 0.0f) {
                     i32 overlay_image_index = 1;
-                    image_t* image_to_nudge = app_state->loaded_images + overlay_image_index;
+                    image_t* image_to_nudge = app_state->loaded_images[overlay_image_index];
                     v2f delta = v2f_scale(delta_time * 10.0f, scene->control);
                     image_to_nudge->origin_offset = v2f_add(image_to_nudge->origin_offset, delta);
                     scene->panning_velocity = V2F(0.0f,0.0f);
@@ -1031,7 +1035,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		return;
 	}
 
-	image_t* displayed_image = app_state->loaded_images + app_state->displayed_image;
+	image_t* displayed_image = app_state->loaded_images[app_state->displayed_image];
 	ASSERT(displayed_image->type == IMAGE_TYPE_WSI);
 
 	// Do actions that need to performed only once, when a new image has been loaded
@@ -1577,7 +1581,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// Render everything at once
 //		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
-		image_t* image = app_state->loaded_images + 0;
+		image_t* image = app_state->loaded_images[0];
 		update_and_render_image(app_state, image);
 	} else {
 		// We are rendering the scene in two passes.
@@ -1597,7 +1601,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
 //			if (image_index == scene->active_layer) {
-				image_t* image = app_state->loaded_images + image_index;
+				image_t* image = app_state->loaded_images[image_index];
 				update_and_render_image(app_state, image);
 //			}
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
