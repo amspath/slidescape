@@ -1159,6 +1159,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			if (scene->right_clicked) {
 				scene->right_clicked_pos = scene->mouse;
 			}
+            if (scene->clicked) {
+                scene->left_clicked_pos = scene->mouse;
+            }
 
 			// Panning control
 			scene->control = get_2d_control_from_input(input, !gui_want_capture_keyboard);

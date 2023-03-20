@@ -147,6 +147,14 @@ v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_p
 	return transformed_pos;
 }
 
+v2i world_pos_to_pixel_pos(v2f world_pos, float um_per_pixel, i32 level) {
+	v2i result;
+	i32 downsample_factor = 1 << level;
+	result.x = (i32)roundf((world_pos.x / um_per_pixel) / (float)downsample_factor);
+	result.y = (i32)roundf((world_pos.y / um_per_pixel) / (float)downsample_factor);
+	return result;
+}
+
 
 i32 tile_pos_from_world_pos(float world_pos, float tile_side) {
 	ASSERT(tile_side > 0);

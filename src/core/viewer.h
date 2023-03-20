@@ -200,6 +200,7 @@ typedef struct scene_t {
 	v2f camera;
 	v2f mouse;
 	v2f right_clicked_pos;
+    v2f left_clicked_pos;
 	bounds2f camera_bounds;
 	bounds2f tile_load_bounds;
 	bool restrict_load_bounds;

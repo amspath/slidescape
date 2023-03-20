@@ -826,7 +826,8 @@ static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
 	ImGui::SetNextWindowBgAlpha(0.65f); // Transparent background
 	if (ImGui::Begin("Mouse pos overlay", p_open, window_flags))
 	{
-		if (ImGui::IsMousePosValid()) {
+        static int level = 0;
+        if (ImGui::IsMousePosValid()) {
 			ImGui::Text("Mouse Position: (%.1f,%.1f)", io.MousePos.x, io.MousePos.y);
 		} else {
 			ImGui::Text("Mouse Position: <invalid>");
@@ -834,6 +835,13 @@ static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
 		// TODO: how to check if a scene is enabled?
 		if (arrlen(app_state->loaded_images) > 0) {
 			ImGui::Text("Scene Position: (%.1f,%.1f)", scene->mouse.x, scene->mouse.y);
+            image_t* image = app_state->loaded_images + 0;
+            v2i pixel_pos = world_pos_to_pixel_pos(scene->mouse, image->mpp_x, level);
+            ImGui::Text("Pixel Position: (%d,%d)", pixel_pos.x, pixel_pos.y);
+            v2i clicked_pixel_pos = world_pos_to_pixel_pos(scene->left_clicked_pos, image->mpp_x, level);
+            ImGui::Text("Clicked Position: (%d,%d)", clicked_pixel_pos.x, clicked_pixel_pos.y);
+            v2i clicked_offset = v2i_subtract(pixel_pos, clicked_pixel_pos);
+            ImGui::Text("Clicked Offset: (%d,%d)", clicked_offset.x, clicked_offset.y);
 		} else {
 			ImGui::Text("Scene Position: <invalid>");
 		}
@@ -845,6 +853,9 @@ static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
 			if (ImGui::MenuItem("Top-right",    NULL, corner == 1)) corner = 1;
 			if (ImGui::MenuItem("Bottom-left",  NULL, corner == 2)) corner = 2;
 			if (ImGui::MenuItem("Bottom-right", NULL, corner == 3)) corner = 3;
+            ImGui::Separator();
+
+            if (ImGui::SliderInt("Level", &level, 0, 10)) {}
 			if (p_open && ImGui::MenuItem("Close")) *p_open = false;
 			ImGui::EndPopup();
 		}
