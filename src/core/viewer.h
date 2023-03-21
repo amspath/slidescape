@@ -41,6 +41,7 @@ typedef enum viewer_file_type_enum {
 	VIEWER_FILE_TYPE_UNKNOWN = 0,
 	VIEWER_FILE_TYPE_SIMPLE_IMAGE,
 	VIEWER_FILE_TYPE_TIFF,
+	VIEWER_FILE_TYPE_NDPI,
 	VIEWER_FILE_TYPE_DICOM,
 	VIEWER_FILE_TYPE_ISYNTAX,
 	VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE,
@@ -208,8 +209,6 @@ typedef struct scene_t {
 	float r_minus_l;
 	float t_minus_b;
 	zoom_state_t zoom;
-	i32 lowest_scale_to_render;
-	i32 highest_scale_to_render;
 	bool8 need_zoom_reset;
 	bool8 need_zoom_animation;
 	v2f control;
@@ -417,6 +416,8 @@ extern i64 zoom_out_key_hold_down_start_time;
 extern i64 zoom_out_key_times_zoomed_while_holding;
 extern bool prefer_integer_zoom INIT(= false);
 extern bool use_fast_rendering INIT(= false); // optimize for performance for e.g. remote desktop
+extern i32 global_lowest_scale_to_render INIT(= 0);
+extern i32 global_highest_scale_to_render INIT(= 16);
 
 extern v2f simple_view_pos; // used by simple images (remove?)
 extern bool window_start_maximized INIT(=true);

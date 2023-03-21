@@ -398,9 +398,6 @@ extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
 extern float total_rgb_transform_time;
 
-extern bool is_dicom_available;
-extern bool is_dicom_loading_done;
-
 
 #undef INIT
 #undef extern

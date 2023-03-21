@@ -369,6 +369,7 @@ file_info_t viewer_get_file_info(const char* filename) {
 						case VIEWER_FILE_TYPE_SIMPLE_IMAGE:
 						case VIEWER_FILE_TYPE_TIFF:
 						case VIEWER_FILE_TYPE_DICOM:
+						case VIEWER_FILE_TYPE_NDPI:
 						case VIEWER_FILE_TYPE_ISYNTAX:
 						case VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE:
 							file.is_image = true;
@@ -490,6 +491,8 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
                 if (!were_annotations_loaded) {
                     load_asap_xml_annotations(app_state, temp_filename);
                     were_annotations_loaded = true;
+	                // Don't hide annotations when first loading the slide, that might lead the user to believe that there are none!
+					app_state->scene.enable_annotations = true;
                 }
             }
 
@@ -659,7 +662,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 			//stbi_image_free(image->stbi.pixels);
 		}
 
-	} else if (app_state->use_builtin_tiff_backend && file->type == VIEWER_FILE_TYPE_TIFF) {
+	} else if (app_state->use_builtin_tiff_backend && (file->type == VIEWER_FILE_TYPE_TIFF /*|| file->type == VIEWER_FILE_TYPE_NDPI*/)) {
 		// Try to open as TIFF, using the built-in backend
 		tiff_t tiff = {0};
 		if (open_tiff_file(&tiff, filename)) {

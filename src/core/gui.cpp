@@ -988,8 +988,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		if (ImGui::Begin("Debugging", &show_debugging_window)) {
 //			ImGui::TextUnformatted("Worker threads");
 			ImGui::SliderInt("Worker threads", &active_worker_thread_count, 1, worker_thread_count);
-			ImGui::SliderInt("Min level display", &app_state->scene.lowest_scale_to_render, 0, 16);
-			ImGui::SliderInt("Max level display", &app_state->scene.highest_scale_to_render, 0, 16);
+			ImGui::SliderInt("Min level display", &global_lowest_scale_to_render, 0, 16);
+			ImGui::SliderInt("Max level display", &global_highest_scale_to_render, 0, 16);
 
 		}
 		ImGui::End();

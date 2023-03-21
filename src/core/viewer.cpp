@@ -690,8 +690,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		// Draw tiles
 		// Draw all levels within the viewport, up to the current zoom factor
-		i32 lowest_level_to_draw = ATLEAST(lowest_visible_scale, scene->lowest_scale_to_render);
-		i32 highest_level_to_draw = ATMOST(highest_visible_scale, scene->highest_scale_to_render);
+		i32 lowest_level_to_draw = ATLEAST(lowest_visible_scale, global_lowest_scale_to_render);
+		i32 highest_level_to_draw = ATMOST(highest_visible_scale, global_highest_scale_to_render);
 		for (i32 level = lowest_level_to_draw; level <= highest_level_to_draw; ++level) {
 			level_image_t *drawn_level = image->level_images + level;
 			if (!drawn_level->exists) {

@@ -54,8 +54,6 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->is_mpp_known = false;
 	scene->enable_grid = false;
 	scene->enable_annotations = true;
-	scene->lowest_scale_to_render = 0;
-	scene->highest_scale_to_render = 16;
 	scene->initialized = true;
 }
 
