@@ -21,7 +21,17 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
 	load_tile_task_t* first_task = batch->tile_tasks;
 	image_t* image = first_task->image;
-    i32 refcount_decrement_amount = 0;
+
+	i32 refcount_decrement_amount = 0;
+	for (i32 i = 0; i < batch->task_count; ++i) {
+		load_tile_task_t *task = batch->tile_tasks + i;
+		refcount_decrement_amount += task->refcount_to_decrement;
+	}
+	if (image->is_deleted) {
+		// Early out to save time if the image was already closed/waiting for destruction
+		atomic_subtract(&image->refcount, refcount_decrement_amount);
+		return;
+	}
 
 	// Note: when the thread started up we allocated a large blob of memory for the thread to use privately
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
@@ -60,8 +70,6 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				chunk_offsets[i] = tile_offset;
 				chunk_sizes[i] = chunk_size;
 				total_read_size += chunk_size;
-
-                refcount_decrement_amount += task->refcount_to_decrement;
 			}
 
 

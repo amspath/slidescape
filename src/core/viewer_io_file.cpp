@@ -34,10 +34,17 @@ void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata)
 
 void load_tile_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_t* task = (load_tile_task_t*) userdata;
+	image_t* image = task->image;
+
+	if (image->is_deleted) {
+		// Early out to save time if the image was already closed/waiting for destruction
+		atomic_subtract(&image->refcount, task->refcount_to_decrement);
+		return;
+	}
+
 	i32 level = task->level;
 	i32 tile_x = task->tile_x;
 	i32 tile_y = task->tile_y;
-	image_t* image = task->image;
 	level_image_t* level_image = image->level_images + level;
 	ASSERT(level_image->exists);
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
