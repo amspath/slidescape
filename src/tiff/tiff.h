@@ -52,6 +52,8 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_PHOTOMETRIC_INTERPRETATION = 262,
 	TIFF_TAG_FILL_ORDER = 266,
 	TIFF_TAG_IMAGE_DESCRIPTION = 270,
+    TIFF_TAG_MAKE = 271,
+    TIFF_TAG_MODEL = 272,
 	TIFF_TAG_STRIP_OFFSETS = 273,
 	TIFF_TAG_ORIENTATION = 274,
 	TIFF_TAG_SAMPLES_PER_PIXEL = 277,
@@ -63,6 +65,7 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_RESOLUTION_UNIT = 296,
 	TIFF_TAG_PAGE_NUMBER = 297,
 	TIFF_TAG_SOFTWARE = 305,
+    TIFF_TAG_DATETIME = 306,
     TIFF_TAG_PREDICTOR = 317,
 	TIFF_TAG_WHITE_POINT = 318,
 	TIFF_TAG_PRIMARY_CHROMACITIES = 319,
@@ -76,6 +79,13 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_JPEG_TABLES = 347,
 	TIFF_TAG_YCBCRSUBSAMPLING = 530,
 	TIFF_TAG_REFERENCEBLACKWHITE = 532,
+
+    NDPI_TAG_ALWAYS_1 = 65420,
+    NDPI_TAG_SOURCE_LENS = 65421,
+    NDPI_TAG_X_OFFSET_FROM_SLIDE_CENTRE = 65422,
+    NDPI_TAG_Y_OFFSET_FROM_SLIDE_CENTRE = 65423,
+    NDPI_TAG_OPTIMISATION_FILE = 65426,
+    NDPI_TAG_REFERENCE = 65427,
 };
 
 enum tiff_data_type_enum {
@@ -274,6 +284,9 @@ typedef struct tiff_ifd_t {
 	tiff_rational_t x_resolution;
 	tiff_rational_t y_resolution;
 	tiff_resunit_enum resolution_unit;
+    u32* ndpi_optimization_markers;
+    u32 ndpi_optimization_count;
+    bool is_ndpi;
 	bool is_philips;
 } tiff_ifd_t;
 
@@ -307,6 +320,7 @@ struct tiff_t {
 	bool is_bigtiff;
 	bool is_big_endian;
 	bool is_philips;
+    bool is_ndpi;
 	bool is_mpp_known;
 	float mpp_x;
 	float mpp_y;

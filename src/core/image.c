@@ -247,6 +247,8 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
                 }
                 DUMMY_STATEMENT;
             }
+        } else if (tiff.is_ndpi) {
+            DUMMY_STATEMENT;
         } else {
             // The image is NOT tiled
             memset(image->level_images, 0, sizeof(image->level_images));

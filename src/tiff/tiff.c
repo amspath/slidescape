@@ -75,6 +75,8 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_PHOTOMETRIC_INTERPRETATION: result = "PhotometricInterpretation"; break;
 		case TIFF_TAG_FILL_ORDER: result = "FillOrder"; break;
 		case TIFF_TAG_IMAGE_DESCRIPTION: result = "ImageDescription"; break;
+        case TIFF_TAG_MAKE: result = "Make"; break;
+        case TIFF_TAG_MODEL: result = "Model"; break;
 		case TIFF_TAG_STRIP_OFFSETS: result = "StripOffsets"; break;
 		case TIFF_TAG_ORIENTATION: result = "Orientation"; break;
 		case TIFF_TAG_SAMPLES_PER_PIXEL: result = "SamplesPerPixel"; break;
@@ -86,6 +88,7 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_RESOLUTION_UNIT: result = "ResolutionUnit"; break;
 		case TIFF_TAG_PAGE_NUMBER: result = "PageNumber"; break;
 		case TIFF_TAG_SOFTWARE: result = "Software"; break;
+        case TIFF_TAG_DATETIME: result = "DateTime"; break;
         case TIFF_TAG_PREDICTOR: result = "Predictor"; break;
 		case TIFF_TAG_WHITE_POINT: result = "WhitePoint"; break;
 		case TIFF_TAG_PRIMARY_CHROMACITIES: result = "PrimaryChromacities"; break;
@@ -99,6 +102,13 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_JPEG_TABLES: result = "JPEGTables"; break;
 		case TIFF_TAG_YCBCRSUBSAMPLING: result = "YCbCrSubSampling"; break;
 		case TIFF_TAG_REFERENCEBLACKWHITE: result = "ReferenceBlackWhite"; break;
+
+        // NDPI tags
+        case NDPI_TAG_SOURCE_LENS: result = "[NDPI] SourceLens"; break;
+        case NDPI_TAG_X_OFFSET_FROM_SLIDE_CENTRE: result = "[NDPI] XOffsetFromSlideCentre"; break;
+        case NDPI_TAG_Y_OFFSET_FROM_SLIDE_CENTRE: result = "[NDPI] YOffsetFromSlideCentre"; break;
+        case NDPI_TAG_OPTIMISATION_FILE: result = "[NDPI] OptimisationFile"; break;
+        case NDPI_TAG_REFERENCE: result = "[NDPI] Reference"; break;
 		default: break;
 	}
 	return result;
@@ -439,6 +449,20 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->image_description_length = tag->data_count;
 				console_print_verbose("%.500s\n", ifd->image_description);
 			} break;
+            case TIFF_TAG_MAKE: {
+                if (is_verbose_mode) {
+                    char* field = tiff_read_field_ascii(tiff, tag);
+                    console_print_verbose("    %.500s\n", field);
+                    free(field);
+                }
+            } break;
+            case TIFF_TAG_MODEL: {
+                if (is_verbose_mode) {
+                    char* field = tiff_read_field_ascii(tiff, tag);
+                    console_print_verbose("    %.500s\n", field);
+                    free(field);
+                }
+            } break;
 			case TIFF_TAG_STRIP_OFFSETS: {
 				ifd->strip_count = tag->data_count;
 				ifd->strip_offsets = tiff_read_field_integers(tiff, tag);
@@ -481,7 +505,7 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 			case TIFF_TAG_SOFTWARE: {
 				ifd->software = tiff_read_field_ascii(tiff, tag);
 				ifd->software_length = tag->data_count;
-				console_print_verbose("%.500s\n", ifd->software);
+				console_print_verbose("    %.500s\n", ifd->software);
 				if (strncmp(ifd->software, "Philips", 7) == 0) {
 					ifd->is_philips = true;
 					tiff->is_philips = true;
@@ -591,6 +615,17 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 					console_print_verbose("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
 				}
 			} break;
+            case NDPI_TAG_ALWAYS_1: {
+                ifd->is_ndpi = true;
+                tiff->is_ndpi = true;
+            }
+            case NDPI_TAG_SOURCE_LENS: {
+                // objective power
+            } break;
+            case NDPI_TAG_OPTIMISATION_FILE: {
+                ifd->ndpi_optimization_markers = (u32*)tiff_read_field_integers(tiff, tag);
+                ifd->ndpi_optimization_count = tag->data_count;
+            } break;
 			default: {
 			} break;
 		}
@@ -599,6 +634,10 @@ bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	}
 
 	free(tags);
+
+    if (ifd->is_ndpi) {
+        DUMMY_STATEMENT;
+    }
 
 	if (ifd->tile_count > 0) {
 		ifd->is_tiled = true;
@@ -1306,6 +1345,7 @@ void tiff_destroy(tiff_t* tiff) {
 		if (ifd->software) free(ifd->software);
 		if (ifd->jpeg_tables) free(ifd->jpeg_tables);
 		if (ifd->reference_black_white) free(ifd->reference_black_white);
+        if (ifd->ndpi_optimization_markers) free(ifd->ndpi_optimization_markers);
 	}
 	// TODO: fix this, choose either stretchy_buffer or regular malloc, not both...
 	if (tiff->is_remote) {
@@ -1428,7 +1468,9 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 	if (level_ifd->is_tiled) {
 		tile_offset = level_ifd->tile_offsets[tile_index];
 		compressed_tile_size_in_bytes = level_ifd->tile_byte_counts[tile_index];
-		compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, compressed_tile_size_in_bytes);
+
+        // TODO: optimize allocation
+		compressed_tile_data = (u8*)malloc(compressed_tile_size_in_bytes);
 
 		// Some tiles apparently contain no data (not even an empty/dummy JPEG stream like some other tiles have).
 		// We need to check for this situation and chicken out if this is the case.
@@ -1436,6 +1478,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 #if DO_DEBUG
 			console_print("thread %d: tile level %d, tile %d (%d, %d) appears to be empty\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 #endif
+            free(compressed_tile_data);
 			return NULL;
 		}
 
@@ -1466,6 +1509,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 			}
 			if (failed) {
 				console_print_error("[thread %d] failed to read from remote level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+                free(compressed_tile_data);
 				return NULL;
 			}
 		}
@@ -1473,8 +1517,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 	} else {
 		// image is not tiled
 		compressed_tile_size_in_bytes = level_ifd->strip_byte_counts[0];
-		// TODO: handle super large files
-		compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, compressed_tile_size_in_bytes);
+		compressed_tile_data = (u8*)malloc(compressed_tile_size_in_bytes);
 		if (!tiff->is_remote) {
 
 			if (level_ifd->strip_count > 0) {
@@ -1497,18 +1540,21 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 					}*/
 					failed = true;
 					console_print_error("[thread %d] Cannot decode TIFF: multi-strip TIFFs not implemented.\n");
-					return NULL; // TODO: release compressed tile data
+                    free(compressed_tile_data);
+					return NULL;
 				}
 
 			} else {
 				failed = true; // no tiles and no strips?
-				return NULL; // TODO: release compressed tile data
+                free(compressed_tile_data);
+				return NULL;
 			}
 
 		} else {
 			// TODO: stub
 			failed = true;
-			return NULL; // TODO: release compressed tile data
+            free(compressed_tile_data);
+			return NULL;
 		}
 	}
 	ASSERT(compressed_tile_data != NULL);
@@ -1526,9 +1572,15 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				// JPEG stream is empty
 			} else {
 				u8* pixel_memory = (u8*)malloc(pixel_memory_size);
-				if (jpeg_decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data,
-				                     compressed_tile_size_in_bytes,
-				                     pixel_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
+                bool success = false;
+                if (level_ifd->is_ndpi) {
+                    success = jpeg_decode_ndpi_image(compressed_tile_data, compressed_tile_size_in_bytes, level_ifd->image_width, level_ifd->image_height, NULL);
+                } else {
+                    success = jpeg_decode_tile(jpeg_tables, jpeg_tables_length, compressed_tile_data,
+                                               compressed_tile_size_in_bytes,
+                                               pixel_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR));
+                }
+				if (success) {
 //		            console_print_verbose("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 					return pixel_memory;
 				} else {
@@ -1561,6 +1613,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 			if (!decode_success) {
 				console_print_error("LZW decompression failed\n");
 				free(decompressed);
+                free(compressed_tile_data);
 				return NULL;
 			}
 
@@ -1578,6 +1631,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
                 } else {
                     console_print_error("LZW decoding failed: unsupported predictor operator (%d)\n", level_ifd->predictor);
                     free(decompressed);
+                    free(compressed_tile_data);
                     return NULL;
                 }
             }
@@ -1590,6 +1644,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				// TODO: convert RGBA to BGRA
 				console_print_error("LZW decompression: RGBA to BGRA conversion not implemented, assuming already in BGRA\n");
 				ASSERT(decompressed_size == pixel_memory_size);
+                free(compressed_tile_data);
 				return decompressed;
 			} else if (level_ifd->samples_per_pixel == 3) {
 
@@ -1628,7 +1683,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 
 				free(decompressed);
 //				console_print_verbose("[thread %d] swizzle level %d, tile %d (%d, %d) took %g ms\n", logical_thread_index, level, tile_index, tile_x, tile_y, 1000.0f * get_seconds_elapsed(decode_end, get_clock()));
-
+                free(compressed_tile_data);
 				return (u8*)pixels;
 			} else if (level_ifd->samples_per_pixel == 1) {
 
@@ -1695,10 +1750,13 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				}*/
 
 				free(decompressed);
+                free(compressed_tile_data);
 				return (u8*)pixels;
 			} else {
 				console_print_error("LZW decompression: unexpected number of samples per pixel (%d)\n", level_ifd->samples_per_pixel);
 				failed = true;
+                free(decompressed);
+                free(compressed_tile_data);
 				return NULL;
 			}
 
@@ -1719,11 +1777,13 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 			} else {
 				// TODO
 				failed = true;
+                free(compressed_tile_data);
 				return NULL;
 			}
 		} else {
 			console_print_error("\"thread %d: failed to decode level %d, tile %d (%d, %d): unsupported TIFF compression method (compression=%d)\n", logical_thread_index, level, tile_index, tile_x, tile_y, compression);
 			failed = true;
+            free(compressed_tile_data);
 			return NULL;
 		}
 

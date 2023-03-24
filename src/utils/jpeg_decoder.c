@@ -159,6 +159,54 @@ u8* jpeg_decode_image(u8* input_ptr, u32 input_length, i32* width, i32* height, 
 	return output_buffer;
 }
 
+u8* jpeg_decode_ndpi_image(u8* input_ptr, u32 input_length, i32 width, i32 height, i32 *channels_in_file) {
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+    // Setup error handling
+    cinfo.err = jpeg_std_error(&jerr);
+    jerr.error_exit = on_error;
+
+    jpeg_create_decompress(&cinfo);
+
+    // We need to edit the SOF for image width and height so that libjpeg does not throw an error
+
+
+    // Read tile data
+    setup_jpeg_source(&cinfo, input_ptr, input_length);
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
+        printf("Failed to read header\n");
+        jpeg_destroy_decompress(&cinfo);
+        return NULL;
+    }
+    cinfo.image_width = width;
+    cinfo.image_height = height;
+
+    cinfo.out_color_space = JCS_EXT_BGRA;
+
+    jpeg_start_decompress(&cinfo);
+
+    int row_width = cinfo.output_width;
+    int target_row_stride = row_width * cinfo.output_components;
+    size_t output_size = target_row_stride * cinfo.output_height;
+    u8* output_buffer = malloc(output_size);
+
+    while (cinfo.output_scanline < cinfo.output_height) {
+        u8* output_pos = output_buffer + (cinfo.output_scanline) * target_row_stride;
+        u8* buffer_array[1] = { output_pos };
+        i32 ret = jpeg_read_scanlines(&cinfo, buffer_array, 1);
+    }
+
+//    if (width) *width = cinfo.output_width;
+//    if (height) *height = cinfo.output_height;
+    if (channels_in_file) *channels_in_file = cinfo.output_components;
+
+    (void) jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+
+    return output_buffer;
+}
+
 EMSCRIPTEN_KEEPALIVE
 uint8_t *create_buffer(int size) {
 	return libc_malloc(size * sizeof(uint8_t));

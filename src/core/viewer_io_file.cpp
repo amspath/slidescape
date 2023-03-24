@@ -296,18 +296,21 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 
 static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 	if (file->is_regular_file) {
-		if (strlen(file->ext) == 0) { // no extension
-			if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
-				return VIEWER_FILE_TYPE_DICOM;
-			} else {
-				return VIEWER_FILE_TYPE_UNKNOWN;
-			}
-		} if (strcasecmp(file->ext, "tiff") == 0 ||
-		      strcasecmp(file->ext, "tif") == 0 ||
-		      strcasecmp(file->ext, "ptif") == 0)
-		{
+        if (strlen(file->ext) == 0) { // no extension
+            if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
+                return VIEWER_FILE_TYPE_DICOM;
+            } else {
+                return VIEWER_FILE_TYPE_UNKNOWN;
+            }
+        }
+        if (strcasecmp(file->ext, "tiff") == 0 ||
+            strcasecmp(file->ext, "tif") == 0 ||
+            strcasecmp(file->ext, "ptif") == 0)
+        {
 			return VIEWER_FILE_TYPE_TIFF;
-		} else if (strcasecmp(file->ext, "png") == 0 ||
+		} else if (strcasecmp(file->ext, "ndpi") == 0) {
+            return VIEWER_FILE_TYPE_NDPI;
+        } else if (strcasecmp(file->ext, "png") == 0 ||
 		           strcasecmp(file->ext, "jpg") == 0 ||
 		           strcasecmp(file->ext, "jpeg") == 0 ||
 		           strcasecmp(file->ext, "bmp") == 0 ||
