@@ -67,6 +67,7 @@ bool init_openslide() {
 	}
 #endif
 
+	bool success = false;
 	if (library_handle) {
 
 #ifdef _WIN32
@@ -98,7 +99,7 @@ bool init_openslide() {
 		} else {
 			console_print("OpenSlide initialized\n");
 		}
-		is_openslide_available = true;
+		success = true;
 
 	} else failed: {
 #ifdef _WIN32
@@ -109,8 +110,7 @@ bool init_openslide() {
 #else
 		console_print("OpenSlide not available: could not load libopenslide.so (not installed?)\n");
 #endif
-		is_openslide_available = false;
+		success = false;
 	}
-	is_openslide_loading_done = true;
-	return is_openslide_available;
+	return success;
 }

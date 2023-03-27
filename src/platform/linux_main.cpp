@@ -368,6 +368,26 @@ bool linux_process_input() {
     return did_idle;
 }
 
+// TODO: refactor
+void load_openslide_task(int logical_thread_index, void* userdata) {
+	is_openslide_available = init_openslide();
+	if (is_openslide_available) {
+		// TODO: register file associations under Linux
+//		if (!win32_registry_add_to_open_with_list("svs")) return;
+//		if (!win32_registry_add_to_open_with_list("ndpi")) return;
+//		if (!win32_registry_add_to_open_with_list("vms")) return;
+//		if (!win32_registry_add_to_open_with_list("scn")) return;
+//		if (!win32_registry_add_to_open_with_list("mrxs")) return;
+//		if (!win32_registry_add_to_open_with_list("bif")) return;
+	}
+	is_openslide_loading_done = true;
+}
+
+void load_dicom_task(int logical_thread_index, void* userdata) {
+	is_dicom_available = dicom_init();
+	is_dicom_loading_done = true;
+}
+
 extern SDL_Window* g_window;
 
 static i32 need_check_window_focus_gained_after_frames;
@@ -402,8 +422,8 @@ int main(int argc, const char** argv)
         return app_command_execute(app_state);
     }
 
-    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)init_openslide, NULL, 0);
-    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)dicom_init, NULL, 0);
+    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)load_openslide_task, NULL, 0);
+    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)load_dicom_task, NULL, 0);
     linux_init_input();
 
 	/*i32 num_video_drivers = SDL_GetNumVideoDrivers();

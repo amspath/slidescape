@@ -82,8 +82,6 @@ bool init_openslide();
 #endif
 
 extern openslide_api openslide;
-extern bool is_openslide_available;
-extern bool is_openslide_loading_done;
 
 #undef INIT
 #undef extern

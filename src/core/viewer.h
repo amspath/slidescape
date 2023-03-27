@@ -419,7 +419,6 @@ extern bool use_fast_rendering INIT(= false); // optimize for performance for e.
 extern i32 global_lowest_scale_to_render INIT(= 0);
 extern i32 global_highest_scale_to_render INIT(= 16);
 
-extern v2f simple_view_pos; // used by simple images (remove?)
 extern bool window_start_maximized INIT(=true);
 extern i32 desired_window_width INIT(=1280);
 extern i32 desired_window_height INIT(=720);
@@ -432,6 +431,11 @@ extern bool is_tile_streamer_frame_boundary_passed;
 extern i32 global_next_resource_id INIT(= 1000);
 
 extern float global_tiff_export_progress; // TODO: change to task-local variable?
+
+extern bool is_dicom_available;
+extern bool is_dicom_loading_done;
+extern bool is_openslide_available;
+extern bool is_openslide_loading_done;
 
 #undef INIT
 #undef extern
