@@ -25,8 +25,9 @@
 
 #include <windows.h>
 
-i64 performance_counter_frequency;
-bool is_sleep_granular;
+static i64 performance_counter_frequency;
+static bool is_sleep_granular;
+static bool is_timer_initialized;
 
 void win32_init_timer() {
 	LARGE_INTEGER perf_counter_frequency_result;
@@ -38,6 +39,15 @@ void win32_init_timer() {
 }
 
 i64 get_clock() {
+#ifndef NO_TIMER_INITIALIZED_RUNTIME_CHECK
+	if (!is_timer_initialized) win32_init_timer();
+#else
+#ifndef NDEBUG
+	if (!is_timer_initialized) {
+		panic("get_clock(): timer not initialized; on Windows, call win32_init_timer() once before calling get_clock()");
+	}
+#endif
+#endif
 	LARGE_INTEGER result;
 	QueryPerformanceCounter(&result);
 	return result.QuadPart;

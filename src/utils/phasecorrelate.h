@@ -18,6 +18,10 @@
 
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "common.h"
 #include "mathutils.h"
 
@@ -31,3 +35,6 @@ typedef struct buffer2d_t {
 
 v2f phase_correlate(buffer2d_t* src1, buffer2d_t* src2, buffer2d_t* window, float background, float* response, i32 offset_limit);
 
+#ifdef __cplusplus
+}
+#endif

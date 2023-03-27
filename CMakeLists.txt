@@ -196,6 +196,7 @@ prepend_path(KEYCODE_SOURCE_FILES deps/keycode)
 
 set(VIEWER_SOURCE_FILES
         platform/platform.c
+        platform/work_queue.c
         platform/shader.c
         platform/openslide_api.c
         core/viewer.cpp

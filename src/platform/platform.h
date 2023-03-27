@@ -23,6 +23,7 @@
 #include "arena.h"
 #include "memrw.h"
 #include "timerutils.h"
+#include "work_queue.h"
 
 #include "keycode.h"
 #include "keytable.h"
@@ -91,14 +92,6 @@ typedef struct mem_t {
 	u8 data[0];
 } mem_t;
 
-typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
-
-typedef struct work_queue_entry_t {
-	bool32 is_valid;
-	work_queue_callback_t* callback;
-	u8 userdata[128];
-} work_queue_entry_t;
-
 #if WINDOWS
 typedef HANDLE semaphore_handle_t;
 typedef HANDLE file_handle_t;
@@ -108,18 +101,6 @@ typedef sem_t* semaphore_handle_t;
 typedef int file_handle_t;
 typedef FILE* file_stream_t;
 #endif
-
-typedef struct work_queue_t {
-	semaphore_handle_t semaphore;
-	i32 volatile next_entry_to_submit;
-	i32 volatile next_entry_to_execute;
-	i32 volatile completion_count;
-	i32 volatile completion_goal;
-	i32 volatile start_count;
-	i32 volatile start_goal;
-	i32 entry_count;
-	work_queue_entry_t* entries;
-} work_queue_t;
 
 typedef struct benaphore_t {
 	semaphore_handle_t semaphore;

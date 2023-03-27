@@ -2035,7 +2035,7 @@ int main() {
 		float predicted_frame_ms = 1000.0f / (float)refresh_rate;
 		if (!is_vsync_enabled) predicted_frame_ms *= 0.5f; // try to hit twice the refresh rate
 
-		float delta_t = (float)(current_clock - last_clock) / (float)performance_counter_frequency;
+		float delta_t = get_seconds_elapsed(last_clock, current_clock);
 		last_clock = current_clock;
 		delta_t = ATMOST(2.0f / 60.0f, delta_t); // prevent physics overshoot at lag spikes
 

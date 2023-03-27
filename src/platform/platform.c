@@ -24,10 +24,6 @@
 #include "platform.h"
 #include "intrinsics.h"
 
-#if !IS_SERVER
-#include "work_queue.c"
-#endif
-
 #if APPLE
 #include <sys/sysctl.h> // for sysctlbyname()
 #endif

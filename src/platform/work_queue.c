@@ -16,6 +16,10 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "work_queue.h"
+#include "platform.h"
+#include "intrinsics.h"
+
 #if !WINDOWS
 #include <semaphore.h>
 #endif
@@ -58,8 +62,7 @@ i32 get_work_queue_task_count(work_queue_t* queue) {
 // TODO: add optional refcount increment
 bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
 	if (userdata_size > sizeof(((work_queue_entry_t*)0)->userdata)) {
-		ASSERT(!"userdata_size overflows available space");
-		panic();
+		panic("add_work_queue_entry(): userdata_size overflows available space");
 	}
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer

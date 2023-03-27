@@ -162,7 +162,7 @@
 #endif /* LZ4_FORCE_INLINE */
 
 // Wrappers for using libc versions of malloc(), realloc() and free(), if you really need to.
-// Otherwise, they get replaced by ltmalloc (for better performance).
+// You can use these if you replaced regular malloc with ltalloc (see below).
 FORCE_INLINE void* libc_malloc(size_t size) {
 	return malloc(size);
 }
@@ -173,11 +173,13 @@ FORCE_INLINE void libc_free(void* memory) {
 	free(memory);
 }
 
-// Faster malloc(), realloc(), free()
+// ltalloc provides a faster malloc(), realloc(), free()
+// https://github.com/r-lyeh-archived/ltalloc
+// To replace regular malloc with ltalloc: #define USE_LTALLOC_INSTEAD_OF_MALLOC in config.h
 #if __has_include("ltalloc.h")
 #define IS_LTALLOC_AVAILABLE 1
 #include "ltalloc.h"
-#if WINDOWS
+#ifdef USE_LTALLOC_INSTEAD_OF_MALLOC
 #define malloc ltmalloc
 #define calloc ltcalloc
 #define free ltfree

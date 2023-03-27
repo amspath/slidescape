@@ -30,12 +30,7 @@ void platform_sleep(u32 ms);
 void platform_sleep_ns(i64 ns);
 
 #if WINDOWS
-
 void win32_init_timer(); // call this once, before calling get_clock()
-
-extern i64 performance_counter_frequency;
-extern bool is_sleep_granular;
-
 #endif
 
 #ifdef __cplusplus
