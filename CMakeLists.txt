@@ -238,6 +238,7 @@ set(VIEWER_SOURCE_FILES
         utils/crc32.c
         utils/block_allocator.c
         utils/timerutils.c
+        utils/benaphore.c
         utils/phasecorrelate.c
         )
 if (WIN32)

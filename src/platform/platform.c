@@ -129,44 +129,6 @@ i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms)
 }
 #endif
 
-// Based on:
-// https://preshing.com/20120226/roll-your-own-lightweight-mutex/
-
-
-benaphore_t benaphore_create(void) {
-	benaphore_t result = {0};
-#if WINDOWS
-	result.semaphore = CreateSemaphore(NULL, 0, 1, NULL);
-#elif (APPLE || LINUX)
-	static i32 counter = 1;
-	char semaphore_name[64];
-	i32 c = atomic_increment(&counter);
-	snprintf(semaphore_name, sizeof(semaphore_name)-1, "/benaphore%d", c);
-	result.semaphore = sem_open(semaphore_name, O_CREAT, 0644, 0);
-#endif
-	return result;
-}
-
-void benaphore_destroy(benaphore_t* benaphore) {
-#if WINDOWS
-	CloseHandle(benaphore->semaphore);
-#elif (APPLE || LINUX)
-	sem_close(benaphore->semaphore);
-#endif
-}
-
-void benaphore_lock(benaphore_t* benaphore) {
-	if (atomic_increment(&benaphore->counter) > 1) {
-		semaphore_wait(benaphore->semaphore);
-	}
-}
-
-void benaphore_unlock(benaphore_t* benaphore) {
-	if (atomic_decrement(&benaphore->counter) > 0) {
-		semaphore_post(benaphore->semaphore);
-	}
-}
-
 // Performance considerations for async I/O on Linux:
 // https://github.com/littledan/linux-aio#performance-considerations
 

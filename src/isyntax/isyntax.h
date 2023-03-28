@@ -23,8 +23,9 @@ extern "C" {
 #endif
 
 #include "common.h"
-#include "platform.h"
+//#include "platform.h"
 #include "block_allocator.h"
+#include "work_queue.h"
 
 #include "yxml.h"
 
@@ -350,13 +351,15 @@ typedef struct isyntax_t {
 	block_allocator_t ll_coeff_block_allocator;
 	block_allocator_t h_coeff_block_allocator;
 	float loading_time;
-	i32 refcount;
 	i32 data_model_major_version; // <100 (usually 5) for iSyntax format v1, >= 100 for iSyntax format v2
+	work_queue_t* work_submission_queue;
+	volatile i32 refcount;
 } isyntax_t;
 
 // function prototypes
 void isyntax_xml_parser_init(isyntax_xml_parser_t* parser);
 bool isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
+void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue);
 bool isyntax_open(isyntax_t* isyntax, const char* filename);
 void isyntax_destroy(isyntax_t* isyntax);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);

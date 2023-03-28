@@ -36,6 +36,7 @@ void win32_init_timer() {
 	// Make Sleep() more granular
 	UINT desired_scheduler_granularity_ms = 1;
 	is_sleep_granular = (timeBeginPeriod(desired_scheduler_granularity_ms) == TIMERR_NOERROR);
+	is_timer_initialized = true;
 }
 
 i64 get_clock() {

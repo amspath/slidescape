@@ -33,7 +33,7 @@
 
 
 #include "common.h"
-#include "platform.h"
+#include "work_queue.h"
 #include "intrinsics.h"
 
 #include "isyntax.h"
@@ -2524,26 +2524,6 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	return true;
 }
 
-#if 0
-void debug_read_codeblock_from_file(isyntax_codeblock_t* codeblock, FILE* fp) {
-	if (fp && !codeblock->data) {
-		codeblock->data = calloc(1, codeblock->block_size + 8); // TODO: pool allocator
-		fseeko64(fp, codeblock->block_data_offset, SEEK_SET);
-		file_stream_read(codeblock->data, codeblock->block_size, fp);
-
-#if 0
-		char out_filename[512];
-		snprintf(out_filename, 512, "codeblocks/%d.bin", codeblock->block_data_offset);
-		FILE* out = file_stream_open_for_writing(out_filename);
-		if (out) {
-			file_stream_write(codeblock->data, codeblock->block_size, out);
-			file_stream_close(out);
-		}
-#endif
-	}
-}
-#endif
-
 static inline i32 get_first_valid_coef_pixel(i32 scale) {
 	i32 result = (PER_LEVEL_PADDING << scale) - (PER_LEVEL_PADDING - 1);
 	return result;
@@ -2568,9 +2548,12 @@ i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll) {
 	return codeblock_count;
 }
 
-#if 0
-static void test_output_block_header(isyntax_image_t* wsi_image) {
-	FILE* test_block_header_fp = fopen("test_block_header.csv", "wb");
+// Dump codeblock info from block header to a .csv file
+static void isyntax_dump_block_header(isyntax_image_t* wsi_image, const char* filename) {
+	if (filename == NULL) {
+		filename = "test_block_header.csv";
+	}
+	FILE* test_block_header_fp = fopen(filename, "wb");
 	if (test_block_header_fp) {
 		fprintf(test_block_header_fp, "x_coordinate,y_coordinate,color_component,scale,coefficient,block_data_offset,block_data_size,block_header_template_id\n");
 
@@ -2596,13 +2579,16 @@ static void test_output_block_header(isyntax_image_t* wsi_image) {
 		fclose(test_block_header_fp);
 	}
 }
-#endif
+
+// Set the work queue to submit parallel jobs to
+void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue) {
+	isyntax->work_submission_queue = work_queue;
+}
 
 bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 	console_print_verbose("Attempting to open iSyntax: %s\n", filename);
 	ASSERT(isyntax);
-	memset(isyntax, 0, sizeof(*isyntax));
 
 	int ret = 0; (void)ret;
 	file_stream_t fp = file_stream_open_for_reading(filename);
@@ -3087,9 +3073,16 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 void isyntax_destroy(isyntax_t* isyntax) {
 	while (isyntax->refcount > 0) {
-//		console_print_error("refcount = %d\n", isyntax->refcount);
 		platform_sleep(1);
-		do_worker_work(&global_work_queue, 0);
+		if (isyntax->work_submission_queue) {
+			do_worker_work(isyntax->work_submission_queue, 0);
+		} else {
+			static bool already_printed = false;
+			if (!already_printed) {
+				console_print_error("isyntax_destroy(): work_submission_queue not set; refcount = %d, waiting to reach 0\n", isyntax->refcount);
+				already_printed = true;
+			}
+		}
 	}
 	if (isyntax->ll_coeff_block_allocator.is_valid) {
 		block_allocator_destroy(&isyntax->ll_coeff_block_allocator);

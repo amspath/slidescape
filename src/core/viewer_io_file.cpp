@@ -676,6 +676,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 	} else if (file->type == VIEWER_FILE_TYPE_ISYNTAX) {
 		// Try to open as iSyntax
 		isyntax_t isyntax = {0};
+		isyntax_set_work_queue(&isyntax, &global_work_queue);
 		if (isyntax_open(&isyntax, filename)) {
 			init_image_from_isyntax(image, &isyntax, is_overlay);
 			return image;
