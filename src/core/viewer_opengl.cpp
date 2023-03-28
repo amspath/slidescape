@@ -87,14 +87,19 @@ void init_draw_rect() {
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_rect);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_rect);
 
+    // Expand the rectangle by a minimal amount to avoid occasional white lines between adjacent textures
+    // (I think these are caused by floating point rounding errors)
+#define VERT_EPSILON (0.00001f)
+#define UV_EPSILON (0.00001f)
+
 	static float vertices[] = {
-			0.0f, 0.0f, 0.0f, 0.0f, 0.0f, // x, y, z,  u, v
-			1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-			0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+			0.0f - VERT_EPSILON, 0.0f - VERT_EPSILON, 0.0f - VERT_EPSILON, 0.0f - UV_EPSILON, 0.0f - UV_EPSILON, // x, y, z,  u, v
+			1.0f + VERT_EPSILON, 0.0f - VERT_EPSILON, 0.0f - VERT_EPSILON, 1.0f + UV_EPSILON, 0.0f - UV_EPSILON,
+			0.0f - VERT_EPSILON, 1.0f + VERT_EPSILON, 0.0f - VERT_EPSILON, 0.0f - UV_EPSILON, 1.0f + UV_EPSILON,
 
 //			0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
 //			1.0f, 0.0f, 0.0f, 1.0f, 0.0f,
-			1.0f, 1.0f, 0.0f, 1.0f, 1.0f,
+			1.0f + VERT_EPSILON, 1.0f + VERT_EPSILON, 0.0f - VERT_EPSILON, 1.0f + UV_EPSILON, 1.0f + UV_EPSILON,
 	};
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
