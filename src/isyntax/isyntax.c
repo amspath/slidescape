@@ -2775,8 +2775,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					}
 					i32 x = codeblock->x_adjusted - offset;
 					i32 y = codeblock->y_adjusted - offset;
-					codeblock->x_adjusted = x;
-					codeblock->y_adjusted = y;
+//					codeblock->x_adjusted = x;
+//					codeblock->y_adjusted = y;
 					codeblock->block_x = x / (tile_width << codeblock->scale);
 					codeblock->block_y = y / (tile_height << codeblock->scale);
 
@@ -2861,7 +2861,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						free(seektable);
 						seektable = NULL;
 
-//						test_output_block_header(wsi_image);
+//						isyntax_dump_block_header(wsi_image, "test_block_header.csv");
 
 						// Allocate enough space for the maximum number of codeblock 'chunks' we can expect
 						// (the actual number of chunks may be lower, because some tiles might not exist)
@@ -2930,18 +2930,17 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 						// When recursively decoding the tiles, at each iteration the image is slightly offset
 						// to the top left.
-						// (Effectively the image seems to shift ~1.5 pixels, I am not sure why? Is this related to
-						// the per level padding of (3 >> level) pixels used in the wavelet transform?)
+                        // The amount of shift seems to be half of the level padding, which is ((3 >> scale) - 2).
+						// (I guess this is related to the way the wavelet transform works.)
 						// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
 						// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
-						float offset_in_pixels = 1.5f;
-						for (i32 scale = 0; scale < wsi_image->max_scale; ++scale) {
+						for (i32 scale = 0; scale < wsi_image->level_count; ++scale) {
 							isyntax_level_t* level = wsi_image->levels + scale;
-							level->origin_offset_in_pixels = offset_in_pixels;
+                            float offset_in_pixels = (float) (get_first_valid_coef_pixel(scale) << 1);
+                            level->origin_offset_in_pixels = offset_in_pixels;
 							float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
 							float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
 							level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
-							offset_in_pixels *= 2;
 						}
 
 						parse_ticks_elapsed += (get_clock() - parse_begin);
@@ -2960,9 +2959,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						// NOTE: Tile entry with codeblock_index == 0 will mean there is no codeblock for this tile (empty/background)
 						level->tiles = (isyntax_tile_t*) calloc(1, level->tile_count * sizeof(isyntax_tile_t));
 					}
-
-//					test_output_block_header(wsi_image);
-
 
 					// TODO: refactor code duplication: this is (probably) mostly wrong!
 					i32 current_chunk_codeblock_index = 0;
