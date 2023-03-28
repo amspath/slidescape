@@ -73,6 +73,10 @@ else()
     endif()
 endif()
 
+message(STATUS "COMMON_COMPILER_FLAGS = ${COMMON_COMPILER_FLAGS}")
+message(STATUS "CMAKE_C_FLAGS = ${CMAKE_C_FLAGS}")
+message(STATUS "CMAKE_CXX_FLAGS = ${CMAKE_CXX_FLAGS}")
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 include_directories("${CMAKE_SOURCE_DIR}/src")
@@ -87,6 +91,8 @@ include_directories("${CMAKE_SOURCE_DIR}/src/third_party")
 include_directories("${CMAKE_SOURCE_DIR}/deps")
 include_directories("${CMAKE_SOURCE_DIR}/deps/jpeg")
 include_directories("${CMAKE_SOURCE_DIR}/deps/keycode")
+include_directories("${CMAKE_SOURCE_DIR}/deps/hdf5")
+include_directories("${CMAKE_SOURCE_DIR}/deps/hdf5/H5FDsubfiling")
 if (WIN32)
     include_directories("${CMAKE_SOURCE_DIR}/deps/dirent")
 endif()
@@ -185,6 +191,51 @@ set(MBEDTLS_TLS_SOURCE_FILES
 set(MBEDTLS_SOURCE_FILES ${MBEDTLS_CRYPTO_SOURCE_FILES} ${MBEDTLS_X509_SOURCE_FILES} ${MBEDTLS_TLS_SOURCE_FILES})
 prepend_path(MBEDTLS_SOURCE_FILES deps/mbedtls/library)
 
+set(HDF5_SOURCE_FILES
+        H5.c H5checksum.c H5dbg.c H5mpi.c H5system.c H5timer.c H5trace.c H5lib_settings.c
+        H5A.c H5Abtree2.c H5Adense.c H5Adeprec.c H5Aint.c #H5Atest.c
+        H5B.c H5Bcache.c H5Bdbg.c
+        H5B2.c H5B2cache.c H5B2dbg.c H5B2hdr.c H5B2int.c H5B2internal.c H5B2leaf.c H5B2stat.c H5B2test.c
+        H5AC.c H5ACdbg.c H5ACmpio.c H5ACproxy_entry.c
+        H5C.c H5Cdbg.c H5Cepoch.c H5Cimage.c H5Clog.c H5Clog_json.c H5Clog_trace.c H5Cmpio.c H5Cprefetched.c H5Cquery.c H5Ctag.c #H5Ctest.c
+        H5CX.c
+        H5D.c H5Dbtree.c H5Dbtree2.c H5Dchunk.c H5Dcompact.c H5Dcontig.c H5Ddbg.c H5Ddeprec.c H5Dearray.c H5Defl.c H5Dfarray.c H5Dfill.c H5Dint.c H5Dio.c H5Dlayout.c H5Dmpio.c H5Dnone.c H5Doh.c H5Dscatgath.c H5Dselect.c H5Dsingle.c #[[H5Dtest.c]] H5Dvirtual.c
+        H5E.c H5Edeprec.c H5Eint.c
+        H5EA.c H5EAcache.c H5EAdbg.c H5EAdblkpage.c H5EAdblock.c H5EAhdr.c H5EAiblock.c H5EAint.c H5EAsblock.c H5EAstat.c H5EAtest.c
+        H5ES.c H5ESevent.c H5ESint.c H5ESlist.c
+        H5F.c H5Faccum.c H5Fcwfs.c H5Fdbg.c H5Fdeprec.c H5Fefc.c H5Ffake.c H5Fint.c H5Fio.c H5Fmount.c H5Fmpi.c H5Fquery.c H5Fsfile.c H5Fspace.c H5Fsuper.c H5Fsuper_cache.c #H5Ftest.c
+        H5FA.c H5FAcache.c H5FAdbg.c H5FAdblkpage.c H5FAdblock.c H5FAhdr.c H5FAint.c H5FAstat.c H5FAtest.c
+        H5FD.c H5FDcore.c H5FDdirect.c H5FDfamily.c H5FDhdfs.c H5FDint.c H5FDlog.c H5FDmirror.c H5FDmpi.c H5FDmpio.c H5FDmulti.c H5FDonion.c H5FDonion_header.c H5FDonion_history.c H5FDonion_index.c H5FDperform.c H5FDros3.c H5FDs3comms.c H5FDsec2.c H5FDspace.c H5FDsplitter.c H5FDstdio.c #[[H5FDtest.c]] H5FDwindows.c
+        H5FL.c
+        H5FO.c
+        H5FS.c H5FScache.c H5FSdbg.c H5FSint.c H5FSsection.c H5FSstat.c #H5FStest.c
+        H5G.c H5Gbtree2.c H5Gcache.c H5Gcompact.c H5Gdense.c H5Gdeprec.c H5Gent.c H5Gint.c H5Glink.c H5Gloc.c H5Gname.c H5Gnode.c H5Gobj.c H5Goh.c H5Groot.c H5Gstab.c #[[H5Gtest.c]] H5Gtraverse.c
+        H5HF.c H5HFbtree2.c H5HFcache.c H5HFdbg.c H5HFdblock.c H5HFdtable.c H5HFhdr.c H5HFhuge.c H5HFiblock.c H5HFiter.c H5HFman.c H5HFsection.c H5HFspace.c H5HFstat.c #[[H5HFtest.c]] H5HFtiny.c
+        H5HG.c H5HGcache.c H5HGdbg.c H5HGquery.c
+        H5HL.c H5HLcache.c H5HLdbg.c H5HLdblk.c H5HLint.c H5HLprfx.c
+        H5L.c H5Ldeprec.c H5Lexternal.c H5Lint.c
+        H5I.c H5Idbg.c H5Iint.c #H5Itest.c
+        H5M.c
+        H5MF.c H5MFaggr.c H5MFdbg.c H5MFsection.c
+        H5MM.c
+        H5O.c H5Oainfo.c H5Oalloc.c H5Oattr.c H5Oattribute.c H5Obogus.c H5Obtreek.c H5Ocache.c H5Ocache_image.c H5Ochunk.c H5Ocont.c H5Ocopy.c H5Ocopy_ref.c H5Odbg.c H5Odeprec.c H5Odrvinfo.c H5Odtype.c H5Oefl.c H5Ofill.c H5Oflush.c H5Ofsinfo.c H5Oginfo.c H5Oint.c H5Olayout.c H5Olinfo.c H5Olink.c H5Omessage.c H5Omtime.c H5Oname.c H5Onull.c H5Opline.c H5Orefcount.c H5Osdspace.c H5Oshared.c H5Oshmesg.c H5Ostab.c #[[H5Otest.c]] H5Ounknown.c
+        H5P.c H5Pacpl.c H5Pdapl.c H5Pdcpl.c H5Pdeprec.c H5Pdxpl.c H5Pencdec.c H5Pfapl.c H5Pfcpl.c H5Pfmpl.c H5Pgcpl.c H5Pint.c H5Plapl.c H5Plcpl.c H5Pmapl.c H5Pmcpl.c H5Pocpl.c H5Pocpypl.c H5Pstrcpl.c #H5Ptest.c
+        H5PB.c
+        H5PL.c H5PLint.c H5PLpath.c H5PLplugin_cache.c
+        H5R.c H5Rdeprec.c H5Rint.c
+        H5RS.c
+        H5S.c H5Sall.c H5Sdbg.c H5Sdeprec.c H5Shyper.c H5Smpio.c H5Snone.c H5Spoint.c H5Sselect.c #H5Stest.c
+        H5SL.c
+        H5SM.c H5SMbtree2.c H5SMcache.c H5SMmessage.c #H5SMtest.c
+        H5T.c H5Tarray.c H5Tbit.c H5Tcommit.c H5Tcompound.c H5Tconv.c H5Tcset.c H5Tdbg.c H5Tdeprec.c H5Tenum.c H5Tfields.c H5Tfixed.c H5Tfloat.c H5Tnative.c H5Toffset.c H5Toh.c H5Topaque.c H5Torder.c H5Tpad.c H5Tprecis.c H5Tref.c H5Tstrpad.c H5Tvisit.c H5Tvlen.c H5Tinit.c # generated
+        H5UC.c
+        H5VL.c H5VLcallback.c H5VLdyn_ops.c H5VLint.c H5VLnative.c H5VLnative_attr.c H5VLnative_blob.c H5VLnative_dataset.c H5VLnative_datatype.c H5VLnative_file.c H5VLnative_group.c H5VLnative_link.c H5VLnative_introspect.c H5VLnative_object.c H5VLnative_token.c H5VLpassthru.c #H5VLtest.c
+        H5VM.c
+        H5WB.c
+        H5Z.c H5Zdeflate.c H5Zfletcher32.c H5Znbit.c H5Zscaleoffset.c H5Zshuffle.c H5Zszip.c H5Ztrans.c
+)
+prepend_path(HDF5_SOURCE_FILES deps/hdf5)
+
 if (WIN32)
     set(KEYCODE_SOURCE_FILES keycode_id.c windows_fromhid.c windows_lparam.c windows_name.c windows_rawname.c windows_tohid.c)
 elseif(APPLE)
@@ -230,6 +281,7 @@ set(VIEWER_SOURCE_FILES
         third_party/yxml.c
         third_party/minfft.c
         third_party/ltalloc.cc
+        third_party/miniz.c
         utils/stringutils.c
         utils/mathutils.c
         utils/memrw.c
@@ -240,6 +292,7 @@ set(VIEWER_SOURCE_FILES
         utils/timerutils.c
         utils/benaphore.c
         utils/phasecorrelate.c
+        utils/hdf5reader.c
         )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
@@ -265,7 +318,9 @@ set(LIBRARY_SOURCE_FILES
         ${JPEG_SOURCE_FILES}
         ${FREETYPE_SOURCE_FILES}
         ${MBEDTLS_SOURCE_FILES}
-        ${KEYCODE_SOURCE_FILES})
+        ${KEYCODE_SOURCE_FILES}
+        ${HDF5_SOURCE_FILES}
+        )
 
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
@@ -280,6 +335,8 @@ if (WIN32)
     target_compile_definitions(slidescape_console PRIVATE DONT_REGISTER_FILETYPE_ASSOCIATIONS=1) # associate only non-console buils
 elseif(APPLE)
     set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -headerpad_max_install_names")
+
+
     find_package(SDL2 REQUIRED)
     include_directories(${SDL2_INCLUDE_DIRS})
     set(MACOSX_BUNDLE_ICON_FILE "resources/icon/icon.icns")
@@ -307,6 +364,8 @@ elseif(APPLE)
         add_custom_command(TARGET slidescape POST_BUILD
                 COMMAND codesign --deep -s "Developer ID Application" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Slidescape.app)
     endif()
+    message(STATUS "CMAKE_C_LINK_FLAGS = ${CMAKE_C_LINK_FLAGS}")
+    message(STATUS "CMAKE_CXX_LINK_FLAGS = ${CMAKE_CXX_LINK_FLAGS}")
 else()
     add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     find_package(SDL2 REQUIRED)
