@@ -27,12 +27,13 @@
 
 #include "coco.h"
 
-
+static rgba_t default_group_color = RGBA(60, 220, 50, 255);
 
 #include "annotation_asap_xml.cpp"
 
 i32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 	annotation_group_t new_group = {};
+    new_group.color = default_group_color; // default color
 	strncpy(new_group.name, name, sizeof(new_group.name));
 	arrput(annotation_set->stored_groups, new_group);
 	i32 new_stored_group_index = annotation_set->stored_group_count++;
@@ -1762,13 +1763,15 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		// Interface for viewing/editing annotation groups
 		if (ImGui::CollapsingHeader("Edit groups"))
 		{
-			static i32 edit_group_index = -1;
+			static i32 edit_group_index = 0;
 			const char* edit_group_preview = "";
+            bool edit_group_is_valid = false;
 
 			if (edit_group_index >= 0 && edit_group_index < annotation_set->active_group_count) {
 				edit_group_preview = group_item_previews[edit_group_index];
+                edit_group_is_valid = true;
 			} else {
-				edit_group_index = -1;
+                edit_group_index = 0;
 			}
 
 			bool disable_interface = annotation_set->active_group_count <= 0;
@@ -1791,7 +1794,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			ImGui::Spacing();
 
 			annotation_group_t* selected_group = NULL;
-			if (edit_group_index >= 0) {
+			if (edit_group_is_valid) {
 				selected_group = get_active_annotation_group(annotation_set, edit_group_index);
 			}
 			const char* group_name = selected_group ? selected_group->name : "";
@@ -1821,7 +1824,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			// Color picker for editing the group color.
 			ImGuiColorEditFlags flags = 0;
 			float color[3] = {};
-			if (edit_group_index >= 0) {
+			if (edit_group_is_valid) {
 				annotation_group_t* group = annotation_set->stored_groups + edit_group_index;
 				rgba_t rgba = group->color;
 				color[0] = BYTE_TO_FLOAT(rgba.r);
@@ -2363,7 +2366,8 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 
 	// TODO: check is this still needed?
 	// reserve annotation group 0 for the "None" category
-	add_annotation_group(annotation_set, "None");
+	i32 group_index = add_annotation_group(annotation_set, "None");
+    annotation_group_t* group = get_active_annotation_group(annotation_set, group_index);
 	annotation_set->export_as_asap_xml = true;
 
 	annotation_set->coco = coco_create_empty();
