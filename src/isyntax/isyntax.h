@@ -351,6 +351,7 @@ typedef struct isyntax_t {
 	block_allocator_t ll_coeff_block_allocator;
 	block_allocator_t h_coeff_block_allocator;
 	float loading_time;
+	float total_rgb_transform_time;
 	i32 data_model_major_version; // <100 (usually 5) for iSyntax format v1, >= 100 for iSyntax format v2
 	work_queue_t* work_submission_queue;
 	volatile i32 refcount;

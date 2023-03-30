@@ -108,7 +108,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 
 	i64 start_first_load = get_clock();
 	i32 tiles_loaded = 0;
-	total_rgb_transform_time = 0.0f;
+	isyntax->total_rgb_transform_time = 0.0f;
 
 	isyntax_init_dummy_codeblocks(isyntax);
 

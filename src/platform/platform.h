@@ -356,7 +356,6 @@ extern char global_export_save_as_filename[512];
 extern bool save_file_dialog_open;
 extern bool gui_want_capture_mouse;
 extern bool gui_want_capture_keyboard;
-extern float total_rgb_transform_time;
 
 
 #undef INIT

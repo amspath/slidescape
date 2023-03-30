@@ -29,6 +29,13 @@
     https://www.openpathology.philips.com/wp-content/uploads/isyntax/4522%20207%2043941_2020_04_24%20Pathology%20iSyntax%20image%20format.pdf
 
   This implementation does not require the Philips iSyntax SDK.
+
+  NOTE (2023-03-29):
+  Unfortunately, Philips' original OpenPathology website is no longer accessible.
+  The documentation on the file format is still available from Philips, but has moved to another location:
+  https://share.philips.com/sites/OpenPathologyPortal
+  However, you have to contact Philips directly to get access there.
+
 */
 
 
@@ -38,13 +45,19 @@
 
 #include "isyntax.h"
 
+// XML library for parsing the header
 #include "yxml.h"
 
+// JPEG decoding library for macro/label images
+#ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
 #include "jpeg_decoder.h"
+#else
 #include "stb_image.h"
+#endif
 
-#define WANT_DEBUG_OUTPUT_PNG 0
-#if WANT_DEBUG_OUTPUT_PNG
+// Enable/disable debug routines for creating PNGs of IDWT steps
+#define ISYNTAX_WANT_DEBUG_OUTPUT_PNG 0
+#if ISYNTAX_WANT_DEBUG_OUTPUT_PNG
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 // stb_image_write.h provides its own crc32() implementation, so we need to prevent a conflict if we already have it
 #define STBIW_CRC32 crc32
@@ -303,7 +316,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
 					if (decoded) {
 						i32 channels_in_file = 0;
-#if 1
+#ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
 						// TODO: Why does this crash?
 						// Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
 						// jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
@@ -1266,7 +1279,7 @@ static void convert_to_absolute_value_16_block(i16* data, u32 len) {
 }
 
 
-#if WANT_DEBUG_OUTPUT_PNG
+#if ISYNTAX_WANT_DEBUG_OUTPUT_PNG
 void debug_convert_wavelet_coefficients_to_image2(icoeff_t* coefficients, i32 width, i32 height, const char* filename) {
 	if (coefficients) {
 		u8* decoded_8bit = (u8*)malloc(width*height);
@@ -1313,7 +1326,6 @@ static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
 	u32* bgra = (u32*)malloc(width * height * sizeof(u32)); // TODO: performance: block allocator
 
-	i64 start = get_clock();
 	for (i32 y = 0; y < height; ++y) {
 		u32* dest = bgra + (y * width);
 #if 1 && defined(__SSE2__) && defined(__SSSE3__)
@@ -1360,7 +1372,6 @@ static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 		Co += stride;
 		Cg += stride;
 	}
-	total_rgb_transform_time += get_seconds_elapsed(start, get_clock());
 	return bgra;
 }
 
@@ -1371,7 +1382,7 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 	i32 full_height= quadrant_height * 2;
 	i32 idwt_stride = full_width;
 
-#if WANT_DEBUG_OUTPUT_PNG
+#if ISYNTAX_WANT_DEBUG_OUTPUT_PNG
 	if (output_steps_as_png) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "%s_step0.png", png_name);
@@ -1393,7 +1404,7 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 		opj_idwt53_h(&h, input_row);
 	}
 
-#if WANT_DEBUG_OUTPUT_PNG
+#if ISYNTAX_WANT_DEBUG_OUTPUT_PNG
 	if (output_steps_as_png) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "%s_step1.png", png_name);
@@ -1417,7 +1428,7 @@ void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool 
 		opj_idwt53_v(&v, idwt + x, idwt_stride, (last_x - x));
 	}
 
-#if WANT_DEBUG_OUTPUT_PNG
+#if ISYNTAX_WANT_DEBUG_OUTPUT_PNG
 	if (output_steps_as_png) {
 		char filename[512];
 		snprintf(filename, sizeof(filename), "%s_step2.png", png_name);
@@ -1899,6 +1910,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i32 valid_offset = (first_valid_pixel * idwt_stride) + first_valid_pixel;
 	u32* bgra = convert_ycocg_to_bgra_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset,
 											tile_width, tile_height, idwt_stride);
+	isyntax->total_rgb_transform_time += get_seconds_elapsed(start, get_clock());
 
 	//		float elapsed_rgb = get_seconds_elapsed(start, get_clock());
 	//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed_rgb, elapsed_malloc);
@@ -2930,13 +2942,13 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 						// When recursively decoding the tiles, at each iteration the image is slightly offset
 						// to the top left.
-                        // The amount of shift seems to be half of the level padding, which is ((3 >> scale) - 2).
+                        // The amount of shift seems correspond to the level padding: ((3 >> (scale-1)) - 2).
 						// (I guess this is related to the way the wavelet transform works.)
 						// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
 						// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
-						for (i32 scale = 0; scale < wsi_image->level_count; ++scale) {
+						for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
 							isyntax_level_t* level = wsi_image->levels + scale;
-                            float offset_in_pixels = (float) (get_first_valid_coef_pixel(scale) << 1);
+                            float offset_in_pixels = (float) (get_first_valid_coef_pixel(scale - 1));
                             level->origin_offset_in_pixels = offset_in_pixels;
 							float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
 							float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
@@ -3014,24 +3026,24 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 
 					// When recursively decoding the tiles, at each iteration the image is slightly offset
 					// to the top left.
-					// (Effectively the image seems to shift ~1.5 pixels, I am not sure why? Is this related to
-					// the per level padding of (3 >> level) pixels used in the wavelet transform?)
+					// The amount of shift seems correspond to the level padding: ((3 >> (scale-1)) - 2).
+					// (I guess this is related to the way the wavelet transform works.)
 					// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
 					// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
-					float offset_in_pixels = 1.5f;
-					for (i32 scale = 0; scale < wsi_image->max_scale; ++scale) {
+					for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
 						isyntax_level_t* level = wsi_image->levels + scale;
+						float offset_in_pixels = (float) (get_first_valid_coef_pixel(scale - 1));
 						level->origin_offset_in_pixels = offset_in_pixels;
 						float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
 						float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
 						level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
-						offset_in_pixels *= 2;
 					}
 
+
 					parse_ticks_elapsed += (get_clock() - parse_begin);
-//						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
-//						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
-//						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
+//				    console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
+//					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
+//					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 					isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());
 				} else {
 					// non-partial header blocks are not supported

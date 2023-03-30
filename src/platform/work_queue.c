@@ -179,13 +179,6 @@ bool is_queue_work_waiting_to_start(work_queue_t* queue) {
 	return result;
 }
 
-// NOTE: only use this on the main thread!
-void drain_work_queue(work_queue_t* queue) {
-	while (is_queue_work_in_progress(&global_work_queue)) {
-		do_worker_work(&global_work_queue, 0);
-	}
-}
-
 void dummy_work_queue_callback(int logical_thread_index, void* userdata) {}
 
 //#define TEST_THREAD_QUEUE

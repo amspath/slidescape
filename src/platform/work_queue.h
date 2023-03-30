@@ -63,7 +63,6 @@ void mark_queue_entry_completed(work_queue_t* queue);
 bool do_worker_work(work_queue_t* queue, int logical_thread_index);
 bool is_queue_work_in_progress(work_queue_t* queue);
 bool is_queue_work_waiting_to_start(work_queue_t* queue);
-void drain_work_queue(work_queue_t* queue);
 void dummy_work_queue_callback(int logical_thread_index, void* userdata);
 void test_multithreading_work_queue();
 
