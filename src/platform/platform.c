@@ -112,68 +112,6 @@ void get_system_info(bool verbose) {
 }
 
 
-#if !IS_SERVER
-
-//TODO: move this
-bool profiling = false;
-
-i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms) {
-	i64 end = get_clock();
-	if (profiling) {
-		float ms_elapsed = get_seconds_elapsed(start, end) * 1000.0f;
-		if (ms_elapsed > report_threshold_ms) {
-			console_print("[profiler] %s: %g ms\n", name, ms_elapsed);
-		}
-	}
-	return end;
-}
-#endif
-
-// Performance considerations for async I/O on Linux:
-// https://github.com/littledan/linux-aio#performance-considerations
-
-// TODO: aiocb64 doesn't exist on macOS? need #defines?
-
-
-
-/*void async_read_submit(io_operation_t* op) {
-#if WINDOWS
-	// stub
-#elif (APPLE || LINUX)
-	memset(&op->cb, 0, sizeof(op->cb));
-	op->cb.aio_nbytes = op->size_to_read;
-	op->cb.aio_fildes = op->file;
-	op->cb.aio_offset = op->offset;
-	op->cb.aio_buf = op->dest;
-
-	if (aio_read(&op->cb) == -1) {
-		console_print_error("submit_async_read(): unable to create I/O request\n");
-	}
-#endif
-}
-
-bool async_read_has_finished(io_operation_t* op) {
-#if WINDOWS
-	// stub
-#elif (APPLE || LINUX)
-	int status = aio_error(&op->cb);
-	return (status != EINPROGRESS);
-#endif
-}
-
-i64 async_read_finalize(io_operation_t* op) {
-#if WINDOWS
-	// stub
-#elif (APPLE || LINUX)
-	i64 bytes_read = aio_return(&op->cb);
-	return bytes_read;
-#endif
-}*/
-
-
-
-
-
 void init_thread_memory(i32 logical_thread_index) {
 	// Allocate a private memory buffer
 	u64 thread_memory_size = MEGABYTES(16);

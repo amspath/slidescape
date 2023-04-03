@@ -66,6 +66,26 @@ bool is_queue_work_waiting_to_start(work_queue_t* queue);
 void dummy_work_queue_callback(int logical_thread_index, void* userdata);
 void test_multithreading_work_queue();
 
+
+// globals
+#if defined(WORK_QUEUE_IMPL)
+#define INIT(...) __VA_ARGS__
+#define extern
+#else
+#define INIT(...)
+#undef extern
+#endif
+
+extern THREAD_LOCAL i32 work_queue_call_depth;
+extern work_queue_t global_work_queue;
+extern i32 global_worker_thread_idle_count;
+
+
+#undef INIT
+#undef extern
+
+
+
 #ifdef __cplusplus
 }
 #endif

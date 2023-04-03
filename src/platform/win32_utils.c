@@ -17,7 +17,7 @@
 */
 
 #include "common.h"
-#include "win32_platform.h"
+#include "win32_utils.h"
 
 wchar_t* win32_string_widen(const char* s, size_t len, wchar_t* buffer) {
 	int characters_written = MultiByteToWideChar(CP_UTF8, 0, s, -1, buffer, len);

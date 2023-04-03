@@ -2688,7 +2688,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 					}
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 
-					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
+//					console_print("iSyntax: the XML header is %u bytes, or %g%% of the total file size\n", header_length, (float)((float)header_length * 100.0f) / isyntax->filesize);
 //					console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 //					console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 //					console_print("   Total loading time: %g seconds\n", get_seconds_elapsed(load_begin, get_clock()));
@@ -2956,7 +2956,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 						}
 
 						parse_ticks_elapsed += (get_clock() - parse_begin);
-						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
+//						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
 //						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
 //						console_print("   Parsing time: %g seconds\n", get_seconds_elapsed(0, parse_ticks_elapsed));
 						isyntax->loading_time = get_seconds_elapsed(load_begin, get_clock());

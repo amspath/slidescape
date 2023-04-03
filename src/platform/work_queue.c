@@ -16,11 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#define WORK_QUEUE_IMPL
 #include "work_queue.h"
 #include "platform.h"
 #include "intrinsics.h"
 
-#if !WINDOWS
+#if defined(_WIN32)
+#include <windows.h>
+#else
 #include <semaphore.h>
 #endif
 
@@ -29,7 +32,8 @@ work_queue_t create_work_queue(const char* semaphore_name, i32 entry_count) {
 
 	i32 semaphore_initial_count = 0;
 #if WINDOWS
-	queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, worker_thread_count, semaphore_name, 0, SEMAPHORE_ALL_ACCESS);
+	LONG maximum_count = 1e6; // realistically, we'd only get up to the number of worker threads, though
+	queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, maximum_count, semaphore_name, 0, SEMAPHORE_ALL_ACCESS);
 #else
 	queue.semaphore = sem_open(semaphore_name, O_CREAT, 0644, semaphore_initial_count);
 #endif

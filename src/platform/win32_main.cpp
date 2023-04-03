@@ -1506,8 +1506,6 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 
 bool win32_process_input(app_state_t* app_state) {
 
-	i64 last_section = get_clock(); // profiling
-
 	// Swap
 	input_t* temp = old_input;
 	old_input = curr_input;
@@ -1566,14 +1564,9 @@ bool win32_process_input(app_state_t* app_state) {
 	win32_process_keyboard_event(&curr_input->mouse_buttons[3], GetAsyncKeyState(VK_XBUTTON1) & (1<<15));
 	win32_process_keyboard_event(&curr_input->mouse_buttons[4], GetAsyncKeyState(VK_XBUTTON2) & (1<<15));
 
-	last_section = profiler_end_section(last_section, "input: (1)", 5.0f);
-
-
 	bool did_idle = win32_process_pending_messages(curr_input, app_state->main_window, app_state->allow_idling_next_frame);
-//	last_section = profiler_end_section(last_section, "input: (2) process pending messages", 20.0f);
 
 	win32_process_xinput_controllers();
-//	last_section = profiler_end_section(last_section, "input: (3) xinput", 5.0f);
 
 	// Check if at least one button/key is pressed at all (if no buttons are pressed,
 	// we might be allowed to idle waiting for input (skipping frames!) as long as nothing is animating on the screen).
@@ -2043,7 +2036,6 @@ int main() {
 		if (did_idle) {
 			last_clock = get_clock();
 		}
-		i64 section_end = profiler_end_section(last_clock, "input", 20.0f);
 
 		win32_gui_new_frame();
 
@@ -2061,8 +2053,6 @@ int main() {
 		glViewport(0, 0, dimension.width, dimension.height);
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-		section_end = profiler_end_section(section_end, "viewer update and render", 20.0f);
-
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;
 		float ms_left = predicted_frame_ms - frame_ms;
 		float time_margin = is_vsync_enabled ? 2.0f : 0.0f;
@@ -2076,8 +2066,6 @@ int main() {
 		}
 
 		wglSwapBuffers(glrc_hdc);
-		section_end = profiler_end_section(section_end, "end frame", 100.0f);
-
 	}
 
 	autosave(app_state, true); // save any unsaved changes

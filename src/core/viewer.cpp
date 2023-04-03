@@ -972,8 +972,6 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
 
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_time) {
 
-	i64 last_section = get_clock(); // start profiler section
-
 	// Release the temporary memory that was allocated the previous frame.
 	app_state->temp_arena.used = 0;
 
@@ -1012,8 +1010,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	// Set up rendering state for the next frame
 	viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
-
-	last_section = profiler_end_section(last_section, "viewer_update_and_render: new frame", 20.0f);
 
 	app_state->allow_idling_next_frame = true; // but we might set it to false later
 

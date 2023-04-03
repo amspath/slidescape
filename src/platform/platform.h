@@ -262,7 +262,6 @@ static inline void semaphore_wait(semaphore_handle_t semaphore) {
 // Platform specific function prototypes
 
 #if !IS_SERVER
-i64 profiler_end_section(i64 start, const char* name, float report_threshold_ms);
 void set_swap_interval(int interval);
 u8* platform_alloc(size_t size); // required to be zeroed by the platform
 #else
@@ -307,10 +306,6 @@ bool is_directory(const char* path);
 
 void get_system_info(bool verbose);
 
-void async_read_submit(io_operation_t* op);
-bool async_read_has_finished(io_operation_t* op);
-i64 async_read_finalize(io_operation_t* op);
-
 void init_thread_memory(i32 logical_thread_index);
 
 // globals
@@ -343,11 +338,8 @@ extern i32 logical_cpu_count;
 extern bool is_vsync_enabled;
 extern bool is_nvidia_gpu;
 extern bool is_macos;
-extern work_queue_t global_work_queue;
 extern work_queue_t global_completion_queue;
 extern work_queue_t global_export_completion_queue;
-extern i32 global_worker_thread_idle_count;
-extern THREAD_LOCAL i32 work_queue_call_depth;
 extern bool is_verbose_mode INIT(= false);
 extern benaphore_t console_printer_benaphore;
 extern bool cursor_hidden;
