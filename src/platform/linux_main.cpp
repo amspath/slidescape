@@ -104,7 +104,7 @@ void stringify_icon_image() {
 }
 #endif
 
-void* worker_thread(void* parameter) {
+static void* worker_thread(void* parameter) {
     platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);

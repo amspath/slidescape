@@ -37,7 +37,7 @@ typedef struct {
 LPSTR* WINAPI CommandLineToArgvA(LPSTR lpCmdline, int* numargs);
 
 // globals
-#if defined(WIN32_MAIN_IMPL)
+#if defined(WIN32_GRAPHICAL_APP_IMPL)
 #define INIT(...) __VA_ARGS__
 #define extern
 #else

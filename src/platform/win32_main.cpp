@@ -21,7 +21,7 @@
 
 #include "common.h"
 
-#include "win32_platform.h"
+#include "win32_graphical_app.h"
 #include "win32_gui.h"
 
 //#define OPENSLIDE_API_IMPL
@@ -1594,7 +1594,7 @@ bool win32_process_input(app_state_t* app_state) {
 }
 
 
-DWORD WINAPI thread_proc(void* parameter) {
+static DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 

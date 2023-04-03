@@ -196,6 +196,7 @@ prepend_path(KEYCODE_SOURCE_FILES deps/keycode)
 
 set(VIEWER_SOURCE_FILES
         platform/platform.c
+        platform/graphical_app.c
         platform/work_queue.c
         platform/shader.c
         platform/openslide_api.c
@@ -244,7 +245,7 @@ set(VIEWER_SOURCE_FILES
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/win32_main.cpp
-            platform/win32_utils.cpp
+            platform/win32_utils.c
             platform/win32_gui.cpp
             platform/glad.c
             imgui/backends/imgui_impl_win32.cpp
@@ -253,7 +254,7 @@ else()
     # Note: SDL2 is used for both Linux and macOS
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/linux_main.cpp
-            platform/linux_utils.cpp
+            platform/linux_utils.c
             platform/linux_gui.cpp
             imgui/backends/imgui_impl_sdl.cpp
             imgui/ImGuiFileDialog.cpp
@@ -335,9 +336,9 @@ set(BASE_FILES
         src/platform/platform.c
         )
 if (WIN32)
-    list(APPEND BASE_FILES src/platform/win32_utils.cpp)
+    list(APPEND BASE_FILES src/platform/win32_utils.c)
 else()
-    list(APPEND BASE_FILES src/platform/linux_utils.cpp)
+    list(APPEND BASE_FILES src/platform/linux_utils.c)
 endif()
 
 set(SERVER_SOURCE_FILES

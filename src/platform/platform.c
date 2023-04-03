@@ -28,11 +28,6 @@
 #include <sys/sysctl.h> // for sysctlbyname()
 #endif
 
-#if WINDOWS
-#include "win32_platform.c"
-#else
-#include "linux_platform.c"
-#endif
 
 
 mem_t* platform_allocate_mem_buffer(size_t capacity) {

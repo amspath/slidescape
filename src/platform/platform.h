@@ -26,50 +26,12 @@
 #include "work_queue.h"
 #include "benaphore.h"
 
-#include "keycode.h"
-#include "keytable.h"
-
 
 #if WINDOWS
 #include <windows.h>
 #else
 #include <semaphore.h>
 #include <unistd.h>
-#include <aio.h> // For async io
-#include <errno.h> // For async io
-#endif
-
-#if APPLE
-#include <stddef.h> // for offsetof()
-#if __has_include(<SDL2/SDL.h>)
-#include <SDL2/SDL.h>
-#else
-#include <SDL.h>
-#endif
-#elif LINUX
-#include <SDL2/SDL.h>
-#else
-// Key modifiers from SDL2
-typedef enum
-{
-	KMOD_NONE = 0x0000,
-	KMOD_LSHIFT = 0x0001,
-	KMOD_RSHIFT = 0x0002,
-	KMOD_LCTRL = 0x0040,
-	KMOD_RCTRL = 0x0080,
-	KMOD_LALT = 0x0100,
-	KMOD_RALT = 0x0200,
-	KMOD_LGUI = 0x0400,
-	KMOD_RGUI = 0x0800,
-	KMOD_NUM = 0x1000,
-	KMOD_CAPS = 0x2000,
-	KMOD_MODE = 0x4000,
-	KMOD_RESERVED = 0x8000
-} SDL_Keymod;
-#define KMOD_CTRL   (KMOD_LCTRL|KMOD_RCTRL)
-#define KMOD_SHIFT  (KMOD_LSHIFT|KMOD_RSHIFT)
-#define KMOD_ALT    (KMOD_LALT|KMOD_RALT)
-#define KMOD_GUI    (KMOD_LGUI|KMOD_RGUI)
 #endif
 
 #ifdef TARGET_EMSCRIPTEN
@@ -125,87 +87,6 @@ typedef struct {
 	arena_t temp_arena;
 } thread_memory_t;
 
-typedef struct button_state_t {
-	bool8 down;
-	u8 transition_count;
-} button_state_t;
-
-typedef struct analog_stick_t {
-	v2f start;
-	v2f end;
-	bool has_input;
-} analog_stick_t;
-
-typedef struct analog_trigger_t {
-	float start;
-	float end;
-	bool has_input;
-} analog_trigger_t;
-
-typedef struct controller_input_t {
-	bool32 is_connected;
-	bool32 is_analog;
-	analog_stick_t left_stick;
-	analog_stick_t right_stick;
-	analog_trigger_t left_trigger;
-	analog_trigger_t right_trigger;
-	u32 modifiers;
-	union {
-		button_state_t buttons[533];
-		struct {
-			button_state_t move_up;
-			button_state_t move_down;
-			button_state_t move_left;
-			button_state_t move_right;
-			button_state_t action_up;
-			button_state_t action_down;
-			button_state_t action_left;
-			button_state_t action_right;
-			button_state_t left_shoulder;
-			button_state_t right_shoulder;
-			button_state_t start;
-			button_state_t back;
-			button_state_t button_a;
-			button_state_t button_b;
-			button_state_t button_x;
-			button_state_t button_y;
-
-			button_state_t keys[512];
-			button_state_t key_shift;
-			button_state_t key_ctrl;
-			button_state_t key_alt;
-			button_state_t key_super;
-
-			// NOTE: add buttons above this line
-			// cl complains about zero-sized arrays, so this the terminator is a full blown button now :(
-			button_state_t terminator;
-		};
-	};
-
-} controller_input_t;
-// Does the count of the controller_input_t.buttons[] array add up?
-STATIC_ASSERT(sizeof(((controller_input_t*)0)->buttons) == (offsetof(controller_input_t, terminator) - offsetof(controller_input_t, buttons) + sizeof(button_state_t)));
-
-typedef struct input_t {
-	button_state_t mouse_buttons[5];
-	float mouse_z_start;
-	float mouse_z;
-	v2f drag_start_xy;
-	v2f drag_vector;
-	v2f mouse_xy;
-	bool mouse_moved;
-	float delta_t;
-	union {
-		controller_input_t abstract_controllers[5];
-		struct {
-			controller_input_t keyboard;
-			controller_input_t controllers[4];
-		};
-	};
-	u8 preferred_controller_index;
-	bool are_any_buttons_down;
-
-} input_t;
 
 #if WINDOWS
 typedef HWND window_handle_t;
@@ -259,33 +140,10 @@ static inline void semaphore_wait(semaphore_handle_t semaphore) {
 
 #endif
 
-// Platform specific function prototypes
-
-#if !IS_SERVER
-void set_swap_interval(int interval);
-u8* platform_alloc(size_t size); // required to be zeroed by the platform
-#else
-static inline u8* platform_alloc(size_t size) { return (u8*)malloc(size);}
-#endif
-
+u8* platform_alloc(size_t size);
 mem_t* platform_allocate_mem_buffer(size_t capacity);
 mem_t* platform_read_entire_file(const char* filename);
 u64 file_read_at_offset(void* dest, file_stream_t fp, u64 offset, u64 num_bytes);
-
-void mouse_show();
-void mouse_hide();
-void update_cursor();
-void set_cursor_default();
-void set_cursor_crosshair();
-
-const char* get_default_save_directory();
-void open_file_dialog(app_state_t* app_state, u32 action, u32 filetype_hint);
-bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer_size, const char* filter_string, const char* filename_hint);
-void toggle_fullscreen(window_handle_t window);
-bool check_fullscreen(window_handle_t window);
-void set_window_title(window_handle_t window, const char* title);
-void reset_window_title(window_handle_t window);
-void message_box(window_handle_t window, const char* message);
 
 int platform_stat(const char* filename, struct stat* st);
 file_stream_t file_stream_open_for_reading(const char* filename);
@@ -322,12 +180,8 @@ static inline temp_memory_t begin_temp_memory_on_local_thread() { return begin_t
 
 extern int g_argc;
 extern const char** g_argv;
-extern bool is_fullscreen;
-extern bool is_program_running;
-extern bool need_quit;
-extern input_t inputs[2];
-extern input_t *old_input;
-extern input_t *curr_input;
+
+
 extern u32 os_page_size;
 extern u64 page_alignment_mask;
 extern i32 total_thread_count;
@@ -335,19 +189,10 @@ extern i32 worker_thread_count;
 extern i32 active_worker_thread_count;
 extern i32 physical_cpu_count;
 extern i32 logical_cpu_count;
-extern bool is_vsync_enabled;
-extern bool is_nvidia_gpu;
-extern bool is_macos;
+
 extern work_queue_t global_completion_queue;
-extern work_queue_t global_export_completion_queue;
+
 extern bool is_verbose_mode INIT(= false);
-extern benaphore_t console_printer_benaphore;
-extern bool cursor_hidden;
-extern const char* global_settings_dir;
-extern char global_export_save_as_filename[512];
-extern bool save_file_dialog_open;
-extern bool gui_want_capture_mouse;
-extern bool gui_want_capture_keyboard;
 
 
 #undef INIT

@@ -39,7 +39,7 @@ void close_directory_listing(directory_listing_t* data);
 
 #ifdef _WIN32
 
-#include "win32_platform.h"
+#include "win32_graphical_app.h"
 
 struct directory_listing_t {
 	WIN32_FIND_DATAW find_data;

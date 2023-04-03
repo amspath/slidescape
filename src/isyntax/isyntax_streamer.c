@@ -17,9 +17,11 @@
 */
 
 #include "common.h"
+#include "isyntax.h"
+#include "intrinsics.h"
 #include "viewer.h"
 
-void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
+static void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 	image_t* image = &global_app_state.loaded_images[global_app_state.displayed_image]; // TODO: refactor: do something less ugly and dangerous than this

@@ -26,6 +26,7 @@ extern "C" {
 
 #include "common.h"
 #include "platform.h"
+#include "graphical_app.h"
 #include "mathutils.h"
 #include "arena.h"
 #include "image.h"

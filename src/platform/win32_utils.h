@@ -35,19 +35,6 @@ void win32_diagnostic_verbose(const char* prefix);
 HANDLE win32_open_overlapped_file_handle(const char* filename);
 size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle, void* dest, u32 read_size, i64 offset);
 
-// Windows implementations for common procedures
-file_handle_t open_file_handle_for_simultaneous_access(const char* filename);
-void file_handle_close(file_handle_t file_handle);
-size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read);
-int platform_stat(const char* filename, struct stat* st);
-file_stream_t file_stream_open_for_reading(const char* filename);
-file_stream_t file_stream_open_for_writing(const char* filename);
-i64 file_stream_read(void* dest, size_t bytes_to_read, file_stream_t file_stream);
-void file_stream_write(void* source, size_t bytes_to_write, file_stream_t file_stream);
-i64 file_stream_get_filesize(file_stream_t file_stream);
-i64 file_stream_get_pos(file_stream_t file_stream);
-bool file_stream_set_pos(file_stream_t file_stream, i64 offset);
-void file_stream_close(file_stream_t file_stream);
 
 #ifdef __cplusplus
 }

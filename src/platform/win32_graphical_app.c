@@ -18,8 +18,9 @@
 
 #pragma once
 #include "common.h"
-#define WIN32_MAIN_IMPL
-#include "win32_platform.h"
+#define WIN32_GRAPHICAL_APP_IMPL
+#include "graphical_app.h"
+#include "win32_graphical_app.h"
 
 
 // Sources:
