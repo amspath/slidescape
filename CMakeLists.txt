@@ -261,6 +261,7 @@ set(VIEWER_SOURCE_FILES
         core/remote.c
         core/image.c
         core/image_registration.c
+        core/heatmap.c
         dicom/dicom.c
         dicom/dicom_dict.c
         dicom/dicom_wsi.c

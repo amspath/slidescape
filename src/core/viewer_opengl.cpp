@@ -67,8 +67,20 @@ typedef struct finalblit_shader_t {
 	i32 attrib_location_tex_coord;
 } finalblit_shader_t;
 
+typedef struct heatmap_tile_shader_t {
+    u32 program;
+    i32 u_projection_view_matrix;
+    i32 u_model_matrix;
+    i32 u_base_texture;
+    i32 u_color_ramp;
+    i32 u_intensity;
+    i32 u_max_opacity;
+
+} heatmap_tile_shader_t;
+
 basic_shader_t basic_shader;
 finalblit_shader_t finalblit_shader;
+heatmap_tile_shader_t heatmap_tile_shader;
 
 u32 dummy_texture;
 
@@ -383,6 +395,17 @@ void init_opengl_stuff(app_state_t* app_state) {
 		transfer_state->initialized = true;
 	}
 
+#if APPLE
+    const char* working_dir = getcwd(NULL, 0);
+    const char* dirname = one_past_last_slash(working_dir, INT32_MAX);
+    bool changed_dir = false;
+    if (strcmp(dirname, "MacOS") == 0) {
+        // We're inside the application bundle, we don't expect shader sources here. -> chdir()
+        chdir("../../..");
+        changed_dir = true;
+    }
+#endif
+
 	// Load the basic shader program (used to render the scene)
 	basic_shader.program = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
 	basic_shader.u_projection_view_matrix = get_uniform(basic_shader.program, "projection_view_matrix");
@@ -404,6 +427,22 @@ void init_opengl_stuff(app_state_t* app_state) {
 	finalblit_shader.u_t = get_uniform(finalblit_shader.program, "t");
 	finalblit_shader.attrib_location_pos = get_attrib(finalblit_shader.program, "pos");
 	finalblit_shader.attrib_location_tex_coord = get_attrib(finalblit_shader.program, "tex_coord");
+
+    heatmap_tile_shader.program = load_basic_shader_program("shaders/heatmap_tile.vert", "shaders/heatmap_tile.frag");
+    heatmap_tile_shader.u_projection_view_matrix = get_uniform(heatmap_tile_shader.program, "projection_view_matrix");
+    heatmap_tile_shader.u_model_matrix = get_uniform(heatmap_tile_shader.program, "model_matrix");
+//    heatmap_tile_shader.u_base_texture = get_uniform(heatmap_tile_shader.program, "base_texture");
+//    heatmap_tile_shader.u_color_ramp = get_uniform(heatmap_tile_shader.program, "color_ramp");
+    heatmap_tile_shader.u_intensity = get_uniform(heatmap_tile_shader.program, "intensity");
+    heatmap_tile_shader.u_max_opacity = get_uniform(heatmap_tile_shader.program, "max_opacity");
+//    get_attrib(finalblit_shader.program, "pos");
+
+#if APPLE
+    if (changed_dir) {
+        chdir(working_dir);
+    }
+    free((void*)working_dir);
+#endif
 
 	glUseProgram(finalblit_shader.program);
 	glUniform1i(finalblit_shader.u_texture0, 0);

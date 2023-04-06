@@ -321,7 +321,9 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 			return VIEWER_FILE_TYPE_XML;
 		} else if (strcasecmp(file->ext, "json") == 0) {
 			return VIEWER_FILE_TYPE_JSON;
-		} else if (strcasecmp(file->ext, "dcm") == 0) {
+		} else if (strcasecmp(file->ext, "h5") == 0) {
+            return VIEWER_FILE_TYPE_H5;
+        } else if (strcasecmp(file->ext, "dcm") == 0) {
 			return VIEWER_FILE_TYPE_DICOM;
 		} else if (strcasecmp(file->ext, "isyntax") == 0 || strcasecmp(file->ext, "i2syntax") == 0) {
 			return VIEWER_FILE_TYPE_ISYNTAX;
@@ -520,6 +522,26 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 	}
 }
 
+bool viewer_load_h5_layer(app_state_t* app_state, scene_t* scene, file_info_t* file) {
+    bool success = false;
+
+    heatmap_destroy(&app_state->scene.heatmap);
+    heatmap_t heatmap = load_heatmap(file);
+    if (heatmap.is_valid) {
+        if (scene->annotation_set.active_annotation_count > 0) {
+            annotation_t* annotation = get_active_annotation(&scene->annotation_set, 0);
+            annotation_recalculate_bounds_if_necessary(annotation);
+            heatmap.pixel_pos.x += (i32)(annotation->bounds.left / scene->zoom.base_pixel_width);
+            heatmap.pixel_pos.y += (i32)(annotation->bounds.top / scene->zoom.base_pixel_height);
+        }
+        scene->heatmap = heatmap;
+        show_heatmap_window = true;
+        success = true;
+    }
+
+    return success;
+}
+
 
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint) {
 	file_info_t file = viewer_get_file_info(filename);
@@ -551,7 +573,9 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 					reload_global_caselist(app_state, filename);
 					show_slide_list_window = true;
 					success = caselist_select_first_case(app_state, &app_state->caselist);
-				}
+				} else if (file.type == VIEWER_FILE_TYPE_H5) {
+                    success = viewer_load_h5_layer(app_state, &app_state->scene, &file);
+                }
 			}
 		} else if (file.is_directory) {
 			directory_info_t directory = viewer_get_directory_info(filename);

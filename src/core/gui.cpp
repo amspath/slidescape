@@ -561,8 +561,28 @@ void draw_layers_window(app_state_t* app_state) {
         ImGui::EndDisabled();
     }
 
-	ImGui::End();
+    ImGui::End();
 }
+
+
+void draw_heatmap_window(app_state_t* app_state, scene_t* scene) {
+    if (!show_heatmap_window) return;
+
+    ImGui::SetNextWindowPos(ImVec2(20, 50), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(460,541), ImGuiCond_FirstUseEver);
+
+    ImGui::Begin("Heatmap", &show_heatmap_window);
+
+    heatmap_t* heatmap = &scene->heatmap;
+    if (heatmap->is_valid) {
+        ImGui::SliderInt("Class", &heatmap->current_class, 0, heatmap->class_count - 1);
+        ImGui::SliderFloat("Max opacity", &heatmap->max_opacity, 0.0f, 1.0f);
+    }
+
+    ImGui::End();
+}
+
+
 
 
 void draw_export_region_dialog(app_state_t* app_state) {
@@ -1273,6 +1293,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	if (show_layers_window) {
 		draw_layers_window(app_state);
 	}
+
+    if (show_heatmap_window) {
+        draw_heatmap_window(app_state, &app_state->scene);
+    }
 
 	if (show_about_window) {
 		ImGui::Begin("About " APP_TITLE, &show_about_window, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);

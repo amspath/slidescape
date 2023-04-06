@@ -50,6 +50,17 @@ void write_stringified_shaders() {
 		return;
 	}
 
+#if APPLE
+    char* working_dir = getcwd(NULL, 0);
+    const char* dirname = one_past_last_slash(working_dir, INT32_MAX);
+    bool changed_dir = false;
+    if (strcmp(dirname, "MacOS") == 0) {
+        // We're inside the application bundle, we don't expect shader sources here. -> chdir()
+        chdir("../../..");
+        changed_dir = true;
+    }
+#endif
+
 	const char* out_filename = "src/stringified_shaders.h";
 
 	bool old_file_exists = false;
@@ -128,6 +139,13 @@ void write_stringified_shaders() {
 	}
 
 	memrw_destroy(&out);
+
+#if APPLE
+    if (changed_dir) {
+        chdir(working_dir);
+    }
+    free(working_dir);
+#endif
 }
 
 #endif

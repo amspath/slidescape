@@ -107,6 +107,8 @@ void unload_all_images(app_state_t *app_state) {
 	app_state->scene.is_cropped = false;
 	app_state->scene.has_selection_box = false;
 	viewer_switch_tool(app_state, TOOL_NONE);
+
+    heatmap_destroy(&app_state->scene.heatmap);
 }
 
 bool was_button_pressed(button_state_t* button) {
@@ -396,8 +398,86 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 	}
 }
 
-void update_and_render_image(app_state_t* app_state, image_t* image) {
-	scene_t* scene = &app_state->scene;
+
+void scene_set_up_projection_matrix(scene_t* scene, v2f origin_offset, mat4x4 projection, mat4x4 view, mat4x4 projection_view) {
+
+    // Create projection matrix based on viewport dimensions in world space
+    {
+        float l = -0.5f * scene->r_minus_l;
+        float r = +0.5f * scene->r_minus_l;
+        float b = +0.5f * scene->t_minus_b;
+        float t = -0.5f * scene->t_minus_b;
+        float n = 100.0f;
+        float f = -100.0f;
+        mat4x4_ortho(projection, l, r, b, t, n, f);
+    }
+
+    mat4x4 I;
+    mat4x4_identity(I);
+
+    // define view matrix
+    mat4x4 view_matrix;
+    mat4x4_translate(view_matrix,
+                     -scene->camera.x + origin_offset.x,
+                     -scene->camera.y + origin_offset.y,
+                     0.0f);
+
+    mat4x4_mul(projection_view, projection, view_matrix);
+}
+
+void render_heatmap(app_state_t* app_state, scene_t* scene, heatmap_t* heatmap) {
+    mat4x4 projection, view, projection_view;
+    v2f origin_offset = {0.0f, 0.0f};
+    scene_set_up_projection_matrix(scene, origin_offset, projection, view, projection_view);
+
+    glUseProgram(heatmap_tile_shader.program);
+    glActiveTexture(GL_TEXTURE0);
+
+    glUniformMatrix4fv(heatmap_tile_shader.u_projection_view_matrix, 1, GL_FALSE, &projection_view[0][0]);
+    glUniform1f(heatmap_tile_shader.u_max_opacity, heatmap->max_opacity);
+
+    i32 class_index = heatmap->current_class;
+    heatmap_class_t* heatmap_class = heatmap->classes + class_index;
+    i32 tile_count = heatmap->height_in_tiles * heatmap->width_in_tiles;
+    i32 exist_count = 0;
+    for (i32 tile_y = 0; tile_y < heatmap->height_in_tiles; ++tile_y) {
+        for (i32 tile_x = 0; tile_x < heatmap->width_in_tiles; ++tile_x) {
+            heatmap_tile_t* tile = heatmap_class->tiles + tile_y * heatmap->width_in_tiles + tile_x;
+            if (tile->exists) {
+                ++exist_count;
+                i32 pixel_x = (heatmap->pixel_pos.x + tile_x * heatmap->tile_width);
+                i32 pixel_y = (heatmap->pixel_pos.y + tile_y * heatmap->tile_height);
+                float world_x = (float)pixel_x * scene->zoom.base_pixel_width;
+                float world_y = (float)pixel_y * scene->zoom.base_pixel_height;
+
+                glUniform1f(heatmap_tile_shader.u_intensity, tile->value);
+
+                // define model matrix
+                mat4x4 model_matrix;
+                mat4x4_translate(model_matrix, world_x, world_y, 0.0f);
+                mat4x4_scale_aniso(model_matrix, model_matrix,
+                                   (heatmap->tile_width) * scene->zoom.base_pixel_width,
+                                   (heatmap->tile_height) * scene->zoom.base_pixel_height, 1.0f);
+                glUniformMatrix4fv(heatmap_tile_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+
+                glBindVertexArray(vao_rect);
+                glActiveTexture(GL_TEXTURE0);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+
+            }
+        }
+    }
+    static bool already_printed = false;
+    if (!already_printed) {
+        console_print("render_heatmap(): drawing %d patches\n", exist_count);
+        already_printed = true;
+    }
+
+
+
+}
+
+void update_and_render_image(app_state_t* app_state, scene_t* scene, image_t* image) {
 
 	i32 client_width = app_state->client_viewport.w;
 	i32 client_height = app_state->client_viewport.h;
@@ -580,29 +660,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 
 		// RENDERING
-		mat4x4 projection = {};
-		{
-			float l = -0.5f * scene->r_minus_l;
-			float r = +0.5f * scene->r_minus_l;
-			float b = +0.5f * scene->t_minus_b;
-			float t = -0.5f * scene->t_minus_b;
-			float n = 100.0f;
-			float f = -100.0f;
-			mat4x4_ortho(projection, l, r, b, t, n, f);
-		}
-
-		mat4x4 I;
-		mat4x4_identity(I);
-
-		// define view matrix
-		mat4x4 view_matrix;
-		mat4x4_translate(view_matrix,
-						 -scene->camera.x + image->origin_offset.x,
-						 -scene->camera.y + image->origin_offset.y,
-						 0.0f);
-
-		mat4x4 projection_view_matrix;
-		mat4x4_mul(projection_view_matrix, projection, view_matrix);
+		mat4x4 projection, view_matrix, projection_view_matrix;
+        scene_set_up_projection_matrix(scene, image->origin_offset, projection, view_matrix, projection_view_matrix);
 
 		glUseProgram(basic_shader.program);
 		glActiveTexture(GL_TEXTURE0);
@@ -1577,12 +1636,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		draw_scale_bar(&scene->scale_bar);
 	}
 
+
 	if (image_count <= 1) {
 		// Render everything at once
 //		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 		image_t* image = app_state->loaded_images[0];
-		update_and_render_image(app_state, image);
+		update_and_render_image(app_state, scene, image);
 	} else {
 		// We are rendering the scene in two passes.
 		// 1: render to framebuffer
@@ -1594,6 +1654,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		for (i32 image_index = 0; image_index < image_count; ++image_index) {
 
+            ASSERT(image_index < COUNT(layer_framebuffers));
 			framebuffer_t* framebuffer = layer_framebuffers + image_index;
 			maybe_resize_overlay(framebuffer, client_width, client_height);
 
@@ -1602,7 +1663,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 //			if (image_index == scene->active_layer) {
 				image_t* image = app_state->loaded_images[image_index];
-				update_and_render_image(app_state, image);
+				update_and_render_image(app_state, scene, image);
 //			}
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		}
@@ -1622,6 +1683,23 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		glDrawArrays(GL_TRIANGLES, 0, 6);
 		glBindVertexArray(0);
 	}
+
+
+    if (scene->heatmap.is_valid) {
+
+        // render heatmap
+        glEnable(GL_BLEND);
+        glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_STENCIL_TEST);
+
+        render_heatmap(app_state, scene, &scene->heatmap);
+
+        glDisable(GL_BLEND);
+
+    }
 
 
 	do_after_scene_render(app_state, input);

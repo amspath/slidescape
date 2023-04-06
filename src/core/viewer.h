@@ -47,6 +47,7 @@ typedef enum viewer_file_type_enum {
 	VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE,
 	VIEWER_FILE_TYPE_XML,
 	VIEWER_FILE_TYPE_JSON,
+	VIEWER_FILE_TYPE_H5,
 } viewer_file_type_enum;
 
 typedef struct file_info_t {
@@ -141,12 +142,6 @@ typedef struct scale_bar_t {
 	bool initialized;
 } scale_bar_t;
 
-
-typedef enum entity_type_enum {
-	ENTITY_SIMPLE_IMAGE = 1,
-	ENTITY_TILED_IMAGE = 2,
-} entity_type_enum;
-
 typedef enum mouse_mode_enum {
 	MODE_VIEW,
 	MODE_INSERT,
@@ -168,17 +163,18 @@ typedef enum placement_tool_enum {
 	TOOL_CREATE_TEXT,
 } placement_tool_enum;
 
+
+typedef enum entity_type_enum {
+    ENTITY_SIMPLE_IMAGE = 1,
+    ENTITY_TILED_IMAGE = 2,
+} entity_type_enum;
+
 typedef struct entity_t {
 	u32 type;
-	v2f pos;
-	union {
-		struct {
-			image_t* image;
-		} simple_image;
-		struct {
-			image_t* image;
-		} tiled_image;
-	};
+	v2f world_pos;
+    u32 linked_entity;
+    u32 linked_resource;
+
 } entity_t;
 
 #define MAX_ENTITIES 1000
@@ -196,6 +192,30 @@ typedef struct zoom_state_t {
 	float base_pixel_width;
 	float base_pixel_height;
 } zoom_state_t;
+
+typedef struct heatmap_tile_t {
+    float value;
+    bool exists;
+} heatmap_tile_t;
+
+typedef struct heatmap_class_t {
+    rgba_t color;
+    heatmap_tile_t* tiles; // not owned, references subset of heatmap_t.tile_storage
+} heatmap_class_t;
+
+typedef struct heatmap_t {
+    bool is_valid;
+    v2i pixel_pos;
+    i32 tile_width;
+    i32 tile_height;
+    i32 width_in_tiles;
+    i32 height_in_tiles;
+    i32 class_count;
+    i32 current_class;
+    float max_opacity;
+    heatmap_tile_t* tile_storage;
+    heatmap_class_t* classes;
+} heatmap_t;
 
 typedef struct scene_t {
 	rect2f viewport;
@@ -223,6 +243,7 @@ typedef struct scene_t {
 	i32 active_layer;
 	annotation_set_t annotation_set;
     annotation_set_template_t annotation_set_template;
+    heatmap_t heatmap;
 	bool8 clicked;
 	bool8 right_clicked;
 	bool8 drag_started;
@@ -245,7 +266,7 @@ typedef struct scene_t {
 	bool is_mpp_known;
 	bool enable_grid;
 	bool enable_annotations;
-	bool8 initialized;
+	bool initialized;
 } scene_t;
 
 typedef struct pixel_transfer_state_t {
@@ -398,6 +419,10 @@ void update_scale_bar(scene_t* scene, scale_bar_t* scale_bar);
 void draw_scale_bar(scale_bar_t* scale_bar);
 void draw_grid(scene_t* scene);
 void draw_selection_box(scene_t* scene);
+
+// heatmap.c
+heatmap_t load_heatmap(file_info_t* file);
+void heatmap_destroy(heatmap_t* heatmap);
 
 // globals
 #if defined(VIEWER_IMPL)

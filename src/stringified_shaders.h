@@ -92,17 +92,61 @@ const char stringified_shader_source__finalblit_frag[] =
 	"    fragColor = vec4((1.0f-t_final) * p0.rgb + t_final * p1.rgb, alpha);\n"
 	"}\n";
 
-const char* stringified_shader_sources[4] = {
+const char stringified_shader_source__heatmap_tile_vert[] = 
+	"#version 330 core\n"
+	"\n"
+	"layout (location = 0) in vec3 pos;\n"
+	"layout (location = 1) in vec2 tex_coord;\n"
+	"\n"
+	"out VS_OUT {\n"
+	"    vec2 tex_coord;\n"
+	"} vs_out;\n"
+	"\n"
+	"uniform mat4 model_matrix;\n"
+	"uniform mat4 projection_view_matrix;\n"
+	"\n"
+	"void main() {\n"
+	"    gl_Position = projection_view_matrix * model_matrix * vec4(pos.xyz, 1.0f);\n"
+	"    vs_out.tex_coord = tex_coord;\n"
+	"}\n";
+
+const char stringified_shader_source__heatmap_tile_frag[] = 
+	"#version 330 core\n"
+	"\n"
+	"in VS_OUT {\n"
+	"    vec2 tex_coord;\n"
+	"} fs_in;\n"
+	"\n"
+	"uniform float intensity;\n"
+	"//uniform sampler2D base_texture;\n"
+	"//uniform sampler2D color_ramp;\n"
+	"uniform float min_intensity;\n"
+	"uniform float max_opacity;\n"
+	"\n"
+	"out vec4 fragColor;\n"
+	"\n"
+	"void main() {\n"
+	"    float threshold = 0.3f;\n"
+	"    float intensity_transformed = clamp((intensity - 0.5f) * 2.0f, 0.0f, 1.0f);\n"
+	"    float opacity = mix(0.0f, max_opacity, intensity_transformed);\n"
+	"    fragColor = vec4(1.0f, 0.7f, 0.0f, opacity);\n"
+	"}\n";
+
+const char* stringified_shader_sources[6] = {
 	stringified_shader_source__basic_vert,
 	stringified_shader_source__basic_frag,
 	stringified_shader_source__finalblit_vert,
 	stringified_shader_source__finalblit_frag,
+	stringified_shader_source__heatmap_tile_vert,
+	stringified_shader_source__heatmap_tile_frag,
 };
 
-const char* stringified_shader_source_names[4] = {
+const char* stringified_shader_source_names[6] = {
 	"basic_vert",
 	"basic_frag",
 	"finalblit_vert",
 	"finalblit_frag",
+	"heatmap_tile_vert",
+	"heatmap_tile_frag",
 };
 
