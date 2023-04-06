@@ -88,32 +88,6 @@ typedef struct {
 } thread_memory_t;
 
 
-#if WINDOWS
-typedef HWND window_handle_t;
-#elif APPLE
-typedef SDL_Window* window_handle_t;
-#else
-typedef SDL_Window* window_handle_t;
-#endif
-
-typedef struct {
-	void* dest;
-	file_handle_t file;
-	i64 offset;
-	size_t size_to_read;
-#if WINDOWS
-	OVERLAPPED overlapped;
-#elif (APPLE || LINUX)
-	struct aiocb cb;
-#endif
-} io_operation_t;
-
-
-typedef enum open_file_dialog_action_enum {
-    OPEN_FILE_DIALOG_LOAD_GENERIC_FILE = 0,
-    OPEN_FILE_DIALOG_CHOOSE_DIRECTORY,
-} open_file_dialog_action_enum;
-
 
 typedef struct directory_listing_t directory_listing_t;
 
