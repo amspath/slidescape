@@ -1,19 +1,28 @@
 /*
-  Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  BSD 2-Clause License
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+  Copyright (c) 2019-2023, Pieter Valkema
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /*
@@ -1765,7 +1774,8 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 	return invalid_edges;
 }
 
-u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, block_allocator_t* ll_coeff_block_allocator, bool decode_rgb) {
+	// printf("@@@ isyntax_load_tile scale=%d tile_x=%d tile_y=%d\n", scale, tile_x, tile_y);
 	isyntax_level_t* level = wsi->levels + scale;
 	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
 	ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
@@ -1808,95 +1818,103 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 			} break;
 		}
 
-		// Distribute result to child tiles
-		if (scale > 0) {
-			isyntax_level_t* next_level = wsi->levels + (scale - 1);
-			isyntax_tile_t* child_top_left = next_level->tiles + (tile_y*2) * next_level->width_in_tiles + (tile_x*2);
-			isyntax_tile_t* child_top_right = child_top_left + 1;
-			isyntax_tile_t* child_bottom_left = child_top_left + next_level->width_in_tiles;
-			isyntax_tile_t* child_bottom_right = child_bottom_left + 1;
+		if (scale == 0) {
+			// No children to take care of at level 0.
+			continue;
+		}
 
-			ASSERT(child_top_left->color_channels[color].coeff_ll == NULL);
-			ASSERT(child_top_right->color_channels[color].coeff_ll == NULL);
-			ASSERT(child_bottom_left->color_channels[color].coeff_ll == NULL);
-			ASSERT(child_bottom_right->color_channels[color].coeff_ll == NULL);
+		// Distribute result to child tiles if it was not distributed already.
+		isyntax_level_t* next_level = wsi->levels + (scale - 1);
+		isyntax_tile_t* child_top_left = next_level->tiles + (tile_y*2) * next_level->width_in_tiles + (tile_x*2);
+		isyntax_tile_t* child_top_right = child_top_left + 1;
+		isyntax_tile_t* child_bottom_left = child_top_left + next_level->width_in_tiles;
+		isyntax_tile_t* child_bottom_right = child_bottom_left + 1;
 
-			// NOTE: malloc() and free() can become a bottleneck, they don't scale well especially across many threads.
-			// We use a custom block allocator to address this.
-			i64 start_malloc = get_clock();
-			child_top_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
-			child_top_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
-			child_bottom_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
-			child_bottom_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
-			elapsed_malloc += get_seconds_elapsed(start_malloc, get_clock());
+		// TODO(avirodov): instead of releasing here, skip copy if still allocated.
+		if (child_top_left->color_channels[color].coeff_ll) {
+			block_free(ll_coeff_block_allocator, child_top_left->color_channels[color].coeff_ll);
+		}
+		if (child_top_right->color_channels[color].coeff_ll) {
+			block_free(ll_coeff_block_allocator, child_top_right->color_channels[color].coeff_ll);
+		}
+		if (child_bottom_left->color_channels[color].coeff_ll) {
+			block_free(ll_coeff_block_allocator, child_bottom_left->color_channels[color].coeff_ll);
+		}
+		if (child_bottom_right->color_channels[color].coeff_ll) {
+			block_free(ll_coeff_block_allocator, child_bottom_right->color_channels[color].coeff_ll);
+		}
 
-			i32 dest_stride = block_width;
-			// Blit top left child LL block
-			{
-				icoeff_t* dest = child_top_left->color_channels[color].coeff_ll;
-				icoeff_t* source = idwt + (first_valid_pixel * idwt_stride) + first_valid_pixel;
-				for (i32 y = 0; y < block_height; ++y) {
-					memcpy(dest, source, row_copy_size);
-					dest += dest_stride;
-					source += idwt_stride;
-				}
+		// NOTE: malloc() and free() can become a bottleneck, they don't scale well especially across many threads.
+		// We use a custom block allocator to address this.
+		i64 start_malloc = get_clock();
+		child_top_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(ll_coeff_block_allocator);
+		child_top_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(ll_coeff_block_allocator);
+		child_bottom_left->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(ll_coeff_block_allocator);
+		child_bottom_right->color_channels[color].coeff_ll = (icoeff_t*)block_alloc(ll_coeff_block_allocator);
+		elapsed_malloc += get_seconds_elapsed(start_malloc, get_clock());
+		i32 dest_stride = block_width;
+		// Blit top left child LL block
+		{
+			icoeff_t* dest = child_top_left->color_channels[color].coeff_ll;
+			icoeff_t* source = idwt + (first_valid_pixel * idwt_stride) + first_valid_pixel;
+			for (i32 y = 0; y < block_height; ++y) {
+				memcpy(dest, source, row_copy_size);
+				dest += dest_stride;
+				source += idwt_stride;
 			}
-			// Blit top right child LL block
-			{
-				icoeff_t* dest = child_top_right->color_channels[color].coeff_ll;
-				icoeff_t* source = idwt + (first_valid_pixel * idwt_stride) + first_valid_pixel + block_width;
-				for (i32 y = 0; y < block_height; ++y) {
-					memcpy(dest, source, row_copy_size);
-					dest += dest_stride;
-					source += idwt_stride;
-				}
+		}
+		// Blit top right child LL block
+		{
+			icoeff_t* dest = child_top_right->color_channels[color].coeff_ll;
+			icoeff_t* source = idwt + (first_valid_pixel * idwt_stride) + first_valid_pixel + block_width;
+			for (i32 y = 0; y < block_height; ++y) {
+				memcpy(dest, source, row_copy_size);
+				dest += dest_stride;
+				source += idwt_stride;
 			}
-			// Blit bottom left child LL block
-			{
-				icoeff_t* dest = child_bottom_left->color_channels[color].coeff_ll;
-				icoeff_t* source = idwt + ((first_valid_pixel + block_height) * idwt_stride) + first_valid_pixel;
-				for (i32 y = 0; y < block_height; ++y) {
-					memcpy(dest, source, row_copy_size);
-					dest += dest_stride;
-					source += idwt_stride;
-				}
+		}
+		// Blit bottom left child LL block
+		{
+			icoeff_t* dest = child_bottom_left->color_channels[color].coeff_ll;
+			icoeff_t* source = idwt + ((first_valid_pixel + block_height) * idwt_stride) + first_valid_pixel;
+			for (i32 y = 0; y < block_height; ++y) {
+				memcpy(dest, source, row_copy_size);
+				dest += dest_stride;
+				source += idwt_stride;
 			}
-			// Blit bottom right child LL block
-			{
-				icoeff_t* dest = child_bottom_right->color_channels[color].coeff_ll;
-				icoeff_t* source = idwt + ((first_valid_pixel + block_height) * idwt_stride) + first_valid_pixel + block_width;
-				for (i32 y = 0; y < block_height; ++y) {
-					memcpy(dest, source, row_copy_size);
-					dest += dest_stride;
-					source += idwt_stride;
-				}
+		}
+		// Blit bottom right child LL block
+		{
+			icoeff_t* dest = child_bottom_right->color_channels[color].coeff_ll;
+			icoeff_t* source = idwt + ((first_valid_pixel + block_height) * idwt_stride) + first_valid_pixel + block_width;
+			for (i32 y = 0; y < block_height; ++y) {
+				memcpy(dest, source, row_copy_size);
+				dest += dest_stride;
+				source += idwt_stride;
 			}
+		}
 
-			// After the last color channel, we can report that the children now have their LL blocks available.
-			if (color == 2) {
-				child_top_left->has_ll = true;
-				child_top_right->has_ll = true;
-				child_bottom_left->has_ll = true;
-				child_bottom_right->has_ll = true;
+		// After the last color channel, we can report that the children now have their LL blocks available.
+		if (color == 2) {
+			child_top_left->has_ll = true;
+			child_top_right->has_ll = true;
+			child_bottom_left->has_ll = true;
+			child_bottom_right->has_ll = true;
 
-				// Even if the parent tile has invalid edges around the outside, its child LL blocks will still have valid edges on the inside.
-				child_top_left->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_RIGHT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER);
-				child_top_right->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_LEFT | ISYNTAX_ADJ_TILE_BOTTOM_LEFT | ISYNTAX_ADJ_TILE_BOTTOM_CENTER);
-				child_bottom_left->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_RIGHT | ISYNTAX_ADJ_TILE_TOP_RIGHT | ISYNTAX_ADJ_TILE_TOP_CENTER);
-				child_bottom_right->ll_invalid_edges = invalid_edges & ~(ISYNTAX_ADJ_TILE_CENTER_LEFT | ISYNTAX_ADJ_TILE_TOP_LEFT | ISYNTAX_ADJ_TILE_TOP_CENTER);
-
-				if (invalid_edges != 0) {
-					console_print("load: scale=%d x=%d y=%d  idwt time =%g  invalid edges=%x\n", scale, tile_x, tile_y, elapsed_idwt, invalid_edges);
-					// early out
-					tile->is_submitted_for_loading = false;
-					release_temp_memory(&temp_memory);
-					return NULL;
-				}
+			if (invalid_edges != 0) {
+				console_print_error("load: scale=%d x=%d y=%d  idwt time =%g  invalid edges=%x\n", scale, tile_x, tile_y, elapsed_idwt, invalid_edges);
+				// early out
+				release_temp_memory(&temp_memory);
+				return NULL;
 			}
 		}
 	}
 
 	tile->is_loaded = true; // Meaning: it is now safe to start loading 'child' tiles of the next level
+	if (!decode_rgb) {
+		release_temp_memory(&temp_memory); // free Y, Co and Cg
+		return NULL;
+	}
 
 	// For the Y (luminance) color channel, we actually need the absolute value of the Y-channel wavelet coefficient.
 	// (This doesn't hold for Co and Cg, those are are used directly as signed integers)
@@ -2105,7 +2123,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	// Check that the serialized length is sane
 	if (serialized_length > 2 * coeff_buffer_size) {
 //		dump_block(compressed, compressed_size);
-		console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, serialized_length too large (%d)\n", serialized_length);
+		console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, serialized_length too large (%lld)\n", serialized_length);
 		ASSERT(!"serialized_length too large");
 		memset(out_buffer, 0, coeff_buffer_size);
 		release_temp_memory(&temp_memory);
@@ -2355,7 +2373,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	if (serialized_length != decompressed_length) {
 //		dump_block(compressed, compressed_size);
-		console_print("iSyntax: decompressed size mismatch (size=%d): expected %d observed %d\n",
+		console_print("iSyntax: decompressed size mismatch (size=%d): expected %lld observed %d\n",
 				 compressed_size, serialized_length, decompressed_length);
 		ASSERT(!"size mismatch");
 	}
@@ -2571,7 +2589,7 @@ static void isyntax_dump_block_header(isyntax_image_t* wsi_image, const char* fi
 
 		for (i32 i = 0; i < wsi_image->codeblock_count; i += 1/*21*3*/) {
 			isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
-			fprintf(test_block_header_fp, "%d,%d,%d,%d,%d,%d,%d,%d\n",
+			fprintf(test_block_header_fp, "%d,%d,%d,%d,%d,%lld,%lld,%d\n",
 //			        codeblock->x_adjusted,
 //			        codeblock->y_adjusted,
 			        codeblock->x_coordinate - wsi_image->offset_x,
@@ -2597,7 +2615,7 @@ void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue) {
 	isyntax->work_submission_queue = work_queue;
 }
 
-bool isyntax_open(isyntax_t* isyntax, const char* filename) {
+bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators) {
 
 	console_print_verbose("Attempting to open iSyntax: %s\n", filename);
 	ASSERT(isyntax);
@@ -3059,12 +3077,35 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename) {
 			size_t ll_coeff_block_allocator_capacity_in_blocks = block_allocator_maximum_capacity_in_blocks / 4;
 			size_t h_coeff_block_size = ll_coeff_block_size * 3;
 			size_t h_coeff_block_allocator_capacity_in_blocks = ll_coeff_block_allocator_capacity_in_blocks * 3;
-			isyntax->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
-			isyntax->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+			if (init_allocators) {
+				isyntax->ll_coeff_block_allocator = malloc(sizeof(block_allocator_t));
+				isyntax->h_coeff_block_allocator = malloc(sizeof(block_allocator_t));
+				*isyntax->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+				*isyntax->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+				isyntax->is_block_allocator_owned = true;
+			} else {
+				// The caller must inject the allocators after return of isyntax_open().
+				isyntax->ll_coeff_block_allocator = NULL;
+				isyntax->h_coeff_block_allocator = NULL;
+				isyntax->is_block_allocator_owned = false;
+			}
 
 			success = true;
 
 			free(read_buffer);
+
+			// Populate debug info.
+			for (int scale = 0; scale < wsi_image->level_count; ++scale) {
+				isyntax_level_t* level = &wsi_image->levels[scale];
+				for (int tile_y = 0; tile_y < level->height_in_tiles; ++tile_y) {
+					for (int tile_x = 0; tile_x < level->width_in_tiles; ++tile_x) {
+						isyntax_tile_t* tile = &level->tiles[level->width_in_tiles * tile_y + tile_x];
+						tile->tile_scale = scale;
+						tile->tile_x = tile_x;
+						tile->tile_y = tile_y;
+					}
+				}
+			}
 		}
 		file_stream_close(fp);
 
@@ -3092,12 +3133,14 @@ void isyntax_destroy(isyntax_t* isyntax) {
 			}
 		}
 	}
-	if (isyntax->ll_coeff_block_allocator.is_valid) {
-		block_allocator_destroy(&isyntax->ll_coeff_block_allocator);
-	}
-	if (isyntax->h_coeff_block_allocator.is_valid) {
-		block_allocator_destroy(&isyntax->h_coeff_block_allocator);
-	}
+    if (isyntax->is_block_allocator_owned) {
+        if (isyntax->ll_coeff_block_allocator->is_valid) {
+            block_allocator_destroy(isyntax->ll_coeff_block_allocator);
+        }
+        if (isyntax->h_coeff_block_allocator->is_valid) {
+            block_allocator_destroy(isyntax->h_coeff_block_allocator);
+        }
+    }
 	if (isyntax->black_dummy_coeff) {
 		free(isyntax->black_dummy_coeff);
 		isyntax->black_dummy_coeff = NULL;

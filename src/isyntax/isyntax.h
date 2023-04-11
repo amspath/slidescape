@@ -1,19 +1,28 @@
 /*
-  Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  BSD 2-Clause License
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+  Copyright (c) 2019-2023, Pieter Valkema
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #pragma once
@@ -243,6 +252,23 @@ typedef struct isyntax_tile_t {
 	bool is_submitted_for_h_coeff_decompression;
 	bool is_submitted_for_loading;
 	bool is_loaded;
+
+    // Cache management.
+    // TODO(avirodov): need to rethink this, maybe an external struct that points to isyntax_tile_t. The benefit
+    //   is that the cache is usually smaller than the number of tiles. The con is that I'll need to manage list memory
+    //   (probably another allocator for small objects - list nodes).
+    bool cache_marked;
+    struct isyntax_tile_t* cache_next;
+    struct isyntax_tile_t* cache_prev;
+
+    // Note(avirodov): this is needed for isyntax_reader. It is very convenient to be able to compute neighbors
+    // from the tile itself, although at the cost of additional memory (3 ints) per tile.
+    // TODO(avirodov): reconsider this as part of moving out cache_* fields, if applicable.
+    // TODO(avirodov): tile_x and tile_y can be computed by O(1) pointer arithmetic given scale. Scale can be
+    //  computed as well, but in O(L) where L is number of levels, and that will be computed often.
+    int tile_scale;
+    int tile_x;
+    int tile_y;
 } isyntax_tile_t;
 
 typedef struct isyntax_level_t {
@@ -348,8 +374,9 @@ typedef struct isyntax_t {
 	i32 tile_height;
 	icoeff_t* black_dummy_coeff;
 	icoeff_t* white_dummy_coeff;
-	block_allocator_t ll_coeff_block_allocator;
-	block_allocator_t h_coeff_block_allocator;
+	block_allocator_t* ll_coeff_block_allocator;
+	block_allocator_t* h_coeff_block_allocator;
+    bool32 is_block_allocator_owned;
 	float loading_time;
 	float total_rgb_transform_time;
 	i32 data_model_major_version; // <100 (usually 5) for iSyntax format v1, >= 100 for iSyntax format v2
@@ -361,10 +388,10 @@ typedef struct isyntax_t {
 void isyntax_xml_parser_init(isyntax_xml_parser_t* parser);
 bool isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
 void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue);
-bool isyntax_open(isyntax_t* isyntax, const char* filename);
+bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators);
 void isyntax_destroy(isyntax_t* isyntax);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);
-u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y);
+u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, block_allocator_t* ll_coeff_block_allocator, bool decode_rgb);
 u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 u32 isyntax_get_adjacent_tiles_mask_only_existing(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer);

@@ -409,7 +409,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 		} else if (menu_items_clicked.load_isyntax_test_file) {
 			isyntax_t isyntax = {};
 			isyntax_set_work_queue(&isyntax, &global_work_queue);
-			if (isyntax_open(&isyntax, isyntax_test_filename)) {
+			if (isyntax_open(&isyntax, isyntax_test_filename, true)) {
 			}
 		} else if (menu_items_clicked.reset_zoom) {
 			scene->need_zoom_reset = true;

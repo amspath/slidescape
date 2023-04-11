@@ -1,19 +1,28 @@
 /*
-  Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  BSD 2-Clause License
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+  Copyright (c) 2019-2023, Pieter Valkema
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "common.h"
@@ -21,7 +30,7 @@
 #include "intrinsics.h"
 #include "viewer.h"
 
-static void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
+void submit_tile_completed(i32 resource_id, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 	image_t* image = &global_app_state.loaded_images[global_app_state.displayed_image]; // TODO: refactor: do something less ugly and dangerous than this
@@ -70,7 +79,7 @@ static i32 isyntax_load_all_tiles_in_level(i32 resource_id, isyntax_t* isyntax, 
 			if (global_worker_thread_idle_count > 0 && tasks_waiting < logical_cpu_count * 10) {
 				isyntax_begin_load_tile(resource_id, isyntax, wsi, scale, tile_x, tile_y);
 			} else if (!is_tile_streamer_frame_boundary_passed) {
-				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y);
+				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y, isyntax->ll_coeff_block_allocator, true);
 				if (tile_pixels) {
 					submit_tile_completed(resource_id, tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
 				}
@@ -178,9 +187,9 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 				isyntax_tile_channel_t* color_channel = tile->color_channels + i;
 				ASSERT(color_channel->coeff_h == NULL);
 				ASSERT(color_channel->coeff_ll == NULL);
-				color_channel->coeff_h = (icoeff_t*)block_alloc(&isyntax->h_coeff_block_allocator);
+				color_channel->coeff_h = (icoeff_t*)block_alloc(isyntax->h_coeff_block_allocator);
 				isyntax_decompress_codeblock_in_chunk(h_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, wsi->compressor_version, color_channel->coeff_h);
-				color_channel->coeff_ll = (icoeff_t*)block_alloc(&isyntax->ll_coeff_block_allocator);
+				color_channel->coeff_ll = (icoeff_t*)block_alloc(isyntax->ll_coeff_block_allocator);
 				isyntax_decompress_codeblock_in_chunk(ll_block, isyntax->block_width, isyntax->block_height, data_chunks[tile_index], offset0, wsi->compressor_version, color_channel->coeff_ll);
 
 				// We're loading everything at once for this level, so we can set every tile as having their neighors loaded as well.
@@ -225,7 +234,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 						tile_index = (tile_y_in_chunk * current_level->width_in_tiles) + tile_x_in_chunk;
 						isyntax_tile_t* tile_in_chunk = current_level->tiles + tile_index;
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
-						color_channel->coeff_h = (icoeff_t*)block_alloc(&isyntax->h_coeff_block_allocator);
+						color_channel->coeff_h = (icoeff_t*)block_alloc(isyntax->h_coeff_block_allocator);
 						isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size,
 												   isyntax->block_width, isyntax->block_height,
 												   codeblock->coefficient, wsi->compressor_version, color_channel->coeff_h);
@@ -279,7 +288,7 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 						tile_index = (tile_y_in_chunk * current_level->width_in_tiles) + tile_x_in_chunk;
 						isyntax_tile_t* tile_in_chunk = current_level->tiles + tile_index;
 						isyntax_tile_channel_t* color_channel = tile_in_chunk->color_channels + color;
-						color_channel->coeff_h = (icoeff_t*) block_alloc(&isyntax->h_coeff_block_allocator);
+						color_channel->coeff_h = (icoeff_t*) block_alloc(isyntax->h_coeff_block_allocator);
 						isyntax_hulsken_decompress(data_chunks[chunk_index] + offset_in_chunk, codeblock->block_size, isyntax->block_width,
 						                                                    isyntax->block_height, codeblock->coefficient, wsi->compressor_version, color_channel->coeff_h); // TODO: free using _aligned_free()
 
@@ -309,8 +318,8 @@ static void isyntax_do_first_load(i32 resource_id, isyntax_t* isyntax, isyntax_i
 			isyntax_tile_t* tile = level->tiles + j;
 			for (i32 color = 0; color < 3; ++color) {
 				isyntax_tile_channel_t* channel = tile->color_channels + color;
-				if (channel->coeff_ll) block_free(&isyntax->ll_coeff_block_allocator, channel->coeff_ll);
-				if (channel->coeff_h) block_free(&isyntax->h_coeff_block_allocator, channel->coeff_h);
+				if (channel->coeff_ll) block_free(isyntax->ll_coeff_block_allocator, channel->coeff_ll);
+				if (channel->coeff_h) block_free(isyntax->h_coeff_block_allocator, channel->coeff_h);
 				channel->coeff_ll = NULL;
 				channel->coeff_h = NULL;
 				++blocks_freed;
@@ -337,7 +346,7 @@ typedef struct isyntax_load_tile_task_t {
 
 void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) userdata;
-	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y);
+	u32* tile_pixels = isyntax_load_tile(task->isyntax, task->wsi, task->scale, task->tile_x, task->tile_y, task->isyntax->ll_coeff_block_allocator, true);
 	if (tile_pixels) {
 		submit_tile_completed(task->resource_id, tile_pixels, task->scale, task->tile_index, task->isyntax->tile_width, task->isyntax->tile_height);
 	}
@@ -429,7 +438,7 @@ void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* ws
 			i64 offset_in_chunk = codeblock->block_data_offset - chunk->offset;
 			ASSERT(offset_in_chunk >= 0);
 			isyntax_tile_channel_t* color_channel = tile->color_channels + color;
-			color_channel->coeff_h = (icoeff_t*) block_alloc(&isyntax->h_coeff_block_allocator);
+			color_channel->coeff_h = (icoeff_t*) block_alloc(isyntax->h_coeff_block_allocator);
 			isyntax_hulsken_decompress(chunk->data + offset_in_chunk, codeblock->block_size, isyntax->block_width,
 									   isyntax->block_height, codeblock->coefficient, wsi->compressor_version, color_channel->coeff_h);
 
