@@ -190,7 +190,6 @@ extern bool is_program_running;
 extern bool need_quit;
 extern bool is_vsync_enabled;
 extern bool is_nvidia_gpu;
-extern bool is_macos;
 extern input_t inputs[2];
 extern input_t *old_input;
 extern input_t *curr_input;

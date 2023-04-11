@@ -163,7 +163,7 @@ extern i32 worker_thread_count;
 extern i32 active_worker_thread_count;
 extern i32 physical_cpu_count;
 extern i32 logical_cpu_count;
-
+extern bool is_macos;
 extern work_queue_t global_completion_queue;
 
 extern bool is_verbose_mode INIT(= false);
