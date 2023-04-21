@@ -490,7 +490,7 @@ int main(int argc, const char** argv)
 
     // Load icon
 #if DO_DEBUG
-	if (!is_macos) {
+	if (!global_system_info.is_macos) {
 		stringify_icon_image(); // (re)creates stringified_icon.h
 	}
 #endif

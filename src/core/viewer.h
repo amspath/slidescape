@@ -32,6 +32,7 @@ extern "C" {
 #include "image.h"
 #include "tiff.h"
 #include "isyntax.h"
+#include "isyntax_streamer.h"
 #include "dicom.h"
 #include "openslide_api.h"
 #include "caselist.h"
@@ -387,8 +388,8 @@ void app_command_execute_immediately(app_command_t* app_command);
 int app_command_execute(app_state_t* app_state);
 
 // isyntax_streamer.cpp
-void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isyntax);
-void isyntax_begin_stream_image_tiles(tile_streamer_t* tile_streamer);
+void isyntax_stream_image_tiles(isyntax_streamer_t* tile_streamer, isyntax_t* isyntax);
+void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer);
 
 // scene.cpp
 void zoom_update_pos(zoom_state_t* zoom, float pos);
@@ -426,8 +427,7 @@ extern i32 desired_window_height INIT(=720);
 extern bool draw_macro_image_in_background;
 extern bool draw_label_image_in_background; // TODO: implement
 
-extern bool is_tile_stream_task_in_progress;
-extern bool is_tile_streamer_frame_boundary_passed;
+
 
 extern i32 global_next_resource_id INIT(= 1000);
 

@@ -457,12 +457,15 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 			isyntax_t* isyntax = &image->isyntax;
 			isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
+			isyntax_streamer_t tile_streamer = {0};
+			tile_streamer.isyntax = isyntax;
+			tile_streamer.wsi = wsi;
+			tile_streamer.resource_id = image->resource_id;
+			tile_streamer.tile_completion_callback = viewer_notify_load_tile_completed;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				wsi->first_load_in_progress = true;
-				isyntax_begin_first_load(image->resource_id, isyntax, wsi);
+				isyntax_begin_first_load(&tile_streamer);
 			} else if (wsi->first_load_complete) {
-				tile_streamer_t tile_streamer = {};
-				tile_streamer.image = image;
 				tile_streamer.origin_offset = image->origin_offset; // TODO: superfluous?
 				if (!scene->restrict_load_bounds) {
 					tile_streamer.camera_bounds = scene->camera_bounds;
@@ -470,10 +473,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 					tile_streamer.camera_bounds = scene->tile_load_bounds;
 				}
 				tile_streamer.camera_center = scene->camera;
-				tile_streamer.scene = scene;
 				tile_streamer.crop_bounds = scene->crop_bounds;
 				tile_streamer.is_cropped = scene->is_cropped;
-				tile_streamer.zoom = scene->zoom;
+				tile_streamer.zoom_level = scene->zoom.level;
 				isyntax_begin_stream_image_tiles(&tile_streamer);
 			}
 		} else if (image->backend == IMAGE_BACKEND_STBI) {
