@@ -55,8 +55,9 @@ typedef struct isyntax_streamer_t {
 	bool is_cropped;
 //	zoom_state_t zoom;
 	i32 zoom_level;
-	work_queue_callback_t* tile_completion_callback;
 	work_queue_t* tile_completion_queue;
+	work_queue_callback_t* tile_completion_callback;
+	u32 tile_completion_task_identifier;
 
 } isyntax_streamer_t;
 

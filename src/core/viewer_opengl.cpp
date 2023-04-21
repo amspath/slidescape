@@ -299,7 +299,8 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 	completion_task.tile_index = tile_index;
 	completion_task.want_gpu_residency = true;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	add_work_queue_entry(&global_completion_queue, viewer_notify_load_tile_completed, &completion_task, sizeof(completion_task));
+	work_queue_submit_task(&global_completion_queue, viewer_notify_load_tile_completed, &completion_task,
+	                       sizeof(completion_task));
 #endif
 
 }

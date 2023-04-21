@@ -217,7 +217,7 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 				load_tile_task_batch_t batch = {};
 				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
 				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
-				if (add_work_queue_entry(&global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
+				if (work_queue_submit_task(&global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
 					// success
 					for (i32 i = 0; i < batch.task_count; ++i) {
 						load_tile_task_t* task = batch.tile_tasks + i;
@@ -236,13 +236,15 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 				tile_t* tile = task.tile;
 				if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
 					// only GPU upload needed
-					if (add_work_queue_entry(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, &task, sizeof(task))) {
+					if (work_queue_submit_task(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu,
+					                           &task,
+					                           sizeof(task))) {
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task.need_gpu_residency;
 						tile->need_keep_in_cache = task.need_keep_in_cache;
 					}
 				} else {
-					if (add_work_queue_entry(&global_work_queue, load_tile_func, &task, sizeof(task))) {
+					if (work_queue_submit_task(&global_work_queue, load_tile_func, &task, sizeof(task))) {
 						// TODO: should we even allow this to fail?
 						// success
 						tile->is_submitted_for_loading = true;
@@ -276,6 +278,7 @@ image_t* get_image_from_resource_id(app_state_t* app_state, i32 resource_id) {
 	return NULL;
 }
 
+#define VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER 5000
 
 void viewer_process_completion_queue(app_state_t* app_state) {
 	float max_texture_load_time = 0.007f; // TODO: pin to frame time
@@ -310,10 +313,11 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 	while (is_queue_work_in_progress(&global_completion_queue)) {
 		work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
 		if (entry.is_valid) {
-			if (!entry.callback) panic();
+//			if (!entry.callback) panic();
 			mark_queue_entry_completed(&global_completion_queue);
 
-			if (entry.callback == viewer_notify_load_tile_completed) {
+			// TODO(pvalkema): fix assumption here that isyntax_streamer_tile_completed_task_t has the same layout as viewer_notify_tile_completed_task_t
+			if (entry.callback == viewer_notify_load_tile_completed || entry.task_identifier == VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER) {
 				viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 				image_t* image = get_image_from_resource_id(app_state, task->resource_id);
 				if (!image) {
@@ -461,7 +465,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			tile_streamer.isyntax = isyntax;
 			tile_streamer.wsi = wsi;
 			tile_streamer.resource_id = image->resource_id;
-			tile_streamer.tile_completion_callback = viewer_notify_load_tile_completed;
+			tile_streamer.tile_completion_queue = &global_completion_queue;
+			tile_streamer.tile_completion_callback = NULL;
+			tile_streamer.tile_completion_task_identifier = VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				wsi->first_load_in_progress = true;
 				isyntax_begin_first_load(&tile_streamer);

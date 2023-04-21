@@ -159,7 +159,8 @@ typedef struct export_task_data_t {
 
 void export_notify_load_tile_completed(int logical_thread_index, void* userdata) {
 	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*)userdata;
-	add_work_queue_entry(&global_export_completion_queue, export_notify_load_tile_completed, userdata, sizeof(viewer_notify_tile_completed_task_t));
+	work_queue_submit_task(&global_export_completion_queue, export_notify_load_tile_completed, userdata,
+	                       sizeof(viewer_notify_tile_completed_task_t));
 }
 
 void construct_new_tile_from_source_tiles(export_task_data_t* export_task, export_level_task_data_t* level_task, i32 export_tile_x, i32 export_tile_y, u8** jpeg_buffer, u32* jpeg_size) {
@@ -322,7 +323,7 @@ void begin_construct_new_tile_from_source_tiles(export_task_data_t* export_task,
 	task.jpeg_buffer = jpeg_buffer;
 	task.jpeg_size = jpeg_size;
 
-	if (!add_work_queue_entry(&global_work_queue, construct_new_tile_from_source_tiles_func, &task, sizeof(task))) {
+	if (!work_queue_submit_task(&global_work_queue, construct_new_tile_from_source_tiles_func, &task, sizeof(task))) {
 		panic();
 	}
 }
@@ -1013,7 +1014,7 @@ void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t
 	app_state->is_export_in_progress = true;
 
 //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
-	if (!add_work_queue_entry(&global_work_queue, export_cropped_bigtiff_func, &task, sizeof(task))) {
+	if (!work_queue_submit_task(&global_work_queue, export_cropped_bigtiff_func, &task, sizeof(task))) {
 //		tile->is_submitted_for_loading = false; // chicken out
 //		atomic_decrement(&isyntax->refcount);
 		app_state->is_export_in_progress = false;

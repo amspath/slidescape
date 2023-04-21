@@ -422,8 +422,8 @@ int main(int argc, const char** argv)
         return app_command_execute(app_state);
     }
 
-    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)load_openslide_task, NULL, 0);
-    add_work_queue_entry(&global_work_queue, (work_queue_callback_t*)load_dicom_task, NULL, 0);
+	work_queue_submit_task(&global_work_queue, (work_queue_callback_t *) load_openslide_task, NULL, 0);
+	work_queue_submit_task(&global_work_queue, (work_queue_callback_t *) load_dicom_task, NULL, 0);
     linux_init_input();
 
 	/*i32 num_video_drivers = SDL_GetNumVideoDrivers();

@@ -984,7 +984,7 @@ void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 
 
 	level_image->indexing_job_submitted = true;
 	atomic_increment(&image->refcount); // retain
-	if (!add_work_queue_entry(&global_work_queue, level_image_indexing_task_func, &task, sizeof(task))) {
+	if (!work_queue_submit_task(&global_work_queue, level_image_indexing_task_func, &task, sizeof(task))) {
 		atomic_decrement(&image->refcount); // chicken out
 		level_image->indexing_job_submitted = false;
 	};

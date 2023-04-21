@@ -73,12 +73,12 @@ i32 get_work_queue_task_count(work_queue_t* queue) {
 }
 
 // TODO: add optional refcount increment
-bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+bool work_queue_submit_entry(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
 	if (!queue) {
-		panic("add_work_queue_entry(): queue is NULL");
+		panic("work_queue_add_entry(): queue is NULL");
 	}
 	if (userdata_size > sizeof(((work_queue_entry_t*)0)->userdata)) {
-		panic("add_work_queue_entry(): userdata_size overflows available space");
+		panic("work_queue_add_entry(): userdata_size overflows available space");
 	}
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer
@@ -95,7 +95,7 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 		if (succeeded) {
 //		    console_print("exhange succeeded\n");
 			work_queue_entry_t* entry = queue->entries + entry_to_submit;
-			*entry = (work_queue_entry_t){ .callback = callback };
+			*entry = (work_queue_entry_t){ .callback = callback, .task_identifier = task_identifier };
 			if (userdata_size > 0) {
 				ASSERT(userdata);
 				memcpy(entry->userdata, userdata, userdata_size);
@@ -119,6 +119,15 @@ bool add_work_queue_entry(work_queue_t* queue, work_queue_callback_t callback, v
 	return false;
 }
 
+bool work_queue_submit_task(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	ASSERT(callback);
+	return work_queue_submit_entry(queue, callback, 0, userdata, userdata_size);
+}
+
+bool work_queue_submit_notification(work_queue_t* queue, u32 task_identifier, void* userdata, size_t userdata_size) {
+	return work_queue_submit_entry(queue, NULL, task_identifier, userdata, userdata_size);
+}
+
 work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {0};
 
@@ -133,9 +142,8 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 			// We have dibs to execute this task!
 			result = queue->entries[entry_to_execute];
 			queue->entries[entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
-			if (!result.callback) {
-				console_print_error("Error: encountered a work entry with a missing callback routine\n");
-				ASSERT(!"invalid code path");
+			if (result.callback == NULL && result.task_identifier == 0) {
+				console_print_error("Warning: encountered a work entry with a missing callback routine and/or task identifier (is this intended)?\n");
 			}
 			result.is_valid = true;
 			read_barrier;
@@ -203,25 +211,25 @@ void echo_task_completed(int logical_thread_index, void* userdata) {
 void echo_task(int logical_thread_index, void* userdata) {
 	console_print("thread %d: %s\n", logical_thread_index, (char*) userdata);
 
-	add_work_queue_entry(&global_completion_queue, echo_task_completed, userdata, strlen(userdata)+1);
+	work_queue_submit_task(&global_completion_queue, echo_task_completed, userdata, strlen(userdata)+1);
 }
 #endif
 
 void test_multithreading_work_queue() {
 #ifdef TEST_THREAD_QUEUE
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"NULL entry", 11);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 0", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 1", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 2", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 3", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 4", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 5", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 6", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 7", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 8", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 9", 9);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 10", 10);
-	add_work_queue_entry(&global_work_queue, echo_task, (void*)"string 11", 10);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"NULL entry", 11);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 0", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 1", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 2", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 3", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 4", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 5", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 6", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 7", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 8", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 9", 9);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 10", 10);
+	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 11", 10);
 
 //	while (is_queue_work_in_progress(&global_work_queue)) {
 //		do_worker_work(&global_work_queue, 0);

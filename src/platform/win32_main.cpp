@@ -1991,10 +1991,10 @@ int main() {
 	win32_init_main_window(app_state);
 
 	// Load OpenSlide in the background, we might not need it immediately.
-	add_work_queue_entry(&global_work_queue, load_openslide_task, NULL, 0);
+	work_queue_submit_task(&global_work_queue, load_openslide_task, NULL, 0);
 
 	// Load DICOM support in the background
-	add_work_queue_entry(&global_work_queue, load_dicom_task, NULL, 0);
+	work_queue_submit_task(&global_work_queue, load_dicom_task, NULL, 0);
 
 	win32_init_input();
 //	do_remote_connection_test();

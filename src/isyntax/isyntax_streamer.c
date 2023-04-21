@@ -41,9 +41,9 @@ static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixel
 	completion_task.want_gpu_residency = true;
 	completion_task.resource_id = streamer->resource_id;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	// TODO(pvalkema): adjust work queues so that we can submit identifiable notifications without callbacks
-	if (!add_work_queue_entry(&global_completion_queue, streamer->tile_completion_callback, &completion_task, sizeof(completion_task))) {
-//	if (!add_work_queue_entry(&streamer->tile_completion_queue, streamer->tile_completion_callback, &completion_task, sizeof(completion_task))) {
+	if (!work_queue_submit_entry(streamer->tile_completion_queue, streamer->tile_completion_callback,
+								 streamer->tile_completion_task_identifier,
+								 &completion_task, sizeof(completion_task))) {
 		ASSERT(!"tile cannot be submitted and will leak");
 	}
 
@@ -373,7 +373,7 @@ void isyntax_begin_load_tile(isyntax_streamer_t* streamer, i32 scale, i32 tile_x
 
 		tile->is_submitted_for_loading = true;
 		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-		if (!add_work_queue_entry(isyntax->work_submission_queue, isyntax_load_tile_task_func, &task, sizeof(task))) {
+		if (!work_queue_submit_task(isyntax->work_submission_queue, isyntax_load_tile_task_func, &task, sizeof(task))) {
 			tile->is_submitted_for_loading = false; // chicken out
 			atomic_decrement(&isyntax->refcount);
 		};
@@ -393,7 +393,7 @@ void isyntax_begin_first_load(isyntax_streamer_t* streamer) {
 		panic("isyntax_begin_first_load(): work_submission_queue not set");
 	}
 	atomic_increment(&streamer->isyntax->refcount); // retain; don't destroy isyntax while busy
-	if (!add_work_queue_entry(submission_queue, isyntax_first_load_task_func, streamer, sizeof(*streamer))) {
+	if (!work_queue_submit_task(submission_queue, isyntax_first_load_task_func, streamer, sizeof(*streamer))) {
 		atomic_decrement(&streamer->isyntax->refcount); // chicken out
 	}
 }
@@ -468,7 +468,8 @@ void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 	tile->is_submitted_for_h_coeff_decompression = true;
 	ASSERT(isyntax->work_submission_queue);
-	if (!add_work_queue_entry(isyntax->work_submission_queue, isyntax_decompress_h_coeff_for_tile_task_func, &task, sizeof(task))) {
+	if (!work_queue_submit_task(isyntax->work_submission_queue, isyntax_decompress_h_coeff_for_tile_task_func, &task,
+	                            sizeof(task))) {
 		atomic_decrement(&isyntax->refcount); // chicken out
 		tile->is_submitted_for_h_coeff_decompression = false;
 	}
@@ -1080,7 +1081,8 @@ void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer) {
 		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 		is_tile_stream_task_in_progress = true;
 		ASSERT(isyntax->work_submission_queue);
-		add_work_queue_entry(isyntax->work_submission_queue, isyntax_stream_image_tiles_func, tile_streamer, sizeof(*tile_streamer));
+		work_queue_submit_task(isyntax->work_submission_queue, isyntax_stream_image_tiles_func, tile_streamer,
+		                       sizeof(*tile_streamer));
 	} else {
 		is_tile_streamer_frame_boundary_passed = true;
 	}
