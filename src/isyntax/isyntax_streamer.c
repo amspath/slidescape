@@ -76,7 +76,7 @@ static i32 isyntax_load_all_tiles_in_level(i32 resource_id, isyntax_t* isyntax, 
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
 			i32 tasks_waiting = get_work_queue_task_count(isyntax->work_submission_queue);
-			if (global_worker_thread_idle_count > 0 && tasks_waiting < logical_cpu_count * 10) {
+			if (global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 				isyntax_begin_load_tile(resource_id, isyntax, wsi, scale, tile_x, tile_y);
 			} else if (!is_tile_streamer_frame_boundary_passed) {
 				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y, isyntax->ll_coeff_block_allocator, true);
@@ -926,7 +926,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 								isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 								if (chunk->data) {
 									i32 tasks_waiting = get_work_queue_task_count(isyntax->work_submission_queue);
-									if (global_worker_thread_idle_count > 0 && tasks_waiting < logical_cpu_count * 10) {
+									if (global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 										isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile, tile_x, tile_y);
 									} else if (!is_tile_streamer_frame_boundary_passed) {
 										tile->is_submitted_for_h_coeff_decompression = true;
@@ -1036,7 +1036,7 @@ void isyntax_stream_image_tiles(tile_streamer_t* tile_streamer, isyntax_t* isynt
 								goto break_out_of_loop2; // camera bounds updated, recalculate
 							}
 							i32 tasks_waiting = get_work_queue_task_count(isyntax->work_submission_queue);
-							if (tasks_waiting > logical_cpu_count * 4) {
+							if (tasks_waiting > global_system_info.logical_cpu_count * 4) {
 								goto break_out_of_loop2;
 							}
 						}

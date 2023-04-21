@@ -1,19 +1,28 @@
 /*
-  Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  BSD 2-Clause License
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+  Copyright (c) 2019-2023, Pieter Valkema
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #define PANIC_IMPLEMENTATION
@@ -82,42 +91,47 @@ bool is_directory(const char* path) {
 
 
 void get_system_info(bool verbose) {
+    system_info_t system_info = {0};
 #if WINDOWS
-    SYSTEM_INFO system_info;
-    GetSystemInfo(&system_info);
-	logical_cpu_count = (i32)system_info.dwNumberOfProcessors;
-	physical_cpu_count = logical_cpu_count; // TODO: how to read this on Windows?
-	os_page_size = system_info.dwPageSize;
+    SYSTEM_INFO win32_system_info;
+    GetSystemInfo(&win32_system_info);
+	system_info.logical_cpu_count = (i32)win32_system_info.dwNumberOfProcessors;
+	system_info.physical_cpu_count = system_info.logical_cpu_count; // TODO(pvalkema): how to read this on Windows?
+	system_info.os_page_size = win32_system_info.dwPageSize;
 #elif APPLE
-    size_t physical_cpu_count_len = sizeof(physical_cpu_count);
-	size_t logical_cpu_count_len = sizeof(logical_cpu_count);
-	sysctlbyname("hw.physicalcpu", &physical_cpu_count, &physical_cpu_count_len, NULL, 0);
-	sysctlbyname("hw.logicalcpu", &logical_cpu_count, &logical_cpu_count_len, NULL, 0);
-	os_page_size = (u32) getpagesize();
-	page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
-	is_macos = true;
+    size_t physical_cpu_count_len = sizeof(system_info.physical_cpu_count);
+	size_t logical_cpu_count_len = sizeof(system_info.logical_cpu_count);
+	sysctlbyname("hw.physicalcpu", &system_info.physical_cpu_count, &physical_cpu_count_len, NULL, 0);
+	sysctlbyname("hw.logicalcpu", &system_info.logical_cpu_count, &logical_cpu_count_len, NULL, 0);
+    system_info.os_page_size = (u32) getpagesize();
+    system_info.page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
+    system_info.is_macos = true;
 #elif LINUX
-    logical_cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
-    physical_cpu_count = logical_cpu_count; // TODO: how to read this on Linux?
-    os_page_size = (u32) getpagesize();
-    page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
+    system_info.logical_cpu_count = sysconf( _SC_NPROCESSORS_ONLN );
+    system_info.physical_cpu_count = system_info.logical_cpu_count; // TODO(pvalkema): how to read this on Linux?
+    system_info.os_page_size = (u32) getpagesize();
+    system_info.page_alignment_mask = ~((u64)(sysconf(_SC_PAGE_SIZE) - 1));
 #endif
-    if (verbose) console_print("There are %d logical CPU cores\n", logical_cpu_count);
-    total_thread_count = MIN(logical_cpu_count, MAX_THREAD_COUNT);
+    if (verbose) console_print("There are %d logical CPU cores\n", system_info.logical_cpu_count);
+    system_info.suggested_total_thread_count = MIN(system_info.logical_cpu_count, MAX_THREAD_COUNT);
+
+    //TODO(pvalkema): think about returning this instead of setting global state.
+    global_system_info = system_info;
 }
 
 
-void init_thread_memory(i32 logical_thread_index) {
+void init_thread_memory(i32 logical_thread_index, system_info_t* system_info) {
 	// Allocate a private memory buffer
 	u64 thread_memory_size = MEGABYTES(16);
-	local_thread_memory = (thread_memory_t*) platform_alloc(thread_memory_size); // how much actually needed?
+	local_thread_memory = (thread_memory_t*) malloc(thread_memory_size); // how much actually needed?
 	thread_memory_t* thread_memory = local_thread_memory;
 	memset(thread_memory, 0, sizeof(thread_memory_t));
 #if !WINDOWS
-	// TODO: implement creation of async I/O events
+	// TODO(pvalkema): think about whether implement creation of async I/O events is needed here
 #endif
 	thread_memory->thread_memory_raw_size = thread_memory_size;
 
+    u32 os_page_size = system_info->os_page_size;
 	thread_memory->aligned_rest_of_thread_memory = (void*)
 			((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
 	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);

@@ -1,19 +1,28 @@
 /*
-  Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  BSD 2-Clause License
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+  Copyright (c) 2019-2023, Pieter Valkema
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include "common.h"
@@ -115,7 +124,7 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 	// To submit an async I/O request on Win32, we need to fill in an OVERLAPPED structure with the
 	// offset in the file where we want to do the read operation
 	LARGE_INTEGER offset_ = {.QuadPart = (i64)aligned_offset};
-	OVERLAPPED overlapped = {};
+	OVERLAPPED overlapped = {0};
 	overlapped.Offset = offset_.LowPart;
 	overlapped.OffsetHigh = (DWORD)offset_.HighPart;
 	overlapped.hEvent = thread_memory->async_io_events[0];
@@ -220,7 +229,7 @@ void file_stream_write(void* source, size_t bytes_to_write, file_stream_t file_s
 }
 
 i64 file_stream_get_filesize(file_stream_t file_stream) {
-	LARGE_INTEGER filesize = {};
+	LARGE_INTEGER filesize = {0};
 	if (!GetFileSizeEx(file_stream, &filesize)) {
 		win32_diagnostic("GetFileSizeEx");
 	}
@@ -228,8 +237,8 @@ i64 file_stream_get_filesize(file_stream_t file_stream) {
 }
 
 i64 file_stream_get_pos(file_stream_t file_stream) {
-	LARGE_INTEGER file_position = {};
-	LARGE_INTEGER distance_to_move = {};
+	LARGE_INTEGER file_position = {0};
+	LARGE_INTEGER distance_to_move = {0};
 	if (!SetFilePointerEx(file_stream, distance_to_move, &file_position, FILE_CURRENT)) {
 		win32_diagnostic("SetFilePointerEx");
 	}
@@ -237,7 +246,7 @@ i64 file_stream_get_pos(file_stream_t file_stream) {
 }
 
 bool file_stream_set_pos(file_stream_t file_stream, i64 offset) {
-	LARGE_INTEGER new_file_pointer = {};
+	LARGE_INTEGER new_file_pointer = {0};
 	new_file_pointer.QuadPart = offset;
 	if (!SetFilePointerEx(file_stream, new_file_pointer, NULL, FILE_BEGIN)) {
 		win32_diagnostic("SetFilePointerEx");

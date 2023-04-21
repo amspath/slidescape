@@ -338,7 +338,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 	u64* tile_bytecounts = calloc(level_task->export_tile_count, sizeof(u64));
 
 
-	u32 batch_size = ATLEAST(worker_thread_count, 1);
+	u32 batch_size = ATLEAST(global_worker_thread_count, 1);
 	u32 batch_count = (level_task->export_tile_count + batch_size - 1) / batch_size;
 
 	// TODO: don't assume unaligned!

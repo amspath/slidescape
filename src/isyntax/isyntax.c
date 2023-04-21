@@ -1229,10 +1229,11 @@ static inline i32 twos_complement_to_signed_magnitude(u32 x) {
 }
 
 static void signed_magnitude_to_twos_complement_16_block(u16* data, u32 len) {
+    u32 aligned_len = (len / 8) * 8;
+    u32 i = 0;
 #if defined(__SSE2__)
-	// Fast SIMD version
-	i32 i;
-	for (i = 0; i < len; i += 8) {
+	// Fast x86 SIMD version
+	for (; i < aligned_len; i += 8) {
 		__m128i x = _mm_loadu_si128((__m128i*)(data + i));
 		__m128i sign_masks = _mm_srai_epi16(x, 15); // 0x0000 if positive, 0xFFFF if negative
 		__m128i maybe_positive = _mm_andnot_si128(sign_masks, x); // (~m & x)
@@ -1241,28 +1242,33 @@ static void signed_magnitude_to_twos_complement_16_block(u16* data, u32 len) {
 		__m128i result = _mm_or_si128(maybe_positive, maybe_negative);
 		_mm_storeu_si128((__m128i*)(data + i), result);
 	}
-	if (i < len) {
-		for (; i < len; ++i) {
-			data[i] = signed_magnitude_to_twos_complement_16(data[i]);
-		}
-	}
-#else
-	// Slow version
-    i32 i = 0;
+#elif defined(__ARM_NEON)
+    // NEON version for ARM processors
+    for (; i < aligned_len; i += 8) {
+        uint16x8_t x = vld1q_u16(data + i);
+        int16x8_t sign_masks = vshrq_n_s16((int16x8_t)x, 15);
+        uint16x8_t maybe_positive = vbicq_u16(x, (uint16x8_t)sign_masks);
+        uint16x8_t value_if_negative = vsubq_u16(vandq_u16(x, vdupq_n_u16(0x8000)), x);
+        uint16x8_t maybe_negative = vandq_u16((uint16x8_t)sign_masks, value_if_negative);
+        uint16x8_t result = vorrq_u16(maybe_positive, maybe_negative);
+        vst1q_u16(data + i, result);
+    }
+#endif
+    // Slow version, for last unaligned elements or in case SIMD isn't available
 	for (; i < len; ++i) {
 		data[i] = signed_magnitude_to_twos_complement_16(data[i]);
 	}
-#endif
 	ASSERT(i == len);
 }
 
 // Convert a block of 16-bit signed integers to their absolute value
 // Almost the same as the signed magnitude <-> twos complement conversion, except the sign bit is cleared at the end
-static void convert_to_absolute_value_16_block(i16* data, u32 len) {
+static void signed_magnitude_to_absolute_value_16_block(i16* data, u32 len) {
+    u32 aligned_len = (len / 8) * 8;
+    u32 i = 0;
 #if defined(__SSE2__)
-	// Fast SIMD version
-	i32 i;
-	for (i = 0; i < len; i += 8) {
+	// Fast x86 SIMD version
+	for (; i < aligned_len; i += 8) {
 		__m128i x = _mm_loadu_si128((__m128i*)(data + i));
 		__m128i sign_masks = _mm_srai_epi16(x, 15); // 0x0000 if positive, 0xFFFF if negative
 		__m128i maybe_positive = _mm_andnot_si128(sign_masks, x); // (~m & x)
@@ -1272,18 +1278,23 @@ static void convert_to_absolute_value_16_block(i16* data, u32 len) {
 		result = _mm_and_si128(result, _mm_set1_epi16(0x7FFF)); // x &= 0x7FFF (clear sign bit)
 		_mm_storeu_si128((__m128i*)(data + i), result);
 	}
-	if (i < len) {
-		for (; i < len; ++i) {
-			data[i] = signed_magnitude_to_twos_complement_16(data[i]) & 0x7FFF;
-		}
-	}
-#else
-    // Slow version
-    i32 i = 0;
-	for (; i < len; ++i) {
-		data[i] = signed_magnitude_to_twos_complement_16(data[i]) & 0x7FFF;
-	}
+#elif defined(__ARM_NEON)
+    // NEON version for ARM processors
+    for (; i < aligned_len; i += 8) {
+        uint16x8_t x = vld1q_u16((u16*)data + i);
+        int16x8_t sign_masks = vshrq_n_s16((int16x8_t)x, 15);
+        uint16x8_t maybe_positive = vbicq_u16(x, (uint16x8_t)sign_masks);
+        uint16x8_t value_if_negative = vsubq_u16(vandq_u16(x, vdupq_n_u16(0x8000)), x);
+        uint16x8_t maybe_negative = vandq_u16((uint16x8_t)sign_masks, value_if_negative);
+        uint16x8_t result = vorrq_u16(maybe_positive, maybe_negative);
+        result = vbicq_u16(result, vdupq_n_u16(0x8000)); // clear sign bit
+        vst1q_u16((u16*)data + i, result);
+    }
 #endif
+    // Slow version, for last unaligned elements or in case SIMD isn't available
+	for (; i < len; ++i) {
+		data[i] = (i16)(signed_magnitude_to_twos_complement_16((u16)data[i]) & 0x7FFF);
+	}
 	ASSERT(i == len);
 }
 
@@ -1334,12 +1345,14 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
 	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
 	u32* bgra = (u32*)malloc(width * height * sizeof(u32)); // TODO: performance: block allocator
+    i32 aligned_width = (width / 8) * 8;
 
-	for (i32 y = 0; y < height; ++y) {
+	for (i32 y = 0; y < aligned_width; ++y) {
 		u32* dest = bgra + (y * width);
-#if 1 && defined(__SSE2__) && defined(__SSSE3__)
+        i32 i = 0;
+#if defined(__SSE2__) && defined(__SSSE3__)
 		// Fast SIMD version (~2x faster on my system)
-		for (i32 i = 0; i < width; i += 8) {
+		for (; i < aligned_width; i += 8) {
 			// Do the color space conversion
 			__m128i Y_ = _mm_loadu_si128((__m128i*)(Y + i));
 			__m128i Co_ = _mm_loadu_si128((__m128i*)(Co + i));
@@ -1370,18 +1383,110 @@ static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 			_mm_storeu_si128((__m128i*)(dest + i), lo);
 			_mm_storeu_si128((__m128i*)(dest + i + 4), hi);
 		}
+#elif defined(__ARM_NEON__)
+        // Fast SIMD version for ARM NEON
+        for (; i < aligned_width; i += 8) {
+            int16x8_t Y_ = vld1q_s16(Y + i);
+            int16x8_t Co_ = vld1q_s16(Co + i);
+            int16x8_t Cg_ = vld1q_s16(Cg + i);
+            int16x8_t tmp = vsubq_s16(Y_, vshrq_n_s16(Cg_, 1));
+            int16x8_t G = vaddq_s16(tmp, Cg_);
+            int16x8_t B = vsubq_s16(tmp, vshrq_n_s16(Co_, 1));
+            int16x8_t R = vaddq_s16(B, Co_);
 
-#else
-		// Slow non-SIMD version
-		for (i32 x = 0; x < width; ++x) {
-			((rgba_t*)dest)[x] = ycocg_to_bgr(Y[x], Co[x], Cg[x]);
-		}
+            uint8x8x4_t bgra_vec;
+            bgra_vec.val[2] = vqmovun_s16(R);
+            bgra_vec.val[1] = vqmovun_s16(G);
+            bgra_vec.val[0] = vqmovun_s16(B);
+            bgra_vec.val[3] = vdup_n_u8(0xFF);
+
+            vst4_u8((uint8_t*)(dest + i), bgra_vec);
+        }
 #endif
+        // Slow version, for last unaligned elements or in case SIMD isn't available
+		for (; i < width; ++i) {
+			((rgba_t*)dest)[i] = ycocg_to_bgr(Y[i], Co[i], Cg[i]);
+		}
+
 		Y += stride;
 		Co += stride;
 		Cg += stride;
 	}
 	return bgra;
+}
+
+static u32* convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
+    i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
+    u32* rgba = (u32*)malloc(width * height * sizeof(u32)); // TODO: performance: block allocator
+    i32 aligned_width = (width / 8) * 8;
+
+    for (i32 y = 0; y < aligned_width; ++y) {
+        u32* dest = rgba + (y * width);
+        i32 i = 0;
+#if defined(__SSE2__) && defined(__SSSE3__)
+        // Fast SIMD version (~2x faster on my system)
+		for (; i < aligned_width; i += 8) {
+			// Do the color space conversion
+			__m128i Y_ = _mm_loadu_si128((__m128i*)(Y + i));
+			__m128i Co_ = _mm_loadu_si128((__m128i*)(Co + i));
+			__m128i Cg_ = _mm_loadu_si128((__m128i*)(Cg + i));
+			__m128i tmp = _mm_sub_epi16(Y_, _mm_srai_epi16(Cg_, 1)); // tmp = Y - Cg/2
+			__m128i G = _mm_add_epi16(tmp, Cg_);                     // G = tmp + Cg
+			__m128i B = _mm_sub_epi16(tmp, _mm_srai_epi16(Co_, 1));  // B = tmp - Co/2
+			__m128i R = _mm_add_epi16(B, Co_);                       // R = B + Co
+
+			// Clamp range to 0..255
+			__m128i zero = _mm_set1_epi16(0);
+			R = _mm_packus_epi16(R, zero); // -R-R-R-R -> RRRR----
+			G = _mm_packus_epi16(zero, G); // -G-G-G-G -> ----GGGG
+			B = _mm_packus_epi16(B, zero); // -B-B-B-B -> BBBB----
+
+			__m128i A = _mm_setr_epi32(0, 0, 0xffffffff, 0xffffffff); // ----AAAA
+
+			// Shuffle into the right order -> BGRA
+			// Shuffle into the right order -> RGBA
+			__m128i RG = _mm_or_si128(R, G);
+			__m128i BA = _mm_or_si128(B, A);
+
+			__m128i v_perm = _mm_setr_epi8(0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
+			RG = _mm_shuffle_epi8(RG, v_perm); // RGRGRGRG
+			BA = _mm_shuffle_epi8(BA, v_perm); // BABABABA
+			__m128i lo = _mm_unpacklo_epi16(RG, BA); // RGBA
+			__m128i hi = _mm_unpackhi_epi16(RG, BA);
+
+			_mm_storeu_si128((__m128i*)(dest + i), lo);
+			_mm_storeu_si128((__m128i*)(dest + i + 4), hi);
+		}
+#elif defined(__ARM_NEON__)
+        // Fast SIMD version for ARM NEON
+        for (; i < aligned_width; i += 8) {
+            int16x8_t Y_ = vld1q_s16(Y + i);
+            int16x8_t Co_ = vld1q_s16(Co + i);
+            int16x8_t Cg_ = vld1q_s16(Cg + i);
+            int16x8_t tmp = vsubq_s16(Y_, vshrq_n_s16(Cg_, 1));
+            int16x8_t G = vaddq_s16(tmp, Cg_);
+            int16x8_t B = vsubq_s16(tmp, vshrq_n_s16(Co_, 1));
+            int16x8_t R = vaddq_s16(B, Co_);
+
+            uint8x8x4_t rgba_vec;
+            rgba_vec.val[0] = vqmovun_s16(R);
+            rgba_vec.val[1] = vqmovun_s16(G);
+            rgba_vec.val[2] = vqmovun_s16(B);
+            rgba_vec.val[3] = vdup_n_u8(0xFF);
+
+            vst4_u8((uint8_t*)(dest + i), rgba_vec);
+        }
+#endif
+        // Slow version, for last unaligned elements or in case SIMD isn't available
+        for (; i < width; ++i) {
+            ((rgba_t*)dest)[i] = ycocg_to_rgb(Y[i], Co[i], Cg[i]);
+        }
+
+        Y += stride;
+        Co += stride;
+        Cg += stride;
+    }
+    return rgba;
 }
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
@@ -1918,7 +2023,7 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 
 	// For the Y (luminance) color channel, we actually need the absolute value of the Y-channel wavelet coefficient.
 	// (This doesn't hold for Co and Cg, those are are used directly as signed integers)
-	convert_to_absolute_value_16_block(Y, idwt_width * idwt_height);
+    signed_magnitude_to_absolute_value_16_block(Y, idwt_width * idwt_height);
 
 	// Reconstruct RGB image from separate color channels while cutting off margins
 	i64 start = get_clock();
@@ -2611,9 +2716,11 @@ static void isyntax_dump_block_header(isyntax_image_t* wsi_image, const char* fi
 }
 
 // Set the work queue to submit parallel jobs to
+// TODO(pvalkema): remove this? needs rethinking
 void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue) {
 	isyntax->work_submission_queue = work_queue;
 }
+
 
 bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators) {
 
@@ -2751,31 +2858,49 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 			isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
 			if (wsi_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
 
-				i64 block_width = isyntax->block_width;
-				i64 block_height = isyntax->block_height;
-				i64 tile_width = isyntax->tile_width;
-				i64 tile_height = isyntax->tile_height;
+				i32 block_width = isyntax->block_width;
+				i32 block_height = isyntax->block_height;
+				i32 tile_width = isyntax->tile_width;
+				i32 tile_height = isyntax->tile_height;
 
-				i64 num_levels = wsi_image->level_count;
+				i32 num_levels = wsi_image->level_count;
 				ASSERT(num_levels >= 1);
-				i64 grid_width = ((wsi_image->width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
-				i64 grid_height = ((wsi_image->height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
+				i32 grid_width = ((wsi_image->width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
+				i32 grid_height = ((wsi_image->height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
 
-				i64 h_coeff_tile_count = 0; // number of tiles with LH/HL/HH coefficients
-				i64 base_level_tile_count = grid_height * grid_width;
-				for (i32 i = 0; i < wsi_image->level_count; ++i) {
-					isyntax_level_t* level = wsi_image->levels + i;
-					level->tile_count = base_level_tile_count >> (i * 2);
+				u64 h_coeff_tile_count = 0; // number of tiles with LH/HL/HH coefficients
+				i32 base_level_tile_count = grid_height * grid_width;
+				for (i32 scale = 0; scale < wsi_image->level_count; ++scale) {
+					isyntax_level_t* level = wsi_image->levels + scale;
+					level->tile_count = base_level_tile_count >> (scale * 2);
 					h_coeff_tile_count += level->tile_count;
-					level->scale = i;
-					level->width_in_tiles = grid_width >> i;
-					level->height_in_tiles = grid_height >> i;
-					level->downsample_factor = (float)(1 << i);
+					level->scale = scale;
+					level->width_in_tiles = grid_width >> scale;
+					level->height_in_tiles = grid_height >> scale;
+					level->width_in_pixels = wsi_image->width >> scale;
+					level->height_in_pixels = wsi_image->height >> scale;
+					level->downsample_factor = (float)(1 << scale);
 					level->um_per_pixel_x = isyntax->mpp_x * level->downsample_factor;
 					level->um_per_pixel_y = isyntax->mpp_y * level->downsample_factor;
-					level->x_tile_side_in_um = tile_width * level->um_per_pixel_x;
-					level->y_tile_side_in_um = tile_height * level->um_per_pixel_y;
+					level->x_tile_side_in_um = (float)tile_width * level->um_per_pixel_x;
+					level->y_tile_side_in_um = (float)tile_height * level->um_per_pixel_y;
 				}
+
+				// When recursively decoding the tiles, at each iteration the image is slightly offset
+				// to the top left.
+				// The shift corresponds to the per level padding added for the wavelet transform:
+				// ((3 << (scale-1)) - 2)
+				// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
+				// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
+				// Level 0 has no
+				for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
+					isyntax_level_t* level = wsi_image->levels + scale;
+					level->origin_offset_in_pixels = get_first_valid_coef_pixel(scale - 1);
+					float offset_in_um_x = (float)level->origin_offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
+					float offset_in_um_y = (float)level->origin_offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
+					level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
+				}
+
 				// The highest level has LL tiles in addition to LH/HL/HH tiles
 				i64 ll_coeff_tile_count = base_level_tile_count >> ((num_levels - 1) * 2);
 				i64 total_coeff_tile_count = h_coeff_tile_count + ll_coeff_tile_count;
@@ -2958,21 +3083,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 
 						}
 
-						// When recursively decoding the tiles, at each iteration the image is slightly offset
-						// to the top left.
-                        // The amount of shift seems correspond to the level padding: ((3 >> (scale-1)) - 2).
-						// (I guess this is related to the way the wavelet transform works.)
-						// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
-						// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
-						for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
-							isyntax_level_t* level = wsi_image->levels + scale;
-                            float offset_in_pixels = (float) (get_first_valid_coef_pixel(scale - 1));
-                            level->origin_offset_in_pixels = offset_in_pixels;
-							float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
-							float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
-							level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
-						}
-
 						parse_ticks_elapsed += (get_clock() - parse_begin);
 //						console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
 //						console_print("   I/O time: %g seconds\n", get_seconds_elapsed(0, io_ticks_elapsed));
@@ -3041,22 +3151,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 						level->tiles[tile_index].data_chunk_index = current_data_chunk_index;
 
 					}
-
-					// When recursively decoding the tiles, at each iteration the image is slightly offset
-					// to the top left.
-					// The amount of shift seems correspond to the level padding: ((3 >> (scale-1)) - 2).
-					// (I guess this is related to the way the wavelet transform works.)
-					// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
-					// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
-					for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
-						isyntax_level_t* level = wsi_image->levels + scale;
-						float offset_in_pixels = (float) (get_first_valid_coef_pixel(scale - 1));
-						level->origin_offset_in_pixels = offset_in_pixels;
-						float offset_in_um_x = offset_in_pixels * wsi_image->levels[0].um_per_pixel_x;
-						float offset_in_um_y = offset_in_pixels * wsi_image->levels[0].um_per_pixel_y;
-						level->origin_offset = (v2f){offset_in_um_x, offset_in_um_y};
-					}
-
 
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 //				    console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);
@@ -3191,3 +3285,5 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	}
 	file_handle_close(isyntax->file_handle);
 }
+
+
