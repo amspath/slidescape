@@ -8,7 +8,9 @@
 #include "jpeglib.h"
 
 static void on_error(j_common_ptr cinfo) {
-	(*cinfo->err->output_message)(cinfo);
+    char buffer[JMSG_LENGTH_MAX];
+    (*cinfo->err->format_message) (cinfo, buffer);
+    console_print_error("JPEG decoding error: %s\n", buffer);
 }
 
 static void empty_impl(j_decompress_ptr cinfo) {
@@ -66,7 +68,7 @@ void setup_jpeg_source(j_decompress_ptr cinfo, uint8_t *input_ptr, uint32_t inpu
 
 
 EMSCRIPTEN_KEEPALIVE
-boolean jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool32 is_YCbCr) {
+bool jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool is_YCbCr) {
 	struct jpeg_decompress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 
