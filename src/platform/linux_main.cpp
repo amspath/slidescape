@@ -118,7 +118,7 @@ static void* worker_thread(void* parameter) {
 			platform_sleep(100);
 			continue;
 		}
-        if (!is_queue_work_waiting_to_start(thread_info->queue)) {
+        if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
             //platform_sleep(1);
             sem_wait(thread_info->queue->semaphore);
             if (thread_info->logical_thread_index > global_active_worker_thread_count) {
@@ -127,7 +127,7 @@ static void* worker_thread(void* parameter) {
                 continue;
             }
         }
-        do_worker_work(thread_info->queue, thread_info->logical_thread_index);
+        work_queue_do_work(thread_info->queue, thread_info->logical_thread_index);
     }
 
     return 0;
@@ -140,9 +140,9 @@ void linux_init_multithreading() {
     global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
 	global_active_worker_thread_count = global_worker_thread_count;
 
-	global_work_queue = create_work_queue("/worksem", 1024); // Queue for newly submitted tasks
-	global_completion_queue = create_work_queue("/completionsem", 1024); // Message queue for completed tasks
-	global_export_completion_queue = create_work_queue("/exportcompletionsem", 1024); // Message queue for export task
+	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
+	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
+	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
 
     pthread_t threads[MAX_THREAD_COUNT] = {};
 

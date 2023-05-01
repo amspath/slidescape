@@ -431,11 +431,12 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 
 		// TODO: fix the copy-pasta
 		i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
-		while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress(&global_export_completion_queue)) {
-			work_queue_entry_t entry = get_next_work_queue_entry(&global_export_completion_queue);
+		while (work_queue_is_work_in_progress(&global_work_queue) ||
+               work_queue_is_work_in_progress(&global_export_completion_queue)) {
+			work_queue_entry_t entry = work_queue_get_next_entry(&global_export_completion_queue);
 			if (entry.is_valid) {
 				if (!entry.callback) panic();
-				mark_queue_entry_completed(&global_export_completion_queue);
+                work_queue_mark_entry_completed(&global_export_completion_queue);
 
 				if (entry.callback == export_notify_load_tile_completed) {
 					benaphore_lock(&image->lock);
@@ -537,8 +538,8 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 			if (!(tiles_left_to_compress_in_batch > 0)) {
 				break;
 			} else {
-				if (is_queue_work_waiting_to_start(&global_work_queue)) {
-					do_worker_work(&global_work_queue, 0);
+				if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
+                    work_queue_do_work(&global_work_queue, 0);
 				}
 			}
 //			if (tiles_left_to_compress_in_batch > 0) {

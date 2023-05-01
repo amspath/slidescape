@@ -176,8 +176,8 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 #if DO_DEBUG
 		console_print("Waiting for OpenSlide to finish loading...\n");
 #endif
-		while (is_queue_work_in_progress(&global_work_queue)) {
-			do_worker_work(&global_work_queue, 0);
+		while (work_queue_is_work_in_progress(&global_work_queue)) {
+            work_queue_do_work(&global_work_queue, 0);
 		}
 	}
 
@@ -709,8 +709,8 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 #if DO_DEBUG
 				console_print("Waiting for OpenSlide to finish loading...\n");
 #endif
-				while (is_queue_work_in_progress(&global_work_queue)) {
-					do_worker_work(&global_work_queue, 0);
+				while (work_queue_is_work_in_progress(&global_work_queue)) {
+                    work_queue_do_work(&global_work_queue, 0);
 				}
 			}
 			if (!is_openslide_available) {

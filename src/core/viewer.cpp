@@ -198,7 +198,7 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 }
 
 void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
-	i32 tasks_waiting = get_work_queue_task_count(&global_work_queue);
+	i32 tasks_waiting = work_queue_get_entry_count(&global_work_queue);
 	i32 max_acceptable_tasks = ATMOST(global_system_info.logical_cpu_count * 10, global_work_queue.entry_count-1);
 	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
 	if (tiles_to_load > usable_slots) {
@@ -310,11 +310,11 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 
 	// Retrieve completed tasks from the worker threads
 	i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
-	while (is_queue_work_in_progress(&global_completion_queue)) {
-		work_queue_entry_t entry = get_next_work_queue_entry(&global_completion_queue);
+	while (work_queue_is_work_in_progress(&global_completion_queue)) {
+		work_queue_entry_t entry = work_queue_get_next_entry(&global_completion_queue);
 		if (entry.is_valid) {
 //			if (!entry.callback) panic();
-			mark_queue_entry_completed(&global_completion_queue);
+            work_queue_mark_entry_completed(&global_completion_queue);
 
 			// TODO(pvalkema): fix assumption here that isyntax_streamer_tile_completed_task_t has the same layout as viewer_notify_tile_completed_task_t
 			if (entry.callback == viewer_notify_load_tile_completed || entry.task_identifier == VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER) {
@@ -468,6 +468,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			tile_streamer.tile_completion_queue = &global_completion_queue;
 			tile_streamer.tile_completion_callback = NULL;
 			tile_streamer.tile_completion_task_identifier = VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER;
+            tile_streamer.pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				wsi->first_load_in_progress = true;
 				isyntax_begin_first_load(&tile_streamer);

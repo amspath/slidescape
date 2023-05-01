@@ -47,7 +47,6 @@
 
 */
 
-
 #include "common.h"
 #include "work_queue.h"
 #include "intrinsics.h"
@@ -407,6 +406,9 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							case 3: {
 								image->level_count = range.numsteps;
 								image->max_scale = range.numsteps - 1;
+                                int32_t level_padding = (PER_LEVEL_PADDING << range.numsteps) - PER_LEVEL_PADDING;
+                                image->width -= 2 * level_padding;
+                                image->height -= 2 * level_padding;
 							} break;
 							case 4: break; // always 4 wavelet coefficients ("LL" "LH" "HL" "HH"), no need to check
 						}
@@ -1342,13 +1344,12 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 	return (rgba_t){ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255};
 }
 
-static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
+static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
 	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
-	u32* bgra = (u32*)malloc(width * height * sizeof(u32)); // TODO: performance: block allocator
     i32 aligned_width = (width / 8) * 8;
 
 	for (i32 y = 0; y < aligned_width; ++y) {
-		u32* dest = bgra + (y * width);
+		u32* dest = out_bgra + (y * width);
         i32 i = 0;
 #if defined(__SSE2__) && defined(__SSSE3__)
 		// Fast SIMD version (~2x faster on my system)
@@ -1412,16 +1413,14 @@ static u32* convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 		Co += stride;
 		Cg += stride;
 	}
-	return bgra;
 }
 
-static u32* convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride) {
+static void convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_rgba) {
     i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
-    u32* rgba = (u32*)malloc(width * height * sizeof(u32)); // TODO: performance: block allocator
     i32 aligned_width = (width / 8) * 8;
 
     for (i32 y = 0; y < aligned_width; ++y) {
-        u32* dest = rgba + (y * width);
+        u32* dest = out_rgba + (y * width);
         i32 i = 0;
 #if defined(__SSE2__) && defined(__SSSE3__)
         // Fast SIMD version (~2x faster on my system)
@@ -1486,7 +1485,6 @@ static u32* convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
         Co += stride;
         Cg += stride;
     }
-    return rgba;
 }
 
 #define DEBUG_OUTPUT_IDWT_STEPS_AS_PNG 0
@@ -1879,7 +1877,9 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 	return invalid_edges;
 }
 
-u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, block_allocator_t* ll_coeff_block_allocator, bool decode_rgb) {
+void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y,
+                       block_allocator_t* ll_coeff_block_allocator,
+                       u32* out_buffer_or_null, enum isyntax_pixel_format_t pixel_format) {
 	// printf("@@@ isyntax_load_tile scale=%d tile_x=%d tile_y=%d\n", scale, tile_x, tile_y);
 	isyntax_level_t* level = wsi->levels + scale;
 	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
@@ -2010,15 +2010,15 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 				console_print_error("load: scale=%d x=%d y=%d  idwt time =%g  invalid edges=%x\n", scale, tile_x, tile_y, elapsed_idwt, invalid_edges);
 				// early out
 				release_temp_memory(&temp_memory);
-				return NULL;
+				return;
 			}
 		}
 	}
 
 	tile->is_loaded = true; // Meaning: it is now safe to start loading 'child' tiles of the next level
-	if (!decode_rgb) {
+	if (out_buffer_or_null == NULL) {
 		release_temp_memory(&temp_memory); // free Y, Co and Cg
-		return NULL;
+		return;
 	}
 
 	// For the Y (luminance) color channel, we actually need the absolute value of the Y-channel wavelet coefficient.
@@ -2031,8 +2031,21 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i32 tile_height = block_height * 2;
 
 	i32 valid_offset = (first_valid_pixel * idwt_stride) + first_valid_pixel;
-	u32* bgra = convert_ycocg_to_bgra_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset,
-											tile_width, tile_height, idwt_stride);
+    switch (pixel_format) {
+        case LIBISYNTAX_PIXEL_FORMAT_BGRA:
+            convert_ycocg_to_bgra_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
+                                        idwt_stride, out_buffer_or_null);
+            break;
+
+        case LIBISYNTAX_PIXEL_FORMAT_RGBA:
+            convert_ycocg_to_rgba_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
+                                        idwt_stride, out_buffer_or_null);
+            break;
+
+        default:
+            ASSERT(!"unknown pixel format!");
+            break;
+    }
 	isyntax->total_rgb_transform_time += get_seconds_elapsed(start, get_clock());
 
 	//		float elapsed_rgb = get_seconds_elapsed(start, get_clock());
@@ -2043,7 +2056,6 @@ u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	}*/
 
 	release_temp_memory(&temp_memory); // free Y, Co and Cg
-	return bgra;
 }
 
 
@@ -3218,7 +3230,7 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	while (isyntax->refcount > 0) {
 		platform_sleep(1);
 		if (isyntax->work_submission_queue) {
-			do_worker_work(isyntax->work_submission_queue, 0);
+            work_queue_do_work(isyntax->work_submission_queue, 0);
 		} else {
 			static bool already_printed = false;
 			if (!already_printed) {

@@ -31,6 +31,8 @@
 extern "C" {
 #endif
 
+#include "common.h"
+#include "mathutils.h"
 
 typedef struct isyntax_streamer_tile_completed_task_t {
 	u8* pixel_memory;
@@ -58,7 +60,7 @@ typedef struct isyntax_streamer_t {
 	work_queue_t* tile_completion_queue;
 	work_queue_callback_t* tile_completion_callback;
 	u32 tile_completion_task_identifier;
-
+    enum isyntax_pixel_format_t pixel_format;
 } isyntax_streamer_t;
 
 
@@ -67,7 +69,7 @@ void isyntax_begin_load_tile(isyntax_streamer_t* streamer, i32 scale, i32 tile_x
 
 
 // globals
-#if defined(VIEWER_IMPL)
+#if defined(ISYNTAX_STREAMER_IMPL)
 #define INIT(...) __VA_ARGS__
 #define extern
 #else

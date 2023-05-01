@@ -36,7 +36,7 @@
 #include <semaphore.h>
 #endif
 
-work_queue_t create_work_queue(const char* semaphore_name, i32 entry_count) {
+work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count) {
 	work_queue_t queue = {0};
 
 	i32 semaphore_initial_count = 0;
@@ -51,7 +51,7 @@ work_queue_t create_work_queue(const char* semaphore_name, i32 entry_count) {
 	return queue;
 }
 
-void destroy_work_queue(work_queue_t* queue) {
+void work_queue_destroy(work_queue_t* queue) {
 	if (queue->entries) {
 		free(queue->entries);
 		queue->entries = NULL;
@@ -64,7 +64,7 @@ void destroy_work_queue(work_queue_t* queue) {
 	queue->semaphore = NULL;
 }
 
-i32 get_work_queue_task_count(work_queue_t* queue) {
+i32 work_queue_get_entry_count(work_queue_t* queue) {
 	i32 count = queue->next_entry_to_submit - queue->next_entry_to_execute;
 	while (count < 0) {
 		count += queue->entry_count;
@@ -73,7 +73,7 @@ i32 get_work_queue_task_count(work_queue_t* queue) {
 }
 
 // TODO: add optional refcount increment
-bool work_queue_submit_entry(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
+bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
 	if (!queue) {
 		panic("work_queue_add_entry(): queue is NULL");
 	}
@@ -121,14 +121,14 @@ bool work_queue_submit_entry(work_queue_t* queue, work_queue_callback_t callback
 
 bool work_queue_submit_task(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
 	ASSERT(callback);
-	return work_queue_submit_entry(queue, callback, 0, userdata, userdata_size);
+	return work_queue_submit(queue, callback, 0, userdata, userdata_size);
 }
 
 bool work_queue_submit_notification(work_queue_t* queue, u32 task_identifier, void* userdata, size_t userdata_size) {
-	return work_queue_submit_entry(queue, NULL, task_identifier, userdata, userdata_size);
+	return work_queue_submit(queue, NULL, task_identifier, userdata, userdata_size);
 }
 
-work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
+work_queue_entry_t work_queue_get_next_entry(work_queue_t* queue) {
 	work_queue_entry_t result = {0};
 
 	i32 entry_to_execute = queue->next_entry_to_execute;
@@ -153,12 +153,12 @@ work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue) {
 	return result;
 }
 
-void mark_queue_entry_completed(work_queue_t* queue) {
+void work_queue_mark_entry_completed(work_queue_t* queue) {
 	atomic_increment(&queue->completion_count);
 }
 
-bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
-	work_queue_entry_t entry = get_next_work_queue_entry(queue);
+bool work_queue_do_work(work_queue_t* queue, int logical_thread_index) {
+	work_queue_entry_t entry = work_queue_get_next_entry(queue);
 	if (entry.is_valid) {
 		atomic_decrement(&global_worker_thread_idle_count);
 		atomic_increment(&queue->start_count);
@@ -180,14 +180,14 @@ bool do_worker_work(work_queue_t* queue, int logical_thread_index) {
 			release_temp_memory(&temp);
 			--work_queue_call_depth;
 		}
-		mark_queue_entry_completed(queue);
+        work_queue_mark_entry_completed(queue);
 		atomic_increment(&global_worker_thread_idle_count);
 	}
 	return entry.is_valid;
 }
 
 
-bool is_queue_work_in_progress(work_queue_t* queue) {
+bool work_queue_is_work_in_progress(work_queue_t* queue) {
 	// If we are checking the global work queue while running a task from that same queue, then we only want to know
 	// whether any OTHER tasks are running. So in that case we need to subtract the call depth.
 	i32 call_depth = (queue == &global_work_queue) ? work_queue_call_depth : 0;
@@ -195,7 +195,7 @@ bool is_queue_work_in_progress(work_queue_t* queue) {
 	return result;
 }
 
-bool is_queue_work_waiting_to_start(work_queue_t* queue) {
+bool work_queue_is_work_waiting_to_start(work_queue_t* queue) {
 	bool result = (queue->start_goal > queue->start_count);
 	return result;
 }
@@ -232,10 +232,10 @@ void test_multithreading_work_queue() {
 	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 11", 10);
 
 //	while (is_queue_work_in_progress(&global_work_queue)) {
-//		do_worker_work(&global_work_queue, 0);
+//		work_queue_do_work(&global_work_queue, 0);
 //	}
-	while (is_queue_work_in_progress(&global_work_queue) || is_queue_work_in_progress((&global_completion_queue))) {
-		do_worker_work(&global_completion_queue, 0);
+	while (work_queue_is_work_in_progress(&global_work_queue) || work_queue_is_work_in_progress((&global_completion_queue))) {
+		work_queue_do_work(&global_completion_queue, 0);
 	}
 #endif
 }

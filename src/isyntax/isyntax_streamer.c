@@ -28,6 +28,8 @@
 #include "common.h"
 #include "isyntax.h"
 #include "intrinsics.h"
+
+#define ISYNTAX_STREAMER_IMPL
 #include "isyntax_streamer.h"
 
 static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
@@ -41,9 +43,9 @@ static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixel
 	completion_task.want_gpu_residency = true;
 	completion_task.resource_id = streamer->resource_id;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	if (!work_queue_submit_entry(streamer->tile_completion_queue, streamer->tile_completion_callback,
-								 streamer->tile_completion_task_identifier,
-								 &completion_task, sizeof(completion_task))) {
+	if (!work_queue_submit(streamer->tile_completion_queue, streamer->tile_completion_callback,
+                           streamer->tile_completion_task_identifier,
+                           &completion_task, sizeof(completion_task))) {
 		ASSERT(!"tile cannot be submitted and will leak");
 	}
 
@@ -72,11 +74,12 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_streamer_t* streamer, i32 sca
 		for (i32 tile_x = 0; tile_x < level->width_in_tiles; ++tile_x, ++tile_index) {
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
-			i32 tasks_waiting = get_work_queue_task_count(isyntax->work_submission_queue);
+			i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
 			if (global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 				isyntax_begin_load_tile(streamer, scale, tile_x, tile_y);
 			} else if (!is_tile_streamer_frame_boundary_passed) {
-				u32* tile_pixels = isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y, isyntax->ll_coeff_block_allocator, true);
+                u32* tile_pixels = (u32*)malloc(isyntax->tile_width * isyntax->tile_height * sizeof(u32));
+				isyntax_load_tile(isyntax, wsi, scale, tile_x, tile_y, isyntax->ll_coeff_block_allocator, tile_pixels, streamer->pixel_format);
 				if (tile_pixels) {
 					submit_tile_completed(streamer, tile_pixels, scale, tile_index, isyntax->tile_width, isyntax->tile_height);
 				}
@@ -93,7 +96,7 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_streamer_t* streamer, i32 sca
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
 			while (!tile->is_loaded) {
-				do_worker_work(isyntax->work_submission_queue, 0);
+				work_queue_do_work(isyntax->work_submission_queue, 0);
 			}
 		}
 	}
@@ -345,9 +348,12 @@ typedef struct isyntax_load_tile_task_t {
 
 void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 	isyntax_load_tile_task_t* task = (isyntax_load_tile_task_t*) userdata;
-	u32* tile_pixels = isyntax_load_tile(task->streamer.isyntax, task->streamer.wsi, task->scale,
-										 task->tile_x, task->tile_y,
-										 task->streamer.isyntax->ll_coeff_block_allocator, true);
+    isyntax_t* isyntax = task->streamer.isyntax;
+	u32* tile_pixels = (u32*)malloc(isyntax->tile_width * isyntax->tile_height * sizeof(u32));
+    isyntax_load_tile(task->streamer.isyntax, task->streamer.wsi,
+                      task->scale, task->tile_x, task->tile_y,
+                      task->streamer.isyntax->ll_coeff_block_allocator,
+                      tile_pixels, task->streamer.pixel_format);
 	if (tile_pixels) {
 		submit_tile_completed(&task->streamer, tile_pixels, task->scale, task->tile_index,
 							  task->streamer.isyntax->tile_width, task->streamer.isyntax->tile_height);
@@ -918,7 +924,7 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 							if (tile->exists && req->need_h_coeff && !tile->is_submitted_for_h_coeff_decompression) {
 								isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 								if (chunk->data) {
-									i32 tasks_waiting = get_work_queue_task_count(isyntax->work_submission_queue);
+									i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
 									if (global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 										isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile, tile_x, tile_y);
 									} else if (!is_tile_streamer_frame_boundary_passed) {
@@ -1028,7 +1034,7 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 							if (is_tile_streamer_frame_boundary_passed) {
 								goto break_out_of_loop2; // camera bounds updated, recalculate
 							}
-							i32 tasks_waiting = get_work_queue_task_count(isyntax->work_submission_queue);
+							i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
 							if (tasks_waiting > global_system_info.logical_cpu_count * 4) {
 								goto break_out_of_loop2;
 							}
@@ -1088,4 +1094,6 @@ void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer) {
 	}
 }
 
+void isyntax_streamer_main_loop(i32 logical_thread_index, void* userdata) {
 
+}

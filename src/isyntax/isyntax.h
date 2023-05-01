@@ -33,6 +33,7 @@ extern "C" {
 
 #include "common.h"
 //#include "platform.h"
+#include "libisyntax.h"
 #include "block_allocator.h"
 #include "work_queue.h"
 
@@ -393,7 +394,8 @@ void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue);
 bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators);
 void isyntax_destroy(isyntax_t* isyntax);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);
-u32* isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, block_allocator_t* ll_coeff_block_allocator, bool decode_rgb);
+void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, block_allocator_t* ll_coeff_block_allocator,
+                       u32* out_buffer_or_null, enum isyntax_pixel_format_t pixel_format);
 u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 u32 isyntax_get_adjacent_tiles_mask_only_existing(isyntax_level_t* level, i32 tile_x, i32 tile_y);
 u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer);

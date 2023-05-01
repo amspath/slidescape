@@ -63,17 +63,17 @@ typedef struct work_queue_t {
 	work_queue_entry_t* entries;
 } work_queue_t;
 
-work_queue_t create_work_queue(const char* semaphore_name, i32 entry_count);
-void destroy_work_queue(work_queue_t* queue);
-i32 get_work_queue_task_count(work_queue_t* queue);
+work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count);
+void work_queue_destroy(work_queue_t* queue);
+i32 work_queue_get_entry_count(work_queue_t* queue);
 bool work_queue_submit_task(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool work_queue_submit_notification(work_queue_t* queue, u32 task_identifier, void* userdata, size_t userdata_size);
-bool work_queue_submit_entry(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size);
-work_queue_entry_t get_next_work_queue_entry(work_queue_t* queue);
-void mark_queue_entry_completed(work_queue_t* queue);
-bool do_worker_work(work_queue_t* queue, int logical_thread_index);
-bool is_queue_work_in_progress(work_queue_t* queue);
-bool is_queue_work_waiting_to_start(work_queue_t* queue);
+bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size);
+work_queue_entry_t work_queue_get_next_entry(work_queue_t* queue);
+void work_queue_mark_entry_completed(work_queue_t* queue);
+bool work_queue_do_work(work_queue_t* queue, int logical_thread_index);
+bool work_queue_is_work_in_progress(work_queue_t* queue);
+bool work_queue_is_work_waiting_to_start(work_queue_t* queue);
 void dummy_work_queue_callback(int logical_thread_index, void* userdata);
 void test_multithreading_work_queue();
 

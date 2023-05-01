@@ -780,7 +780,8 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				load_tile_task_t* wishlist = calloc(width_in_tiles * height_in_tiles, sizeof(load_tile_task_t));
 				i32 tiles_to_load = 0;
 
-				work_queue_t read_completion_queue = create_work_queue("/imagereadregionsem", width_in_tiles * height_in_tiles);
+				work_queue_t read_completion_queue = work_queue_create("/imagereadregionsem",
+                                                                       width_in_tiles * height_in_tiles);
 
 				// request tiles
 				benaphore_lock(&image->lock);
@@ -812,11 +813,11 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 
 				// retrieve all requested tiles
 				while (read_completion_queue.completion_count < tiles_to_load) {
-					if (is_queue_work_in_progress(&read_completion_queue)) {
-						work_queue_entry_t entry = get_next_work_queue_entry(&read_completion_queue);
+					if (work_queue_is_work_in_progress(&read_completion_queue)) {
+						work_queue_entry_t entry = work_queue_get_next_entry(&read_completion_queue);
 						if (entry.is_valid) {
 							benaphore_lock(&image->lock);
-							mark_queue_entry_completed(&read_completion_queue);
+                            work_queue_mark_entry_completed(&read_completion_queue);
 							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 							if (task->pixel_memory) {
 								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
@@ -828,13 +829,13 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							}
 							benaphore_unlock(&image->lock);
 						}
-					} else if (is_queue_work_waiting_to_start(&global_work_queue)) {
-						do_worker_work(&global_work_queue, 0);
+					} else if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
+                        work_queue_do_work(&global_work_queue, 0);
 					} else {
 						platform_sleep(1);
 					}
 				}
-				destroy_work_queue(&read_completion_queue);
+                work_queue_destroy(&read_completion_queue);
 			}
 
 
@@ -995,7 +996,7 @@ void image_destroy(image_t* image) {
     while (image->refcount > 0) {
 //		console_print_error("refcount = %d\n", image->refcount);
         platform_sleep(1);
-        do_worker_work(&global_work_queue, 0);
+        work_queue_do_work(&global_work_queue, 0);
     }
 	if (image) {
 		if (image->type == IMAGE_TYPE_WSI) {

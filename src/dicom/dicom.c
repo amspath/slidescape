@@ -1555,7 +1555,7 @@ void dicom_instance_destroy(dicom_instance_t* instance) {
 	while (instance->refcount > 0) {
 //		console_print_error("refcount = %d\n", isyntax->refcount);
 		platform_sleep(1);
-		do_worker_work(&global_work_queue, 0);
+        work_queue_do_work(&global_work_queue, 0);
 	}
     // TODO: use pool/arena allocator so we can free everything in one go?
 	if (instance->pixel_data_offsets) free(instance->pixel_data_offsets);
