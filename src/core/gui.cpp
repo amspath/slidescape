@@ -984,7 +984,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	if (show_debugging_window) {
 
 		ImGui::SetNextWindowPos(ImVec2(120,100), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(256,156), ImGuiCond_FirstUseEver);
+		ImGui::SetNextWindowSize(ImVec2(350,500), ImGuiCond_FirstUseEver);
 
 		if (ImGui::Begin("Debugging", &show_debugging_window)) {
 //			ImGui::TextUnformatted("Worker threads");
@@ -992,6 +992,23 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			ImGui::SliderInt("Min level display", &global_lowest_scale_to_render, 0, 16);
 			ImGui::SliderInt("Max level display", &global_highest_scale_to_render, 0, 16);
 
+            // Options for adjusting level offsets
+            if (arrlen(app_state->loaded_images) > 0) {
+                image_t* image = app_state->loaded_images[0];
+                if (ImGui::TreeNodeEx("Adjust level offsets", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+                    for (i32 i = 0; i < image->level_count; ++i) {
+                        level_image_t* level_image = image->level_images + i;
+                        float offset_in_pixels = level_image->origin_offset.x / image->mpp_x;
+                        char label[64];
+                        snprintf(label, sizeof(label), "Level %d", i);
+                        if (ImGui::DragFloat(label, &offset_in_pixels, 0.125)) {
+                            float offset_in_um = offset_in_pixels * image->mpp_x;
+                            level_image->origin_offset.x = offset_in_um;
+                            level_image->origin_offset.y = offset_in_um;
+                        }
+                    }
+                }
+            }
 		}
 		ImGui::End();
 	}
