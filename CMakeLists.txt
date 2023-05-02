@@ -256,7 +256,7 @@ else()
             platform/linux_main.cpp
             platform/linux_utils.c
             platform/linux_gui.cpp
-            imgui/backends/imgui_impl_sdl.cpp
+            imgui/backends/imgui_impl_sdl2.cpp
             imgui/ImGuiFileDialog.cpp
             )
 endif()

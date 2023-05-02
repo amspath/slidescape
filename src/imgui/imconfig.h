@@ -133,13 +133,6 @@ typedef struct v4f {
 //#define IM_DEBUG_BREAK  IM_ASSERT(0)
 //#define IM_DEBUG_BREAK  __debugbreak()
 
-//---- Debug Tools: Have the Item Picker break in the ItemAdd() function instead of ItemHoverable(),
-// (which comes earlier in the code, will catch a few extra items, allow picking items other than Hovered one.)
-// This adds a small runtime cost which is why it is not enabled by default.
-#ifndef NDEBUG
-#define IMGUI_DEBUG_TOOL_ITEM_PICKER_EX
-#endif
-
 //---- Debug Tools: Enable slower asserts
 //#define IMGUI_DEBUG_PARANOID
 
