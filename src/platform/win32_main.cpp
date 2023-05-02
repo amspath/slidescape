@@ -1600,7 +1600,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 
 	atomic_increment(&global_worker_thread_idle_count);
 
-	init_thread_memory(thread_info->logical_thread_index);
+	init_thread_memory(thread_info->logical_thread_index, &global_system_info);
 	thread_memory_t* thread_memory = local_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
@@ -1657,31 +1657,31 @@ static DWORD WINAPI thread_proc(void* parameter) {
 //	console_print("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
 	for (;;) {
-		if (thread_info->logical_thread_index > active_worker_thread_count) {
+		if (thread_info->logical_thread_index > global_active_worker_thread_count) {
 			// Worker is disabled, do nothing
 			Sleep(100);
 			continue;
 		}
-		if (!is_queue_work_in_progress(thread_info->queue)) {
+		if (!work_queue_is_work_in_progress(thread_info->queue)) {
 			Sleep(1);
 			WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
 		}
-		do_worker_work(thread_info->queue, thread_info->logical_thread_index);
+		work_queue_do_work(thread_info->queue, thread_info->logical_thread_index);
 	}
 }
 
 void win32_init_multithreading() {
-	init_thread_memory(0);
+	init_thread_memory(0, &global_system_info);
 
-	worker_thread_count = total_thread_count - 1;
-	active_worker_thread_count = worker_thread_count;
+	global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
+	global_active_worker_thread_count = global_worker_thread_count;
 
-	global_work_queue = create_work_queue("/worksem", 1024); // Queue for newly submitted tasks
-	global_completion_queue = create_work_queue("/completionsem", 1024); // Message queue for completed tasks
-	global_export_completion_queue = create_work_queue("/exportcompletionsem", 1024); // Message queue for export task
+	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
+	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
+	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
 
 	// NOTE: the main thread is considered thread 0.
-	for (i32 i = 1; i < total_thread_count; ++i) {
+	for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
 		platform_thread_info_t thread_info = { .logical_thread_index = i, .queue = &global_work_queue};
 		thread_infos[i] = thread_info;
 
