@@ -665,6 +665,14 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 		}
 	}
 
+	// Multi-select by holding down Ctrl and dragging
+	if (scene->is_dragging && input->keyboard.key_ctrl.down && !scene->is_drag_vector_within_click_tolerance) {
+		if (hit_result.line_segment_distance < 10.0f) {
+			annotation_t* annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
+			annotation->selected = true;
+		}
+	}
+
 	recount_selected_annotations(app_state, annotation_set);
 
 	if (annotation_set->selection_count > 0) {

@@ -1592,6 +1592,8 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 			compressed_streams = compressed_strip_data;
 			compressed_stream_sizes = level_ifd->strip_byte_counts;
 			compressed_stream_count = level_ifd->strip_count;
+		} else {
+			goto decompression_failed;
 		}
 
 		u8* decompressed = NULL; // allocated later if needed

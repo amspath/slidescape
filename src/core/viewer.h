@@ -102,8 +102,8 @@ typedef struct load_tile_task_t {
 	i32 tile_x;
 	i32 tile_y;
 	i32 priority;
-	bool8 need_gpu_residency;
-	bool8 need_keep_in_cache;
+	bool need_gpu_residency;
+	bool need_keep_in_cache;
 	work_queue_callback_t* completion_callback;
 	work_queue_t* completion_queue;
     i32 refcount_to_decrement;
@@ -211,8 +211,8 @@ typedef struct scene_t {
 	float r_minus_l;
 	float t_minus_b;
 	zoom_state_t zoom;
-	bool8 need_zoom_reset;
-	bool8 need_zoom_animation;
+	bool need_zoom_reset;
+	bool need_zoom_animation;
 	v2f control;
 	float time_since_control_start;
 	v2f panning_velocity;
@@ -225,21 +225,22 @@ typedef struct scene_t {
 	i32 active_layer;
 	annotation_set_t annotation_set;
     annotation_set_template_t annotation_set_template;
-	bool8 clicked;
-	bool8 right_clicked;
-	bool8 drag_started;
-	bool8 drag_ended;
-	bool8 is_dragging; // if mouse down: is this scene being dragged?
-	bool8 suppress_next_click; // if mouse down: prevent release being counted as click
-	bool8 viewport_changed;
+	bool clicked;
+	bool right_clicked;
+	bool drag_started;
+	bool drag_ended;
+	bool is_dragging; // if mouse down: is this scene being dragged?
+	bool is_drag_vector_within_click_tolerance;
+	bool suppress_next_click; // if mouse down: prevent release being counted as click
+	bool viewport_changed;
 	rect2f selection_box;
-	bool8 has_selection_box;
+	bool has_selection_box;
 	v2f drag_vector;
 	v2f cumulative_drag_vector;
 	bounds2f crop_bounds;
 	bounds2i selection_pixel_bounds;
-	bool8 can_export_region;
-	bool8 is_cropped;
+	bool can_export_region;
+	bool is_cropped;
 	v3f transparent_color;
 	float transparent_tolerance;
 	bool use_transparent_filter;
@@ -247,7 +248,7 @@ typedef struct scene_t {
 	bool is_mpp_known;
 	bool enable_grid;
 	bool enable_annotations;
-	bool8 initialized;
+	bool initialized;
 } scene_t;
 
 typedef struct pixel_transfer_state_t {
@@ -255,7 +256,7 @@ typedef struct pixel_transfer_state_t {
 	u32 texture;
 	i32 texture_width;
 	i32 texture_height;
-	bool8 need_finalization;
+	bool need_finalization;
 	void* userdata;
 	bool8 initialized;
 } pixel_transfer_state_t;

@@ -1112,8 +1112,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->drag_vector = input->drag_vector;
 					scene->cumulative_drag_vector.x += scene->drag_vector.x;
 					scene->cumulative_drag_vector.y += scene->drag_vector.y;
+					if (!input->keyboard.key_ctrl.down) {
+						mouse_hide();
+					} else {
+						mouse_show();
+					}
 				}
 				input->drag_vector = v2f();
+				scene->is_drag_vector_within_click_tolerance = v2f_length(scene->cumulative_drag_vector) < CLICK_DRAG_TOLERANCE;
 			} else {
 				if (input->mouse_buttons[0].transition_count != 0) {
 					mouse_show();
@@ -1439,7 +1445,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			if (app_state->mouse_mode == MODE_VIEW) {
-				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE) {
+				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE && !input->keyboard.key_ctrl.down) {
 					float final_multiplier = panning_multiplier * app_state->mouse_sensitivity * 0.1f;
 					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * final_multiplier;
 					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * final_multiplier;
@@ -1451,10 +1457,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 				if (!gui_want_capture_mouse) {
 					// try to hover over / select an annotation
-					if (scene->annotation_set.stored_annotation_count > 0) {
+					if (scene->annotation_set.active_annotation_count > 0) {
 						interact_with_annotations(app_state, scene, input);
-//				    	    float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
-//			    	    	console_print("Selecting took %g ms.\n", selection_ms);
+//				    	float selection_ms = get_seconds_elapsed(select_begin, get_clock()) * 1000.0f;
+//			    	    console_print("Selecting took %g ms.\n", selection_ms);
 					}
 
 				}
