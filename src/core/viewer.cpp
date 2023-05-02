@@ -1139,11 +1139,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			float times_larger = MAX(times_larger_x, times_larger_y);
 			float desired_zoom_pos = ceilf(log2f(times_larger * 1.1f));
 
-			// By default, allow zooming in up to 2x native resolution
-			viewer_min_level = -1;
+			// By default, allow zooming in up to 4x native resolution
 			// If the image is small, allow zooming in further
-			if (desired_zoom_pos < 2.0f) {
-				viewer_min_level = (i32)desired_zoom_pos - 3;
+			i32 suggested_min_level = desired_zoom_pos >= 2.0f ? -2 : (i32)desired_zoom_pos - 4;
+			if (viewer_min_level > suggested_min_level) {
+				viewer_min_level = suggested_min_level;
 			}
 			// Don't set the initial zoom level past native resolution for small images
 			if (desired_zoom_pos < 0.0f) {

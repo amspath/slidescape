@@ -107,7 +107,7 @@ extern ImFont* global_fixed_width_font;
 extern ImFont* global_icon_font;
 #endif
 
-extern i32 viewer_min_level INIT(= -1);
+extern i32 viewer_min_level INIT(= -3);
 extern i32 viewer_max_level INIT(= 10);
 extern float layer_time INIT(= 1.0f);
 extern float target_layer_time INIT(= 1.0f);
