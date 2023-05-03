@@ -2902,9 +2902,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 				// to the top left.
 				// The shift corresponds to the per level padding added for the wavelet transform:
 				// ((3 << (scale-1)) - 2)
-				// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
+				// Put another way: the highest (zoomed out levels) are shifted to the bottom right
 				// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
-				// Level 0 has no
 				for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
 					isyntax_level_t* level = wsi_image->levels + scale;
 					level->origin_offset_in_pixels = get_first_valid_coef_pixel(scale - 1);

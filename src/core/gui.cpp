@@ -1001,7 +1001,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
                         float offset_in_pixels = level_image->origin_offset.x / image->mpp_x;
                         char label[64];
                         snprintf(label, sizeof(label), "Level %d", i);
-                        if (ImGui::DragFloat(label, &offset_in_pixels, 0.125)) {
+                        if (ImGui::DragFloat(label, &offset_in_pixels, 0.125f)) {
                             float offset_in_um = offset_in_pixels * image->mpp_x;
                             level_image->origin_offset.x = offset_in_um;
                             level_image->origin_offset.y = offset_in_um;
