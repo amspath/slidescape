@@ -189,7 +189,7 @@ bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer
     min_size.y *= 0.5f;
 
     if (need_save_file_dialog) {
-        IGFD::FileDialog::Instance()->OpenModal((const std::string &) "SaveFileDlgKey",
+        IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "SaveFileDlgKey",
                                                 (const std::string &) "Save as...", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*",
                                                 (const std::string &) get_active_directory(app_state),
                                                 (const std::string &) "", 1, nullptr, 0);
