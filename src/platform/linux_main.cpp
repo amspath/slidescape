@@ -582,7 +582,40 @@ int main(int argc, const char** argv)
 		fprintf(stderr, "Failed to obtain DPI information for display 0: %s\n", SDL_GetError());
 		exit(1);
 	}
-	float dpi_scaling = ddpi / 72.f;
+	// TODO: which is the correct 'base' dpi? Is it 72 for macOS, 96 for Linux?
+	float dpi_scaling = ddpi / 72.0f;
+
+	// NOTE: SDL_GetDisplayDPI() may return bogus results (ex. on Ubuntu 20.04 / SDL 2.0.10)
+	// Let's do a sanity check and try to do a fallback method in case the DPI is suspicious
+	if (dpi_scaling < 0.5f || dpi_scaling > 4.0f) {
+		dpi_scaling = 96.0f / 72.0f;
+		const char* session_type = getenv("XDG_SESSION_TYPE");
+		if (strcmp(session_type, "x11") == 0) {
+			// Use the xdpyinfo command to query the DPI
+			// TODO: we can probably do this in a better way?
+			//  https://stackoverflow.com/questions/54377212/how-can-i-get-updated-system-dpi-information-from-x11-in-a-c-program
+			FILE* fp = popen("xdpyinfo | grep resolution", "r");
+			if (fp) {
+				char cmd_output[1024];
+				cmd_output[0] = '\0';
+				if (fgets(cmd_output, sizeof(cmd_output), fp) != NULL) {
+					i32 dpi_width = 0;
+					console_print("%s\n", cmd_output);
+					if (sscanf(cmd_output, "  resolution:    %dx", &dpi_width) == 1) {
+						console_print("%d\n", dpi_width);
+						float new_scaling = (float)dpi_width / 72.0f;
+						if (new_scaling >= 0.5f && new_scaling <= 4.0f) {
+							dpi_scaling = new_scaling;
+						}
+					}
+				}
+				pclose(fp);
+			}
+		} else if (strcmp(session_type, "wayland") == 0) {
+			// TODO: stub
+		}
+	}
+
 	float font_scale_factor = 1.0f;
 	if (dpi_scaling > 1.0f) {
 		font_scale_factor += ((dpi_scaling - 1.0f) * 0.5f);
