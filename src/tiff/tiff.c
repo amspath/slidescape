@@ -328,9 +328,9 @@ tiff_rational_t float_to_tiff_rational(double x) {
 	return result;
 }
 
-bool32 tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
-	bool32 is_bigtiff = tiff->is_bigtiff;
-	bool32 is_big_endian = tiff->is_big_endian;
+bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
+	bool is_bigtiff = tiff->is_bigtiff;
+	bool is_big_endian = tiff->is_big_endian;
 
 	// By default, assume RGB color space.
 	// (although TIFF files are always required to specify this in the PhotometricInterpretation tag)
@@ -1616,6 +1616,10 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 			u32 decompressed_height;
 			if (level_ifd->strip_count > 0) {
 				decompressed_height = level_ifd->rows_per_strip;
+				if ((compressed_stream_index + 1) * decompressed_height > level_ifd->tile_height) {
+					// last strip height may be less, if the total height is not a multiple of rows_per_strip
+					decompressed_height = level_ifd->tile_height % level_ifd->rows_per_strip;
+				}
 				if (decompressed_height == 0 || decompressed_height > level_ifd->tile_height) {
 					goto decompression_failed;
 				}
@@ -1676,9 +1680,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 						u32 samples = level_ifd->samples_per_pixel;
 						u32 subpixels_per_scanline = level_ifd->tile_width * samples;
 						for (u32 y = 0; y < decompressed_height; ++y) {
-							u8 prev[8] = {};
 							u8* scanline = decompressed + y * subpixels_per_scanline;
-							u8* pixel = scanline;
 							horAcc8(samples, scanline, subpixels_per_scanline);
 						}
 					} else {

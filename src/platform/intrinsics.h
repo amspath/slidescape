@@ -235,15 +235,15 @@ static inline u32 bit_scan_forward(u32 x) {
 
 #endif
 
-static inline u16 maybe_swap_16(u16 x, bool32 is_big_endian) {
+static inline u16 maybe_swap_16(u16 x, bool is_big_endian) {
 	return is_big_endian ? bswap_16(x) : x;
 }
 
-static inline u32 maybe_swap_32(u32 x, bool32 is_big_endian) {
+static inline u32 maybe_swap_32(u32 x, bool is_big_endian) {
 	return is_big_endian ? bswap_32(x) : x;
 }
 
-static inline u64 maybe_swap_64(u64 x, bool32 is_big_endian) {
+static inline u64 maybe_swap_64(u64 x, bool is_big_endian) {
 	return is_big_endian ? bswap_64(x) : x;
 }
 
