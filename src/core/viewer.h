@@ -207,6 +207,7 @@ typedef struct scene_t {
     v2f left_clicked_pos;
 	bounds2f camera_bounds;
 	bounds2f tile_load_bounds;
+	float rotation;
 	bool restrict_load_bounds;
 	float r_minus_l;
 	float t_minus_b;

@@ -605,10 +605,11 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		// define view matrix
 		mat4x4 view_matrix;
-		mat4x4_translate(view_matrix,
-						 -scene->camera.x + image->origin_offset.x,
-						 -scene->camera.y + image->origin_offset.y,
-						 0.0f);
+		mat4x4_rotate_Z(view_matrix, I, scene->rotation);
+		mat4x4_translate_in_place(view_matrix,
+		                          -scene->camera.x + image->origin_offset.x,
+		                          -scene->camera.y + image->origin_offset.y,
+		                          0.0f);
 
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
@@ -876,7 +877,26 @@ v2f get_2d_control_from_input(input_t* input, bool allow_keyboard_input) {
 }
 
 static inline void scene_update_camera_bounds(scene_t* scene) {
-	scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
+//	scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
+	float sin_theta = sinf(scene->rotation);
+	float cos_theta = cosf(scene->rotation);
+
+	float right = 0.5f * scene->r_minus_l;
+	float left = -right;
+	float bottom = 0.5f * scene->t_minus_b;
+	float top = -bottom;
+
+	v2f rotated_points[4] = {
+			{left * cos_theta - top * sin_theta, top * cos_theta + left * sin_theta }, // top left
+			{right * cos_theta - top * sin_theta, top * cos_theta + right * sin_theta }, // top right
+			{left * cos_theta - bottom * sin_theta, bottom * cos_theta + left * sin_theta }, // bottom left
+			{right * cos_theta - bottom * sin_theta, bottom * cos_theta + right * sin_theta }, // bottom right
+	};
+
+	bounds2f rotated_bounds = bounds_from_points(rotated_points, 4);
+	rotated_bounds.min = v2f_add(rotated_bounds.min, scene->camera);
+	rotated_bounds.max = v2f_add(rotated_bounds.max, scene->camera);
+	scene->camera_bounds = rotated_bounds;
 }
 
 void scene_update_camera_pos(scene_t* scene, v2f pos) {
@@ -887,8 +907,24 @@ void scene_update_camera_pos(scene_t* scene, v2f pos) {
 static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f client_mouse_xy) {
 	if (client_mouse_xy.x >= 0 && client_mouse_xy.y < app_state->client_viewport.w * app_state->display_scale_factor &&
 			client_mouse_xy.y >= 0 && client_mouse_xy.y < app_state->client_viewport.h * app_state->display_scale_factor) {
-		scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.screen_point_width;
-		scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.screen_point_width;
+		if (scene->rotation == 0.0f) {
+			scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.screen_point_width;
+			scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.screen_point_width;
+		} else {
+			// Calculate mouse pos in polar coordinates, and use that to translate to world position
+			float client_mouse_x_from_center = (app_state->client_viewport.w * 0.5f) - client_mouse_xy.x;
+			float client_mouse_y_from_center = (app_state->client_viewport.h * 0.5f) - client_mouse_xy.y;
+			float client_distance_from_center = v2f_length(V2F(client_mouse_x_from_center, client_mouse_y_from_center));
+			if (client_distance_from_center == 0.0f) {
+				scene->mouse = scene->camera;
+			} else {
+				float theta = atan2f(client_mouse_y_from_center, client_mouse_x_from_center);
+				float radius = scene->zoom.screen_point_width * client_distance_from_center;
+
+				scene->mouse.x = scene->camera.x - cosf(theta - scene->rotation) * radius;
+				scene->mouse.y = scene->camera.y - sinf(theta - scene->rotation) * radius;
+			}
+		}
 	} else {
 		scene->mouse = scene->camera;
 	}
@@ -1153,6 +1189,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, displayed_image->mpp_x, displayed_image->mpp_y);
 			scene->camera.x = displayed_image->width_in_um / 2.0f;
 			scene->camera.y = displayed_image->height_in_um / 2.0f;
+			scene->rotation = 0.0f;
 
 			scene->need_zoom_reset = false;
 		}
@@ -1301,6 +1338,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 				if (new_zoom.pos != old_zoom.pos) {
 					if (need_set_zoom_pivot) {
+						// TODO: fix pivot point calculation when rotated
 						if (used_mouse_to_zoom) {
 							scene->zoom_pivot = scene->mouse;
 							scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, displayed_image->width_in_um);
@@ -1322,10 +1360,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 				float d_zoom = scene->zoom_target_state.pos - scene->zoom.pos;
 
+				// Stop the zoom animation when the remaining movement is more or less imperceptible
 				float abs_d_zoom = fabsf(d_zoom);
 				if (abs_d_zoom < 1e-5f) {
 					scene->need_zoom_animation = false;
 				}
+
+				// Calculate the change in zoom position we want for this frame
 				float sign_d_zoom = signbit(d_zoom) ? -1.0f : 1.0f;
 				float linear_catch_up_speed = 2.0f * delta_time;
 				float exponential_catch_up_speed = 16.0f * delta_time;
@@ -1336,21 +1377,32 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 				zoom_update_pos(&scene->zoom, scene->zoom.pos + d_zoom);
 
-				// get the relative position of the pivot point on the screen (with x and y between 0 and 1)
-				v2f pivot_relative_to_screen = scene->zoom_pivot;
-				pivot_relative_to_screen.x -= scene->camera_bounds.min.x;
-				pivot_relative_to_screen.y -= scene->camera_bounds.min.y;
-				pivot_relative_to_screen.x /= (float)scene->r_minus_l;
-				pivot_relative_to_screen.y /= (float)scene->t_minus_b;
+				// Get the position of the pivot point on the screen, relative to the width/height of the screen
+				// The values are normalized between -0.5 and +0.5, where (0,0) is the center of the screen (= camera pos)
+				polygon4f rotated_camera_rect_origin = rotated_rectangle(scene->r_minus_l, scene->t_minus_b, scene->rotation);
+				v2f rotated_r_minus_l = v2f_subtract(rotated_camera_rect_origin.topright, rotated_camera_rect_origin.topleft);
+				v2f rotated_t_minus_b = v2f_subtract(rotated_camera_rect_origin.bottomleft, rotated_camera_rect_origin.topleft);
+				v2f pivot_relative_to_camera = v2f_subtract(scene->zoom_pivot, scene->camera);
+				float pivot_along_r_minus_l = v2f_dot(rotated_r_minus_l, pivot_relative_to_camera);
+				float pivot_along_t_minus_b = v2f_dot(rotated_t_minus_b, pivot_relative_to_camera);
+				pivot_along_r_minus_l /= v2f_length_squared(rotated_r_minus_l);
+				pivot_along_t_minus_b /= v2f_length_squared(rotated_t_minus_b);
 
-				// recalculate the camera position
+				// Now, calculate the new camera position
+				// First, get a new resized (possibly rotated) camera rect with correct the dimensions for the new zoom level
 				scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
 				scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
-				scene->camera_bounds = bounds_from_pivot_point(scene->zoom_pivot, pivot_relative_to_screen, scene->r_minus_l, scene->t_minus_b);
-				scene->camera.x = (scene->camera_bounds.right + scene->camera_bounds.left) / 2.0f;
-				scene->camera.y = (scene->camera_bounds.top + scene->camera_bounds.bottom) / 2.0f;
+				polygon4f new_camera_rect = rotated_rectangle(scene->r_minus_l, scene->t_minus_b, scene->rotation);
 
-				// camera updated, need to updated mouse position
+				// Reposition the camera so that the zoom pivot point remains in the same relative position on-screen
+				// (Basically we do the reverse of the steps above.)
+				rotated_r_minus_l = v2f_subtract(new_camera_rect.topright, new_camera_rect.topleft);
+				rotated_t_minus_b = v2f_subtract(new_camera_rect.bottomleft, new_camera_rect.topleft);
+				pivot_relative_to_camera = v2f_add(v2f_scale(pivot_along_r_minus_l, rotated_r_minus_l), v2f_scale(pivot_along_t_minus_b, rotated_t_minus_b));
+				scene->camera = v2f_subtract(scene->zoom_pivot, pivot_relative_to_camera);
+				scene_update_camera_bounds(scene);
+
+				// The camera was updated, so we need to update the mouse position
 				scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
 			}

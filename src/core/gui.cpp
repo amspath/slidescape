@@ -991,6 +991,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			ImGui::SliderInt("Worker threads", &global_active_worker_thread_count, 1, global_worker_thread_count);
 			ImGui::SliderInt("Min level display", &global_lowest_scale_to_render, 0, 16);
 			ImGui::SliderInt("Max level display", &global_highest_scale_to_render, 0, 16);
+			ImGui::SliderFloat("Rotation", &app_state->scene.rotation, -1.0f * IM_PI, 1.0f * IM_PI);
+			if (ImGui::Button("Reset rotation")) {
+				app_state->scene.rotation = 0.0f;
+			}
 
             // Options for adjusting level offsets
             if (arrlen(app_state->loaded_images) > 0) {

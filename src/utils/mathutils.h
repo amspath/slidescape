@@ -22,6 +22,8 @@
 extern "C" {
 #endif
 
+#include "float.h"
+
 #define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
 #define MAKE_BGRA(r,g,b,a) (((u32)(a)) << 24u | ((u32)(r)) << 16u | ((u32)(g)) << 8u | ((u32)(b)) << 0u)
@@ -99,6 +101,12 @@ typedef struct bounds2f {
 } bounds2f;
 FORCE_INLINE bounds2f BOUNDS2F(float left, float top, float right, float bottom) {bounds2f b = {left, top, right, bottom}; return b;}
 
+typedef struct polygon4f {
+	union {
+		struct { v2f topleft, topright, bottomleft, bottomright; };
+		v2f values[4];
+	};
+} polygon4f;
 
 typedef enum corner_enum {
 	CORNER_TOP_LEFT = 0,
@@ -143,6 +151,8 @@ bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, f
 bounds2f tile_bounds_to_world_bounds(bounds2i tile_bounds, float tile_width, float tile_height, v2f image_pos);
 bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b);
 bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minus_l, float t_minus_b);
+bounds2f bounds_from_points(v2f* points, i32 point_count);
+polygon4f rotated_rectangle(float width, float height, float rotation);
 bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y);
 rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y);
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr);
