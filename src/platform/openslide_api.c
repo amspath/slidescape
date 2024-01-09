@@ -17,8 +17,7 @@
 */
 
 #include "common.h"
-#include "platform.h"
-#include "stringutils.h"
+#include "platform.h" // for get_clock() and get_seconds_elapsed()
 
 #define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
@@ -29,26 +28,58 @@
 #include <dlfcn.h>
 #endif
 
+#ifdef _WIN32
+HINSTANCE win32_load_library_with_possible_filenames(const wchar_t** filenames, i32 filename_count) {
+    HINSTANCE instance = NULL;
+    for (i32 i = 0; i < filename_count; ++i) {
+        const wchar_t* filename = filenames[i];
+        instance = LoadLibraryW(filename);
+    }
+    return instance;
+}
+
+const wchar_t* one_past_last_slash_w(const wchar_t* s, i32 max) {
+    if (max <= 0) return s;
+    size_t len = wcsnlen(s, (size_t)(max - 1));
+    size_t stripped_len = 0;
+    const wchar_t* pos = s + len - 1;
+    for (; pos >= s; --pos) {
+        wchar_t c = *pos;
+        if (c == '/' || c == '\\')  {
+            break;
+        } else {
+            ++stripped_len;
+        }
+    }
+    const wchar_t* result = pos + 1; // gone back one too far
+    ASSERT(stripped_len > 0 && stripped_len <= len);
+    return result;
+}
+
+#endif
+
 bool init_openslide() {
 	i64 debug_start = get_clock();
 
 #ifdef _WIN32
 	// Look for DLLs in an openslide/ folder in the same location as the .exe
-	char dll_path[4096];
-	GetModuleFileNameA(NULL, dll_path, sizeof(dll_path));
-	char* pos = (char*)one_past_last_slash(dll_path, sizeof(dll_path));
-	i32 chars_left = sizeof(dll_path) - (pos - dll_path);
-	strncpy(pos, "openslide", chars_left);
-	SetDllDirectoryA(dll_path);
+	wchar_t dll_path[4096];
+	GetModuleFileNameW(NULL, dll_path, sizeof(dll_path));
+    wchar_t* pos = (wchar_t*)one_past_last_slash_w(dll_path, sizeof(dll_path));
+	i32 chars_left = COUNT(dll_path) - (pos - dll_path);
+	wcsncpy(pos, L"openslide", chars_left);
+	SetDllDirectoryW(dll_path);
 
-	HINSTANCE library_handle = LoadLibraryA("libopenslide-0.dll");
+    const wchar_t* dll_filenames[] = { L"libopenslide-1.dll", L"libopenslide-0.dll" };
+
+	HINSTANCE library_handle = win32_load_library_with_possible_filenames(dll_filenames, COUNT(dll_filenames));
 	if (!library_handle) {
 		// If DLL not found in the openslide/ folder, look one folder up (in the same location as the .exe)
 		*pos = '\0';
-		SetDllDirectoryA(dll_path);
-		library_handle = LoadLibraryA("libopenslide-0.dll");
+		SetDllDirectoryW(dll_path);
+		library_handle = win32_load_library_with_possible_filenames(dll_filenames, COUNT(dll_filenames));
 	}
-	SetDllDirectoryA(NULL);
+	SetDllDirectoryW(NULL);
 
 #elif defined(__APPLE__)
 	void* library_handle = dlopen("libopenslide.dylib", RTLD_LAZY);
@@ -104,7 +135,7 @@ bool init_openslide() {
 	} else failed: {
 #ifdef _WIN32
 		//win32_diagnostic("LoadLibraryA");
-		console_print("OpenSlide not available: could not load libopenslide-0.dll\n");
+		console_print("OpenSlide not available: could not load libopenslide-1.dll or libopenslide-0.dll\n");
 #elif defined(__APPLE__)
 		console_print("OpenSlide not available: could not load libopenslide.dylib (not installed?)\n");
 #else
