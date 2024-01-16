@@ -112,7 +112,7 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, 
 
 void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene) {
 	for (i32 i = 0; i < count; ++i) {
-		points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.screen_point_width);
+		points[i] = world_pos_to_screen_pos(scene, points[i]);
 	}
 	gui_draw_polygon_outline(points, 4, color, closed, thickness);
 }
@@ -862,7 +862,7 @@ static void draw_mouse_pos_overlay(app_state_t* app_state, bool* p_open) {
 		}
 
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-		v2f transformed_pos = world_pos_to_screen_pos(scene->mouse, scene->camera_bounds.min, scene->zoom.screen_point_width);
+		v2f transformed_pos = world_pos_to_screen_pos(scene, scene->mouse);
 		draw_list->AddCircle(transformed_pos, 20.0f, ImGui::GetColorU32(IM_COL32(70, 70, 70, 255)), 24, 2.0f);
 
 	}

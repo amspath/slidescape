@@ -394,6 +394,7 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* tile_streamer, isyntax_t* is
 void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer);
 
 // scene.cpp
+v2f world_pos_to_screen_pos(scene_t* scene, v2f world_pos);
 void zoom_update_pos(zoom_state_t* zoom, float pos);
 void init_zoom_state(zoom_state_t* zoom, float zoom_position, float notch_size, float base_pixel_width, float base_pixel_height);
 void init_scene(app_state_t *app_state, scene_t *scene);

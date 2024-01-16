@@ -21,6 +21,28 @@
 #include "viewer.h"
 #include "gui.h"
 
+
+v2f world_pos_to_screen_pos(scene_t* scene, v2f world_pos) {
+//	v2f transformed_pos = {
+//			.x = (world_pos.x - scene->camera_bounds.min.x) / screen_um_per_pixel,
+//			.y = (world_pos.y - scene->camera_bounds.min.y) / screen_um_per_pixel,
+//	};
+//	return transformed_pos;
+
+	//TODO (pvalkema): @Performance: calculate once and re-use
+	float sin_theta = sinf(scene->rotation);
+	float cos_theta = cosf(scene->rotation);
+
+	v2f rel_to_camera = v2f_subtract(world_pos, scene->camera); // relative to camera in world units
+	v2f rotated = {rel_to_camera.x * cos_theta - rel_to_camera.y * sin_theta, rel_to_camera.y * cos_theta + rel_to_camera.x * sin_theta };
+	v2f scaled = v2f_scale(1.0f / scene->zoom.screen_point_width, rotated);
+
+	scaled.x += scene->viewport.w * 0.5f;
+	scaled.y += scene->viewport.h * 0.5f;
+
+	return scaled;
+}
+
 void zoom_update_pos(zoom_state_t* zoom, float pos) {
 	ASSERT(pos > -50);
 	zoom->pos = pos;
@@ -59,7 +81,7 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 }
 
 v2f scene_mouse_pos(scene_t* scene) {
-	v2f transformed_pos = world_pos_to_screen_pos(scene->mouse, scene->camera_bounds.min, scene->zoom.screen_point_width);
+	v2f transformed_pos = world_pos_to_screen_pos(scene, scene->mouse);
 	return transformed_pos;
 }
 
@@ -185,7 +207,7 @@ void draw_selection_box(scene_t* scene) {
 		points[2] = V2F(bounds.right, bounds.bottom);
 		points[3] = V2F(bounds.right, bounds.top);
 		for (i32 i = 0; i < 4; ++i) {
-			points[i] = world_pos_to_screen_pos(points[i], scene->camera_bounds.min, scene->zoom.screen_point_width);
+			points[i] = world_pos_to_screen_pos(scene, points[i]);
 		}
 		rgba_t rgba = {0, 0, 0, 128};
 		gui_draw_polygon_outline(points, 4, rgba, true, 5.0f);

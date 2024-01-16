@@ -1277,7 +1277,7 @@ static void draw_annotation_fill_area(temp_memory_t* temp_memory, app_state_t* a
 
 			v2f* vertices = (v2f*) arena_push_size(temp_memory->arena, sizeof(v2f) * triangle_count * 3);
 			for (i32 i = 0; i < triangle_count * 3; ++i) {
-				vertices[i] = world_pos_to_screen_pos(annotation->tesselated_trianges[i], camera_min, scene->zoom.screen_point_width);
+				vertices[i] = world_pos_to_screen_pos(scene, annotation->tesselated_trianges[i]);
 			}
 
 			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
@@ -1324,7 +1324,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		if (annotation->coordinate_count > 0) {
 			v2f* points = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * annotation->coordinate_count);
 			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-				points[i] = world_pos_to_screen_pos(annotation->coordinates[i], camera_min, scene->zoom.screen_point_width);
+				points[i] = world_pos_to_screen_pos(scene, annotation->coordinates[i]);
 			}
 
 			// Only draw the closing line back to the starting point if needed
@@ -1432,7 +1432,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 						float transformed_distance = distance / scene->zoom.screen_point_width;
 						if (transformed_distance < annotation_insert_hover_distance) {
 							// Draw a partially transparent, slightly larger ('hovering' size) node circle at the projected point
-							v2f transformed_pos = world_pos_to_screen_pos(projected_point, camera_min, scene->zoom.screen_point_width);
+							v2f transformed_pos = world_pos_to_screen_pos(scene, projected_point);
 							rgba_t hover_color = group->color;
 							hover_color.a = alpha / 2;
 							draw_list->AddCircleFilled(transformed_pos, annotation_node_size * 1.4f, *(u32*)(&hover_color), 12);
@@ -1444,10 +1444,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				if (annotation_set->is_edit_mode && annotation_set->is_split_mode && annotation_index == annotation_set->selected_coordinate_annotation_index) {
 					if (annotation_set->selected_coordinate_index >= 0 && annotation_set->selected_coordinate_index < annotation->coordinate_count) {
 						v2f split_coordinate = annotation->coordinates[annotation_set->selected_coordinate_index];
-						v2f transformed_pos = world_pos_to_screen_pos(split_coordinate, camera_min, scene->zoom.screen_point_width);
+						v2f transformed_pos = world_pos_to_screen_pos(scene, split_coordinate);
 						v2f split_line_points[2] = {};
 						split_line_points[0] = transformed_pos;
-						split_line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.screen_point_width);
+						split_line_points[1] = world_pos_to_screen_pos(scene, app_state->scene.mouse);
 						draw_list->AddLine(split_line_points[0], split_line_points[1], annotation_color, thickness);
 					} else {
 						if (DO_DEBUG) {
@@ -1462,8 +1462,8 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				if (annotation->is_open && annotation->coordinate_count > 0) {
 					v2f last = annotation->coordinates[annotation->coordinate_count-1];
 					v2f line_points[2] = {};
-					line_points[0] = world_pos_to_screen_pos(last, camera_min, scene->zoom.screen_point_width);
-					line_points[1] = world_pos_to_screen_pos(app_state->scene.mouse, camera_min, scene->zoom.screen_point_width);
+					line_points[0] = world_pos_to_screen_pos(scene, last);
+					line_points[1] = world_pos_to_screen_pos(scene, app_state->scene.mouse);
 					draw_list->AddLine(line_points[0], line_points[1], annotation_color, thickness);
 				}
 			}
@@ -1471,8 +1471,8 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		} else {
 			// Annotation does NOT have coordinates
 			if (annotation->type == ANNOTATION_ELLIPSE) {
-				v2f p0 = world_pos_to_screen_pos(annotation->p0, camera_min, scene->zoom.screen_point_width);
-				v2f p1 = world_pos_to_screen_pos(annotation->p1, camera_min, scene->zoom.screen_point_width);
+				v2f p0 = world_pos_to_screen_pos(scene, annotation->p0);
+				v2f p1 = world_pos_to_screen_pos(scene, annotation->p1);
 				v2f center = v2f_average(p0, p1);
 				v2f v = v2f_subtract(p1, p0);
 				float len = v2f_length(v);

@@ -139,13 +139,6 @@ bool are_bounds2f_overlapping(bounds2f a, bounds2f b) {
 	return result;
 }
 
-v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel) {
-	v2f transformed_pos = {
-			.x = (world_pos.x - camera_min.x) / screen_um_per_pixel,
-			.y = (world_pos.y - camera_min.y) / screen_um_per_pixel,
-	};
-	return transformed_pos;
-}
 
 v2i world_pos_to_pixel_pos(v2f world_pos, float um_per_pixel, i32 level) {
 	v2i result;

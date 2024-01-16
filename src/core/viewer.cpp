@@ -1385,8 +1385,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				v2f pivot_relative_to_camera = v2f_subtract(scene->zoom_pivot, scene->camera);
 				float pivot_along_r_minus_l = v2f_dot(rotated_r_minus_l, pivot_relative_to_camera);
 				float pivot_along_t_minus_b = v2f_dot(rotated_t_minus_b, pivot_relative_to_camera);
-				pivot_along_r_minus_l /= v2f_length_squared(rotated_r_minus_l);
-				pivot_along_t_minus_b /= v2f_length_squared(rotated_t_minus_b);
+				pivot_along_r_minus_l /= SQUARE(scene->r_minus_l);
+				pivot_along_t_minus_b /= SQUARE(scene->t_minus_b);
 
 				// Now, calculate the new camera position
 				// First, get a new resized (possibly rotated) camera rect with correct the dimensions for the new zoom level
