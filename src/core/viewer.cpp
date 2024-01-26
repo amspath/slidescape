@@ -1146,9 +1146,27 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					}
 				} else if (scene->is_dragging) {
 					// already started dragging on a previous frame
-					scene->drag_vector = input->drag_vector;
+					scene->raw_drag_vector = input->drag_vector;
+					if (scene->rotation == 0.0f) {
+						// Trivial case: no need to rotate the drag vector
+						scene->drag_vector = scene->raw_drag_vector;
+					} else {
+						// Rotate the drag vector along with the scene (still in screen pixel units)
+						float drag_length = v2f_length(input->drag_vector);
+						float theta = atan2f(input->drag_vector.y, input->drag_vector.x);
+						if (drag_length > 0.0f) {
+							scene->drag_vector.x = cosf(theta - scene->rotation) * drag_length;
+							scene->drag_vector.y = sinf( theta - scene->rotation) * drag_length;
+						} else {
+							scene->drag_vector = V2F(0.0f, 0.0f);
+						}
+					}
+					// NOTE(pvalkema): this variable rotates along with the scene, should this be the case?
 					scene->cumulative_drag_vector.x += scene->drag_vector.x;
 					scene->cumulative_drag_vector.y += scene->drag_vector.y;
+
+					// Hide the mouse while panning.
+					// Ctrl cancels panning, so in that case the mouse cursor should be shown like normal.
 					if (!input->keyboard.key_ctrl.down) {
 						mouse_hide();
 					} else {
@@ -1235,23 +1253,37 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			bool use_zoom_animation = !use_fast_rendering;
 			bool32 used_mouse_to_zoom = false;
 
-			// Zoom in or out using the mouse wheel.
+			// Zoom in or out, or rotate using the mouse wheel.
 			if (!gui_want_capture_mouse && input->mouse_z != 0.0f) {
-				if (use_zoom_animation) {
-					// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
-					// Pro: gives better control than zooming in whole levels; con: makes zooming in/out rather slow.
-					// Trick: advance the 'zoom target' in increments of ~0.75 or more levels, but round down to the nearest 0.5 once we are close by.
-					// This allows slow zooming (0.5 per mouse wheel tick), but if you move fast you can accelerate.
-					if (abs_residual_dlevel < 0.3f) {
-						dlevel = -input->mouse_z * 0.7499f;
-					} else {
-						dlevel = -input->mouse_z * 0.9999f;
+				if (input->keyboard.key_ctrl.down) {
+					// Rotate counterclockwise when scrolling down, and clockwise when scrolling up.
+					// TODO(pvalkema): rotate smoothly when use_zoom_animation is true
+					scene->rotation += input->mouse_z * ((1.0f / 18.0f) * IM_PI);
+					if (scene->rotation >= 2.0f * IM_PI) {
+						scene->rotation -= 2.0f * IM_PI;
 					}
+					if (scene->rotation <= -2.0f * IM_PI) {
+						scene->rotation += 2.0f * IM_PI;
+					}
+
 				} else {
-					dlevel = -input->mouse_z;
+					if (use_zoom_animation) {
+						// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
+						// Pro: gives better control than zooming in whole levels; con: makes zooming in/out rather slow.
+						// Trick: advance the 'zoom target' in increments of ~0.75 or more levels, but round down to the nearest 0.5 once we are close by.
+						// This allows slow zooming (0.5 per mouse wheel tick), but if you move fast you can accelerate.
+						if (abs_residual_dlevel < 0.3f) {
+							dlevel = -input->mouse_z * 0.7499f;
+						} else {
+							dlevel = -input->mouse_z * 0.9999f;
+						}
+					} else {
+						dlevel = -input->mouse_z;
+					}
+
+					used_mouse_to_zoom = true;
 				}
 
-				used_mouse_to_zoom = true;
 			}
 
 			float key_repeat_interval = 0.15f; // in seconds
@@ -1610,8 +1642,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scale_bar->pos.y = input->mouse_xy.y - scale_bar->drag_start_offset.y;
 #else
 					// TODO: figure out why on macOS, input->mouse_xy is {0,0} while dragging
-					scale_bar->pos.x += scene->drag_vector.x;
-					scale_bar->pos.y += scene->drag_vector.y;
+					scale_bar->pos.x += scene->raw_drag_vector.x;
+					scale_bar->pos.y += scene->raw_drag_vector.y;
 #endif
 //					console_print_verbose("mouse = %d, %d\n", input->mouse_xy.x, input->mouse_xy.y);
 					update_scale_bar(scene, scale_bar);

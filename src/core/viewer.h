@@ -236,6 +236,7 @@ typedef struct scene_t {
 	bool viewport_changed;
 	rect2f selection_box;
 	bool has_selection_box;
+	v2f raw_drag_vector;
 	v2f drag_vector;
 	v2f cumulative_drag_vector;
 	bounds2f crop_bounds;
