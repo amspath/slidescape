@@ -231,9 +231,6 @@ void test_multithreading_work_queue() {
 	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 10", 10);
 	work_queue_submit_task(&global_work_queue, echo_task, (void*)"string 11", 10);
 
-//	while (is_queue_work_in_progress(&global_work_queue)) {
-//		work_queue_do_work(&global_work_queue, 0);
-//	}
 	while (work_queue_is_work_in_progress(&global_work_queue) || work_queue_is_work_in_progress((&global_completion_queue))) {
 		work_queue_do_work(&global_completion_queue, 0);
 	}

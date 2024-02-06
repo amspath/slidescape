@@ -195,6 +195,118 @@ static i32 parse_up_to_five_integers(const char* str, i32* array_of_five_integer
 	return 5;
 }
 
+static void bgra_to_rgba(uint32_t *pixels, int width, int height) {
+    int num_pixels = width * height;
+    int num_pixels_aligned = (num_pixels / 4) * 4;
+
+#if defined(__ARM_NEON)
+    for (int i = 0; i < num_pixels_aligned; i += 4) {
+        uint32x4_t bgra = vld1q_u32(pixels + i);
+        uint32x4_t b_mask = vdupq_n_u32(0x000000FF);
+        uint32x4_t r_mask = vdupq_n_u32(0x00FF0000);
+        uint32x4_t b = vandq_u32(bgra, b_mask);
+        uint32x4_t r = vandq_u32(bgra, r_mask);
+        uint32x4_t br_swapped = vorrq_u32(vshlq_n_u32(b, 16), vshrq_n_u32(r, 16));
+        uint32x4_t ga_alpha_mask = vdupq_n_u32(0xFF00FF00);
+        uint32x4_t ga_alpha = vandq_u32(bgra, ga_alpha_mask);
+        uint32x4_t rgba = vorrq_u32(ga_alpha, br_swapped);
+        vst1q_u32(pixels + i, rgba);
+    }
+#elif defined(__SSE2__)
+    for (int i = 0; i < num_pixels_aligned; i += 4) {
+        __m128i bgra = _mm_loadu_si128((__m128i*)(pixels + i));
+        __m128i b_mask = _mm_set1_epi32(0x000000FF);
+        __m128i r_mask = _mm_set1_epi32(0x00FF0000);
+        __m128i b = _mm_and_si128(bgra, b_mask);
+        __m128i r = _mm_and_si128(bgra, r_mask);
+        __m128i br_swapped = _mm_or_si128(_mm_slli_epi32(b, 16), _mm_srli_epi32(r, 16));
+        __m128i ga_alpha_mask = _mm_set1_epi32(0xFF00FF00);
+        __m128i ga_alpha = _mm_and_si128(bgra, ga_alpha_mask);
+        __m128i rgba = _mm_or_si128(ga_alpha, br_swapped);
+        _mm_storeu_si128((__m128i*)(pixels + i), rgba);
+    }
+#else
+    for (int i = num_pixels_aligned; i < num_pixels; ++i) {
+        uint32_t val = pixels[i];
+        pixels[i] = ((val & 0xff) << 16) | (val & 0x00ff00) | ((val & 0xff0000) >> 16) | (val & 0xff000000);
+    }
+#endif
+}
+
+static u8* isyntax_decode_jpeg_stream(u8* compressed, size_t compressed_len, i32* width, i32* height, i32* channels_in_file,
+                                      enum isyntax_pixel_format_t pixel_format) {
+    u8* pixels = NULL;
+    i32 w = 0;
+    i32 h = 0;
+
+#ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
+    // TODO: Why does this crash?
+    // Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
+    // jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
+    // This causes the program to crash eventually when trying to free memory in free_pool().
+    // When using a hardware watchpoint on the corrupted memory, the overwiting occurs in x86_64/jdsample-avx2.asm at line 358:
+    //     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymm6
+    // WORKAROUND: disabled SIMD in jsimd_can_h2v2_fancy_upsample().
+
+    pixels = jpeg_decode_image(compressed, compressed_len, &w, &h, channels_in_file);
+    if (pixel_format == LIBISYNTAX_PIXEL_FORMAT_BGRA) {
+        DUMMY_STATEMENT; // no action needed
+    } else if (pixel_format == LIBISYNTAX_PIXEL_FORMAT_RGBA) {
+        bgra_to_rgba((uint32_t*)pixels, w, h);
+    }
+#else
+    // stb_image.h
+    pixels = stbi_load_from_memory(compressed, (int)compressed_len, &w, &h, channels_in_file, 4);
+    if (pixel_format == LIBISYNTAX_PIXEL_FORMAT_RGBA) {
+        DUMMY_STATEMENT; // no action needed
+    } else if (pixel_format == LIBISYNTAX_PIXEL_FORMAT_BGRA) {
+        bgra_to_rgba((uint32_t*)pixels, w, h);
+    }
+#endif
+    if (width) *width = w;
+    if (height) *height = h;
+    return pixels;
+}
+
+// Read base64-encoded label or macro image from file and return decompressed pixels.
+// TODO(pvalkema): remove this / only support returning compressed JPEG buffer and leave decompression to caller?
+u8* isyntax_get_associated_image_pixels(isyntax_t* isyntax, isyntax_image_t* image, enum isyntax_pixel_format_t pixel_format) {
+    u8* decompressed = NULL;
+    i32 channels_in_file = 0;
+    u32 jpeg_compressed_len = 0;
+    u8* jpeg_compressed = isyntax_get_associated_image_jpeg(isyntax, image, &jpeg_compressed_len);
+    if (jpeg_compressed) {
+        decompressed = isyntax_decode_jpeg_stream(jpeg_compressed, jpeg_compressed_len,
+                                                  &image->width, &image->height, &channels_in_file, pixel_format);
+        free(jpeg_compressed);
+    }
+    return decompressed;
+}
+
+// Read base64-encoded label or macro image from file and return the decoded (still JPEG-compressed) image,
+// writing the length of the JPEG buffer into jpeg_size.
+u8* isyntax_get_associated_image_jpeg(isyntax_t* isyntax, isyntax_image_t* image, u32* jpeg_size) {
+    if (jpeg_size == NULL) {
+        return NULL;
+    }
+    i64 read_offset = image->base64_encoded_jpg_file_offset;
+    size_t read_size = image->base64_encoded_jpg_len;
+    u8* decoded = NULL;
+    if (read_offset > 0 && read_size > 0) {
+        u8* encoded = malloc(read_size);
+        size_t bytes_read = file_handle_read_at_offset(encoded, isyntax->file_handle, read_offset, read_size);
+        if (bytes_read == read_size) {
+            size_t len = 0;
+            decoded = base64_decode((u8*)encoded, read_size, &len);
+            if (decoded) {
+                *jpeg_size = len;
+            }
+        }
+        free(encoded);
+    }
+    return decoded;
+}
+
 static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	switch(group) {
@@ -317,29 +429,12 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x1005: { /*PIM_DP_IMAGE_DATA*/
 					size_t decoded_capacity = value_len;
 					size_t decoded_len = 0;
-					i32 last_char = value[value_len-1];
+					char last_char = value[value_len-1];
 					if (last_char == '/') {
 						value_len--; // The last character may cause the base64 decoding to fail if invalid
 					}
-					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
-					if (decoded) {
-						i32 channels_in_file = 0;
-#ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
-						// TODO: Why does this crash?
-						// Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
-						// jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
-						// This causes the program to crash eventually when trying to free memory in free_pool().
-						// When using a hardware watchpoint on the corrupted memory, the overwiting occurs in x86_64/jdsample-avx2.asm at line 358:
-						//     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymm6
-						// WORKAROUND: disabled SIMD in jsimd_can_h2v2_fancy_upsample().
-
-						image->pixels = jpeg_decode_image(decoded, decoded_len, &image->width, &image->height, &channels_in_file);
-#else
-						// stb_image.h
-						image->pixels = stbi_load_from_memory(decoded, decoded_len, &image->width, &image->height, &channels_in_file, 4);
-#endif
-						free(decoded);
-					}
+                    image->base64_encoded_jpg_file_offset = isyntax->parser.content_file_offset;
+                    image->base64_encoded_jpg_len = value_len;
 				} break;
 				case 0x1013: /*DP_COLOR_MANAGEMENT*/                        {} break;
 				case 0x1014: /*DP_IMAGE_POST_PROCESSING*/                   {} break;
@@ -396,19 +491,19 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							default: break;
 							case 0: {
 								image->offset_x = range.start;
-								image->width = range.numsteps;
+								image->width_including_padding = range.numsteps;
 							} break;
 							case 1: {
 								image->offset_y = range.start;
-								image->height = range.numsteps;
+								image->height_including_padding = range.numsteps;
 							} break;
 							case 2: break; // always 3 color channels ("Y" "Co" "Cg"), no need to check
 							case 3: {
 								image->level_count = range.numsteps;
 								image->max_scale = range.numsteps - 1;
                                 int32_t level_padding = (PER_LEVEL_PADDING << range.numsteps) - PER_LEVEL_PADDING;
-                                image->width_minus_padding = image->width - 2 * level_padding;
-                                image->height_minus_padding = image->height - 2 * level_padding;
+                                image->width = image->width_including_padding - 2 * level_padding;
+                                image->height = image->height_including_padding - 2 * level_padding;
 							} break;
 							case 4: break; // always 4 wavelet coefficients ("LL" "LH" "HL" "HH"), no need to check
 						}
@@ -775,6 +870,7 @@ void isyntax_xml_parser_init(isyntax_xml_parser_t* parser) {
 	parser->contentbuf = malloc(parser->contentbuf_capacity);
 	parser->contentcur = NULL;
 	parser->contentlen = 0;
+    parser->content_file_offset = 0;
 
 	parser->current_dicom_attribute_name[0] = '\0';
 	parser->current_dicom_group_tag = 0;
@@ -815,7 +911,7 @@ static void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_
 	*dest_len = new_len;
 }
 
-bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_length, bool is_last_chunk) {
+static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_offset, i64 chunk_length, bool is_last_chunk) {
 
 	yxml_t* x = NULL;
 	bool success = false;
@@ -874,6 +970,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 					parser->contentcur = parser->contentbuf;
 					*parser->contentcur = '\0';
 					parser->contentlen = 0;
+                    parser->content_file_offset = 0;
 					parser->attribute_index = 0;
 					if (strcmp(x->elem, "Attribute") == 0) {
 						node->node_type = ISYNTAX_NODE_LEAF;
@@ -921,6 +1018,11 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 				case YXML_CONTENT: {
 					// element content
 					if (!parser->contentcur) break;
+
+                    // Remember the file offset of the element content
+                    if (parser->content_file_offset == 0) {
+                        parser->content_file_offset = chunk_offset + (doc - xml_header);
+                    }
 
 					// Load iSyntax block header table (and other large XML tags) greedily and bypass yxml parsing overhead
 					if (parser->current_node_type == ISYNTAX_NODE_LEAF) {
@@ -981,7 +1083,7 @@ bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_le
 						// Leaf node WITHOUT children.
 						// In this case we didn't already parse the attributes at the YXML_ATTREND stage.
 						// Now at the YXML_ELEMEND stage we can parse the complete tag at once (attributes + content).
-						console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), size:%-8u = %s\n", get_spaces(parser->node_stack_index),
+						console_print_verbose("%sDICOM: %-40s (0x%04x, 0x%04x), size:%-8zu = %s\n", get_spaces(parser->node_stack_index),
 						                      parser->current_dicom_attribute_name,
 						                      parser->current_dicom_group_tag, parser->current_dicom_element_tag,
 											  parser->contentlen, parser->contentbuf);
@@ -1345,10 +1447,9 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 }
 
 static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
-	i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
     i32 aligned_width = (width / 8) * 8;
 
-	for (i32 y = 0; y < aligned_width; ++y) {
+	for (i32 y = 0; y < height; ++y) {
 		u32* dest = out_bgra + (y * width);
         i32 i = 0;
 #if defined(__SSE2__) && defined(__SSSE3__)
@@ -1416,10 +1517,9 @@ static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 }
 
 static void convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_rgba) {
-    i32 first_valid_pixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
     i32 aligned_width = (width / 8) * 8;
 
-    for (i32 y = 0; y < aligned_width; ++y) {
+    for (i32 y = 0; y < height; ++y) {
         u32* dest = out_rgba + (y * width);
         i32 i = 0;
 #if defined(__SSE2__) && defined(__SSSE3__)
@@ -1442,7 +1542,6 @@ static void convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 
 			__m128i A = _mm_setr_epi32(0, 0, 0xffffffff, 0xffffffff); // ----AAAA
 
-			// Shuffle into the right order -> BGRA
 			// Shuffle into the right order -> RGBA
 			__m128i RG = _mm_or_si128(R, G);
 			__m128i BA = _mm_or_si128(B, A);
@@ -2281,7 +2380,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		do {
 			if (bits_read >= block_size_in_bits) {
 //				dump_block(compressed, compressed_size);
-				console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, Huffman table extends out of bounds (compressed_size=%d)\n", compressed_size);
+				console_print_error("Error: isyntax_hulsken_decompress(): invalid codeblock, Huffman table extends out of bounds (compressed_size=%zu)\n", compressed_size);
 				ASSERT(!"out of bounds");
 				memset(out_buffer, 0, coeff_buffer_size);
 				release_temp_memory(&temp_memory);
@@ -2490,7 +2589,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 
 	if (serialized_length != decompressed_length) {
 //		dump_block(compressed, compressed_size);
-		console_print("iSyntax: decompressed size mismatch (size=%d): expected %lld observed %d\n",
+		console_print("iSyntax: decompressed size mismatch (size=%zu): expected %lld observed %d\n",
 				 compressed_size, serialized_length, decompressed_length);
 		ASSERT(!"size mismatch");
 	}
@@ -2799,18 +2898,19 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 			i32 chunk_index = 0;
 			for (;; ++chunk_index) {
 //				console_print_verbose("iSyntax: reading XML header chunk %d\n", chunk_index);
-				i64 chunk_length = 0;
+                i64 chunk_offset = chunk_index * (i64)read_size;
+                i64 chunk_length = 0;
 				bool match = false;
 				char* pos = read_buffer;
-				i64 offset = 0;
+				i64 marker_offset = 0;
 				char* marker = (char*)memchr(read_buffer, '\x04', bytes_read);
 				if (marker) {
-					offset = marker - read_buffer;
+                    marker_offset = marker - read_buffer;
 					match = true;
-					chunk_length = offset;
+					chunk_length = marker_offset;
 					header_length += chunk_length;
 					isyntax_data_offset = header_length + 1;
-					i64 data_offset_in_last_chunk = offset + 1;
+					i64 data_offset_in_last_chunk = marker_offset + 1;
 					bytes_read_from_data_offset_in_last_chunk = (i64)bytes_read - data_offset_in_last_chunk;
 				}
 				if (match) {
@@ -2820,7 +2920,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 					}
 
 					parse_begin = get_clock();
-					if (!isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, true)) {
+					if (!isyntax_parse_xml_header(isyntax, read_buffer, chunk_offset, chunk_length, true)) {
 						goto failed;
 					}
 					parse_ticks_elapsed += (get_clock() - parse_begin);
@@ -2838,7 +2938,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 					if (are_there_bytes_left) {
 
 						parse_begin = get_clock();
-						if (!isyntax_parse_xml_header(isyntax, read_buffer, chunk_length, false)) {
+						if (!isyntax_parse_xml_header(isyntax, read_buffer, chunk_offset, chunk_length, false)) {
 							goto failed;
 						}
 						parse_ticks_elapsed += (get_clock() - parse_begin);
@@ -2877,8 +2977,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 
 				i32 num_levels = wsi_image->level_count;
 				ASSERT(num_levels >= 1);
-				i32 grid_width = ((wsi_image->width + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
-				i32 grid_height = ((wsi_image->height + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
+				i32 grid_width = ((wsi_image->width_including_padding + (block_width << num_levels) - 1) / (block_width << num_levels)) << (num_levels - 1);
+				i32 grid_height = ((wsi_image->height_including_padding + (block_height << num_levels) - 1) / (block_height << num_levels)) << (num_levels - 1);
 
 				u64 h_coeff_tile_count = 0; // number of tiles with LH/HL/HH coefficients
 				i32 base_level_tile_count = grid_height * grid_width;
@@ -2889,8 +2989,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 					level->scale = scale;
 					level->width_in_tiles = grid_width >> scale;
 					level->height_in_tiles = grid_height >> scale;
-					level->width_minus_padding = wsi_image->width_minus_padding >> scale;
-					level->height_minus_padding = wsi_image->height_minus_padding >> scale;
+					level->width = wsi_image->width >> scale;
+					level->height = wsi_image->height >> scale;
 					level->downsample_factor = (float)(1 << scale);
 					level->um_per_pixel_x = isyntax->mpp_x * level->downsample_factor;
 					level->um_per_pixel_y = isyntax->mpp_y * level->downsample_factor;
@@ -2902,8 +3002,9 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 				// to the top left.
 				// The shift corresponds to the per level padding added for the wavelet transform:
 				// ((3 << (scale-1)) - 2)
-				// Put another way: the highest (zoomed out levels) are shifted to the bottom right
+				// Put another way: the highest (zoomed out levels) are shifted the to the bottom right
 				// (this is also reflected in the x and y coordinates of the codeblocks in the iSyntax header).
+				// Level 0 has no
 				for (i32 scale = 1; scale < wsi_image->level_count; ++scale) {
 					isyntax_level_t* level = wsi_image->levels + scale;
 					level->origin_offset_in_pixels = get_first_valid_coef_pixel(scale - 1);
@@ -3226,6 +3327,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 }
 
 void isyntax_destroy(isyntax_t* isyntax) {
+    // TODO(pvalkema): review synchronization needed to safely destroy the isyntax_t
+    // NOTE: in isyntax_streamer.c, the refcount can be incremented in various places (while threaded jobs are running)
 	while (isyntax->refcount > 0) {
 		platform_sleep(1);
 		if (isyntax->work_submission_queue) {
@@ -3256,10 +3359,6 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	}
 	for (i32 image_index = 0; image_index < isyntax->image_count; ++image_index) {
 		isyntax_image_t* image = isyntax->images + image_index;
-		if (image->pixels) {
-			free(image->pixels);
-			image->pixels = NULL;
-		}
 		if (image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
 			if (image->codeblocks) {
 				free(image->codeblocks);

@@ -1094,6 +1094,4 @@ void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer) {
 	}
 }
 
-void isyntax_streamer_main_loop(i32 logical_thread_index, void* userdata) {
 
-}

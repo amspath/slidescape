@@ -19,6 +19,7 @@
 #include "common.h"
 #include "platform.h"
 #include "image.h"
+#include "jpeg_decoder.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
 #include "stb_image.h" // for stbi_image_free()
@@ -301,6 +302,23 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
     return image->is_valid;
 }
 
+u8* decode_associated_image_from_isyntax(isyntax_t* isyntax, isyntax_image_t* image) {
+	u32 jpeg_size = 0;
+	u8* jpeg_compressed = isyntax_get_associated_image_jpeg(isyntax, image, &jpeg_size);
+
+	// TODO: Why does this crash?
+	// Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
+	// jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
+	// This causes the program to crash eventually when trying to free memory in free_pool().
+	// When using a hardware watchpoint on the corrupted memory, the overwiting occurs in x86_64/jdsample-avx2.asm at line 358:
+	//     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymm6
+	// WORKAROUND: disabled SIMD in jsimd_can_h2v2_fancy_upsample().
+	i32 channels_in_file = 0;
+	u8* pixels = jpeg_decode_image(jpeg_compressed, jpeg_size, &image->width, &image->height, &channels_in_file);
+	return pixels;
+
+}
+
 bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay) {
     image->type = IMAGE_TYPE_WSI;
     image->backend = IMAGE_BACKEND_ISYNTAX;
@@ -371,11 +389,12 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
         }
     }
 
-    isyntax_image_t* macro_image = isyntax->images + isyntax->macro_image_index;
-    if (macro_image->image_type == ISYNTAX_IMAGE_TYPE_MACROIMAGE) {
-        if (macro_image->pixels) {
-            image->macro_image.pixels = macro_image->pixels;
-            macro_image->pixels = NULL; // transfer ownership
+	// TODO (pvalkema): defer this/load lazily
+	isyntax_image_t* macro_image = isyntax->images + isyntax->macro_image_index;
+	if (macro_image->image_type == ISYNTAX_IMAGE_TYPE_MACROIMAGE) {
+		u8* pixels = decode_associated_image_from_isyntax(isyntax, macro_image);
+        if (pixels) {
+            image->macro_image.pixels = pixels;
             image->macro_image.width = macro_image->width;
             image->macro_image.height = macro_image->height;
             image->macro_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
@@ -386,9 +405,9 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
     }
     isyntax_image_t* label_image = isyntax->images + isyntax->label_image_index;
     if (label_image->image_type == ISYNTAX_IMAGE_TYPE_LABELIMAGE) {
-        if (label_image->pixels) {
-            image->label_image.pixels = label_image->pixels;
-            label_image->pixels = NULL; // transfer ownership
+		u8* pixels = decode_associated_image_from_isyntax(isyntax, label_image);
+        if (pixels) {
+            image->label_image.pixels = pixels;
             image->label_image.width = label_image->width;
             image->label_image.height = label_image->height;
             image->label_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
