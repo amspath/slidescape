@@ -1299,6 +1299,19 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
+
+		// Don't draw the annotation if it's out of view
+		annotation_recalculate_bounds_if_necessary(annotation);
+		bounds2f extruded_camera_bounds = scene->camera_bounds;
+		float extrude_amount = 30.0f * scene->zoom.screen_point_width; // prevent pop-in at the edges e.g. due to the added thickness of the annotation outline
+		extruded_camera_bounds.min.x -= extrude_amount;
+		extruded_camera_bounds.min.y -= extrude_amount;
+		extruded_camera_bounds.max.x += extrude_amount;
+		extruded_camera_bounds.max.y += extrude_amount;
+		if (!are_bounds2f_overlapping(extruded_camera_bounds, annotation->bounds)) {
+			continue;
+		}
+
 		annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };
 		rgba_t base_color = group->color;
@@ -2018,7 +2031,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		if (ImGui::CollapsingHeader("Options"))
 		{
-			ImGui::Checkbox("Show annotations", &scene->enable_annotations);
+			ImGui::Checkbox("Show annotations (press H to toggle)", &scene->enable_annotations);
 			ImGui::SliderFloat("Annotation opacity", &annotation_opacity, 0.0f, 1.0f, "%.3f");
 
 			ImGui::SliderFloat("Line thickness (normal)", &annotation_normal_line_thickness, 0.0f, 10.0f, "%.1f px");

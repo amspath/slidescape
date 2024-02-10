@@ -166,6 +166,7 @@ void draw_scale_bar(scale_bar_t* scale_bar) {
 	}
 }
 
+// TODO: display grid properly when the view is rotated
 void draw_grid(scene_t* scene) {
 	if (scene->enable_grid) {
 		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
