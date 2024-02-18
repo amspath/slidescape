@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -111,11 +111,11 @@ typedef struct directory_listing_t directory_listing_t;
 // Inline procedures as wrappers for system routines
 #if WINDOWS
 
-static inline void semaphore_post(semaphore_handle_t semaphore) {
+static inline void platform_semaphore_post(semaphore_handle_t semaphore) {
 	ReleaseSemaphore(semaphore, 1, NULL);
 }
 
-static inline void semaphore_wait(semaphore_handle_t semaphore) {
+static inline void platform_semaphore_wait(semaphore_handle_t semaphore) {
 	WaitForSingleObject(semaphore, INFINITE);
 }
 

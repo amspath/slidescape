@@ -106,7 +106,7 @@ bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 
 			atomic_increment(&queue->completion_goal);
 			atomic_increment(&queue->start_goal);
 //		    queue->next_entry_to_submit = new_next_entry_to_submit;
-			semaphore_post(queue->semaphore);
+			platform_semaphore_post(queue->semaphore);
 			return true;
 		} else {
 			if (tries > 5) {
