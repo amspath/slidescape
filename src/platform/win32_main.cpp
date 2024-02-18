@@ -1997,7 +1997,6 @@ int main() {
 	work_queue_submit_task(&global_work_queue, load_dicom_task, NULL, 0);
 
 	win32_init_input();
-//	do_remote_connection_test();
 
 	is_program_running = true;
 

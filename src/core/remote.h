@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,6 +20,11 @@
 #include "common.h"
 #include "viewer.h"
 
+typedef struct http_response_t {
+    memrw_t buffer;
+    i32 content_offset;
+    size_t content_length;
+} http_response_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +39,8 @@ u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename
 u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename, i64 *chunk_offsets, i64 *chunk_sizes,
                           i32 batch_size, i32 *bytes_read, i32 thread_id);
 u8* download_remote_caselist(const char* hostname, i32 portno, const char* filename, i32* bytes_read);
-bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename);
+bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename);
+http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token);
 
 #if DO_DEBUG
 void do_remote_connection_test();

@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -84,6 +84,7 @@ extern bool show_demo_window;
 extern bool show_debugging_window;
 extern bool show_image_options_window;
 extern bool show_open_remote_window;
+extern bool show_open_uri_window;
 extern bool show_slide_list_window;
 extern bool show_layers_window;
 extern bool show_annotations_window;
@@ -101,6 +102,7 @@ extern float global_progress_bar_test_progress;
 extern char remote_hostname[64] INIT(= "localhost");
 extern char remote_port[64] INIT(= "2000");
 extern char remote_filename[128] INIT(= "sample.tiff");
+extern char remote_uri[256];
 #ifdef __cplusplus
 extern ImFont* global_main_font;
 extern ImFont* global_fixed_width_font;

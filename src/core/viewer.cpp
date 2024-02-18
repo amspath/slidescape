@@ -1752,6 +1752,10 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 			app_state->scene.enable_annotations = !app_state->scene.enable_annotations;
 		}
 	}
+    // Ctrl+U: open URI window
+    if (was_key_pressed(input, KEY_U) && input->keyboard.key_ctrl.down) {
+        show_open_uri_window = true;
+    }
 
 
 	gui_draw(app_state, curr_input, app_state->client_viewport.w, app_state->client_viewport.h);

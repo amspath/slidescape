@@ -121,11 +121,11 @@ static inline void platform_semaphore_wait(semaphore_handle_t semaphore) {
 
 #else // Linux, macOS
 
-static inline void semaphore_post(semaphore_handle_t semaphore) {
+static inline void platform_semaphore_post(semaphore_handle_t semaphore) {
 	sem_post(semaphore);
 }
 
-static inline void semaphore_wait(semaphore_handle_t semaphore) {
+static inline void platform_semaphore_wait(semaphore_handle_t semaphore) {
 	sem_wait(semaphore);
 }
 

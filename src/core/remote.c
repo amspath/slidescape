@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,6 +19,12 @@
 #include "common.h"
 #include "platform.h"
 #include "viewer.h"
+#include "remote.h"
+
+#ifdef __APPLE__
+// For loading the root certificates (requires linking against "-framework Security")
+#include <Security/Security.h>
+#endif
 
 #if !defined(MBEDTLS_CONFIG_FILE)
 #include "mbedtls/config.h"
@@ -77,6 +83,89 @@ static void my_debug( void *ctx, int level,
 	fflush(  (FILE *) ctx  );
 }
 
+
+// Adapted from https://github.com/HaxeFoundation/hxcpp/blob/7bd5ff3/src/hx/libs/ssl/SSL.cpp#L455-L491
+// discussed here: https://stackoverflow.com/questions/42432473/programmatically-read-root-ca-certificates-in-ios
+// copyright notice below from hxcpp, see: https://github.com/HaxeFoundation/hxcpp
+/*
+* Copyright (c) 2008 by the contributors
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following condition is met:
+*     * Redistributions of source code must retain the above copyright
+*       notice, this list of conditions and the following disclaimer.
+*
+* See individual source files for additional license information.
+*
+* THIS SOFTWARE IS PROVIDED BY THE HAXE PROJECT CONTRIBUTORS ``AS IS'' AND ANY
+* EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+* WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+* DISCLAIMED.
+*/
+
+mbedtls_x509_crt* ssl_cert_load_defaults() {
+#if WINDOWS
+    HCERTSTORE store;
+	PCCERT_CONTEXT cert;
+	sslcert *chain = NULL;
+	if( store = CertOpenSystemStore(0, (LPCSTR)"Root") ){
+		cert = NULL;
+		while( cert = CertEnumCertificatesInStore(store, cert) ){
+			if( chain == NULL ){
+				chain = new sslcert();
+				chain->create( NULL );
+			}
+			mbedtls_x509_crt_parse_der( chain->c, (unsigned char *)cert->pbCertEncoded, cert->cbCertEncoded );
+		}
+		CertCloseStore(store, 0);
+	}
+	if( chain != NULL )
+		return chain;
+#elif APPLE
+    CFMutableDictionaryRef search;
+    CFArrayRef result;
+    SecKeychainRef keychain;
+    SecCertificateRef item;
+    CFDataRef dat;
+    mbedtls_x509_crt *chain = NULL;
+
+    // Load keychain
+    if( SecKeychainOpen("/System/Library/Keychains/SystemRootCertificates.keychain",&keychain) != errSecSuccess )
+        return NULL;
+
+    // Search for certificates
+    search = CFDictionaryCreateMutable( NULL, 0, NULL, NULL );
+    CFDictionarySetValue( search, kSecClass, kSecClassCertificate );
+    CFDictionarySetValue( search, kSecMatchLimit, kSecMatchLimitAll );
+    CFDictionarySetValue( search, kSecReturnRef, kCFBooleanTrue );
+    CFDictionarySetValue( search, kSecMatchSearchList, CFArrayCreate(NULL, (const void **)&keychain, 1, NULL) );
+    if( SecItemCopyMatching( search, (CFTypeRef *)&result ) == errSecSuccess ){
+        CFIndex n = CFArrayGetCount( result );
+        for( CFIndex i = 0; i < n; i++ ){
+            item = (SecCertificateRef)CFArrayGetValueAtIndex( result, i );
+
+            // Get certificate in DER format
+            dat = SecCertificateCopyData( item );
+            if( dat ){
+                if( chain == NULL ){
+                    chain = calloc(1, sizeof(mbedtls_x509_crt));
+                }
+                mbedtls_x509_crt_parse_der( chain, (unsigned char *)CFDataGetBytePtr(dat), CFDataGetLength(dat) );
+                CFRelease( dat );
+            }
+        }
+    }
+    CFRelease(keychain);
+    if( chain != NULL )
+        return chain;
+#elif LINUX
+    // TODO: load root certificate on Linux?
+#endif
+    return NULL;
+}
+
+
 tls_connection_t* open_remote_connection(const char* hostname, i32 portno, void* alloced_mem_for_struct) {
 	int ret = 1, len;
 	int exit_code = MBEDTLS_EXIT_FAILURE;
@@ -119,13 +208,22 @@ tls_connection_t* open_remote_connection(const char* hostname, i32 portno, void*
 	 */
 	console_print_verbose( "  . Loading the CA root certificate ..." );
 
-	ret = mbedtls_x509_crt_parse( &connection->cacert, (const unsigned char *) mbedtls_test_cas_pem,
-	                              mbedtls_test_cas_pem_len );
-	if( ret < 0 )
-	{
-		console_print_verbose( " failed\n  !  mbedtls_x509_crt_parse returned -0x%x\n\n", (unsigned int) -ret );
-		goto exit;
-	}
+    mbedtls_x509_crt* chain = ssl_cert_load_defaults();
+    if (chain) {
+        memcpy(&connection->cacert, chain, sizeof(mbedtls_x509_crt));
+        free(chain);
+    } else {
+        ret = mbedtls_x509_crt_parse( &connection->cacert, (const unsigned char *) mbedtls_test_cas_pem,
+                                      mbedtls_test_cas_pem_len );
+        if( ret < 0 )
+        {
+            console_print_verbose( " failed\n  !  mbedtls_x509_crt_parse returned -0x%x\n\n", (unsigned int) -ret );
+            char error_buf[100];
+            mbedtls_strerror( ret, error_buf, 100 );
+            console_print_error("Last error was: %d - %s\n\n", ret, error_buf );
+            goto exit;
+        }
+    }
 
 	console_print_verbose( " ok (%d skipped)\n", ret );
 
@@ -410,9 +508,9 @@ u8* download_remote_caselist(const char* hostname, i32 portno, const char* filen
 	return read_buffer;
 }
 
-bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename) {
+bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename) {
 
-	bool32 success = false;
+	bool success = false;
 
 	static const char requestfmt[] = "GET /slide/%s/header HTTP/1.1\r\nConnection: close\r\n\r\n";
 	char request[4096];
@@ -458,28 +556,123 @@ bool32 open_remote_slide(app_state_t *app_state, const char *hostname, i32 portn
 	return success;
 }
 
-#if DO_DEBUG
-void do_remote_connection_test() {
-	const char* hostname = "google.com";
-	tls_connection_t* connection = open_remote_connection(hostname, 443, alloca(sizeof(tls_connection_t)));
-	if (connection) {
-		static const char request[] = "GET / HTTP/1.0\r\nConnection: close\r\n\r\n";
-		memrw_t mem_buffer = memrw_create(MEGABYTES(1));
-		bool read_ok = remote_request(connection, request, strlen(request), &mem_buffer);
-		float seconds_elapsed = close_remote_connection(connection);
-		if (read_ok) {
-			console_print( "Remote connection test (%s): %d bytes read in %g seconds\n", hostname, mem_buffer.used_size, seconds_elapsed );
-			memrw_push_back(&mem_buffer, "\0", 1);
-			FILE* test_out = fopen("test_google.html", "wb");
-			fwrite(mem_buffer.data, mem_buffer.used_size-1, 1, test_out);
-			fclose(test_out);
-//			console_print("Downloaded case list '%s' in %g seconds.\n", filename, seconds_elapsed);
-		} else {
-		}
-		memrw_destroy(&mem_buffer);
-	}
+
+// from https://stackoverflow.com/questions/726122/best-ways-of-parsing-a-url-using-c
+typedef struct url_info_t
+{
+    const char* protocol;
+    const char* site;
+    const char* port;
+    const char* path;
+} url_info_t;
+
+url_info_t* split_url(url_info_t* info, const char* url)
+{
+    if (!info || !url)
+        return NULL;
+    info->protocol = strtok(strcpy((char*)malloc(strlen(url)+1), url), "://");
+    if (!info->protocol)
+        return NULL;
+    info->site = strstr(url, "://");
+    if (info->site)
+    {
+        info->site += 3;
+        char* site_port_path = strcpy((char*)calloc(1, strlen(info->site) + 1), info->site);
+        info->site = strtok(site_port_path, ":");
+        info->site = strtok(site_port_path, "/");
+    }
+    else
+    {
+        char* site_port_path = strcpy((char*)calloc(1, strlen(url) + 1), url);
+        info->site = strtok(site_port_path, ":");
+        info->site = strtok(site_port_path, "/");
+    }
+    char* URL = strcpy((char*)malloc(strlen(url) + 1), url);
+    info->port = strstr(URL + 6, ":");
+    char* port_path = 0;
+    char* port_path_copy = 0;
+    if (info->port && isdigit(*(port_path = (char*)info->port + 1)))
+    {
+        port_path_copy = strcpy((char*)malloc(strlen(port_path) + 1), port_path);
+        char * r = strtok(port_path, "/");
+        if (r)
+            info->port = r;
+        else
+            info->port = port_path;
+    }
+    else
+        info->port = "80";
+    if (port_path_copy)
+        info->path = port_path_copy + strlen(info->port ? info->port : "");
+    else
+    {
+        char* path = strstr(URL + 8, "/");
+        info->path = path ? path : "/";
+    }
+    int r = strcmp(info->protocol, info->site) == 0;
+    if (r && strcmp(info->port, "80") == 0)
+        info->protocol = "http";
+    else if (r)
+        info->protocol = "tcp";
+    return info;
 }
-#endif
+
+http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token) {
+
+    url_info_t url_info = {};
+    if (!split_url(&url_info, uri)) {
+        console_print_error("Error parsing URI \"%s\"\n", uri);
+        return NULL;
+    }
+
+    // If the API token is provided, add it to the HTTP headers
+    char token_header_string[4196] = "";
+    if (api_token && api_token[0] != '\0') {
+        snprintf(token_header_string, sizeof(token_header_string), "Authorization: Bearer %s\r\n", api_token);
+    } else {
+        token_header_string[0] = '\0';
+    }
+
+    static const char requestfmt[] =
+            "GET %s HTTP/1.1\r\n"
+            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n"
+//            "Accept-Encoding: gzip, deflate, br\r\n"
+            "Accept-Language: en,nl;q=0.9,en-US;q=0.8,af;q=0.7\r\n%s"
+            "Cache-Control: max-age=0\r\n"
+            "Connection: close\r\n"
+            "Host: %s\r\n"
+            "Upgrade-Insecure-Requests: 1\r\n\r\n";
+    char request[4096];
+    snprintf(request, sizeof(request), requestfmt, url_info.path, token_header_string, url_info.site);
+    i32 request_len = (i32)strlen(request);
+
+    console_print_verbose("%s\n", request);
+
+    tls_connection_t* connection = open_remote_connection(url_info.site, 443, alloca(sizeof(tls_connection_t)));
+    if (!connection) {
+        return NULL;
+    }
+
+    memrw_t mem_buffer = memrw_create(MEGABYTES(2));
+    bool32 read_ok = remote_request(connection, request, request_len, &mem_buffer);
+    float seconds_elapsed = close_remote_connection(connection);
+
+    http_response_t* response = NULL;
+    if (read_ok && mem_buffer.used_size > 0) {
+        // now we should have the whole HTTP response
+        console_print("%s\n", mem_buffer.data);
+
+        response = malloc(sizeof(http_response_t));
+        response->buffer = mem_buffer;
+
+
+    }
+
+    return response;
+}
+
+
+
 
 
 

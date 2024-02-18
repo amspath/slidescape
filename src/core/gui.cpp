@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -229,6 +229,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool close;
 			bool save;
 			bool open_remote;
+			bool open_uri;
 			bool exit_program;
 			bool new_dataset_asap_xml;
 			bool new_dataset_coco;
@@ -252,7 +253,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 		bool can_save = scene->annotation_set.modified;
 
 		if (ImGui::BeginMenu("File")) {
-			if (ImGui::MenuItem("Open...", "Ctrl+O", &menu_items_clicked.open_file)) {}
+			if (ImGui::MenuItem("Open file...", "Ctrl+O", &menu_items_clicked.open_file)) {}
 			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Save", "Ctrl+S", &menu_items_clicked.save, can_save)) {}
@@ -317,7 +318,8 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Show debugging window", "Ctrl+F1", &show_debugging_window)) {}
 				ImGui::Separator();
-				if (ImGui::MenuItem("Open remote...", NULL, &menu_items_clicked.open_remote)) {}
+                if (ImGui::MenuItem("Open URI...", "Ctrl+U", &menu_items_clicked.open_uri)) {}
+				if (ImGui::MenuItem("Open remote WSI...", NULL, &menu_items_clicked.open_remote)) {}
 				ImGui::Separator();
 //				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				if (ImGui::MenuItem("Show menu bar", "Alt+F12", &show_menu_bar)) {}
@@ -353,11 +355,13 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 		} else if (menu_items_clicked.open_file) {
             u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
 			open_file_dialog(app_state, OPEN_FILE_DIALOG_LOAD_GENERIC_FILE, filetype_hint);
-		} else if (menu_items_clicked.close) {
+		} else if (menu_items_clicked.open_uri) {
+            show_open_uri_window = true;
+        } else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.save) {
 			save_annotations(app_state, &app_state->scene.annotation_set, true);
-		}else if (menu_items_clicked.open_remote) {
+		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (prev_fullscreen != is_fullscreen) {
 			bool currently_fullscreen = check_fullscreen(app_state->main_window);
@@ -910,6 +914,34 @@ void save_changes_modal(app_state_t* app_state, annotation_set_t* annotation_set
 	}
 }
 
+void gui_draw_open_uri_window(app_state_t* app_state) {
+    ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(544, 158), ImGuiCond_FirstUseEver);
+
+    ImGui::Begin("Open URI", &show_open_uri_window);
+
+    ImGuiInputTextFlags input_flags = ImGuiInputTextFlags_EnterReturnsTrue;
+    bool entered = false;
+
+    entered = entered || ImGui::InputTextEx("##URI", "Enter URI here", remote_uri, sizeof(remote_uri), ImVec2(-FLT_MIN, 0), input_flags);
+
+    static char token_buf[4096];
+    if (ImGui::TreeNodeEx("API token", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+        entered = entered || ImGui::InputTextEx("##API_token", "Enter API token here", token_buf, sizeof(token_buf), ImVec2(-FLT_MIN, 0), input_flags);
+
+    }
+
+    static bool pressed_connect;
+    if (entered || ImGui::Button("Connect")) {
+        pressed_connect = true;
+        open_remote_uri(app_state, remote_uri, token_buf);
+    }
+    if (pressed_connect) {
+        ImGui::TextUnformatted("Use the console (F3) to view connection results.\n");
+    }
+    ImGui::End();
+}
+
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
@@ -927,6 +959,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	}
 
 	if (show_menu_bar) gui_draw_main_menu_bar(app_state);
+    if (show_open_uri_window) gui_draw_open_uri_window(app_state);
 
 	if (show_open_remote_window) {
 		ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);

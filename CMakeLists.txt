@@ -287,7 +287,7 @@ elseif(APPLE)
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slidescape MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slidescape PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/Info.plist")
-    target_link_libraries(slidescape "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices")
+    target_link_libraries(slidescape "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices" "-framework Security")
     target_link_libraries(slidescape ${SDL2_LIBRARIES})
     set_target_properties(slidescape PROPERTIES OUTPUT_NAME Slidescape)
 
