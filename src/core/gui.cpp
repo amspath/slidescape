@@ -934,7 +934,10 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
     static bool pressed_connect;
     if (entered || ImGui::Button("Connect")) {
         pressed_connect = true;
-        open_remote_uri(app_state, remote_uri, token_buf);
+        http_response_t* response = open_remote_uri(app_state, remote_uri, token_buf);
+        if (response) {
+            http_response_destroy(response);
+        }
     }
     if (pressed_connect) {
         ImGui::TextUnformatted("Use the console (F3) to view connection results.\n");

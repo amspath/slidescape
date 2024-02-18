@@ -231,6 +231,7 @@ set(VIEWER_SOURCE_FILES
         third_party/yxml.c
         third_party/minfft.c
         third_party/ltalloc.cc
+        third_party/http_parser.c
         utils/stringutils.c
         utils/mathutils.c
         utils/memrw.c

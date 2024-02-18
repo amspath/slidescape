@@ -60,6 +60,8 @@
 //#define SERVER_NAME "localhost"
 //#define GET_REQUEST "GET / HTTP/1.0\r\n\r\n"
 
+#include "http_parser.h"
+
 #define DEBUG_LEVEL DO_DEBUG
 
 typedef struct {
@@ -617,6 +619,19 @@ url_info_t* split_url(url_info_t* info, const char* url)
     return info;
 }
 
+static i32 header_field_callback(http_parser *parser, const char *p, size_t len) {
+//    parser->data;
+    return 0;
+}
+
+static i32 body_callback(http_parser *parser, const char *p, size_t len) {
+    http_response_t* response = (http_response_t*)parser->data;
+    memrw_push_back(&response->buffer, (void*)p, len);
+    response->content_length += len;
+    return 0;
+}
+
+
 http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token) {
 
     url_info_t url_info = {};
@@ -660,18 +675,37 @@ http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const 
     http_response_t* response = NULL;
     if (read_ok && mem_buffer.used_size > 0) {
         // now we should have the whole HTTP response
-        console_print("%s\n", mem_buffer.data);
+        console_print_verbose("%s\n", mem_buffer.data);
 
-        response = malloc(sizeof(http_response_t));
-        response->buffer = mem_buffer;
+        response = calloc(1, sizeof(http_response_t));
+        response->buffer = memrw_create(MEGABYTES(2));
+
+        http_parser_settings settings = {};
+        settings.on_header_field = header_field_callback;
+        settings.on_body = body_callback;
+
+        http_parser* parser = malloc(sizeof(http_parser));
+        http_parser_init(parser, HTTP_RESPONSE);
+        parser->data = (void*)response;
+
+        i32 nparsed = http_parser_execute(parser, &settings, (char*)mem_buffer.data, mem_buffer.used_size);
+
+        console_print("Content length = %d\n", response->content_length);
+        console_print("%s\n", response->buffer.data);
 
 
     }
 
+    memrw_destroy(&mem_buffer);
+
     return response;
 }
 
-
+void http_response_destroy(http_response_t* response) {
+    ASSERT(response);
+    memrw_destroy(&response->buffer);
+    free(response);
+}
 
 
 

@@ -52,6 +52,8 @@ u64 memrw_push_back(memrw_t* buffer, void* data, u64 size) {
 void memrw_init(memrw_t* buffer, u64 capacity) {
 	memset(buffer, 0, sizeof(*buffer));
 	buffer->data = (u8*) malloc(capacity);
+    ASSERT(capacity > 0);
+    buffer->data[0] = '\0';
 	buffer->capacity = capacity;
 }
 
