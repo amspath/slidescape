@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -75,10 +75,10 @@ i32 work_queue_get_entry_count(work_queue_t* queue) {
 // TODO: add optional refcount increment
 bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
 	if (!queue) {
-		panic("work_queue_add_entry(): queue is NULL");
+		fatal_error("work_queue_add_entry(): queue is NULL");
 	}
 	if (userdata_size > sizeof(((work_queue_entry_t*)0)->userdata)) {
-		panic("work_queue_add_entry(): userdata_size overflows available space");
+		fatal_error("work_queue_add_entry(): userdata_size overflows available space");
 	}
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer

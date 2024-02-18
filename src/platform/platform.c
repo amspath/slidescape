@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -25,7 +25,7 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#define PANIC_IMPLEMENTATION
+#define FATAL_ERROR_IMPLEMENTATION
 #define STB_DS_IMPLEMENTATION
 #include "common.h"
 
@@ -61,7 +61,7 @@ mem_t* platform_read_entire_file(const char* filename) {
 				result->capacity = filesize;
 				size_t bytes_read = file_stream_read(result->data, filesize, fp);
 				if (bytes_read != filesize) {
-					panic();
+					fatal_error();
 				}
 			}
 		}

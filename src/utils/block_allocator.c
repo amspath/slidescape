@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -95,7 +95,7 @@ void* block_alloc(block_allocator_t* allocator) {
 				result = current_chunk->memory + block_index * allocator->block_size;
 			} else {
 				console_print_error("block_alloc(): out of memory!\n");
-				panic();
+				fatal_error();
 			}
 		}
 	}
@@ -127,7 +127,7 @@ void block_free(block_allocator_t* allocator, void* ptr_to_free) {
 		benaphore_unlock(&allocator->lock);
 	} else {
 		console_print_error("block_free(): invalid pointer!\n");
-		panic();
+		fatal_error();
 	}
 
 }

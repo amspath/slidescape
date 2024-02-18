@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -432,7 +432,7 @@ static void coco_output_license(coco_license_t* license, memrw_t* out) {
 	                                     "\"name\": \"%s\"}", license->url, license->id, license->name);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
-	} else panic();
+	} else fatal_error();
 }
 
 static void coco_output_licenses(coco_t* coco, memrw_t* out) {
@@ -465,7 +465,7 @@ static void coco_output_image(coco_image_t* image, memrw_t* out) {
                                 image->width, image->date_captured, image->flickr_url, image->id);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
-	} else panic();
+	} else fatal_error();
 }
 
 static void coco_output_images(coco_t* coco, memrw_t* out) {
@@ -514,7 +514,7 @@ static void coco_output_annotation(coco_t* coco, coco_annotation_t* annotation, 
 									     "\"segmentation\":[", annotation->id, annotation->category_id);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
-	} else panic();
+	} else fatal_error();
 	// Part 2: the segmentation field
 #if 0
 	i32 segmentation_count = 1;
@@ -554,7 +554,7 @@ static void coco_output_annotation(coco_t* coco, coco_annotation_t* annotation, 
 	                                    annotation->bbox.x, annotation->bbox.y, annotation->bbox.w, annotation->bbox.h);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
-	} else panic();
+	} else fatal_error();
 
 
 }
@@ -586,7 +586,7 @@ static void coco_output_category(coco_category_t* category, memrw_t* out) {
 										 category->color.r, category->color.g, category->color.b);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
-	} else panic();
+	} else fatal_error();
 }
 
 static void coco_output_categories(coco_t* coco, memrw_t* out) {
@@ -613,7 +613,7 @@ static void coco_output_feature(coco_feature_t* feature, memrw_t* out) {
 										 feature->id, feature->name);
 	if (len > 0 && len < sizeof(buf)) {
 		memrw_write(buf, out, len);
-	} else panic();
+	} else fatal_error();
 
 	// If the category_id JSON field is not present, that means the feature is not restricted to a group
 	if (feature->restrict_to_group) {

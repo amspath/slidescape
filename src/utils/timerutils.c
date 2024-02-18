@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ i64 get_clock() {
 #else
 #ifndef NDEBUG
 	if (!is_timer_initialized) {
-		panic("get_clock(): timer not initialized; on Windows, call win32_init_timer() once before calling get_clock()");
+		fatal_error("get_clock(): timer not initialized; on Windows, call win32_init_timer() once before calling get_clock()");
 	}
 #endif
 #endif

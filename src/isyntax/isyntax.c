@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -903,7 +903,7 @@ static void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_
 	if (new_len > capacity) {
 		capacity = next_pow2(new_len);
 		u8* new_ptr = (u8*)realloc(*dest, capacity);
-		if (!new_ptr) panic();
+		if (!new_ptr) fatal_error();
 		*dest = new_ptr;
 		*dest_capacity = capacity;
 	}
@@ -1065,7 +1065,7 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 						if (parser->contentlen == parser->contentbuf_capacity) {
 							size_t new_capacity = parser->contentbuf_capacity * 2;
 							char* new_ptr = (char*)realloc(parser->contentbuf, new_capacity);
-							if (!new_ptr) panic();
+							if (!new_ptr) fatal_error();
 							parser->contentbuf = new_ptr;
 							parser->contentcur = parser->contentbuf + parser->contentlen;
 							parser->contentbuf_capacity = new_capacity;
@@ -1151,7 +1151,7 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 										// (Each UFSImageBlockHeader object corresponds to a codeblock in the cluster)
 										++parser->block_header_index_for_cluster;
 										if (parser->block_header_index_for_cluster >= MAX_CODEBLOCKS_PER_CLUSTER) {
-											panic(); // TODO: unexpected error condition, fail more gracefully?
+											fatal_error(); // TODO: unexpected error condition, fail more gracefully?
 										}
 									}
 								} break;
@@ -1227,7 +1227,7 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 						if (parser->attrlen == parser->attrbuf_capacity) {
 							size_t new_capacity = parser->attrbuf_capacity * 2;
 							char* new_ptr = (char*)realloc(parser->attrbuf, new_capacity);
-							if (!new_ptr) panic();
+							if (!new_ptr) fatal_error();
 							parser->attrbuf = new_ptr;
 							parser->attrcur = parser->attrbuf + parser->attrlen;
 							parser->attrbuf_capacity = new_capacity;
@@ -2331,7 +2331,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 			bits_read += 6*8;
 			total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 		} else {
-			panic("invalid coeff_count");
+			fatal_error("invalid coeff_count");
 		}
 		serialized_length = total_mask_bits * (block_width * block_height / 8);
 	}
@@ -2625,7 +2625,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				bitmasks[2] = *(u16*)(byte_pos+4);
 				total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 			} else {
-				panic("invalid coeff_count");
+				fatal_error("invalid coeff_count");
 			}
 			expected_length = (total_mask_bits * block_width * block_height) / 8 + (coeff_count * 2);
 			ASSERT(decompressed_length == expected_length);
@@ -2655,7 +2655,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				// find next bit for current coeff
 				for (;;) {
 					if (running_coeff_index >= coeff_count) {
-						panic("too many bitplanes");
+						fatal_error("too many bitplanes");
 					}
 					u16 bitmask = bitmasks_copy[running_coeff_index];
 					if (bitmask) {
@@ -2671,7 +2671,7 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 				// compressor version 2: alternating coefficients
 				for (;;) {
 					if (running_bit_index >= 16) {
-						panic("too many bitplanes");
+						fatal_error("too many bitplanes");
 					}
 					if (running_coeff_index < coeff_count) {
 						u16 bitmask = bitmasks_copy[running_coeff_index];
@@ -3173,7 +3173,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 								current_data_chunk_index = next_data_chunk_index;
 								if (current_data_chunk_index >= max_possible_chunk_count) {
 									console_print_error("iSyntax: encountered too many data chunks\n");
-									panic();
+									fatal_error();
 								}
 
 								isyntax_data_chunk_t* chunk = wsi_image->data_chunks + current_data_chunk_index;
@@ -3239,7 +3239,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 							current_data_chunk_index = next_data_chunk_index;
 							if (current_data_chunk_index >= wsi_image->data_chunk_count) {
 								console_print_error("iSyntax: encountered too many data chunks\n");
-								panic();
+								fatal_error();
 							}
 
 							if (isyntax->data_model_major_version < 100) {

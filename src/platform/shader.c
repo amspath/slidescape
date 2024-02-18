@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -206,7 +206,7 @@ u32 load_basic_shader_program(const char* vert_filename, const char* frag_filena
 			char info_log[2048];
 			glGetProgramInfoLog(shader_program, sizeof(info_log), NULL, info_log);
 			console_print_error("Error: shader linking failed: %s", info_log);
-			panic();
+			fatal_error();
 		}
 	}
 

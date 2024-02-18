@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -163,10 +163,10 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
             image->level_count = tiff.max_downsample_level + 1;
 
             if (tiff.level_image_ifd_count > image->level_count) {
-                panic();
+                fatal_error();
             }
             if (image->level_count > WSI_MAX_LEVELS) {
-                panic();
+                fatal_error();
             }
 
             i32 ifd_index = 0;
@@ -343,7 +343,7 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
         image->level_count = wsi_image->level_count;
 
         if (image->level_count > WSI_MAX_LEVELS) {
-            panic();
+            fatal_error();
         }
 
         for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
@@ -456,7 +456,7 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
         image->level_count = dicom->wsi.level_count;
 
         if (image->level_count > WSI_MAX_LEVELS) {
-            panic();
+            fatal_error();
         }
 
         for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
@@ -627,10 +627,10 @@ void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
 
         // TODO: check against downsample level, see init_image_from_tiff()
         if (wsi->level_count > image->level_count) {
-            panic();
+            fatal_error();
         }
         if (image->level_count > WSI_MAX_LEVELS) {
-            panic();
+            fatal_error();
         }
 
         i32 wsi_level_index = 0;
@@ -1038,10 +1038,10 @@ void image_destroy(image_t* image) {
 				}
 				image->simple.is_valid = false;
 			} else {
-				panic("invalid image backend");
+				fatal_error("invalid image backend");
 			}
 		} else {
-			panic("invalid image type");
+			fatal_error("invalid image type");
 		}
 
 		for (i32 i = 0; i < image->level_count; ++i) {

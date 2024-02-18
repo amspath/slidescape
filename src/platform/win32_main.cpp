@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -377,7 +377,7 @@ void win32_init_input() {
 	Rid[0].hwndTarget = 0;
 	if (RegisterRawInputDevices(Rid, 1, sizeof(Rid[0])) == FALSE) {
 		win32_diagnostic("Registering raw input devices failed");
-		panic();
+		fatal_error();
 	}
 
 	win32_init_xinput();
@@ -678,7 +678,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 			BOOL ret = GetMessageA(&message, NULL, 0, 0); // blocks until there is a message
 			if (ret == -1) {
 				win32_diagnostic("GetMessageA");
-				panic();
+				fatal_error();
 			}
 		}
 	}
@@ -1197,24 +1197,24 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	wglGetProcAddress_alt = (PFNWGLGETPROCADDRESSPROC) GetProcAddress(opengl32_dll_handle, "wglGetProcAddress");
 	if (!wglGetProcAddress_alt) {
 		console_print("Error initalizing OpenGL: could not load proc 'wglGetProcAddress'.\n");
-		panic();
+		fatal_error();
 	}
 	wglCreateContext_alt = (PFNWGLCREATECONTEXTPROC) gl_get_proc_address("wglCreateContext");
-	if (!wglCreateContext_alt) { panic(); }
+	if (!wglCreateContext_alt) { fatal_error(); }
 	wglMakeCurrent_alt = (PFNWGLMAKECURRENTPROC) gl_get_proc_address("wglMakeCurrent");
-	if (!wglMakeCurrent_alt) { panic(); }
+	if (!wglMakeCurrent_alt) { fatal_error(); }
 	wglDeleteContext_alt = (PFNWGLDELETECONTEXTPROC) gl_get_proc_address("wglDeleteContext");
-	if (!wglDeleteContext_alt) { panic(); }
+	if (!wglDeleteContext_alt) { fatal_error(); }
 	wglGetCurrentDC_alt = (PFNWGLGETCURRENTDCPROC) gl_get_proc_address("wglGetCurrentDC");
-	if (!wglGetCurrentDC_alt) { panic(); }
+	if (!wglGetCurrentDC_alt) { fatal_error(); }
 	wglSetPixelFormat = (PFNSETPIXELFORMATPROC) gl_get_proc_address("wglSetPixelFormat");
-	if (!wglSetPixelFormat) { panic(); }
+	if (!wglSetPixelFormat) { fatal_error(); }
 	wglDescribePixelFormat = (PFNDESCRIBEPIXELFORMATPROC) gl_get_proc_address("wglDescribePixelFormat");
-	if (!wglDescribePixelFormat) { panic(); }
+	if (!wglDescribePixelFormat) { fatal_error(); }
 	wglChoosePixelFormat = (PFNCHOOSEPIXELFORMATPROC) gl_get_proc_address("wglChoosePixelFormat");
-	if (!wglChoosePixelFormat) { panic(); }
+	if (!wglChoosePixelFormat) { fatal_error(); }
 	wglSwapBuffers = (PFNSWAPBUFFERSPROC) gl_get_proc_address("wglSwapBuffers");
-	if (!wglSwapBuffers) { panic(); }
+	if (!wglSwapBuffers) { fatal_error(); }
 
 	// We want to create an OpenGL context using wglCreateContextAttribsARB, instead of the regular wglCreateContext.
 	// Unfortunately, that's considered an OpenGL extension. Therefore, we first need to create a "dummy" context
@@ -1245,12 +1245,12 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	if (use_software_renderer) {
 		if (!wglSetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format)) {
 			win32_diagnostic("wglSetPixelFormat");
-			panic();
+			fatal_error();
 		}
 	} else {
 		if (!SetPixelFormat(dummy_dc, suggested_pixel_format_index, &suggested_pixel_format)) {
 			win32_diagnostic("SetPixelFormat");
-			panic();
+			fatal_error();
 		}
 	}
 
@@ -1258,18 +1258,18 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	HGLRC dummy_glrc = wglCreateContext_alt(dummy_dc);
 	if (!dummy_glrc) {
 		win32_diagnostic("wglCreateContext");
-		panic();
+		fatal_error();
 	}
 
 	if (!wglMakeCurrent_alt(dummy_dc, dummy_glrc)) {
 		win32_diagnostic("wglMakeCurrent");
-		panic();
+		fatal_error();
 	}
 
 	// Before we go any further, try to report the supported OpenGL version from openg32.dll
 	PFNGLGETSTRINGPROC temp_glGetString = (PFNGLGETSTRINGPROC) gl_get_proc_address("glGetString");
 	if (temp_glGetString == NULL) {
-		panic();
+		fatal_error();
 	}
 
 	char version_string[256] = {};
@@ -1349,7 +1349,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	GET_WGL_PROC(wglGetExtensionsStringEXT, PFNWGLGETEXTENSIONSSTRINGEXTPROC);
 	if (!wglGetExtensionsStringEXT) {
 		console_print("Error: wglGetExtensionsStringEXT is unavailable\n");
-		panic();
+		fatal_error();
 	}
 	wgl_extensions_string = wglGetExtensionsStringEXT();
 //	puts(wgl_extensions_string);
@@ -1359,21 +1359,21 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 		GET_WGL_PROC(wglGetSwapIntervalEXT, PFNWGLGETSWAPINTERVALEXTPROC);
 	} else {
 		console_print("Error: WGL_EXT_swap_control is unavailable\n");
-		panic();
+		fatal_error();
 	}
 
 	if (win32_wgl_extension_supported("WGL_ARB_create_context")) {
 		GET_WGL_PROC(wglCreateContextAttribsARB, PFNWGLCREATECONTEXTATTRIBSARBPROC);
 	} else {
 		console_print("Error: WGL_ARB_create_context is unavailable\n");
-		panic();
+		fatal_error();
 	}
 
 	if (win32_wgl_extension_supported("WGL_ARB_pixel_format")) {
 		GET_WGL_PROC(wglChoosePixelFormatARB, PFNWGLCHOOSEPIXELFORMATARBPROC);
 	} else {
 		console_print("Error: WGL_ARB_pixel_format is unavailable\n");
-		panic();
+		fatal_error();
 	}
 
 #undef GET_WGL_PROC
@@ -1404,7 +1404,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	bool32 status = wglChoosePixelFormatARB(dc, pixel_attribs, NULL, 1, &suggested_pixel_format_index, &num_formats);
 	if (!status || num_formats == 0) {
 		console_print("wglChoosePixelFormatARB() failed.");
-		panic();
+		fatal_error();
 	}
 	wglDescribePixelFormat(dc, suggested_pixel_format_index, sizeof(suggested_pixel_format), &suggested_pixel_format);
 	if (!wglSetPixelFormat(dc, suggested_pixel_format_index, &suggested_pixel_format)) {
@@ -1431,7 +1431,7 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	glrcs[0] = wglCreateContextAttribsARB(dc, NULL, context_attribs);
 	if (glrcs[0] == NULL) {
 		console_print("wglCreateContextAttribsARB() failed.");
-		panic();
+		fatal_error();
 	}
 
 
@@ -1442,14 +1442,14 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	DestroyWindow(dummy_window);
 	if (!wglMakeCurrent_alt(dc, glrcs[0])) {
 		win32_diagnostic("wglMakeCurrent");
-		panic();
+		fatal_error();
 	}
 	ReleaseDC(window, dc);
 
 	// Now, get the OpenGL proc addresses using GLAD.
 	if (!gladLoadGLLoader((GLADloadproc) gl_get_proc_address)) {
 		console_print("Error initializing OpenGL: failed to initialize GLAD.\n");
-		panic();
+		fatal_error();
 	}
 
 	// Hack: Enabling synchronous debug output (on NVIDIA drivers) apparently disables OpenGL driver multithreading.
@@ -1466,12 +1466,12 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 		HGLRC glrc = wglCreateContextAttribsARB(dc, glrcs[0], context_attribs);
 		if (!glrc) {
 			console_print("Thread %d: wglCreateContextAttribsARB() failed.", thread_index);
-			panic();
+			fatal_error();
 		}
 /*		if (!wglShareLists(glrcs[0], glrc)) {
 			console_print("Thread %d: ", thread_index);
 			win32_diagnostic("wglShareLists");
-			panic();
+			fatal_error();
 		}*/
 		glrcs[thread_index] = glrc;
 	}
@@ -1629,7 +1629,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 			continue; // for some reason, this can fail, but with error code 0, retrying seems harmless??
 		} else {
 			win32_diagnostic("wglMakeCurrent");
-			panic();
+			fatal_error();
 		}
 	}
 	ReleaseDC(global_app_state.main_window, dc);
@@ -1707,7 +1707,7 @@ void win32_init_main_window(app_state_t* app_state) {
 
 	if (!RegisterClassA(&main_window_class)) {
 		win32_diagnostic("RegisterClassA");
-		panic();
+		fatal_error();
 	};
 
 	RECT desired_window_rect = {};
@@ -1728,7 +1728,7 @@ void win32_init_main_window(app_state_t* app_state) {
 	                                     0, 0, g_instance, 0);
 	if (!app_state->main_window) {
 		win32_diagnostic("CreateWindowExA");
-		panic();
+		fatal_error();
 	}
 
 	win32_init_opengl(app_state->main_window, false);

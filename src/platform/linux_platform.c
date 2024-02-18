@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -38,7 +38,7 @@ u8* platform_alloc(size_t size) {
     u8* result = (u8*) malloc(size);
     if (!result) {
         printf("Error: memory allocation failed!\n");
-        panic();
+        fatal_error();
     }
     return result;
 }

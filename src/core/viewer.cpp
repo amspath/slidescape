@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -314,7 +314,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 	while (work_queue_is_work_in_progress(&global_completion_queue)) {
 		work_queue_entry_t entry = work_queue_get_next_entry(&global_completion_queue);
 		if (entry.is_valid) {
-//			if (!entry.callback) panic();
+//			if (!entry.callback) fatal_error();
             work_queue_mark_entry_completed(&global_completion_queue);
 
 			// TODO(pvalkema): fix assumption here that isyntax_streamer_tile_completed_task_t has the same layout as viewer_notify_tile_completed_task_t

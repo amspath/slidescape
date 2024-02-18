@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -46,7 +46,7 @@ static void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_
 	if (new_len > capacity) {
 		capacity = next_pow2(new_len);
 		u8* new_ptr = (u8*)realloc(*dest, capacity);
-		if (!new_ptr) panic();
+		if (!new_ptr) fatal_error();
 		*dest = new_ptr;
 		*dest_capacity = capacity;
 	}
@@ -206,7 +206,7 @@ bool tiff_parse_xml_header(tiff_t* tiff, tiff_ifd_t* ifd, char* xml_header, i64 
 						if (parser.contentlen == parser.contentbuf_capacity) {
 							size_t new_capacity = parser.contentbuf_capacity * 2;
 							char* new_ptr = (char*)realloc(parser.contentbuf, new_capacity);
-							if (!new_ptr) panic();
+							if (!new_ptr) fatal_error();
 							parser.contentbuf = new_ptr;
 							parser.contentcur = parser.contentbuf + parser.contentlen;
 							parser.contentbuf_capacity = new_capacity;
@@ -325,7 +325,7 @@ bool tiff_parse_xml_header(tiff_t* tiff, tiff_ifd_t* ifd, char* xml_header, i64 
 						if (parser.attrlen == parser.attrbuf_capacity) {
 							size_t new_capacity = parser.attrbuf_capacity * 2;
 							char* new_ptr = (char*)realloc(parser.attrbuf, new_capacity);
-							if (!new_ptr) panic();
+							if (!new_ptr) fatal_error();
 							parser.attrbuf = new_ptr;
 							parser.attrcur = parser.attrbuf + parser.attrlen;
 							parser.attrbuf_capacity = new_capacity;

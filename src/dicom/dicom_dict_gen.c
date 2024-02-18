@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -732,7 +732,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 						if (parser.contentlen == parser.contentbuf_capacity) {
 							size_t new_capacity = parser.contentbuf_capacity * 2;
 							char* new_ptr = (char*)realloc(parser.contentbuf, new_capacity);
-							if (!new_ptr) panic();
+							if (!new_ptr) fatal_error();
 							parser.contentbuf = new_ptr;
 							parser.contentcur = parser.contentbuf + parser.contentlen;
 							parser.contentbuf_capacity = new_capacity;
@@ -831,7 +831,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 								if (uid_last_part_len < sizeof(new_entry.uid_last_part)) {
 									memcpy(new_entry.uid_last_part, parser.current_dicom_uid, uid_last_part_len);
 								} else {
-									panic("UID suffix too large for data structure");
+									fatal_error("UID suffix too large for data structure");
 								}
 								arrput(uid_entries, new_entry);
 							}
@@ -890,7 +890,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 						if (parser.attrlen == parser.attrbuf_capacity) {
 							size_t new_capacity = parser.attrbuf_capacity * 2;
 							char* new_ptr = (char*)realloc(parser.attrbuf, new_capacity);
-							if (!new_ptr) panic();
+							if (!new_ptr) fatal_error();
 							parser.attrbuf = new_ptr;
 							parser.attrcur = parser.attrbuf + parser.attrlen;
 							parser.attrbuf_capacity = new_capacity;

@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -204,7 +204,7 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 		}
 		console_print_verbose("OpenSlide: WSI has %d levels\n", wsi->level_count);
 		if (wsi->level_count > WSI_MAX_LEVELS) {
-			panic();
+			fatal_error();
 		}
 
 		openslide.get_level0_dimensions(wsi->osr, &wsi->width, &wsi->height);

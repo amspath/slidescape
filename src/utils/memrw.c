@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@ void memrw_maybe_grow(memrw_t* buffer, u64 new_size) {
 	if (new_size > buffer->capacity) {
 		u64 new_capacity = next_pow2(new_size);
 		void* new_ptr = realloc(buffer->data, new_capacity);
-		if (!new_ptr) panic();
+		if (!new_ptr) fatal_error();
 		buffer->data = new_ptr;
 //#if DO_DEBUG
 //		console_print_verbose("memrw_maybe_grow(): expanded buffer size from %u to %u\n", buffer->capacity, new_capacity);
@@ -71,7 +71,7 @@ void memrw_seek(memrw_t* buffer, i64 offset) {
 	if (offset >= 0 && (i64)offset < buffer->used_size) {
 		buffer->cursor = offset;
 	} else {
-		panic();
+		fatal_error();
 	};
 }
 

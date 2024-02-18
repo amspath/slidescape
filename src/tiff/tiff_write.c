@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,7 +16,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "../platform/common.h"
+#include "common.h"
 #include "mathutils.h"
 #include "stringutils.h"
 
@@ -324,7 +324,7 @@ void begin_construct_new_tile_from_source_tiles(export_task_data_t* export_task,
 	task.jpeg_size = jpeg_size;
 
 	if (!work_queue_submit_task(&global_work_queue, construct_new_tile_from_source_tiles_func, &task, sizeof(task))) {
-		panic();
+		fatal_error();
 	}
 }
 
@@ -435,7 +435,7 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
                work_queue_is_work_in_progress(&global_export_completion_queue)) {
 			work_queue_entry_t entry = work_queue_get_next_entry(&global_export_completion_queue);
 			if (entry.is_valid) {
-				if (!entry.callback) panic();
+				if (!entry.callback) fatal_error();
                 work_queue_mark_entry_completed(&global_export_completion_queue);
 
 				if (entry.callback == export_notify_load_tile_completed) {

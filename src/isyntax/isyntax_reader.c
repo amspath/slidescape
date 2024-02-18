@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema, Alexandr Virodov
+  Copyright (c) 2019-2024, Pieter Valkema, Alexandr Virodov
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -168,7 +168,7 @@ static void isyntax_openslide_load_tile_coefficients(isyntax_cache_t* cache, isy
         } else if (scale_in_chunk == 2) {
             codeblock_index_in_chunk = 5 + (tile->tile_y % 4) * 4 + (tile->tile_x % 4);
         } else {
-            panic();
+            fatal_error();
         }
 
         isyntax_openslide_load_tile_coefficients_ll_or_h(

@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -37,7 +37,7 @@ void copy_make_border(buffer2d_t* src, buffer2d_t* dst, i32 top, i32 bottom, i32
 	if (dst->data) {
 		// already allocated memory, need to that sizes match!
 		if (!(dst->h == dst_h && dst->w == dst_w)) {
-			panic("size mismatch");
+			fatal_error("size mismatch");
 		}
 //		memset(dst->data, 0, total_size);
 	} else {

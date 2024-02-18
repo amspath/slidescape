@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -306,7 +306,7 @@ bool load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 									if (annotation && feature_index < COUNT(annotation->features)) {
 										annotation->features[feature_index] = value;
 									} else {
-										panic();
+										fatal_error();
 									}
 								}
 							}
@@ -322,7 +322,7 @@ bool load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 							if (element_stack_index <= 0) {
 								// Underflow! More YXML_ELEMEND than YXML_ELEMSTART?
 								// yxml should throw an error in this case (malformed XML file?); this code should never be reached.
-								panic();
+								fatal_error();
 							}
 							--element_stack_index;
 

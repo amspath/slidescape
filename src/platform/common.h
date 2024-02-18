@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -302,36 +302,38 @@ typedef struct str_t {
 #define __FILENAME__ __FILE__
 #endif
 
-#define panic(message) _panic(__FILE__, __LINE__, __func__, "" message)
-#if PANIC_DONT_INLINE
-#define PANIC_INLINE_SPECIFIER
-// Not inlining _panic() shaves a few kilobytes off the executable size.
-// NOTE: if PANIC_DONT_INLINE is enabled, PANIC_IMPLEMENTATION must be defined in exactly 1 source file.
+#define fatal_error(message) _fatal_error(__FILE__, __LINE__, __func__, "" message)
+#if FATAL_ERROR_DONT_INLINE
+#define FATAL_ERROR_INLINE_SPECIFIER
+// Not inlining _fatal_error() shaves a few kilobytes off the executable size.
+// NOTE: if FATAL_ERROR_DONT_INLINE is enabled, FATAL_ERROR_IMPLEMENTATION must be defined in exactly 1 source file.
 #ifdef __cplusplus
 extern "C"
 #endif
-void _panic(const char* source_filename, i32 line, const char* func, const char* message);
+void _fatal_error(const char* source_filename, i32 line, const char* func, const char* message);
 #else
-#define PANIC_IMPLEMENTATION
-#define PANIC_INLINE_SPECIFIER FORCE_INLINE
-#endif //PANIC_DONT_INLINE
-#ifdef PANIC_IMPLEMENTATION
-PANIC_INLINE_SPECIFIER void _panic(const char* source_filename, i32 line, const char* func, const char* message) {
+#define FATAL_ERROR_IMPLEMENTATION
+#define FATAL_ERROR_INLINE_SPECIFIER FORCE_INLINE
+#endif //FATAL_ERROR_DONT_INLINE
+#ifdef FATAL_ERROR_IMPLEMENTATION
+FATAL_ERROR_INLINE_SPECIFIER void _fatal_error(const char* source_filename, i32 line, const char* func, const char* message) {
 	fprintf(stderr, "%s(): %s:%d\n", func, source_filename, line);
 	if (message[0] != '\0') fprintf(stderr, "Error: %s\n", message);
 	fprintf(stderr, "A fatal error occurred (aborting).\n");
 #if DO_DEBUG
 	#if COMPILER_GCC
 	__builtin_trap();
-#endif
+	#elif COMPILER_MSVC
+	__debugbreak();
+	#endif
 #endif
 	abort();
 }
-#endif //PANIC_IMPLEMENTATION
+#endif //FATAL_ERROR_IMPLEMENTATION
 
 #ifndef NDEBUG
 #define DO_DEBUG 1
-#define ASSERT(expr) do {if (!(expr)) panic();} while(0)
+#define ASSERT(expr) do {if (!(expr)) fatal_error();} while(0)
 #else
 #define DO_DEBUG 0
 #define ASSERT(expr)

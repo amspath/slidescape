@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -364,7 +364,7 @@ void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 void isyntax_begin_load_tile(isyntax_streamer_t* streamer, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_t* isyntax = streamer->isyntax;
 	if (!isyntax->work_submission_queue) {
-		panic("isyntax_begin_load_tile(): work_submission_queue not set");
+		fatal_error("isyntax_begin_load_tile(): work_submission_queue not set");
 	}
 	isyntax_level_t* level = streamer->wsi->levels + scale;
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
@@ -396,7 +396,7 @@ void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
 void isyntax_begin_first_load(isyntax_streamer_t* streamer) {
 	work_queue_t* submission_queue = streamer->isyntax->work_submission_queue;
 	if (!submission_queue) {
-		panic("isyntax_begin_first_load(): work_submission_queue not set");
+		fatal_error("isyntax_begin_first_load(): work_submission_queue not set");
 	}
 	atomic_increment(&streamer->isyntax->refcount); // retain; don't destroy isyntax while busy
 	if (!work_queue_submit_task(submission_queue, isyntax_first_load_task_func, streamer, sizeof(*streamer))) {
@@ -422,7 +422,7 @@ void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* ws
 		} else if (scale_in_chunk == 2) {
 			codeblock_index_in_chunk = 5 + (tile_y % 4) * 4 + (tile_x % 4);
 		} else {
-			panic();
+			fatal_error();
 		}
 		i32 chunk_codeblock_indices_for_color[3] = {codeblock_index_in_chunk,
 		                                            chunk->codeblock_count_per_color + codeblock_index_in_chunk,
@@ -462,7 +462,7 @@ void isyntax_decompress_h_coeff_for_tile_task_func(i32 logical_thread_index, voi
 
 void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, isyntax_tile_t* tile, i32 tile_x, i32 tile_y) {
 	if (!isyntax->work_submission_queue) {
-		panic("isyntax_begin_decompress_h_coeff_for_tile(): work_submission_queue not set");
+		fatal_error("isyntax_begin_decompress_h_coeff_for_tile(): work_submission_queue not set");
 	}
 	isyntax_decompress_h_coeff_for_tile_task_t task = {0};
 	task.isyntax = isyntax;
