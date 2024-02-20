@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -381,7 +381,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 
 
 	if (!show_only_input_bar) {
-		ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_AlwaysUseWindowPadding);
+		ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_HorizontalScrollbar);
 		if (ImGui::BeginPopupContextWindow())
 		{
 			if (ImGui::Selectable("Clear")) console_clear_log();
@@ -435,7 +435,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 //	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, (ImVec2){0, 0});
 //	ImGui::PushClipRect(ImVec2(0, ImGui::GetCursorPosY()), )
 //	ImGui::SetCursorPosY(ImGui::GetWindowHeight() - footer_height_to_reserve);
-	ImGui::BeginChild("CommandRegion", ImVec2(0, 0), false, ImGuiWindowFlags_NoScrollbar);
+	ImGui::BeginChild("CommandRegion", ImVec2(0, 0), 0, ImGuiWindowFlags_NoScrollbar);
 	if (ImGui::BeginPopupContextWindow()) {
 		if (ImGui::Selectable("Clear")) console_clear_log();
 		if (ImGui::MenuItem("Verbose mode", NULL, &is_verbose_mode)) {}
