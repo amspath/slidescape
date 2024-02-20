@@ -109,16 +109,17 @@ static void my_debug( void *ctx, int level,
 mbedtls_x509_crt* ssl_cert_load_defaults() {
 #if WINDOWS
     HCERTSTORE store;
-	PCCERT_CONTEXT cert;
-	sslcert *chain = NULL;
-	if( store = CertOpenSystemStore(0, (LPCSTR)"Root") ){
-		cert = NULL;
-		while( cert = CertEnumCertificatesInStore(store, cert) ){
+	PCCERT_CONTEXT cert = NULL;
+	mbedtls_x509_crt *chain = NULL;
+	store = CertOpenSystemStore(0, (LPCSTR) "Root");
+	if (store) {
+		cert = CertEnumCertificatesInStore(store, cert);
+		while (cert){
 			if( chain == NULL ){
-				chain = new sslcert();
-				chain->create( NULL );
+				chain = calloc(1, sizeof(mbedtls_x509_crt));
 			}
-			mbedtls_x509_crt_parse_der( chain->c, (unsigned char *)cert->pbCertEncoded, cert->cbCertEncoded );
+			mbedtls_x509_crt_parse_der(chain, (unsigned char *)cert->pbCertEncoded, cert->cbCertEncoded );
+			cert = CertEnumCertificatesInStore(store, cert);
 		}
 		CertCloseStore(store, 0);
 	}

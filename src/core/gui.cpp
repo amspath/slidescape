@@ -916,7 +916,7 @@ void save_changes_modal(app_state_t* app_state, annotation_set_t* annotation_set
 
 void gui_draw_open_uri_window(app_state_t* app_state) {
     ImGui::SetNextWindowPos(ImVec2(120, 100), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(544, 158), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(620, 222), ImGuiCond_FirstUseEver);
 
     ImGui::Begin("Open URI", &show_open_uri_window);
 
