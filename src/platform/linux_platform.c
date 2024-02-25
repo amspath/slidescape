@@ -44,9 +44,16 @@ u8* platform_alloc(size_t size) {
 }
 
 const char* get_default_save_directory() {
+    static char default_save_dir[256];
+    static bool first_time = true;
 	struct passwd* pwd = getpwuid(getuid());
-	if (pwd)
-		return pwd->pw_dir;
-	else
-		return "";
+	if (pwd) {
+        if (first_time) {
+            snprintf(default_save_dir, sizeof(default_save_dir)-1, "%s/", pwd->pw_dir);
+            first_time = false;
+        }
+        return default_save_dir;
+    } else {
+        return "";
+    }
 };

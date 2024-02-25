@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -117,17 +117,23 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
     min_size.y *= 0.5f;
 
     if (need_open_file_dialog) {
+
+        ImGuiFileDialogFlags flags = ImGuiFileDialogFlags_DontShowHiddenFiles
+                                     | ImGuiFileDialogFlags_DisableCreateDirectoryButton
+                                     | ImGuiFileDialogFlags_ConfirmOverwrite
+                                     | ImGuiFileDialogFlags_Modal;
+        IGFD::FileDialogConfig config;
+        config.filePathName = get_active_directory(app_state);
+        config.flags = flags;
         if (open_file_dialog_action == OPEN_FILE_DIALOG_LOAD_GENERIC_FILE) {
             const char* filters = ".*,WSI files (*.tiff *.ptif){.tiff,.ptif}";
             IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "ChooseFileDlgKey",
-                                                     (const std::string &) "Choose file", filters,
-                                                     (const std::string &) get_active_directory(app_state),
-                                                     (const std::string &) "", 1, nullptr, 0);
+                                                     (const std::string &) "Choose file",
+                                                     filters, config);
         } else if (open_file_dialog_action == OPEN_FILE_DIALOG_CHOOSE_DIRECTORY) {
             IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "ChooseFileDlgKey",
-                                                     (const std::string &) "Choose annotation directory",nullptr,
-                                                     (const std::string &) get_active_directory(app_state),
-                                                     (const std::string &) "", 1, nullptr, 0);
+                                                     (const std::string &) "Choose annotation directory",
+                                                     nullptr, config);
         }
 
         need_open_file_dialog = false;
@@ -189,10 +195,16 @@ bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer
     min_size.y *= 0.5f;
 
     if (need_save_file_dialog) {
+        IGFD::FileDialogConfig config;
+        ImGuiFileDialogFlags flags = ImGuiFileDialogFlags_DontShowHiddenFiles
+                                     | ImGuiFileDialogFlags_DisableCreateDirectoryButton
+                                     | ImGuiFileDialogFlags_ConfirmOverwrite
+                                     | ImGuiFileDialogFlags_Modal;
+        config.filePathName = get_active_directory(app_state);
+        config.flags = flags;
         IGFD::FileDialog::Instance()->OpenDialog((const std::string &) "SaveFileDlgKey",
                                                 (const std::string &) "Save as...", "WSI files (*.tiff *.ptif){.tiff,.ptif},.*",
-                                                (const std::string &) get_active_directory(app_state),
-                                                (const std::string &) "", 1, nullptr, 0);
+                                                config);
         need_save_file_dialog = false;
         save_file_dialog_open = true;
     }
