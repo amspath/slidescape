@@ -49,6 +49,7 @@ SOFTWARE.
 #include <sys/stat.h>
 #include <cstdio>
 #include <cerrno>
+#include <cassert>
 
 // this option need c++17
 #ifdef USE_STD_FILESYSTEM

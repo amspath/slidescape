@@ -30,6 +30,7 @@
 #include "tiff_write.h"
 #include "image.h"
 #include "image_registration.h"
+#include "slide_score.h"
 
 
 #define GUI_IMPL
@@ -923,19 +924,48 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
     ImGuiInputTextFlags input_flags = ImGuiInputTextFlags_EnterReturnsTrue;
     bool entered = false;
 
+    if (ImGui::IsWindowAppearing() && !ImGui::IsAnyItemActive()) {
+        ImGui::SetKeyboardFocusHere();
+    }
     entered = entered || ImGui::InputTextEx("##URI", "Enter URI here", remote_uri, sizeof(remote_uri), ImVec2(-FLT_MIN, 0), input_flags);
 
     static char token_buf[4096];
+    static bool first_time = true;
+    if (first_time) {
+        mem_t* key_file = platform_read_entire_file("api_key.txt");
+        if (key_file) {
+            if (key_file->len < sizeof(token_buf)) {
+                memcpy(token_buf, key_file->data, key_file->len);
+            }
+            free(key_file);
+        }
+        first_time = false;
+    }
+    static bool save_api_key = true;
+    static bool is_api_key_dirty = false;
     if (ImGui::TreeNodeEx("API token", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
-        entered = entered || ImGui::InputTextEx("##API_token", "Enter API token here", token_buf, sizeof(token_buf), ImVec2(-FLT_MIN, 0), input_flags);
+        if (ImGui::Checkbox("Save API key", &save_api_key)) {}
+        ImGuiInputTextFlags api_key_input_flags = 0;
+        if (ImGui::InputTextEx("##API_token", "Enter API token here", token_buf, sizeof(token_buf), ImVec2(-FLT_MIN, 0), api_key_input_flags)) {
+            is_api_key_dirty = true;
+        }
 
     }
 
     static bool pressed_connect;
     if (entered || ImGui::Button("Connect")) {
         pressed_connect = true;
+        if (save_api_key && is_api_key_dirty) {
+            file_stream_t fp = file_stream_open_for_writing("api_key.txt");
+            if (fp) {
+                file_stream_write(token_buf, strlen(token_buf), fp);
+                file_stream_close(fp);
+            }
+            is_api_key_dirty = false;
+        }
         http_response_t* response = open_remote_uri(app_state, remote_uri, token_buf);
         if (response) {
+            debug_slide_score_api_handle_response((const char *) (response->buffer.data), response->buffer.used_size);
             http_response_destroy(response);
         }
     }

@@ -690,6 +690,7 @@ http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const 
         parser->data = (void*)response;
 
         i32 nparsed = http_parser_execute(parser, &settings, (char*)mem_buffer.data, mem_buffer.used_size);
+        memrw_putc(0, &response->buffer); // zero-terminate the content string
 
         console_print("Content length = %d\n", response->content_length);
         console_print("%s\n", response->buffer.data);
@@ -707,7 +708,6 @@ void http_response_destroy(http_response_t* response) {
     memrw_destroy(&response->buffer);
     free(response);
 }
-
 
 
 

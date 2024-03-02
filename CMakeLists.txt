@@ -209,6 +209,7 @@ set(VIEWER_SOURCE_FILES
         core/coco.cpp
         core/ini.c
         core/remote.c
+        core/slide_score.c
         core/image.c
         core/image_registration.c
         dicom/dicom.c

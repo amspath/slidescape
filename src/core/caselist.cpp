@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -132,7 +132,6 @@ bool32 load_caselist(caselist_t* caselist, const char* json_source, size_t json_
 		json_value_s* root = json_parse(json_source, json_length);
 		if (root->type != json_type_array) {
 			// failed
-
 		} else {
 			caselist->json_root_value = root;
 
