@@ -3296,6 +3296,17 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 				isyntax->is_block_allocator_owned = false;
 			}
 
+			// Blocks with 'background' coefficients, to use for filling in margins at the edges (in case the neighboring codeblock doesn't exist)
+			if (!isyntax->black_dummy_coeff) {
+				isyntax->black_dummy_coeff = (icoeff_t*)calloc(1, isyntax->block_width * isyntax->block_height * sizeof(icoeff_t));
+			}
+			if (!isyntax->white_dummy_coeff) {
+				isyntax->white_dummy_coeff = (icoeff_t*)malloc(isyntax->block_width * isyntax->block_height * sizeof(icoeff_t));
+				for (i32 i = 0; i < isyntax->block_width * isyntax->block_height; ++i) {
+					isyntax->white_dummy_coeff[i] = 255;
+				}
+			}
+
 			success = true;
 
 			free(read_buffer);

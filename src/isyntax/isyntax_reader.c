@@ -128,7 +128,7 @@ static void isyntax_openslide_load_tile_coefficients_ll_or_h(isyntax_cache_t* ca
 
         isyntax_hulsken_decompress(codeblock_data, codeblock->block_size,
                                    isyntax->block_width, isyntax->block_height,
-                                   codeblock->coefficient, 1,
+                                   codeblock->coefficient, wsi->compressor_version,
                                    is_ll ? tile->color_channels[color].coeff_ll : tile->color_channels[color].coeff_h);
         free(codeblock_data);
     }

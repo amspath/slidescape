@@ -51,19 +51,6 @@ static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixel
 
 }
 
-static void isyntax_init_dummy_codeblocks(isyntax_t* isyntax) {
-	// Blocks with 'background' coefficients, to use for filling in margins at the edges (in case the neighboring codeblock doesn't exist)
-	if (!isyntax->black_dummy_coeff) {
-		isyntax->black_dummy_coeff = (icoeff_t*)calloc(1, isyntax->block_width * isyntax->block_height * sizeof(icoeff_t));
-	}
-	if (!isyntax->white_dummy_coeff) {
-		isyntax->white_dummy_coeff = (icoeff_t*)malloc(isyntax->block_width * isyntax->block_height * sizeof(icoeff_t));
-		for (i32 i = 0; i < isyntax->block_width * isyntax->block_height; ++i) {
-			isyntax->white_dummy_coeff[i] = 255;
-		}
-	}
-}
-
 static i32 isyntax_load_all_tiles_in_level(isyntax_streamer_t* streamer, i32 scale) {
 	i32 tiles_loaded = 0;
 	i32 tile_index = 0;
@@ -124,8 +111,6 @@ static void isyntax_do_first_load(isyntax_streamer_t* streamer) {
 	i64 start_first_load = get_clock();
 	i32 tiles_loaded = 0;
 	isyntax->total_rgb_transform_time = 0.0f;
-
-	isyntax_init_dummy_codeblocks(isyntax);
 
 	i32 scale = wsi->max_scale;
 	isyntax_level_t* current_level = wsi->levels + scale;
