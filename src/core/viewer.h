@@ -342,6 +342,7 @@ typedef struct app_state_t {
     char last_active_directory[512];
     char annotation_directory[512];
     bool is_annotation_directory_set;
+    bool need_close;
 } app_state_t;
 
 

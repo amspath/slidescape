@@ -94,7 +94,8 @@ typedef struct annotation_group_t {
 	i32 id;
 	bool is_explicitly_defined; // true if there is an associated <Group> in the XML file
 	bool selected;
-	bool deleted; // TODO: is this right?
+    bool hidden;
+    bool deleted; // TODO: is this right?
 } annotation_group_t;
 
 typedef struct annotation_feature_t {

@@ -771,6 +771,13 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 	// Step 3: choose the annotation that has the closest distance.
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
+
+        // Don't interact with hidden annotations (if the assingned group is flagged as hidden)
+        annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
+        if (group->hidden) {
+            continue;
+        }
+
 		// TODO: think about what to do for annotations that are not polygons (e.g., circles) / i.e. have no coordinates
 		if (annotation->coordinate_count > 0) {
 			if (is_point_within_annotation_bounds(annotation, point, bounds_check_tolerance)) {
@@ -1299,6 +1306,10 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
+        annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
+        if (group->hidden) {
+            continue;
+        }
 
 		// Don't draw the annotation if it's out of view
 		annotation_recalculate_bounds_if_necessary(annotation);
@@ -1312,7 +1323,6 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			continue;
 		}
 
-		annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
 //		rgba_t rgba = {50, 50, 0, 255 };
 		rgba_t base_color = group->color;
 		u8 alpha = (u8)(annotation_opacity * 255.0f);
@@ -1431,6 +1441,11 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 						gui_draw_insert_annotation_submenu(app_state);
 
+                        ImGui::Separator();
+                        if (ImGui::MenuItem("Close", "Ctrl+W")) {
+                            app_state->need_close = true;
+                        }
+
 						ImGui::EndPopup();
 					}
 				}
@@ -1530,6 +1545,11 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 			gui_draw_insert_annotation_submenu(app_state);
 
+            ImGui::Separator();
+            if (ImGui::MenuItem("Close", "Ctrl+W")) {
+                app_state->need_close = true;
+            }
+
 			ImGui::EndPopup();
 		}
 	}
@@ -1564,9 +1584,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	// find group corresponding to the currently selected annotations
 	i32 annotation_group_index = -1;
+    annotation_t* selected_annotation = NULL;
 	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 		annotation_t* annotation = get_active_annotation(annotation_set, i);
 		if (annotation->selected) {
+            selected_annotation = annotation;
 			if (annotation_group_index == -1) {
 				annotation_group_index = annotation->group_id;
 			} else if (annotation_group_index != annotation->group_id) {
@@ -1578,6 +1600,15 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	bool nothing_selected = (annotation_group_index == -1);
 	bool multiple_groups_selected = (annotation_group_index == -2);
 
+    bool multiple_annotations_selected = annotation_set->selection_count > 0;
+    const char* annotation_name_preview_string = "(nothing selected)";
+    if (annotation_set->selection_count > 0) {
+        if (annotation_set->selection_count == 1) {
+            annotation_name_preview_string = selected_annotation->name;
+        } else {
+            annotation_name_preview_string = "(multiple selected)";
+        }
+    }
 
 	// Detect hotkey presses for group assignment
 	bool* hotkey_pressed = (bool*) alloca(annotation_set->active_group_count * sizeof(bool));
@@ -1605,7 +1636,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	if (show_annotations_window) {
 
-		ImGui::SetNextWindowPos(ImVec2(830,43), ImGuiCond_FirstUseEver, ImVec2());
+		ImGui::SetNextWindowPos(ImVec2(1011,43), ImGuiCond_FirstUseEver, ImVec2());
 		ImGui::SetNextWindowSize(ImVec2(525,673), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
@@ -1753,6 +1784,10 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			if (ImGui::Button("Assign group or feature...")) {
 				show_annotation_group_assignment_window = true;
 			}
+            ImGui::SameLine();
+            if (ImGui::Button("Show/hide groups...")) {
+                show_annotation_group_filter_window = true;
+            }
 
 			ImGui::NewLine();
 
@@ -1863,6 +1898,8 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				ImGui::ColorEdit3("Group color", (float*) color, flags);
 			}
 
+            //ImGui::Checkbox("Hidden", &selected_group->hidden);
+
 			if (ImGui::Button("Delete group")) {
 				//annotation_group_delete(annotation_set, edit_group_index);
 				if (selected_group) {
@@ -1881,6 +1918,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				edit_group_index = add_annotation_group(annotation_set, new_group_name);
 				notify_annotation_set_modified(annotation_set);
 			}
+
+            ImGui::SameLine();
+            if (ImGui::Button("Show/hide groups...")) {
+                show_annotation_group_filter_window = true;
+            }
 
 			ImGui::NewLine();
 
@@ -2093,7 +2135,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::Begin("Assign", &show_annotation_group_assignment_window);
 
-		ImGui::TextUnformatted(group_preview_string);
+        ImGui::TextUnformatted(annotation_name_preview_string);
 
 		ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
 		if (ImGui::BeginTabBar("Feature assignment tab bar", tab_bar_flags))
@@ -2129,8 +2171,20 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 					    || pressed_hotkey) {
 						set_group_for_selected_annotations(annotation_set, group_index);
 					}
+                    if (ImGui::BeginPopupContextItem()) {
+                        ImGui::MenuItem("Hide group", NULL, &group->hidden);
+                        ImGui::EndPopup();
+                    }
 
-					ImGui::SameLine(0); ImGui::RadioButton(group_item_previews[group_index], &annotation_group_index, group_index);
+					ImGui::SameLine(0);
+                    if (group->hidden) {
+                        ImGuiStyle& style = ImGui::GetStyle();
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * style.DisabledAlpha);
+                    }
+                    ImGui::RadioButton(group_item_previews[group_index], &annotation_group_index, group_index);
+                    if (group->hidden) {
+                        ImGui::PopStyleVar(1);
+                    }
 					if (group_index <= 9) {
 						ImGui::SameLine(ImGui::GetWindowWidth()-40.0f);
 						if (group_index <= 8) {
@@ -2259,8 +2313,54 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			ImGui::EndTabBar();
 		}
 
+        bool need_disable_show_hide_button = (annotation_set->active_annotation_count == 0);
+        if (need_disable_show_hide_button) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Show/hide groups...")) {
+            show_annotation_group_filter_window = true;
+        }
+        if (need_disable_show_hide_button) {
+            ImGui::EndDisabled();
+        }
+
+
 		ImGui::End();
 	}
+
+    if (show_annotation_group_filter_window) {
+
+        ImGui::SetNextWindowPos(ImVec2(288,42), ImGuiCond_FirstUseEver, ImVec2());
+        ImGui::SetNextWindowSize(ImVec2(285,572), ImGuiCond_FirstUseEver);
+
+        ImGui::Begin("Show/hide groups", &show_annotation_group_filter_window);
+
+        bool disable_filter_checkboxes = !scene->enable_annotations;
+        if (disable_filter_checkboxes) {
+            ImGui::BeginDisabled();
+        }
+
+        for (i32 group_index = 0; group_index < annotation_set->active_group_count; ++group_index) {
+            annotation_group_t* group = annotation_set->stored_groups + group_index;
+
+            bool shown = !group->hidden;
+            if (ImGui::Checkbox(group->name, &shown)) {
+                group->hidden = !shown;
+            }
+        }
+
+        if (disable_filter_checkboxes) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::Separator();
+        bool hidden = !scene->enable_annotations;
+        if (ImGui::Checkbox("Hide all annotations (H)", &hidden)) {
+            scene->enable_annotations = !hidden;
+        }
+
+        ImGui::End();
+    }
 }
 
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set) {

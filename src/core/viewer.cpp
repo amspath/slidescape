@@ -1104,10 +1104,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			app_state->seconds_without_mouse_movement += delta_time;
 		}
 
-		if (was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) {
+		if ((was_key_pressed(input, KEY_W) && input->keyboard.key_ctrl.down) || app_state->need_close) {
 			menu_close_file(app_state);
-			do_after_scene_render(app_state, input);
-			return;
+            do_after_scene_render(app_state, input);
+            app_state->need_close = false;
+            return;
 		}
 
 		if (gui_want_capture_mouse) {
@@ -1751,6 +1752,9 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 		if (was_key_pressed(input, KEY_H)) {
 			app_state->scene.enable_annotations = !app_state->scene.enable_annotations;
 		}
+        if (was_key_pressed(input, KEY_G)) {
+            show_annotation_group_assignment_window = !show_annotation_group_assignment_window;
+        }
 	}
     // Ctrl+U: open URI window
     if (was_key_pressed(input, KEY_U) && input->keyboard.key_ctrl.down) {
