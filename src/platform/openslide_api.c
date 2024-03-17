@@ -34,6 +34,9 @@ HINSTANCE win32_load_library_with_possible_filenames(const wchar_t** filenames, 
     for (i32 i = 0; i < filename_count; ++i) {
         const wchar_t* filename = filenames[i];
         instance = LoadLibraryW(filename);
+		if (instance) {
+			return instance;
+		}
     }
     return instance;
 }
