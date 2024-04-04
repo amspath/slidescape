@@ -577,12 +577,11 @@ int main(int argc, const char** argv)
 #if LINUX
 
 	// Query default monitor resolution
-	float ddpi, hdpi, vdpi;
+	// TODO: which is the correct 'base' dpi? Is it 72 for macOS, 96 for Linux?
+	float ddpi = 96.0f, hdpi = 0.0f, vdpi = 0.0f;
 	if (SDL_GetDisplayDPI(0, &ddpi, &hdpi, &vdpi) != 0) {
 		fprintf(stderr, "Failed to obtain DPI information for display 0: %s\n", SDL_GetError());
-		exit(1);
 	}
-	// TODO: which is the correct 'base' dpi? Is it 72 for macOS, 96 for Linux?
 	float dpi_scaling = ddpi / 72.0f;
 
 	// NOTE: SDL_GetDisplayDPI() may return bogus results (ex. on Ubuntu 20.04 / SDL 2.0.10)

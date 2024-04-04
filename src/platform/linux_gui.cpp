@@ -120,7 +120,6 @@ void gui_draw_open_file_dialog(app_state_t* app_state) {
 
         ImGuiFileDialogFlags flags = ImGuiFileDialogFlags_DontShowHiddenFiles
                                      | ImGuiFileDialogFlags_DisableCreateDirectoryButton
-                                     | ImGuiFileDialogFlags_ConfirmOverwrite
                                      | ImGuiFileDialogFlags_Modal;
         IGFD::FileDialogConfig config;
         config.filePathName = get_active_directory(app_state);
