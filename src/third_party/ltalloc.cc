@@ -1021,6 +1021,9 @@ CPPCODE(extern "C") void ltfree(void *p)
 		
 		uintptr_t ptr = (uintptr_t )p;
 		ptr += size_without_canary;
+		if (*(LTALLOC_CANARY_TYPE*)ptr != LTALLOC_CANARY) {
+			LTALLOC_ASSERT(!"memory overflow");
+		}
 		LTALLOC_ASSERT("memory overflow detected!" && *(LTALLOC_CANARY_TYPE*)ptr == LTALLOC_CANARY);
 	}
 #endif
@@ -1067,9 +1070,12 @@ CPPCODE(extern "C") size_t ltmsize(void *p)
 		size_t size = ptrie_lookup(&largeAllocSizes, (uintptr_t)p);
 #endif
 
-#ifdef LTALLOC_OVERFLOW_DETECTION
-		size -= LTALLOC_CANARY_SIZE;
-#endif
+		// NOTE(pvalkema): disabled these lines to fix a bug with spurious detection of overflows.
+		// See this GitHub issue for a description of the problem:
+		// https://github.com/r-lyeh-archived/ltalloc/issues/29
+//#ifdef LTALLOC_OVERFLOW_DETECTION
+//		size -= LTALLOC_CANARY_SIZE;
+//#endif
 
 		return size;
 	}
@@ -1319,6 +1325,12 @@ CPPCODE(extern "C") void *ltrealloc( void *ptr, size_t sz ) {
 	if( !ptr ) return ltmalloc( sz );
 	if( !sz  ) return ltfree( ptr ), (void *)0;
 	size_t osz = ltmsize( ptr );
+	// NOTE(pvalkema): added this to fix a bug that could cause spurious overflow detections
+	// See this GitHub issue for a description of the problem:
+	// https://github.com/r-lyeh-archived/ltalloc/issues/29
+#ifdef LTALLOC_OVERFLOW_DETECTION
+	osz -= LTALLOC_CANARY_SIZE;
+#endif
 	if( sz <= osz ) {
 		return ptr;
 	}
