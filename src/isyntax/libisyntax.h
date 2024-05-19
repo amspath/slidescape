@@ -47,8 +47,9 @@ void            libisyntax_close(isyntax_t* isyntax);
 //== Getters API ==
 int32_t                libisyntax_get_tile_width(const isyntax_t* isyntax);
 int32_t                libisyntax_get_tile_height(const isyntax_t* isyntax);
-int32_t                libisyntax_get_wsi_image_index(const isyntax_t* isyntax);
-const isyntax_image_t* libisyntax_get_image(const isyntax_t* isyntax, int32_t wsi_image_index);
+const isyntax_image_t* libisyntax_get_wsi_image(const isyntax_t* isyntax);
+const isyntax_image_t* libisyntax_get_label_image(const isyntax_t* isyntax);
+const isyntax_image_t* libisyntax_get_macro_image(const isyntax_t* isyntax);
 int32_t                libisyntax_image_get_level_count(const isyntax_image_t* image);
 const isyntax_level_t* libisyntax_image_get_level(const isyntax_image_t* image, int32_t index);
 
@@ -79,5 +80,15 @@ void            libisyntax_cache_destroy(isyntax_cache_t* isyntax_cache);
 isyntax_error_t libisyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* isyntax_cache,
                                      int32_t level, int64_t tile_x, int64_t tile_y,
                                      uint32_t* pixels_buffer, int32_t pixel_format);
+isyntax_error_t libisyntax_read_region(isyntax_t* isyntax, isyntax_cache_t* isyntax_cache, int32_t level,
+                                       int64_t x, int64_t y, int64_t width, int64_t height, uint32_t* pixels_buffer,
+                                       int32_t pixel_format);
 
 
+isyntax_error_t libisyntax_read_label_image(isyntax_t* isyntax, int32_t* width, int32_t* height,
+                                                   uint32_t** pixels_buffer, int32_t pixel_format);
+isyntax_error_t libisyntax_read_macro_image(isyntax_t* isyntax, int32_t* width, int32_t* height,
+                                                   uint32_t** pixels_buffer, int32_t pixel_format);
+isyntax_error_t libisyntax_read_label_image_jpeg(isyntax_t* isyntax, uint8_t** jpeg_buffer, uint32_t* jpeg_size);
+isyntax_error_t libisyntax_read_macro_image_jpeg(isyntax_t* isyntax, uint8_t** jpeg_buffer, uint32_t* jpeg_size);
+isyntax_error_t libisyntax_read_icc_profile(isyntax_t* isyntax, isyntax_image_t* image, uint8_t** icc_profile_buffer, uint32_t* icc_profile_size);

@@ -307,6 +307,28 @@ u8* isyntax_get_associated_image_jpeg(isyntax_t* isyntax, isyntax_image_t* image
     return decoded;
 }
 
+u8* isyntax_get_icc_profile(isyntax_t* isyntax, isyntax_image_t* image, u32* icc_profile_size) {
+	if (icc_profile_size == NULL) {
+		return NULL;
+	}
+	i64 read_offset = image->base64_encoded_icc_profile_file_offset;
+	size_t read_size = image->base64_encoded_icc_profile_len;
+	u8* decoded = NULL;
+	if (read_offset > 0 && read_size > 0) {
+		u8* encoded = malloc(read_size);
+		size_t bytes_read = file_handle_read_at_offset(encoded, isyntax->file_handle, read_offset, read_size);
+		if (bytes_read == read_size) {
+			size_t len = 0;
+			decoded = base64_decode((u8*)encoded, read_size, &len);
+			if (decoded) {
+				*icc_profile_size = len;
+			}
+		}
+		free(encoded);
+	}
+	return decoded;
+}
+
 static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u32 element, char* value, u64 value_len) {
 
 	switch(group) {
@@ -400,7 +422,16 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x0101: /*DICOM_BITS_STORED*/                      {} break;
 				case 0x0102: /*DICOM_HIGH_BIT*/                         {} break;
 				case 0x0103: /*DICOM_PIXEL_REPRESENTATION*/             {} break;
-				case 0x2000: /*DICOM_ICCPROFILE*/                       {} break;
+				case 0x2000: /*DICOM_ICCPROFILE*/                       {
+					size_t decoded_capacity = value_len;
+					size_t decoded_len = 0;
+					char last_char = value[value_len-1];
+					if (last_char == '/') {
+						value_len--; // The last character may cause the base64 decoding to fail if invalid
+					}
+					image->base64_encoded_icc_profile_file_offset = isyntax->parser.content_file_offset;
+					image->base64_encoded_icc_profile_len = value_len;
+				} break;
 				case 0x2110: /*DICOM_LOSSY_IMAGE_COMPRESSION*/          {} break;
 				case 0x2112: /*DICOM_LOSSY_IMAGE_COMPRESSION_RATIO*/    {} break;
 				case 0x2114: /*DICOM_LOSSY_IMAGE_COMPRESSION_METHOD*/   {} break; // "PHILIPS_DP_1_0"
@@ -1435,7 +1466,7 @@ static rgba_t ycocg_to_rgb(i32 Y, i32 Co, i32 Cg) {
 	i32 G = tmp + Cg;
 	i32 B = tmp - Co/2;
 	i32 R = B + Co;
-	return (rgba_t){ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255};
+	return (rgba_t){{{ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255}}};
 }
 
 static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
@@ -1443,7 +1474,7 @@ static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
 	i32 G = tmp + Cg;
 	i32 B = tmp - Co/2;
 	i32 R = B + Co;
-	return (rgba_t){ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255};
+	return (rgba_t){{{ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255}}};
 }
 
 static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
@@ -3296,7 +3327,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 				isyntax->is_block_allocator_owned = false;
 			}
 
-			// Blocks with 'background' coefficients, to use for filling in margins at the edges (in case the neighboring codeblock doesn't exist)
+			// Initialize dummy blocks with 'background' coefficients, to use for filling in margins at the edges (in case the neighboring codeblock doesn't exist)
 			if (!isyntax->black_dummy_coeff) {
 				isyntax->black_dummy_coeff = (icoeff_t*)calloc(1, isyntax->block_width * isyntax->block_height * sizeof(icoeff_t));
 			}

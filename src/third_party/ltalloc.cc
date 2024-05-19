@@ -942,7 +942,7 @@ CPPCODE(template <bool throw_> static) void *ltmalloc(size_t size)
 	unsigned int sizeClass = get_size_class(size_final);
 	ThreadCache *tc = &threadCache[sizeClass];
 	FreeBlock *fb = tc->freeList;
-	uintptr_t buffer = NULL;
+	uintptr_t buffer = (uintptr_t)NULL;
 #ifdef LTALLOC_OVERFLOW_DETECTION
 	size_t size_chunk = class_to_size(sizeClass);;
 #endif
@@ -1021,9 +1021,6 @@ CPPCODE(extern "C") void ltfree(void *p)
 		
 		uintptr_t ptr = (uintptr_t )p;
 		ptr += size_without_canary;
-		if (*(LTALLOC_CANARY_TYPE*)ptr != LTALLOC_CANARY) {
-			LTALLOC_ASSERT(!"memory overflow");
-		}
 		LTALLOC_ASSERT("memory overflow detected!" && *(LTALLOC_CANARY_TYPE*)ptr == LTALLOC_CANARY);
 	}
 #endif

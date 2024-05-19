@@ -1,19 +1,28 @@
 /*
-  Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  BSD 2-Clause License
 
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
+  Copyright (c) 2019-2024, Pieter Valkema
 
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
 
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #pragma once
@@ -21,8 +30,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "float.h"
 
 #define FLOAT_TO_BYTE(x) ((u8)(255.0f * CLAMP((x), 0.0f, 1.0f)))
 #define BYTE_TO_FLOAT(x) CLAMP(((float)((x & 0x0000ff))) /255.0f, 0.0f, 1.0f)
@@ -53,7 +60,7 @@ typedef struct rgba_t {
 		u8 values[4];
 	};
 } rgba_t;
-FORCE_INLINE rgba_t RGBA(u8 r, u8 g, u8 b, u8 a) {rgba_t rgba = {r, g, b, a}; return rgba; }
+FORCE_INLINE rgba_t RGBA(u8 r, u8 g, u8 b, u8 a) {rgba_t rgba = {{{r, g, b, a}}}; return rgba; }
 
 #ifndef V2F_DEFINED
 #define V2F_DEFINED
@@ -70,7 +77,7 @@ typedef struct v3f {
 		float values[3];
 	};
 } v3f;
-FORCE_INLINE v3f V3F(float x, float y, float z) {v3f v = {x, y, z}; return v; }
+FORCE_INLINE v3f V3F(float x, float y, float z) {v3f v = {{{x, y, z}}}; return v; }
 
 #ifndef V4F_DEFINED
 #define V4F_DEFINED
@@ -82,7 +89,7 @@ typedef struct v4f {
 	};
 } v4f;
 #endif
-FORCE_INLINE v4f V4F(float x, float y, float z, float w) {v4f v = {x, y, z, w}; return v; }
+FORCE_INLINE v4f V4F(float x, float y, float z, float w) {v4f v = {{{x, y, z, w}}}; return v; }
 
 typedef struct bounds2i {
 	union {
@@ -90,7 +97,7 @@ typedef struct bounds2i {
 		struct { v2i min, max; };
 	};
 } bounds2i;
-FORCE_INLINE bounds2i BOUNDS2I(i32 left, i32 top, i32 right, i32 bottom) {bounds2i b = {left, top, right, bottom}; return b;}
+FORCE_INLINE bounds2i BOUNDS2I(i32 left, i32 top, i32 right, i32 bottom) {bounds2i b = {{{left, top, right, bottom}}}; return b;}
 
 
 typedef struct bounds2f {
@@ -99,14 +106,8 @@ typedef struct bounds2f {
 		struct { v2f min, max; };
 	};
 } bounds2f;
-FORCE_INLINE bounds2f BOUNDS2F(float left, float top, float right, float bottom) {bounds2f b = {left, top, right, bottom}; return b;}
+FORCE_INLINE bounds2f BOUNDS2F(float left, float top, float right, float bottom) {bounds2f b = {{{left, top, right, bottom}}}; return b;}
 
-typedef struct polygon4f {
-	union {
-		struct { v2f topleft, topright, bottomleft, bottomright; };
-		v2f values[4];
-	};
-} polygon4f;
 
 typedef enum corner_enum {
 	CORNER_TOP_LEFT = 0,
@@ -144,14 +145,13 @@ bounds2f rect2f_to_bounds(rect2f rect);
 rect2f bounds2f_to_rect(bounds2f bounds);
 bounds2f bounds2f_encompassing(bounds2f a, bounds2f b);
 bool are_bounds2f_overlapping(bounds2f a, bounds2f b);
+v2f world_pos_to_screen_pos(v2f world_pos, v2f camera_min, float screen_um_per_pixel);
 v2i world_pos_to_pixel_pos(v2f world_pos, float um_per_pixel, i32 level);
 i32 tile_pos_from_world_pos(float world_pos, float tile_side);
 bounds2i world_bounds_to_tile_bounds(bounds2f* world_bounds, float tile_width, float tile_height, v2f image_pos);
 bounds2f tile_bounds_to_world_bounds(bounds2i tile_bounds, float tile_width, float tile_height, v2f image_pos);
 bounds2f bounds_from_center_point(v2f center, float r_minus_l, float t_minus_b);
 bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minus_l, float t_minus_b);
-bounds2f bounds_from_points(v2f* points, i32 point_count);
-polygon4f rotated_rectangle(float width, float height, float rotation);
 bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y);
 rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y);
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr);

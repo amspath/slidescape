@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -313,6 +313,8 @@ typedef struct isyntax_image_t {
 	bool header_codeblocks_are_partial;
 	bool first_load_complete;
 	bool first_load_in_progress;
+	i64 base64_encoded_icc_profile_file_offset;
+	size_t base64_encoded_icc_profile_len;
 } isyntax_image_t;
 
 typedef struct isyntax_parser_node_t {
@@ -406,6 +408,7 @@ void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 b
 i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 u8* isyntax_get_associated_image_pixels(isyntax_t* isyntax, isyntax_image_t* image, enum isyntax_pixel_format_t pixel_format);
 u8* isyntax_get_associated_image_jpeg(isyntax_t* isyntax, isyntax_image_t* image, u32* jpeg_size);
+u8* isyntax_get_icc_profile(isyntax_t* isyntax, isyntax_image_t* image, u32* icc_profile_size);
 
 
 #ifdef __cplusplus
