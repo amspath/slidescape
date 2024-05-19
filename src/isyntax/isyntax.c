@@ -66,7 +66,7 @@
 // Enable/disable debug routines for creating PNGs of IDWT steps
 #define ISYNTAX_WANT_DEBUG_OUTPUT_PNG 0
 #if ISYNTAX_WANT_DEBUG_OUTPUT_PNG
-#define STB_IMAGE_WRITE_IMPLEMENTATION
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
 // stb_image_write.h provides its own crc32() implementation, so we need to prevent a conflict if we already have it
 #define STBIW_CRC32 crc32
 #include <stb_image_write.h>
@@ -532,9 +532,9 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							case 3: {
 								image->level_count = range.numsteps;
 								image->max_scale = range.numsteps - 1;
-                                int32_t level_padding = (PER_LEVEL_PADDING << range.numsteps) - PER_LEVEL_PADDING;
-                                image->width = image->width_including_padding - 2 * level_padding;
-                                image->height = image->height_including_padding - 2 * level_padding;
+                                image->level0_padding = (PER_LEVEL_PADDING << range.numsteps) - PER_LEVEL_PADDING;
+                                image->width = image->width_including_padding - 2 * image->level0_padding;
+                                image->height = image->height_including_padding - 2 * image->level0_padding;
 							} break;
 							case 4: break; // always 4 wavelet coefficients ("LL" "LH" "HL" "HH"), no need to check
 						}
@@ -701,7 +701,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							goto decoding_cluster_header_table_failed;
 						}
 						// pass 1: check how many clusters there are
-						i32 cluster_count = 0;
+						i32 cluster_count = 1;
 						for (;;) {
 							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + ((isyntax_dicom_tag_header_t*)pos)->size;
 							isyntax_dicom_tag_header_t* next_sequence_element = (isyntax_dicom_tag_header_t*)next_sequence_element_pos;
@@ -717,7 +717,9 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							image->data_chunk_count = cluster_count;
 							image->data_chunks = calloc(1, cluster_count * sizeof(isyntax_data_chunk_t));
 						}
-						ASSERT(image->number_of_blocks > 0); // TODO: handle error case
+						if (image->number_of_blocks <= 0) { // sanity check
+							goto decoding_cluster_header_table_failed;
+						}
 						if (image->codeblocks == NULL) {
 							// NOTE: this value seems to be much larger than the actual number of codeblocks present in the file
 							image->codeblock_count = image->number_of_blocks; // from UFS_IMAGE_NUMBER_OF_BLOCKS attribute
@@ -868,8 +870,21 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					template->dimension_count = parse_up_to_five_integers(value, template->dimension_order);
 				} break; // data model >= 100
 				case 0x2023: /*UFS_IMAGE_VALID_DATA_ENVELOPES*/ {} break; // data model >= 100
-				case 0x2024: /*UFS_IMAGE_OPP_EXTREME_VERTICES*/ {} break; // data model >= 100
-				case 0x2025: /*UFS_IMAGE_OPP_EXTREME_VERTEX*/ {} break; // data model >= 100
+				case 0x2024: /*UFS_IMAGE_OPP_EXTREME_VERTICES*/ { // data model >= 100
+					// increment envelope
+				} break;
+				case 0x2025: /*UFS_IMAGE_OPP_EXTREME_VERTEX*/ { // data model >= 100
+					if (isyntax->parser.data_object_flags & (ISYNTAX_OBJECT_UFSImageValidDataEnvelope)) {
+						isyntax_valid_data_envelope_t* envelope = isyntax->valid_data_envelopes + isyntax->parser.valid_data_envelope_index;
+						if (envelope->vertex_count < COUNT(envelope->vertices)) {
+							v2i vertex = {};
+							atoi_and_advance(atoi_and_advance(value, &vertex.x), &vertex.y); // parse two integers
+							envelope->vertices[envelope->vertex_count++] = vertex;
+						} else {
+							success = false; // out of bounds
+						}
+					}
+				} break; // data model >= 100
 				case 0x2026: /*UFS_IMAGE_VALID_ENVELOPE_DIMENSIONS*/ {} break; // data model >= 100
 				case 0x2027: /*UFS_IMAGE_DIMENSION_ORIGIN*/ {} break; // data model >= 100
 				case 0x2029: /*UFS_IMAGE_PIXEL_TRANSFORM_METHOD*/ {} break; // data model >= 100
@@ -887,7 +902,7 @@ static bool validate_dicom_attr(const char* expected, const char* observed) {
 	return ok;
 }
 
-void isyntax_xml_parser_init(isyntax_xml_parser_t* parser) {
+static void isyntax_xml_parser_init(isyntax_xml_parser_t* parser) {
 
 	parser->initialized = true;
 
@@ -942,6 +957,27 @@ static void push_to_buffer_maybe_grow(u8** restrict dest, size_t* restrict dest_
 	*dest_len = new_len;
 }
 
+static bool isyntax_parse_xml_header_cleanup(isyntax_t* isyntax, bool success) {
+	isyntax_xml_parser_t* parser = &isyntax->parser;
+	if (parser->x) {
+		free(parser->x);
+		parser->x = NULL;
+	}
+	if (parser->attrbuf) {
+		free(parser->attrbuf);
+		parser->attrbuf = NULL;
+	}
+	if (parser->contentbuf) {
+		free(parser->contentbuf);
+		parser->contentbuf = NULL;
+	}
+	return success;
+}
+
+static inline bool isyntax_parse_xml_header_failure(isyntax_t* isyntax) {
+	return isyntax_parse_xml_header_cleanup(isyntax, false);
+}
+
 static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 chunk_offset, i64 chunk_length, bool is_last_chunk) {
 
 	yxml_t* x = NULL;
@@ -956,35 +992,19 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 	}
 	x = parser->x;
 
-	if (0) { failed: cleanup:
-		if (parser->x) {
-			free(parser->x);
-			parser->x = NULL;
-		}
-		if (parser->attrbuf) {
-			free(parser->attrbuf);
-			parser->attrbuf = NULL;
-		}
-		if (parser->contentbuf) {
-			free(parser->contentbuf);
-			parser->contentbuf = NULL;
-		}
-		return success;
-	}
-
 	// parse XML byte for byte
 	char* doc = xml_header;
 	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length, ++doc) {
 		int c = *doc;
 		if (c == '\0') {
 			// This should never trigger; iSyntax file is corrupt!
-			goto failed;
+			return isyntax_parse_xml_header_failure(isyntax);
 		}
 		yxml_ret_t r = yxml_parse(x, c);
 		if (r == YXML_OK) {
 			continue; // nothing worthy of note has happened -> continue
 		} else if (r < 0) {
-			goto failed;
+			return isyntax_parse_xml_header_failure(isyntax);
 		} else if (r > 0) {
 			// token
 			switch(r) {
@@ -1020,7 +1040,12 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 							case 0:                                       flags |= ISYNTAX_OBJECT_DPUfsImport; break;
 							case PIM_DP_SCANNED_IMAGES:                   flags |= ISYNTAX_OBJECT_DPScannedImage; break;
 							case UFS_IMAGE_GENERAL_HEADERS:               flags |= ISYNTAX_OBJECT_UFSImageGeneralHeader; break;
-							case UFS_IMAGE_BLOCK_HEADER_TEMPLATES:        flags |= ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate; break;
+							case UFS_IMAGE_BLOCK_HEADER_TEMPLATES: {
+								flags |= ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate;
+								if (isyntax->parser.block_header_template_index >= COUNT(isyntax->block_header_templates)) { // bounds check
+									return isyntax_parse_xml_header_failure(isyntax);
+								}
+							} break;
 							case UFS_IMAGE_DIMENSIONS:                    flags |= ISYNTAX_OBJECT_UFSImageDimension; break;
 							case UFS_IMAGE_DIMENSION_RANGES:              flags |= ISYNTAX_OBJECT_UFSImageDimensionRange; break;
 							case DP_COLOR_MANAGEMENT:                     flags |= ISYNTAX_OBJECT_DPColorManagement; break;
@@ -1029,8 +1054,20 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 							case DP_WAVELET_QUANTIZER_SETTINGS_PER_LEVEL: flags |= ISYNTAX_OBJECT_DPWaveletQuantizerSeetingsPerLevel; break;
 							case PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE: flags |= ISYNTAX_OBJECT_PixelDataRepresentation; break;
 							case UFS_IMAGE_BLOCK_HEADERS:                 flags |= ISYNTAX_OBJECT_UFSImageBlockHeader; break;
-							case UFS_IMAGE_CLUSTER_HEADER_TEMPLATES:      flags |= ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate; break;
-							case UFS_IMAGE_VALID_DATA_ENVELOPES:          flags |= ISYNTAX_OBJECT_UFSImageValidDataEnvelope; break;
+							case UFS_IMAGE_CLUSTER_HEADER_TEMPLATES: {
+								flags |= ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate;
+								if (isyntax->parser.cluster_header_template_index >= COUNT(isyntax->cluster_header_templates)) { // bounds check
+									return isyntax_parse_xml_header_failure(isyntax);
+								}
+							} break;
+							case UFS_IMAGE_VALID_DATA_ENVELOPES: {
+								// 'soft' bounds check: parsing these is not strictly needed so we don't need to fail if we don't get them all.
+								if (isyntax->parser.valid_data_envelope_index < COUNT(isyntax->valid_data_envelopes)) {
+									flags |= ISYNTAX_OBJECT_UFSImageValidDataEnvelope;
+								} else {
+									console_print("Warning: cannot read all UFSImageValidDataEnvelopes (out of bounds)\n");
+								}
+							} break;
 							case UFS_IMAGE_OPP_EXTREME_VERTICES:          flags |= ISYNTAX_OBJECT_UFSImageOppExtremeVertex; break;
 						}
 						parser->data_object_flags = flags;
@@ -1160,7 +1197,9 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 								case UFS_IMAGE_BLOCK_HEADER_TEMPLATES: {
 									flags &= ~ISYNTAX_OBJECT_UFSImageBlockHeaderTemplate;
 									++parser->block_header_template_index;
-									++isyntax->block_header_template_count; // TODO: refactor?
+									if (isyntax->block_header_template_count < COUNT(isyntax->block_header_templates)) {
+										++isyntax->block_header_template_count;
+									}
 									parser->dimension_index = 0;
 								} break;
 								case UFS_IMAGE_DIMENSIONS: {
@@ -1181,14 +1220,14 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 										// NOTE: Within a UFSImageClusterHeaderTemplate, the UFSImageBlockHeader objects contain coordinate offset values that apply to that cluster template
 										// (Each UFSImageBlockHeader object corresponds to a codeblock in the cluster)
 										++parser->block_header_index_for_cluster;
-										if (parser->block_header_index_for_cluster >= MAX_CODEBLOCKS_PER_CLUSTER) {
-											fatal_error(); // TODO: unexpected error condition, fail more gracefully?
+										if (parser->block_header_index_for_cluster >= MAX_CODEBLOCKS_PER_CLUSTER) { // bounds check
+											return isyntax_parse_xml_header_failure(isyntax);
 										}
 									}
 								} break;
 								case UFS_IMAGE_CLUSTER_HEADER_TEMPLATES: {
 									// Finalize cluster header template object: fix up relative codeblock coordinates within cluster
-									// using the information from UFS_IMAGE_DIMENSION_RANGES (=base value) // TODO: verify this
+									// using the information from UFS_IMAGE_DIMENSION_RANGES (=base value)
 									// combined with the UFS_IMAGE_BLOCK_COORDINATE values (=offsets) using the dimension ordering info provided by UFS_IMAGE_DIMENSIONS_IN_CLUSTER
 									isyntax_cluster_header_template_t* template = isyntax->cluster_header_templates + parser->cluster_header_template_index;
 									template->codeblock_in_cluster_count = parser->block_header_index_for_cluster;
@@ -1210,11 +1249,19 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 									// Pop flags and reset indices
 									flags &= ~ISYNTAX_OBJECT_UFSImageClusterHeaderTemplate;
 									++parser->cluster_header_template_index;
-									++isyntax->cluster_header_template_count; // TODO: refactor?
+									if (isyntax->cluster_header_template_count < COUNT(isyntax->cluster_header_templates)) {
+										++isyntax->cluster_header_template_count;
+									}
 									parser->dimension_index = 0;
 									parser->block_header_index_for_cluster = 0;
 								} break;
-								case UFS_IMAGE_VALID_DATA_ENVELOPES:          flags &= ~ISYNTAX_OBJECT_UFSImageValidDataEnvelope; break;
+								case UFS_IMAGE_VALID_DATA_ENVELOPES: {
+									flags &= ~ISYNTAX_OBJECT_UFSImageValidDataEnvelope;
+									++parser->valid_data_envelope_index;
+									if (isyntax->valid_data_envelope_count < COUNT(isyntax->valid_data_envelopes)) {
+										++isyntax->valid_data_envelope_count;
+									}
+								} break;
 								case UFS_IMAGE_OPP_EXTREME_VERTICES:          flags &= ~ISYNTAX_OBJECT_UFSImageOppExtremeVertex; break;
 							}
 							parser->data_object_flags = flags;
@@ -1232,8 +1279,8 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 						parser->current_node_type = parser->node_stack[parser->node_stack_index].node_type;
 						parser->current_node_has_children = parser->node_stack[parser->node_stack_index].has_children;
 					} else {
-						//TODO: handle error condition
 						console_print_error("iSyntax XML error: closing element without matching start\n");
+						return isyntax_parse_xml_header_failure(isyntax);
 					}
 
 				} break;
@@ -1333,7 +1380,7 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 					break; // processing instructions (uninteresting, skip)
 				default: {
 					console_print_error("yxml_parse(): unrecognized token (%d)\n", r);
-					goto failed;
+					return isyntax_parse_xml_header_failure(isyntax);
 				}
 			}
 		}
@@ -1341,7 +1388,7 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 
 	success = true;
 	if (is_last_chunk) {
-		goto cleanup;
+		return isyntax_parse_xml_header_cleanup(isyntax, success);
 	} else {
 		return success; // no cleanup yet, we will still need resources until the last header chunk is reached.
 	}
@@ -1757,6 +1804,18 @@ u32 isyntax_get_adjacent_tiles_mask_only_existing(isyntax_level_t* level, i32 ti
 	return mask;
 }
 
+bool isyntax_is_parent_tile_missing(isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
+	// Some tiles may have a missing parent tile (from scale + 1).
+	// In this case the LL coefficients are missing, but dummy coefficients can be safely used instead.
+	if (scale < wsi->max_scale) {
+		isyntax_level_t* parent_level = wsi->levels + scale + 1;
+		isyntax_tile_t* parent_tile = parent_level->tiles + (tile_y/2) * parent_level->width_in_tiles + (tile_x/2);
+		return !parent_tile->exists;
+	} else {
+		return false;
+	}
+}
+
 u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, i32 color, icoeff_t* dest_buffer) {
 	isyntax_level_t* level = wsi->levels + scale;
 	ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
@@ -1824,8 +1883,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_LEFT;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y-1, tile_x-1)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_LEFT;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride) + left_margin_source_x,
 									   color_channel, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1844,8 +1907,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + tile_x;
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_CENTER;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y-1, tile_x)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_CENTER;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1864,8 +1931,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y-1, tile_x+1)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_TOP_RIGHT;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, (top_margin_source_y * source_stride),
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1884,8 +1955,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y, tile_x-1)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_CENTER_LEFT;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1919,8 +1994,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y, tile_x+1)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_CENTER_RIGHT;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1939,8 +2018,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y+1, tile_x-1)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_LEFT;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, left_margin_source_x,
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1959,8 +2042,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + tile_x;
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y+1, tile_x)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_CENTER;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -1979,8 +2066,12 @@ u32 isyntax_idwt_tile_for_color_channel(isyntax_t* isyntax, isyntax_image_t* wsi
 		isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
 		if (source_tile->exists) {
 			isyntax_tile_channel_t* color_channel = source_tile->color_channels + color;
-			if (!color_channel->coeff_ll) invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
-			if (!color_channel->coeff_h) invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+			if (!color_channel->coeff_ll && !isyntax_is_parent_tile_missing(wsi, scale, tile_y+1, tile_x+1)) {
+				invalid_neighbors_ll |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+			}
+			if (!color_channel->coeff_h) {
+				invalid_neighbors_h |= ISYNTAX_ADJ_TILE_BOTTOM_RIGHT;
+			}
 			get_offsetted_coeff_blocks(ll_hl_lh_hh, 0,
 									   source_tile->color_channels + color, block_stride, h_dummy_coeff, ll_dummy_coeff);
 			for (i32 i = 0; i < 4; ++i) {
@@ -2181,9 +2272,9 @@ void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	//		float elapsed_rgb = get_seconds_elapsed(start, get_clock());
 	//	console_print_verbose("load: scale=%d x=%d y=%d  idwt time =%g  rgb transform time=%g  malloc time=%g\n", scale, tile_x, tile_y, elapsed_idwt, elapsed_rgb, elapsed_malloc);
 
-	/*if (scale == wsi->max_scale && tile_x == 1 && tile_y == 1) {
-		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, bgra, tile_width * 4);
-	}*/
+//	if (scale == wsi->max_scale-1 && tile_x == 5 && tile_y == 0) {
+//		stbi_write_png("debug_dwt_output.png", tile_width, tile_height, 4, out_buffer_or_null, tile_width * 4);
+//	}
 
 	release_temp_memory(&temp_memory); // free Y, Co and Cg
 }
@@ -3294,6 +3385,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 						level->tiles[tile_index].data_chunk_index = current_data_chunk_index;
 
 					}
+
+//					isyntax_dump_block_header(wsi_image, "test_block_header.csv");
 
 					parse_ticks_elapsed += (get_clock() - parse_begin);
 //				    console_print("iSyntax: the seektable is %u bytes, or %g%% of the total file size\n", seektable_size, (float)((float)seektable_size * 100.0f) / isyntax->filesize);

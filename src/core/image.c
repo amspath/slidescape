@@ -398,8 +398,8 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
             image->macro_image.width = macro_image->width;
             image->macro_image.height = macro_image->height;
             image->macro_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
-            image->macro_image.world_pos.x = -((float)wsi_image->offset_x * isyntax->mpp_x);
-            image->macro_image.world_pos.y = -((float)wsi_image->offset_y * isyntax->mpp_y);
+            image->macro_image.world_pos.x = -((float)(wsi_image->offset_x + wsi_image->level0_padding) * isyntax->mpp_x);
+            image->macro_image.world_pos.y = -((float)(wsi_image->offset_y + wsi_image->level0_padding) * isyntax->mpp_y);
             image->macro_image.is_valid = true;
         }
     }
@@ -411,9 +411,13 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
             image->label_image.width = label_image->width;
             image->label_image.height = label_image->height;
             image->label_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
-//			image->label_image.world_pos.x = -((float)wsi_image->offset_x * isyntax->mpp_x);
-//			image->label_image.world_pos.y = -((float)wsi_image->offset_y * isyntax->mpp_y);
-            image->label_image.is_valid = true;
+			if (image->macro_image.is_valid) {
+				image->label_image.world_pos.x = image->macro_image.world_pos.x // macro image left side (origin)
+					+ image->macro_image.width * image->macro_image.mpp // macro image right side
+					+ image->label_image.width * image->label_image.mpp; // add label height (will rotate 90 degrees to the right to 'fit' in place)
+				image->label_image.world_pos.y = image->macro_image.world_pos.y;
+			}
+	        image->label_image.is_valid = true;
         }
     }
 

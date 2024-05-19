@@ -657,6 +657,27 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			}
 		}
 
+		if (draw_label_image_in_background) {
+			glDisable(GL_STENCIL_TEST);
+			if (label_image->is_valid && label_image->texture != 0 && macro_image->is_valid) {
+				v2f pmax = {};
+				pmax.x = label_image->width * label_image->mpp;
+				pmax.y = label_image->height * label_image->mpp;
+
+				mat4x4 model_matrix;
+				mat4x4_translate(model_matrix,
+				                 image->origin_offset.x + label_image->world_pos.x,
+				                 image->origin_offset.y + label_image->world_pos.y,
+				                 10.0f);
+				mat4x4_scale_aniso(model_matrix, model_matrix, pmax.x, pmax.y, 1.0f);
+				mat4x4 model_matrix_rot;
+				mat4x4_rotate_Z(model_matrix_rot, model_matrix, 0.5f * M_PI);
+				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix_rot[0][0]);
+
+				draw_rect(label_image->texture);
+			}
+		}
+
 		{
 			// Set up the stencil buffer to prevent rendering outside the image area
 			bounds2f stencil_bounds = {0, 0, image->width_in_um, image->height_in_um};
@@ -1413,7 +1434,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 				// Get the position of the pivot point on the screen, relative to the width/height of the screen
 				// The values are normalized between -0.5 and +0.5, where (0,0) is the center of the screen (= camera pos)
-				polygon4f rotated_camera_rect_origin = rotated_rectangle(scene->r_minus_l, scene->t_minus_b, scene->rotation);
+				polygon4v2f rotated_camera_rect_origin = rotated_rectangle(scene->r_minus_l, scene->t_minus_b, scene->rotation);
 				v2f rotated_r_minus_l = v2f_subtract(rotated_camera_rect_origin.topright, rotated_camera_rect_origin.topleft);
 				v2f rotated_t_minus_b = v2f_subtract(rotated_camera_rect_origin.bottomleft, rotated_camera_rect_origin.topleft);
 				v2f pivot_relative_to_camera = v2f_subtract(scene->zoom_pivot, scene->camera);
@@ -1426,7 +1447,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				// First, get a new resized (possibly rotated) camera rect with correct the dimensions for the new zoom level
 				scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
 				scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
-				polygon4f new_camera_rect = rotated_rectangle(scene->r_minus_l, scene->t_minus_b, scene->rotation);
+				polygon4v2f new_camera_rect = rotated_rectangle(scene->r_minus_l, scene->t_minus_b, scene->rotation);
 
 				// Reposition the camera so that the zoom pivot point remains in the same relative position on-screen
 				// (Basically we do the reverse of the steps above.)
@@ -1474,32 +1495,45 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene_update_camera_bounds(scene);
 			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
 
-			u32 key_modifiers_without_shift = input->keyboard.modifiers & ~KMOD_SHIFT;
-			if (was_key_pressed(input, KEY_G) && key_modifiers_without_shift == KMOD_CTRL) {
-				scene->enable_grid = !scene->enable_grid;
-			}
-			if (was_key_pressed(input, KEY_B) && key_modifiers_without_shift == KMOD_CTRL) {
-				scene->scale_bar.enabled = !scene->scale_bar.enabled;
-			}
+			if (!gui_want_capture_keyboard) {
+				u32 key_modifiers_without_shift = input->keyboard.modifiers & ~KMOD_SHIFT;
 
-			if (was_key_pressed(input, KEY_Q) && key_modifiers_without_shift == 0) {
-				viewer_switch_tool(app_state, TOOL_CREATE_POINT);
-			} else if (was_key_pressed(input, KEY_M) && key_modifiers_without_shift == 0) {
-				viewer_switch_tool(app_state, TOOL_CREATE_LINE);
-			} else if (was_key_pressed(input, KEY_F) && key_modifiers_without_shift == 0) {
-				viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
-//			} else if (was_key_pressed(input, KEY_E) && key_modifiers_without_shift == 0) {
-//				viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
-			} else if (was_key_pressed(input, KEY_R) && key_modifiers_without_shift == 0) {
-				viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
-//			} else if (was_key_pressed(input, KEY_T) && key_modifiers_without_shift == 0) {
-//				viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
-			}
+				// Toggle the grid
+				if (was_key_pressed(input, KEY_G) && key_modifiers_without_shift == KMOD_CTRL) {
+					scene->enable_grid = !scene->enable_grid;
+				}
 
-			/*if (was_key_pressed(input, KEY_O)) {
-				app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
-//				console_print("switching to creation mode\n");
-			}*/
+				// Toggle the scale bar
+				if (was_key_pressed(input, KEY_B) && key_modifiers_without_shift == KMOD_CTRL) {
+					scene->scale_bar.enabled = !scene->scale_bar.enabled;
+				}
+
+				// Switch to annotation creation tools
+				if (was_key_pressed(input, KEY_Q) && key_modifiers_without_shift == 0) {
+					viewer_switch_tool(app_state, TOOL_CREATE_POINT);
+				} else if (was_key_pressed(input, KEY_M) && key_modifiers_without_shift == 0) {
+					viewer_switch_tool(app_state, TOOL_CREATE_LINE);
+				} else if (was_key_pressed(input, KEY_F) && key_modifiers_without_shift == 0) {
+					viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
+//			    } else if (was_key_pressed(input, KEY_E) && key_modifiers_without_shift == 0) {
+//				    viewer_switch_tool(app_state, TOOL_CREATE_ELLIPSE);
+				} else if (was_key_pressed(input, KEY_R) && key_modifiers_without_shift == 0) {
+					viewer_switch_tool(app_state, TOOL_CREATE_RECTANGLE);
+//			    } else if (was_key_pressed(input, KEY_T) && key_modifiers_without_shift == 0) {
+//				    viewer_switch_tool(app_state, TOOL_CREATE_TEXT);
+				}
+
+				/*if (was_key_pressed(input, KEY_O)) {
+					app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
+				console_print("switching to creation mode\n");
+				}*/
+
+				// Toggle image adjustments
+				if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
+					app_state->use_image_adjustments = !app_state->use_image_adjustments;
+				}
+
+			}
 
 			// Debug feature: view 'frozen' outline of camera bounds
 #if DO_DEBUG
@@ -1516,9 +1550,6 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 #endif
 
-			if (!gui_want_capture_keyboard && was_key_pressed(input, KEY_P)) {
-				app_state->use_image_adjustments = !app_state->use_image_adjustments;
-			}
 			update_scale_bar(scene, &scene->scale_bar);
 
 			if (app_state->mouse_mode == MODE_VIEW) {
@@ -1667,6 +1698,30 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}*/
 
 		}
+
+#if DO_DEBUG
+		// Visualize the 'valid data envelopes' encoded in iSyntax images (for debugging)
+		if (debug_draw_isyntax_valid_data_envelopes) {
+			image_t* image = app_state->loaded_images[0];
+			if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+				isyntax_t* isyntax = &image->isyntax;
+				i32 envelope_count = MIN(isyntax->valid_data_envelope_count, COUNT(isyntax->valid_data_envelopes));
+				for (i32 i = 0; i < envelope_count; ++i) {
+					isyntax_valid_data_envelope_t* envelope = isyntax->valid_data_envelopes + i;
+					if (envelope->vertex_count > 1) {
+						temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
+						v2f* points = arena_push_array(temp_memory.arena, envelope->vertex_count, v2f);
+						for (i32 j = 0; j < envelope->vertex_count; ++j) {
+							v2i v = envelope->vertices[j];
+							points[j] = V2F(v.x * isyntax->mpp_x, v.y * isyntax->mpp_y);
+						}
+						gui_draw_polygon_outline_in_scene(points, envelope->vertex_count, RGBA(255, 0, 0, 255), true, 5.0f, scene);
+						release_temp_memory(&temp_memory);
+					}
+				}
+			}
+		}
+#endif
 
 		draw_grid(scene);
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);

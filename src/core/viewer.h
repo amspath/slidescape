@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -426,12 +426,12 @@ extern bool use_fast_rendering INIT(= false); // optimize for performance for e.
 extern i32 global_lowest_scale_to_render INIT(= 0);
 extern i32 global_highest_scale_to_render INIT(= 16);
 
-extern bool window_start_maximized INIT(=true);
-extern i32 desired_window_width INIT(=1280);
-extern i32 desired_window_height INIT(=720);
-extern bool draw_macro_image_in_background;
-extern bool draw_label_image_in_background; // TODO: implement
-
+extern bool window_start_maximized INIT(= true);
+extern i32 desired_window_width INIT(= 1280);
+extern i32 desired_window_height INIT(= 720);
+extern bool draw_macro_image_in_background INIT(= false);
+extern bool draw_label_image_in_background INIT(= false);
+extern bool debug_draw_isyntax_valid_data_envelopes INIT(= false);
 
 
 extern i32 global_next_resource_id INIT(= 1000);

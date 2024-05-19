@@ -208,6 +208,11 @@ typedef struct isyntax_cluster_header_template_t {
 	u8 dimension_count;
 } isyntax_cluster_header_template_t;
 
+typedef struct isyntax_valid_data_envelope_t {
+	v2i vertices[64];
+	i32 vertex_count;
+} isyntax_valid_data_envelope_t;
+
 typedef struct isyntax_codeblock_t {
 	u32 x_coordinate;
 	u32 y_coordinate;
@@ -297,6 +302,7 @@ typedef struct isyntax_image_t {
 	i32 height_including_padding;
 	i32 width;
 	i32 height;
+	i32 level0_padding;
 	i32 offset_x;
 	i32 offset_y;
 	i32 level_count;
@@ -357,6 +363,7 @@ typedef struct isyntax_xml_parser_t {
 	i32 cluster_header_template_index;
 	i32 block_header_index_for_cluster;
 	i32 dimension_index;
+	i32 valid_data_envelope_index;
 	bool initialized;
 } isyntax_xml_parser_t;
 
@@ -369,6 +376,8 @@ typedef struct isyntax_t {
 	i32 block_header_template_count;
 	isyntax_cluster_header_template_t cluster_header_templates[8];
 	i32 cluster_header_template_count;
+	isyntax_valid_data_envelope_t valid_data_envelopes[16];
+	i32 valid_data_envelope_count;
 	i32 macro_image_index;
 	i32 label_image_index;
 	i32 wsi_image_index;
@@ -393,7 +402,6 @@ typedef struct isyntax_t {
 } isyntax_t;
 
 // function prototypes
-void isyntax_xml_parser_init(isyntax_xml_parser_t* parser);
 bool isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
 void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue);
 bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators);

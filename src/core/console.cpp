@@ -148,12 +148,32 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 			console_clear_log();
 		} else if (strcmp(cmd, "macro") == 0) {
 			draw_macro_image_in_background = !draw_macro_image_in_background;
+			if (draw_macro_image_in_background) {
+				console_print("Enabled macro image display");
+			} else {
+				console_print("Disabled macro image display");
+			}
 		} else if (strcmp(cmd, "label") == 0) {
 			draw_label_image_in_background = !draw_label_image_in_background;
+			if (draw_macro_image_in_background) {
+				console_print("Enabled label image display");
+			} else {
+				console_print("Disabled label image display");
+			}
 		} else if (strcmp(cmd, "grid") == 0) {
 			app_state->scene.enable_grid = !app_state->scene.enable_grid;
+			if (draw_macro_image_in_background) {
+				console_print("Enabled grid");
+			} else {
+				console_print("Disabled grid");
+			}
 		} else if (strcmp(cmd, "scalebar") == 0) {
 			app_state->scene.scale_bar.enabled = !app_state->scene.scale_bar.enabled;
+			if (draw_macro_image_in_background) {
+				console_print("Enabled scale bar");
+			} else {
+				console_print("Disabled scale bar");
+			}
 		} else if (strcmp(cmd, "vsync") == 0) {
 			if (arg) {
 				if (arg[0] == '0') is_vsync_enabled = 0;

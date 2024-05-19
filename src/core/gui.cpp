@@ -115,7 +115,7 @@ void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, boo
 	for (i32 i = 0; i < count; ++i) {
 		points[i] = world_pos_to_screen_pos(scene, points[i]);
 	}
-	gui_draw_polygon_outline(points, 4, color, closed, thickness);
+	gui_draw_polygon_outline(points, count, color, closed, thickness);
 }
 
 void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene) {

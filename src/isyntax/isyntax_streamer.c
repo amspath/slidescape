@@ -32,6 +32,8 @@
 #define ISYNTAX_STREAMER_IMPL
 #include "isyntax_streamer.h"
 
+static bool allow_load_tile_on_worker_threads = true; // disable to load tiles only on the main thread (e.g. for debugging)
+
 static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
 	isyntax_streamer_tile_completed_task_t completion_task = {0};
@@ -62,7 +64,7 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_streamer_t* streamer, i32 sca
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
 			i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
-			if (global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
+			if (allow_load_tile_on_worker_threads && global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 				isyntax_begin_load_tile(streamer, scale, tile_x, tile_y);
 			} else if (!is_tile_streamer_frame_boundary_passed) {
                 u32* tile_pixels = (u32*)malloc(isyntax->tile_width * isyntax->tile_height * sizeof(u32));
@@ -586,7 +588,29 @@ void isyntax_mark_tile_for_full_loading_and_set_adjacent_requirements(isyntax_lo
 		adj_tile_req->need_ll_edges_mask |= ISYNTAX_ADJ_TILE_TOP_LEFT;
 	}
 }
-
+// if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll))
+static inline bool is_tile_ready_for_idwt(isyntax_tile_t* tile, i32 tile_x, i32 tile_y, isyntax_level_t* parent_level) {
+	if (tile->exists) {
+		if (!tile->has_h) {
+			return false; // required H coefficients are missing -> not ready
+		} else if (!tile->has_ll) {
+			if (!parent_level) {
+				return false; // required LL coefficients are missing from top-level tile -> not ready
+			} else {
+				isyntax_tile_t* parent_tile = parent_level->tiles + (tile_y/2) * parent_level->width_in_tiles + (tile_x/2);
+				if (parent_tile->exists) {
+					return false; // required LL coefficients are missing from parent tile -> not ready
+				} else {
+					return true; // LL coefficients not required, because parent tile does not exist -> ready (we can use dummy coefficients instead)
+				}
+			}
+		} else {
+			return true; // LL and H coefficients are both present -> ready
+		}
+	} else {
+		return true; // tile does not exist -> ready (we can use dummy coefficients instead)
+	}
+}
 
 bool isyntax_load_next_level_greedily = false;
 
@@ -910,7 +934,7 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 								isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 								if (chunk->data) {
 									i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
-									if (global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
+									if (allow_load_tile_on_worker_threads && global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 										isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile, tile_x, tile_y);
 									} else if (!is_tile_streamer_frame_boundary_passed) {
 										tile->is_submitted_for_h_coeff_decompression = true;
@@ -929,6 +953,8 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 
 				for (i32 scale = highest_scale_to_load; scale >= lowest_visible_scale; --scale) {
 					isyntax_level_t *level = wsi->levels + scale;
+					bool has_parent_level = (scale < wsi->max_scale);
+					isyntax_level_t* parent_level = has_parent_level ? wsi->levels + scale + 1 : NULL;
 					isyntax_load_region_t *region = regions + scale;
 
 					for (i32 local_tile_y = 0; local_tile_y < region->height_in_tiles; ++local_tile_y) {
@@ -945,11 +971,21 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 							if (tile->is_submitted_for_loading) {
 								continue; // a worker thread is already on it, don't resubmit
 							}
+							if (!tile->exists) {
+								continue;
+							}
 							if (!tile->has_ll) {
-								continue; // higher level tile needs to load first
+								if (parent_level) {
+									isyntax_tile_t* parent_tile = parent_level->tiles + (tile_y/2) * parent_level->width_in_tiles + (tile_x/2);
+									if (parent_tile->exists) {
+										continue; // higher level tile needs to load first
+									}
+								} else {
+									continue; // LL coefficients should be available at the top level
+								}
 							}
 							if (!tile->has_h) {
-								continue; // codeblocks not decompressed (this should never trigger)
+								continue; // codeblocks not decompressed
 							}
 
 
@@ -957,56 +993,74 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 							u32 adj_tiles = isyntax_get_adjacent_tiles_mask(level, tile_x, tile_y);
 							// Check if all prerequisites have been met, for the surrounding tiles as well
 							if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_LEFT) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x-1);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x - 1;
+								i32 source_tile_y = tile_y - 1;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_CENTER) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + tile_x;
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x;
+								i32 source_tile_y = tile_y - 1;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_TOP_RIGHT) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y-1) * level->width_in_tiles + (tile_x+1);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x + 1;
+								i32 source_tile_y = tile_y - 1;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_LEFT) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x-1);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x - 1;
+								i32 source_tile_y = tile_y;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x;
+								i32 source_tile_y = tile_y;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_CENTER_RIGHT) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y) * level->width_in_tiles + (tile_x+1);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x + 1;
+								i32 source_tile_y = tile_y;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_LEFT) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x-1);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x - 1;
+								i32 source_tile_y = tile_y + 1;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_CENTER) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + tile_x;
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x;
+								i32 source_tile_y = tile_y + 1;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
 							if (adj_tiles & ISYNTAX_ADJ_TILE_BOTTOM_RIGHT) {
-								isyntax_tile_t* source_tile = level->tiles + (tile_y+1) * level->width_in_tiles + (tile_x+1);
-								if (source_tile->exists && !(source_tile->has_h && source_tile->has_ll)) {
+								i32 source_tile_x = tile_x + 1;
+								i32 source_tile_y = tile_y + 1;
+								isyntax_tile_t* source_tile = level->tiles + source_tile_y * level->width_in_tiles + source_tile_x;
+								if (!is_tile_ready_for_idwt(source_tile, source_tile_x, source_tile_y, parent_level)) {
 									continue;
 								}
 							}
