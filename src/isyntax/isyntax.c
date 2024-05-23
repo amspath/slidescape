@@ -74,8 +74,6 @@
 
 #include <ctype.h>
 
-// TODO: Add ICC profiles support
-
 #define PER_LEVEL_PADDING 3
 
 #include "isyntax_dwt.c"

@@ -647,6 +647,19 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			annotation_set->is_insert_coordinate_mode = false;
 			annotation_set->force_insert_mode = false;
 			annotation_set->is_split_mode = false;
+		} else if (scene->is_dragging && input->keyboard.key_ctrl.down && !scene->is_drag_vector_within_click_tolerance && line_segment_pixel_distance < 10.0f) {
+			// Multi-select by holding down Ctrl and dragging
+			bool did_select = false;
+			if (!hit_annotation->selected) {
+				hit_annotation->selected = true;
+				did_select = true;
+			}
+
+			// Feature for quickly assigning the same annotation group to the next selected annotation.
+			if (did_select && hit_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
+				hit_annotation->group_id = annotation_set->last_assigned_annotation_group;
+				notify_annotation_set_modified(annotation_set);
+			}
 		}
 
 	}
@@ -662,14 +675,6 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			if (i == hit_result.annotation_index) continue; // skip the one we just selected!
 			annotation_t* annotation = get_active_annotation(annotation_set, i);
 			annotation->selected = false;
-		}
-	}
-
-	// Multi-select by holding down Ctrl and dragging
-	if (scene->is_dragging && input->keyboard.key_ctrl.down && !scene->is_drag_vector_within_click_tolerance) {
-		if (hit_result.line_segment_distance < 10.0f) {
-			annotation_t* annotation = get_active_annotation(annotation_set, hit_result.annotation_index);
-			annotation->selected = true;
 		}
 	}
 

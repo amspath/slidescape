@@ -345,6 +345,8 @@ typedef struct app_state_t {
     bool need_close;
 } app_state_t;
 
+#define VIEWER_CLICK_DRAG_TOLERANCE 8.0f
+
 
 //  prototypes
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration);

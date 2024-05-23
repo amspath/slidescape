@@ -984,8 +984,6 @@ void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 	app_state->scene.annotation_set.editing_annotation_index = -1;
 }
 
-#define CLICK_DRAG_TOLERANCE 8.0f
-
 bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input, float delta_time) {
     bool consume_directional_control = false;
     i32 image_count = arrlen(app_state->loaded_images);
@@ -1141,7 +1139,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			if (was_button_released(&input->mouse_buttons[0]) && !scene->suppress_next_click && mouse_inside_window) {
 				float drag_distance = v2f_length(scene->cumulative_drag_vector);
-				if (drag_distance < CLICK_DRAG_TOLERANCE) {
+				if (drag_distance < VIEWER_CLICK_DRAG_TOLERANCE) {
 					scene->clicked = true;
 				}
 			}
@@ -1196,7 +1194,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					}
 				}
 				input->drag_vector = v2f();
-				scene->is_drag_vector_within_click_tolerance = v2f_length(scene->cumulative_drag_vector) < CLICK_DRAG_TOLERANCE;
+				scene->is_drag_vector_within_click_tolerance = v2f_length(scene->cumulative_drag_vector) < VIEWER_CLICK_DRAG_TOLERANCE;
 			} else {
 				if (input->mouse_buttons[0].transition_count != 0) {
 					mouse_show();
@@ -1562,7 +1560,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			if (app_state->mouse_mode == MODE_VIEW) {
-				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE && !input->keyboard.key_ctrl.down) {
+				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= VIEWER_CLICK_DRAG_TOLERANCE && !input->keyboard.key_ctrl.down) {
 					float final_multiplier = panning_multiplier * app_state->mouse_sensitivity * 0.1f;
 					scene->camera.x -= scene->drag_vector.x * scene->zoom.pixel_width * final_multiplier;
 					scene->camera.y -= scene->drag_vector.y * scene->zoom.pixel_height * final_multiplier;
@@ -1667,7 +1665,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			} else if (app_state->mouse_mode == MODE_DRAG_SCALE_BAR) {
 				scale_bar_t* scale_bar = &scene->scale_bar;
-				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= CLICK_DRAG_TOLERANCE) {
+				if (scene->is_dragging && v2f_length(scene->cumulative_drag_vector) >= VIEWER_CLICK_DRAG_TOLERANCE) {
 					// Update the position of the scale bar while dragging the mouse.
 #if WINDOWS
 					scale_bar->pos.x = input->mouse_xy.x - scale_bar->drag_start_offset.x;
