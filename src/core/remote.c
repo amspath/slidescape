@@ -443,6 +443,7 @@ bool remote_request(tls_connection_t* connection, const char* request, i32 reque
 	while( 1 );
 
 	exit:
+    memrw_putc(0, mem_buffer); // zero-terminate
 	return success;
 
 }

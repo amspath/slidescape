@@ -100,6 +100,22 @@ i64 memrw_write_string(const char* s, memrw_t* buffer) {
 	return memrw_write(s, buffer, len);
 }
 
+i64 memrw_write_string_urlencode(const char* s, memrw_t* buffer) {
+    size_t len = strlen(s);
+    i64 bytes_written = 0;
+    for (size_t i = 0; i < len; ++i) {
+        char c = s[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+            bytes_written += memrw_putc(c, buffer);
+        } else {
+            static const char* hex = "0123456789abcdef";
+            char c_encoded[4] = {'%', hex[(c >> 4) & 15], hex[c & 15]};
+            bytes_written += memrw_write(c_encoded, buffer, 3);
+        }
+    }
+    return bytes_written;
+}
+
 // Push a zero-terminated string onto the buffer, and return the offset in the buffer (for use as a string pool)
 i64 memrw_string_pool_push(memrw_t* buffer, const char* s) {
 	i64 cursor = buffer->cursor;

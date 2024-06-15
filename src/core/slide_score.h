@@ -19,26 +19,11 @@
 #pragma once
 
 #include "common.h"
+#include "memrw.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef struct slide_score_image_metadata_t {
-    i32 tile_width;
-    i32 tile_height;
-    i32 osd_tile_size;
-    float mpp_x;
-    float mpp_y;
-    float objective_power;
-    i32 background_color;
-    i32 level_count;
-    i32 z_layer_count;
-    i32 level_0_width;
-    i32 level_0_height;
-    char filename[256];
-
-} slide_score_image_metadata_t;
 
 typedef enum field_type_enum {
     FIELD_TYPE_UNKNOWN = 0,
@@ -108,16 +93,67 @@ typedef enum slide_score_api_enum {
     SLIDE_SCORE_API_GET_TOKEN_EXPIRY,
     SLIDE_SCORE_API_I_ENDPOINT,
     SLIDE_SCORE_API_GET_RAW_TILE,
+    SLIDE_SCORE_API_LAST,
 } slide_score_api_enum;
 
-typedef struct json_api_binding_t {
+typedef struct slide_score_get_image_metadata_result_t {
+    i32 tile_width;
+    i32 tile_height;
+    i32 osd_tile_size;
+    float mpp_x;
+    float mpp_y;
+    float objective_power;
+    i32 background_color;
+    i32 level_count;
+    i32 z_layer_count;
+    i32 level_0_width;
+    i32 level_0_height;
+    char filename[256];
+} slide_score_get_image_metadata_result_t;
+
+typedef struct slide_score_get_tile_server_result_t {
+    char cookie_part[256];
+    char url_part[256];
+    char expires_on[256];
+} slide_score_get_tile_server_result_t;
+
+typedef struct slide_score_api_result_t {
+    slide_score_api_enum api;
+    bool success;
+    union {
+        void* result_generic;
+        slide_score_get_image_metadata_result_t get_image_metadata;
+        slide_score_get_tile_server_result_t get_tile_server;
+    };
+} slide_score_api_result_t;
+
+typedef struct slide_score_client_t {
+    char server_name[256];
+    char api_key[4096];
+} slide_score_client_t;
+
+
+
+typedef struct web_api_binding_t {
     const char* name;
     i64 offset;
     field_type_enum field_type;
     bool already_filled;
-} json_api_binding_t;
+} web_api_binding_t;
 
-bool debug_slide_score_api_handle_response(const char* json, size_t json_length);
+typedef struct web_api_result_descriptor_t {
+    web_api_binding_t* bindings_template;
+    i32 binding_count;
+} web_api_result_descriptor_t;
+
+typedef struct web_api_call_t {
+    bool is_valid;
+    memrw_t url;
+    memrw_t request;
+    web_api_binding_t* bindings;
+} web_api_call_t;
+
+slide_score_api_result_t debug_slide_score_api_handle_response(const char* json, size_t json_length, slide_score_api_enum api);
 
 
 #ifdef __cplusplus

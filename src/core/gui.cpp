@@ -979,7 +979,7 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
         }
         http_response_t* response = open_remote_uri(app_state, remote_uri, token_buf);
         if (response) {
-            debug_slide_score_api_handle_response((const char *) (response->buffer.data), response->buffer.used_size);
+            debug_slide_score_api_handle_response((const char *) (response->buffer.data), response->content_length, SLIDE_SCORE_API_GET_IMAGE_METADATA);
             http_response_destroy(response);
         }
     }
