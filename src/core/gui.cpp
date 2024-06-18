@@ -590,7 +590,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		show_export_region_dialog = false;
 	}
 	gui_make_next_window_appear_in_center_of_screen();
-	ImGui::SetNextWindowSize(ImVec2(600.0f, 400.0f), ImGuiCond_Appearing);
+	ImGui::SetNextWindowSize(ImVec2(800.0f, 400.0f), ImGuiCond_Appearing);
 
 	if (ImGui::BeginPopupModal("Export region", NULL, 0/*ImGuiWindowFlags_AlwaysAutoResize*/)) {
 		scene_t* scene = &app_state->scene;
@@ -765,6 +765,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 			}
 			if (is_overwrite_confirm_dialog_open) {
 				proceed_with_export = false;
+				gui_make_next_window_appear_in_center_of_screen();
 				if (ImGui::BeginPopupModal("Overwrite existing file?##export_region", NULL, ImGuiWindowFlags_AlwaysAutoResize))
 				{
 					ImGui::Text("Overwrite existing file '%s'?\n\n", filename_buffer);
