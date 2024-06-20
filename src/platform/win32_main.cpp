@@ -2036,7 +2036,7 @@ int main() {
 			last_clock = get_clock();
 		}
 
-		win32_gui_new_frame();
+		win32_gui_new_frame(app_state);
 
 		// Update and render our application
 		win32_window_dimension_t dimension = win32_get_window_dimension(app_state->main_window);
@@ -2050,6 +2050,24 @@ int main() {
 		// Render the UI
 		ImGui::Render();
 		glViewport(0, 0, dimension.width, dimension.height);
+
+		// Render any ImGui content submitted to the extra draw list
+		if (app_state->frame_counter > 1) {
+			static ImDrawData draw_data = ImDrawData();
+			draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
+			draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
+			draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+			ImVector<ImDrawList*> draw_lists;
+			draw_lists.push_back(global_extra_draw_list);
+			draw_data.CmdLists = draw_lists;
+			draw_data.CmdListsCount = 1;
+			draw_data.TotalIdxCount = global_extra_draw_list->IdxBuffer.size();
+			draw_data.TotalVtxCount = global_extra_draw_list->VtxBuffer.size();
+			draw_data.Valid = true;
+			ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+		}
+
+		// Render rest of UI
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;

@@ -1544,7 +1544,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			}
 			if (scene->restrict_load_bounds) {
-				gui_draw_bounds_in_scene(scene->tile_load_bounds, RGBA(0,0,0,128), 2.0f, scene);
+				gui_draw_bounds_in_scene(scene->tile_load_bounds, RGBA(0,0,0,128), 2.0f, scene, NULL);
 			}
 #endif
 
@@ -1713,7 +1713,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 							v2i v = envelope->vertices[j];
 							points[j] = V2F(v.x * isyntax->mpp_x, v.y * isyntax->mpp_y);
 						}
-						gui_draw_polygon_outline_in_scene(points, envelope->vertex_count, RGBA(255, 0, 0, 255), true, 5.0f, scene);
+						gui_draw_polygon_outline_in_scene(points, envelope->vertex_count, RGBA(255, 0, 0, 255), true, 5.0f, scene, NULL);
 						release_temp_memory(&temp_memory);
 					}
 				}
@@ -1722,7 +1722,9 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 #endif
 
 		draw_grid(scene);
+//		i64 start = get_clock();
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
+//		console_print_verbose("draw_annotations() took %.03f ms\n", get_seconds_elapsed(start, get_clock()));
 		draw_selection_box(scene);
 		draw_scale_bar(&scene->scale_bar);
 	}

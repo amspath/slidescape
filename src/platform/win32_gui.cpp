@@ -34,7 +34,20 @@
 #include "gui.h"
 #include "font_definitions.h"
 
-void win32_gui_new_frame() {
+void win32_gui_new_frame(app_state_t* app_state) {
+	if (app_state->frame_counter == 1) {
+		// We initialize the extra draw list only after the first frame, because then we know for sure that
+		// ImGui::GetDrawListSharedData() has been set properly
+		static ImDrawListSharedData shared_data_copy = *ImGui::GetDrawListSharedData();
+		global_extra_draw_list = new ImDrawList(&shared_data_copy);
+	}
+	if (app_state->frame_counter >= 1) {
+		// Init for the frame
+		// (no need to PopTextureID()/PopClipRect()) since we reset every frame
+		global_extra_draw_list->_ResetForNewFrame();
+		global_extra_draw_list->PushTextureID(ImGui::GetIO().Fonts->TexID);
+		global_extra_draw_list->PushClipRectFullScreen();
+	}
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();

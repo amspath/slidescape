@@ -69,9 +69,11 @@ void menu_close_file(app_state_t* app_state) {
 	}
 }
 
-void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness) {
+void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness, ImDrawList* draw_list) {
 	if (count < 2) return;
-	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+	if (!draw_list) {
+		draw_list = ImGui::GetBackgroundDrawList();
+	}
 	u32 color = *(u32*)(&rgba);
 	// Workaround for problem with acute angles
 	// (lines are being drawn incorrectly with not enough thickness if the angles are too sharp)
@@ -111,20 +113,20 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, 
 	}
 }
 
-void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene) {
+void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene, ImDrawList* draw_list) {
 	for (i32 i = 0; i < count; ++i) {
 		points[i] = world_pos_to_screen_pos(scene, points[i]);
 	}
-	gui_draw_polygon_outline(points, count, color, closed, thickness);
+	gui_draw_polygon_outline(points, count, color, closed, thickness, draw_list);
 }
 
-void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene) {
+void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene, ImDrawList* draw_list) {
 	v2f points[4];
 	points[0] = V2F(bounds.left, bounds.top);
 	points[1] = V2F(bounds.left, bounds.bottom);
 	points[2] = V2F(bounds.right, bounds.bottom);
 	points[3] = V2F(bounds.right, bounds.top);
-	gui_draw_polygon_outline_in_scene(points, 4, color, true, thickness, scene);
+	gui_draw_polygon_outline_in_scene(points, 4, color, true, thickness, scene, draw_list);
 }
 
 bool enable_load_debug_coco_file;

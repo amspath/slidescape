@@ -80,6 +80,14 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->initialized = true;
 }
 
+// TODO: what is the lifetime of a scene? (right now, there is only one scene which is never destroyed)
+/*void destroy_scene(scene_t* scene) {
+	if (scene->imgui_draw_list) {
+		delete scene->imgui_draw_list;
+		scene->imgui_draw_list = NULL;
+	}
+}*/
+
 v2f scene_mouse_pos(scene_t* scene) {
 	v2f transformed_pos = world_pos_to_screen_pos(scene, scene->mouse);
 	return transformed_pos;
@@ -211,7 +219,7 @@ void draw_selection_box(scene_t* scene) {
 			points[i] = world_pos_to_screen_pos(scene, points[i]);
 		}
 		rgba_t rgba = {0, 0, 0, 128};
-		gui_draw_polygon_outline(points, 4, rgba, true, 5.0f);
+		gui_draw_polygon_outline(points, 4, rgba, true, 5.0f, NULL);
 	}
 }
 

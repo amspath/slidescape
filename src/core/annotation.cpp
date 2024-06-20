@@ -1301,12 +1301,58 @@ static void draw_annotation_fill_area(temp_memory_t* temp_memory, app_state_t* a
 	}
 }
 
+typedef struct annotation_batch_data_t {
+	i32 start_index;
+	i32 batch_size;
+	app_state_t* app_state;
+	scene_t* scene;
+	annotation_set_t* annotation_set;
+	v2f camera_min;
+} annotation_batch_data_t;
+
+/*void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min, i32 start_index, i32 batch_size) {
+
+}
+
+void draw_annotation_batch_func(i32 logical_thread_index, void* userdata)  {
+
+	if (!is_tile_stream_task_in_progress) {
+		isyntax_t* isyntax = tile_streamer->isyntax;
+		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
+		is_tile_stream_task_in_progress = true;
+		ASSERT(isyntax->work_submission_queue);
+		work_queue_submit_task(isyntax->work_submission_queue, isyntax_stream_image_tiles_func, tile_streamer,
+		                       sizeof(*tile_streamer));
+	} else {
+		is_tile_streamer_frame_boundary_passed = true;
+	}
+}*/
+
+
 void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min) {
 	if (!scene->enable_annotations) return;
 
 	recount_selected_annotations(app_state, annotation_set);
 
 	bool did_popup = false;
+
+	ImDrawList* draw_list;
+#if WINDOWS
+	if (app_state->frame_counter > 1) {
+		draw_list = global_extra_draw_list; // for testing
+	} else {
+		draw_list = ImGui::GetBackgroundDrawList();
+	}
+#else
+	// TODO: support multiple draw lists on other platforms
+	draw_list = ImGui::GetBackgroundDrawList();
+#endif
+
+	// Prevent acute angles in annotations being drawn incorrectly (at least until ImGui bug is fixed):
+	// https://github.com/ocornut/imgui/issues/3366
+	// https://github.com/ocornut/imgui/pull/2964
+	ImDrawListFlags backup_flags = draw_list->Flags;
+//	draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
 
 	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
 		temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
@@ -1341,25 +1387,23 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		}
 		u32 annotation_color = *(u32*)(&base_color);
 
-		ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
-
-		// Prevent acute angles in annotations being drawn incorrectly (at least until ImGui bug is fixed):
-		// https://github.com/ocornut/imgui/issues/3366
-		// https://github.com/ocornut/imgui/pull/2964
-		ImDrawListFlags backup_flags = draw_list->Flags;
-//		draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
+		// Decide whether we are zoomed in far enough to make out any details (if not, we'll skip full draw)
+		float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
+		float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
+		float span = MAX(span_x, span_y);
+		float span_in_pixels = span / scene->zoom.screen_point_width;
+		bool need_full_draw = true;
+		if (span_in_pixels < 2.0f) {
+			need_full_draw = false;
+			thickness = CLAMP(span_in_pixels, 0.5f, thickness);
+		}
 
 		if (annotation->coordinate_count > 0) {
-			v2f* points = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * annotation->coordinate_count);
-			for (i32 i = 0; i < annotation->coordinate_count; ++i) {
-				points[i] = world_pos_to_screen_pos(scene, annotation->coordinates[i]);
-			}
-
 			// Only draw the closing line back to the starting point if needed
 			bool closed = !annotation->is_open;
 
 			// Draw the inside of the annotation
-			if (annotation_need_draw_fill_area(annotation)) {
+			if (need_full_draw && annotation_need_draw_fill_area(annotation)) {
 				rgba_t fill_color = base_color;
 				fill_color.a = (u8)(annotation_highlight_opacity * 255.0f);
 				draw_annotation_fill_area(&temp_memory, app_state, scene, camera_min, annotation, fill_color);
@@ -1377,18 +1421,34 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			}
 
 			// Draw the annotation in the background list (behind UI elements), as a thick colored line
-			if (annotation->coordinate_count >= 4) {
-				gui_draw_polygon_outline(points, annotation->coordinate_count, line_color, closed, thickness);
-			} else if (annotation->coordinate_count >= 2) {
-				draw_list->AddLine(points[0], points[1], *(u32*)(&line_color), thickness);
-				if (annotation->coordinate_count == 3) {
-					draw_list->AddLine(points[1], points[2], *(u32*)(&line_color), thickness);
-					if (closed) {
-						draw_list->AddLine(points[2], points[0], *(u32*)(&line_color), thickness);
-					}
+			if (need_full_draw) {
+				v2f* points = (v2f*) arena_push_size(temp_memory.arena, sizeof(v2f) * annotation->coordinate_count);
+				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+					points[i] = world_pos_to_screen_pos(scene, annotation->coordinates[i]);
 				}
-			} else if (annotation->coordinate_count == 1) {
-				//annotation_draw_coordinate_dot(draw_list, points[0], annotation_node_size * 0.7f, base_color);
+				if (annotation->coordinate_count >= 4) {
+					gui_draw_polygon_outline(points, annotation->coordinate_count, line_color, closed, thickness, draw_list);
+				} else if (annotation->coordinate_count >= 2) {
+					draw_list->AddLine(points[0], points[1], *(u32*)(&line_color), thickness);
+					if (annotation->coordinate_count == 3) {
+						draw_list->AddLine(points[1], points[2], *(u32*)(&line_color), thickness);
+						if (closed) {
+							draw_list->AddLine(points[2], points[0], *(u32*)(&line_color), thickness);
+						}
+					}
+				} else if (annotation->coordinate_count == 1) {
+					// In this situation, need_draw_nodes is set to true (so we'll draw the node later)
+//				    annotation_draw_coordinate_dot(draw_list, points[0], annotation_node_size * 0.7f, base_color);
+				}
+			} else {
+				// Situation: we are zoomed out quite far, so the annotation won't be visible in detail
+				// Render for best performance: only draw a rectangle
+				if (annotation->coordinate_count > 1) {
+					float annotation_center_x = (annotation->bounds.max.x + annotation->bounds.min.x) * 0.5f;
+					float annotation_center_y = (annotation->bounds.max.y + annotation->bounds.min.y) * 0.5f;
+					v2f screen_pos = world_pos_to_screen_pos(scene, V2F(annotation_center_x, annotation_center_y));
+					draw_list->AddRectFilled(v2f_subtract(screen_pos, V2F(thickness, thickness)), v2f_add(screen_pos, V2F(thickness, thickness)), *(u32*)(&base_color));
+				}
 			}
 
 			// draw coordinate nodes
@@ -1396,7 +1456,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				bool need_hover = false;
 				v2f hovered_node_point = {};
 				for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
-					v2f point = points[coordinate_index];
+					v2f point = world_pos_to_screen_pos(scene, annotation->coordinates[coordinate_index]);
 					if (annotation_set->is_edit_mode && !annotation_set->is_insert_coordinate_mode &&
 					    annotation_index == annotation_set->hovered_annotation &&
 					    coordinate_index == annotation_set->hovered_coordinate &&
@@ -1531,10 +1591,9 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				draw_list->AddPolyline((const ImVec2*)(p_ellipse), segment_count, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 2.0f);
 			}
 		}
-
-		draw_list->Flags = backup_flags;
 		release_temp_memory(&temp_memory);
 	}
+	draw_list->Flags = backup_flags;
 
 	if (!did_popup) {
 		if (ImGui::BeginPopupContextVoid()) {
@@ -1799,7 +1858,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		}
 
 
-		if (ImGui::CollapsingHeader("Dataset info")) {
+		/*if (ImGui::CollapsingHeader("Dataset info")) {
 			if (ImGui::InputText("Description", annotation_set->coco.info.description, COCO_MAX_FIELD)) {
 				notify_annotation_set_modified(annotation_set);
 			}
@@ -1819,7 +1878,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 				notify_annotation_set_modified(annotation_set);
 			}
 			// TODO: Image, license etc.
-		}
+		}*/
 
 		// Interface for viewing/editing annotation groups
 		if (ImGui::CollapsingHeader("Edit groups"))

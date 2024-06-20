@@ -25,6 +25,9 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 extern "C" {
+#else
+// Allow for function prototypes that can use ImGui structures even from C
+typedef struct ImDrawList ImDrawList;
 #endif
 
 enum gui_modal_type_enum {
@@ -54,9 +57,9 @@ void imgui_create_context();
 void gui_make_next_window_appear_in_center_of_screen();
 void gui_draw_open_file_dialog(app_state_t* app_state);
 void menu_close_file(app_state_t* app_state);
-void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness);
-void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene);
-void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene);
+void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness, ImDrawList* draw_list);
+void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene, ImDrawList* draw_list);
+void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene, ImDrawList* draw_list);
 bool gui_draw_selected_annotation_submenu_section(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set);
 void gui_draw_insert_annotation_submenu(app_state_t* app_state);
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
@@ -109,6 +112,7 @@ extern ImFont* global_main_font;
 extern ImFont* global_fixed_width_font;
 extern ImFont* global_icon_font;
 #endif
+extern ImDrawList* global_extra_draw_list;
 
 extern i32 viewer_min_level INIT(= -2);
 extern i32 viewer_max_level INIT(= 10);
