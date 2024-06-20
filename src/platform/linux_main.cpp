@@ -118,16 +118,11 @@ static void* worker_thread(void* parameter) {
 			platform_sleep(100);
 			continue;
 		}
-        if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
-            //platform_sleep(1);
-            sem_wait(thread_info->queue->semaphore);
-            if (thread_info->logical_thread_index > global_active_worker_thread_count) {
-                // Worker is disabled, do nothing
-                platform_sleep(100);
-                continue;
-            }
-        }
-        work_queue_do_work(thread_info->queue, thread_info->logical_thread_index);
+		if (!work_queue_do_work(thread_info->queue, thread_info->logical_thread_index)) {
+			if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
+				sem_wait(thread_info->queue->semaphore);
+			}
+		}
     }
 
     return 0;

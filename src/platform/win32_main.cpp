@@ -1662,11 +1662,11 @@ static DWORD WINAPI thread_proc(void* parameter) {
 			Sleep(100);
 			continue;
 		}
-		if (!work_queue_is_work_in_progress(thread_info->queue)) {
-			Sleep(1);
-			WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
+		if (!work_queue_do_work(thread_info->queue, thread_info->logical_thread_index)) {
+			if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
+				WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
+			}
 		}
-		work_queue_do_work(thread_info->queue, thread_info->logical_thread_index);
 	}
 }
 
