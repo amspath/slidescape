@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2024, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -89,6 +89,7 @@ void test_multithreading_work_queue();
 
 extern THREAD_LOCAL i32 work_queue_call_depth;
 extern work_queue_t global_work_queue;
+extern work_queue_t global_high_priority_work_queue;
 extern i32 global_worker_thread_idle_count;
 
 

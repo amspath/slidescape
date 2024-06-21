@@ -55,6 +55,37 @@ void imgui_create_context() {
 	}
 }
 
+// Reset a drawlist to make it empty again (needs to be called at the beginning of every frame for each active drawlist)
+void gui_drawlist_reset_for_new_frame(ImDrawList* drawlist) {
+	// (no need to PopTextureID()/PopClipRect()) since we reset every frame
+	// see: https://github.com/ocornut/imgui/issues/6406#issuecomment-1632826410
+	drawlist->_ResetForNewFrame();
+	drawlist->PushTextureID(ImGui::GetIO().Fonts->TexID);
+	drawlist->PushClipRectFullScreen();
+}
+
+void gui_reset_all_extra_drawlists() {
+	for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
+		ImDrawList* drawlist = global_extra_drawlists[i];
+		if (drawlist) {
+			gui_drawlist_reset_for_new_frame(drawlist);
+		}
+	}
+}
+
+// Retrieve one of the global extra drawlists by index, and initialize it if necessary.
+ImDrawList* gui_get_extra_drawlist(i32 drawlist_index) {
+	ASSERT(drawlist_index < MAX_EXTRA_DRAWLISTS);
+	ImDrawList* drawlist = global_extra_drawlists[drawlist_index];
+	if (!drawlist) {
+		global_extra_drawlist_shared_datas[drawlist_index] = *ImGui::GetDrawListSharedData();
+		global_extra_drawlists[drawlist_index] = drawlist = new ImDrawList(global_extra_drawlist_shared_datas + drawlist_index);
+		gui_drawlist_reset_for_new_frame(drawlist);
+//		console_print("draw_annotation_batch(): initialized ImDrawList #%d\n", drawlist_index);
+	}
+	return drawlist;
+}
+
 void gui_make_next_window_appear_in_center_of_screen() {
 	ImVec2 center(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f);
 	ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -69,10 +100,10 @@ void menu_close_file(app_state_t* app_state) {
 	}
 }
 
-void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness, ImDrawList* draw_list) {
+void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, float thickness, ImDrawList* drawlist) {
 	if (count < 2) return;
-	if (!draw_list) {
-		draw_list = ImGui::GetBackgroundDrawList();
+	if (!drawlist) {
+		drawlist = ImGui::GetBackgroundDrawList();
 	}
 	u32 color = *(u32*)(&rgba);
 	// Workaround for problem with acute angles
@@ -103,30 +134,30 @@ void gui_draw_polygon_outline(v2f* points, i32 count, rgba_t rgba, bool closed, 
 			flags = ImDrawFlags_Closed;
 		}
 
-		draw_list->AddPolyline((ImVec2*)(points + i), nlin, color, flags, thickness);
+		drawlist->AddPolyline((ImVec2*)(points + i), nlin, color, flags, thickness);
 		i += nlin-1;
 	}
 
 	// Close the polygon using a manually added line in case of a split due to acute angles
 	if (closed && has_at_least_one_split) {
-		draw_list->AddLine(points[0], points[count-1], color, thickness);
+		drawlist->AddLine(points[0], points[count - 1], color, thickness);
 	}
 }
 
-void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene, ImDrawList* draw_list) {
+void gui_draw_polygon_outline_in_scene(v2f* points, i32 count, rgba_t color, bool closed, float thickness, scene_t* scene, ImDrawList* drawlist) {
 	for (i32 i = 0; i < count; ++i) {
 		points[i] = world_pos_to_screen_pos(scene, points[i]);
 	}
-	gui_draw_polygon_outline(points, count, color, closed, thickness, draw_list);
+	gui_draw_polygon_outline(points, count, color, closed, thickness, drawlist);
 }
 
-void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene, ImDrawList* draw_list) {
+void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, scene_t* scene, ImDrawList* drawlist) {
 	v2f points[4];
 	points[0] = V2F(bounds.left, bounds.top);
 	points[1] = V2F(bounds.left, bounds.bottom);
 	points[2] = V2F(bounds.right, bounds.bottom);
 	points[3] = V2F(bounds.right, bounds.top);
-	gui_draw_polygon_outline_in_scene(points, 4, color, true, thickness, scene, draw_list);
+	gui_draw_polygon_outline_in_scene(points, 4, color, true, thickness, scene, drawlist);
 }
 
 bool enable_load_debug_coco_file;

@@ -77,6 +77,7 @@ typedef FILE* file_stream_t;
 typedef struct platform_thread_info_t {
 	i32 logical_thread_index;
 	work_queue_t* queue;
+	work_queue_t* high_priority_queue;
 } platform_thread_info_t;
 
 #define MAX_ASYNC_IO_EVENTS 32

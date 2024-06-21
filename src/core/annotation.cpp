@@ -1268,7 +1268,7 @@ bool annotation_need_draw_fill_area(annotation_t* annotation) {
 	return false;
 }
 
-static void draw_annotation_fill_area(temp_memory_t* temp_memory, app_state_t* app_state, scene_t* scene, v2f camera_min, annotation_t* annotation, rgba_t fill_color) {
+static void draw_annotation_fill_area(temp_memory_t* temp_memory, app_state_t* app_state, scene_t* scene, v2f camera_min, annotation_t* annotation, rgba_t fill_color, ImDrawList* draw_list) {
 	if (!(annotation->valid_flags & ANNOTATION_VALID_TESSELATION)) {
 		// Performance: don't tesselate large polygons too often (this is CPU intensive!)
 		if (annotation->coordinate_count < 10 || app_state->mouse_mode != MODE_DRAG_ANNOTATION_NODE) {
@@ -1291,8 +1291,6 @@ static void draw_annotation_fill_area(temp_memory_t* temp_memory, app_state_t* a
 			for (i32 i = 0; i < triangle_count * 3; ++i) {
 				vertices[i] = world_pos_to_screen_pos(scene, annotation->tesselated_trianges[i]);
 			}
-
-			ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
 			for (i32 i = 0; i < triangle_count; ++i) {
 				v2f* T = vertices + i * 3;
 				draw_list->AddTriangleFilled(T[0], T[1], T[2], *(u32*)(&fill_color));
@@ -1308,59 +1306,20 @@ typedef struct annotation_batch_data_t {
 	scene_t* scene;
 	annotation_set_t* annotation_set;
 	v2f camera_min;
+	i32 draw_list_index;
+	volatile i32* completion_counter;
 } annotation_batch_data_t;
 
-/*void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min, i32 start_index, i32 batch_size) {
 
-}
-
-void draw_annotation_batch_func(i32 logical_thread_index, void* userdata)  {
-
-	if (!is_tile_stream_task_in_progress) {
-		isyntax_t* isyntax = tile_streamer->isyntax;
-		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-		is_tile_stream_task_in_progress = true;
-		ASSERT(isyntax->work_submission_queue);
-		work_queue_submit_task(isyntax->work_submission_queue, isyntax_stream_image_tiles_func, tile_streamer,
-		                       sizeof(*tile_streamer));
-	} else {
-		is_tile_streamer_frame_boundary_passed = true;
-	}
-}*/
-
-
-void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min) {
-	if (!scene->enable_annotations) return;
-
-	recount_selected_annotations(app_state, annotation_set);
-
-	bool did_popup = false;
-
-	ImDrawList* draw_list;
-#if WINDOWS
-	if (app_state->frame_counter > 1) {
-		draw_list = global_extra_draw_list; // for testing
-	} else {
-		draw_list = ImGui::GetBackgroundDrawList();
-	}
-#else
-	// TODO: support multiple draw lists on other platforms
-	draw_list = ImGui::GetBackgroundDrawList();
-#endif
-
-	// Prevent acute angles in annotations being drawn incorrectly (at least until ImGui bug is fixed):
-	// https://github.com/ocornut/imgui/issues/3366
-	// https://github.com/ocornut/imgui/pull/2964
-	ImDrawListFlags backup_flags = draw_list->Flags;
-//	draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
-
-	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
-		temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
+void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min, i32 start_index, i32 batch_size, volatile i32* completion_counter, i32 logical_thread_index, i32 draw_list_index) {
+	ImDrawList* draw_list = gui_get_extra_drawlist(draw_list_index);
+	i32 end_index = MIN(start_index + batch_size, annotation_set->active_annotation_count);
+	for (i32 annotation_index = start_index; annotation_index < end_index; ++annotation_index) {
 		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
-        annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
-        if (group->hidden) {
-            continue;
-        }
+		annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
+		if (group->hidden) {
+			continue;
+		}
 
 		// Don't draw the annotation if it's out of view
 		annotation_recalculate_bounds_if_necessary(annotation);
@@ -1399,6 +1358,8 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		}
 
 		if (annotation->coordinate_count > 0) {
+			temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
+
 			// Only draw the closing line back to the starting point if needed
 			bool closed = !annotation->is_open;
 
@@ -1406,7 +1367,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 			if (need_full_draw && annotation_need_draw_fill_area(annotation)) {
 				rgba_t fill_color = base_color;
 				fill_color.a = (u8)(annotation_highlight_opacity * 255.0f);
-				draw_annotation_fill_area(&temp_memory, app_state, scene, camera_min, annotation, fill_color);
+				draw_annotation_fill_area(&temp_memory, app_state, scene, camera_min, annotation, fill_color, draw_list);
 			}
 
 			bool need_draw_nodes = annotation->type == ANNOTATION_POINT ||
@@ -1450,7 +1411,173 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					draw_list->AddRectFilled(v2f_subtract(screen_pos, V2F(thickness, thickness)), v2f_add(screen_pos, V2F(thickness, thickness)), *(u32*)(&base_color));
 				}
 			}
+			release_temp_memory(&temp_memory);
 
+
+		} else {
+			// Annotation does NOT have coordinates
+			if (annotation->type == ANNOTATION_ELLIPSE) {
+				v2f p0 = world_pos_to_screen_pos(scene, annotation->p0);
+				v2f p1 = world_pos_to_screen_pos(scene, annotation->p1);
+				v2f center = v2f_average(p0, p1);
+				v2f v = v2f_subtract(p1, p0);
+				float len = v2f_length(v);
+				float angle = atan2f(-v.y, v.x);
+				float radius_x = cosf(angle) * len;
+				float radius_y = sinf(angle) * len;
+//				float radius_average = fabsf(radius_x) + fabsf(radius_y) * 0.5f;
+//				draw_list->AddCircle(center, radius_average, IM_COL32(255, 255, 0, 255), 0, 2.0f);
+
+				if (len > 50.0f) {
+					DUMMY_STATEMENT;
+				}
+
+				const i32 segment_count = 48;
+				v2f p_ellipse[segment_count] = {};
+				float theta = 0;
+				float theta_step = (IM_PI * 2.0f) / segment_count;
+				for (i32 i = 0; i < segment_count; ++i) {
+					p_ellipse[i].x = center.x + radius_x * cosf(theta);
+					p_ellipse[i].y = center.y + radius_y * sinf(theta);
+					theta += theta_step;
+				}
+				draw_list->AddPolyline((const ImVec2*)(p_ellipse), segment_count, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 2.0f);
+			}
+		}
+	}
+	atomic_add(completion_counter, 1);
+}
+
+void draw_annotation_batch_func(i32 logical_thread_index, void* userdata)  {
+	annotation_batch_data_t* data = (annotation_batch_data_t*) userdata;
+	if (data) {
+		draw_annotation_batch(data->app_state, data->scene, data->annotation_set, data->camera_min, data->start_index, data->batch_size, data->completion_counter, logical_thread_index, data->draw_list_index);
+	}
+}
+
+
+void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* annotation_set, v2f camera_min) {
+	if (!scene->enable_annotations) return;
+
+	recount_selected_annotations(app_state, annotation_set);
+
+	// First, we do the noninteractive part of annotation drawing.
+	// This can be split into batches for multithreading. This improves performance for large annotation sets.
+	// Each batch must be drawn on a separate ImDrawList, because drawing in ImGui generally isn't thread-safe.
+	// See e.g.:
+	// https://github.com/ocornut/imgui/issues/6406#issuecomment-1563002902
+	// https://github.com/ocornut/imgui/issues/6167
+	// https://github.com/ocornut/imgui/issues/5776
+	i32 annotations_per_batch = 1000;
+	i32 annotation_batch_count = (annotation_set->active_annotation_count + annotations_per_batch - 1) / annotations_per_batch;
+	global_active_extra_drawlists = MAX(annotation_batch_count, global_active_extra_drawlists);
+	if (global_active_extra_drawlists > MAX_EXTRA_DRAWLISTS) {
+		// If the number of annotations is extremely large, we don't have enough drawlists.
+		// In this case, we'll split evenly over the drawlists we have.
+		annotations_per_batch = (annotation_set->active_annotation_count + annotations_per_batch - 1) / MAX_EXTRA_DRAWLISTS;
+		annotation_batch_count = MAX_EXTRA_DRAWLISTS;
+		global_active_extra_drawlists = MAX_EXTRA_DRAWLISTS;
+	}
+	volatile i32 completion_counter = 0;
+	if (enable_multithreaded_annotation_drawing) {
+		for (i32 batch = 0; batch < annotation_batch_count; ++batch) {
+			i32 start_index = batch * annotations_per_batch;
+			i32 batch_size = MIN(annotation_set->active_annotation_count - start_index, annotations_per_batch);
+			annotation_batch_data_t batch_data = {
+				.start_index = start_index,
+				.batch_size = batch_size,
+				.app_state = app_state,
+				.scene = scene,
+				.annotation_set = annotation_set,
+				.camera_min = camera_min,
+				.draw_list_index = batch,
+				.completion_counter = &completion_counter,
+			};
+			work_queue_submit_task(&global_high_priority_work_queue, draw_annotation_batch_func, &batch_data, sizeof(batch_data));
+		}
+		while (completion_counter < annotation_batch_count) {
+			if (work_queue_is_work_waiting_to_start(&global_high_priority_work_queue)) {
+				if (!work_queue_do_work(&global_high_priority_work_queue, 0)) {
+					platform_sleep(1);
+				}
+			} else {
+				platform_sleep(1);
+			}
+		}
+	} else {
+		for (i32 batch = 0; batch < annotation_batch_count; ++batch) {
+			i32 start_index = batch * annotations_per_batch;
+			i32 batch_size = MIN(annotation_set->active_annotation_count - start_index, annotations_per_batch);
+			draw_annotation_batch(app_state, scene, annotation_set, camera_min, start_index, batch_size, &completion_counter, 0, batch);
+		}
+	}
+
+
+	// Second, do the interactive part of annotation drawing, which cannot be multithreaded.
+	bool did_popup = false;
+	ImDrawList* draw_list = ImGui::GetBackgroundDrawList();
+	// Prevent acute angles in annotations being drawn incorrectly (at least until ImGui bug is fixed):
+	// https://github.com/ocornut/imgui/issues/3366
+	// https://github.com/ocornut/imgui/pull/2964
+	ImDrawListFlags backup_flags = draw_list->Flags;
+//	draw_list->Flags &= ~ImDrawListFlags_AntiAliasedLines;
+
+	// TODO: test multithreaded annotation drawing on Linux
+	// TODO: create a separate work queue (and thread pool?) for IO tasks that may block (or alternative: use fibers that can be resumed?) - test with MMS test
+	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
+		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
+        annotation_group_t* group = annotation_set->stored_groups + annotation->group_id;
+        if (group->hidden) {
+            continue;
+        }
+
+		// Don't draw the annotation if it's out of view
+		// TODO: Refactor (calculate drawing parameters)
+		annotation_recalculate_bounds_if_necessary(annotation);
+		bounds2f extruded_camera_bounds = scene->camera_bounds;
+		float extrude_amount = 30.0f * scene->zoom.screen_point_width; // prevent pop-in at the edges e.g. due to the added thickness of the annotation outline
+		extruded_camera_bounds.min.x -= extrude_amount;
+		extruded_camera_bounds.min.y -= extrude_amount;
+		extruded_camera_bounds.max.x += extrude_amount;
+		extruded_camera_bounds.max.y += extrude_amount;
+		if (!are_bounds2f_overlapping(extruded_camera_bounds, annotation->bounds)) {
+			continue;
+		}
+
+//		rgba_t rgba = {50, 50, 0, 255 };
+		// TODO: Refactor
+		rgba_t base_color = group->color;
+		u8 alpha = (u8)(annotation_opacity * 255.0f);
+		base_color.a = alpha;
+		float thickness = annotation_normal_line_thickness;
+		if (annotation->selected) {
+			base_color.r = LERP(0.2f, base_color.r, 255);
+			base_color.g = LERP(0.2f, base_color.g, 255);
+			base_color.b = LERP(0.2f, base_color.b, 255);
+			thickness = annotation_selected_line_thickness;
+		}
+		u32 annotation_color = *(u32*)(&base_color);
+
+		// Decide whether we are zoomed in far enough to make out any details (if not, we'll skip full draw)
+		// TODO: Refactor
+		float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
+		float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
+		float span = MAX(span_x, span_y);
+		float span_in_pixels = span / scene->zoom.screen_point_width;
+		bool need_full_draw = true;
+		if (span_in_pixels < 2.0f) {
+			need_full_draw = false;
+			thickness = CLAMP(span_in_pixels, 0.5f, thickness);
+		}
+
+		if (annotation->coordinate_count > 0) {
+
+			bool need_draw_nodes = annotation->type == ANNOTATION_POINT ||
+			                       (annotation->selected && (annotation_show_polygon_nodes_outside_edit_mode ||
+			                                                 annotation_set->is_edit_mode || annotation_set->editing_annotation_index == annotation_index));
+
+
+			// Here starts the interactive part of annotation drawing that cannot be multithreaded.
 			// draw coordinate nodes
 			if (need_draw_nodes) {
 				bool need_hover = false;
@@ -1563,7 +1690,8 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 		} else {
 			// Annotation does NOT have coordinates
-			if (annotation->type == ANNOTATION_ELLIPSE) {
+			// TODO: refactor; currently drawn in multithreaded/batched part
+			/*if (annotation->type == ANNOTATION_ELLIPSE) {
 				v2f p0 = world_pos_to_screen_pos(scene, annotation->p0);
 				v2f p1 = world_pos_to_screen_pos(scene, annotation->p1);
 				v2f center = v2f_average(p0, p1);
@@ -1589,9 +1717,8 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 					theta += theta_step;
 				}
 				draw_list->AddPolyline((const ImVec2*)(p_ellipse), segment_count, IM_COL32(255, 255, 0, 255), ImDrawFlags_Closed, 2.0f);
-			}
+			}*/
 		}
-		release_temp_memory(&temp_memory);
 	}
 	draw_list->Flags = backup_flags;
 

@@ -1018,8 +1018,11 @@ void image_destroy(image_t* image) {
     image->is_deleted = true;
     while (image->refcount > 0) {
 //		console_print_error("refcount = %d\n", image->refcount);
-        platform_sleep(1);
-        work_queue_do_work(&global_work_queue, 0);
+	    if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
+		    work_queue_do_work(&global_work_queue, 0);
+	    } else {
+		    platform_sleep(1);
+	    }
     }
 	if (image) {
 		if (image->type == IMAGE_TYPE_WSI) {

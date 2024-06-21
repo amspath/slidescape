@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -136,6 +136,7 @@ void linux_init_multithreading() {
 	global_active_worker_thread_count = global_worker_thread_count;
 
 	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
+	global_high_priority_work_queue = global_work_queue; // Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
 	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
 
@@ -143,7 +144,7 @@ void linux_init_multithreading() {
 
     // NOTE: the main thread is considered thread 0.
     for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
-        thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue};
+        thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue, .high_priority_queue = &global_high_priority_work_queue};
 
         if (pthread_create(threads + i, NULL, &worker_thread, (void*)(&thread_infos[i])) != 0) {
             fprintf(stderr, "Error creating thread\n");
@@ -755,6 +756,7 @@ int main(int argc, const char** argv)
         }
 
         // Start the Dear ImGui frame
+	    gui_reset_all_extra_drawlists();
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
@@ -765,6 +767,37 @@ int main(int argc, const char** argv)
         // Finish up by rendering the UI
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+
+	    // Render any ImGui content submitted to the extra draw lists on worker threads
+	    if (global_active_extra_drawlists > 0) {
+		    static ImDrawData draw_data = ImDrawData();
+		    draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
+		    draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
+		    draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+		    draw_data.TotalIdxCount = 0;
+		    draw_data.TotalVtxCount = 0;
+		    draw_data.CmdListsCount = 0;
+		    ImVector<ImDrawList*> drawlists;
+		    for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
+			    ImDrawList* drawlist = global_extra_drawlists[i];
+			    if (drawlist) {
+				    i32 vertex_buffer_size = drawlist->VtxBuffer.size();
+				    if (vertex_buffer_size > 0) {
+					    drawlists.push_back(drawlist);
+					    draw_data.CmdListsCount += 1;
+					    draw_data.TotalIdxCount += drawlist->IdxBuffer.size();
+					    draw_data.TotalVtxCount += vertex_buffer_size;
+				    }
+			    }
+		    }
+		    draw_data.CmdLists = drawlists;
+		    draw_data.Valid = true;
+		    if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
+			    ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+		    }
+	    }
+
+		// Render the rest of the ImGui draw data (submitted on the main thread)
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         SDL_GL_SwapWindow(window);

@@ -1662,9 +1662,11 @@ static DWORD WINAPI thread_proc(void* parameter) {
 			Sleep(100);
 			continue;
 		}
-		if (!work_queue_do_work(thread_info->queue, thread_info->logical_thread_index)) {
-			if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
-				WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
+		if (!work_queue_do_work(thread_info->high_priority_queue, thread_info->logical_thread_index)) {
+			if (!work_queue_do_work(thread_info->queue, thread_info->logical_thread_index)) {
+				if (!(work_queue_is_work_waiting_to_start(thread_info->queue) || work_queue_is_work_waiting_to_start(thread_info->high_priority_queue))) {
+					WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
+				}
 			}
 		}
 	}
@@ -1677,12 +1679,13 @@ void win32_init_multithreading() {
 	global_active_worker_thread_count = global_worker_thread_count;
 
 	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
+	global_high_priority_work_queue = global_work_queue; // Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
 	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
-		platform_thread_info_t thread_info = { .logical_thread_index = i, .queue = &global_work_queue};
+		platform_thread_info_t thread_info = { .logical_thread_index = i, .queue = &global_work_queue, .high_priority_queue = &global_high_priority_work_queue};
 		thread_infos[i] = thread_info;
 
 		DWORD thread_id;
@@ -2051,23 +2054,36 @@ int main() {
 		ImGui::Render();
 		glViewport(0, 0, dimension.width, dimension.height);
 
-		// Render any ImGui content submitted to the extra draw list
-		if (app_state->frame_counter > 1) {
+		// Render any ImGui content submitted to the extra draw lists on worker threads
+		if (global_active_extra_drawlists > 0) {
 			static ImDrawData draw_data = ImDrawData();
 			draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
 			draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
 			draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
-			ImVector<ImDrawList*> draw_lists;
-			draw_lists.push_back(global_extra_draw_list);
-			draw_data.CmdLists = draw_lists;
-			draw_data.CmdListsCount = 1;
-			draw_data.TotalIdxCount = global_extra_draw_list->IdxBuffer.size();
-			draw_data.TotalVtxCount = global_extra_draw_list->VtxBuffer.size();
+			draw_data.TotalIdxCount = 0;
+			draw_data.TotalVtxCount = 0;
+			draw_data.CmdListsCount = 0;
+			ImVector<ImDrawList*> drawlists;
+			for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
+				ImDrawList* drawlist = global_extra_drawlists[i];
+				if (drawlist) {
+					i32 vertex_buffer_size = drawlist->VtxBuffer.size();
+					if (vertex_buffer_size > 0) {
+						drawlists.push_back(drawlist);
+						draw_data.CmdListsCount += 1;
+						draw_data.TotalIdxCount += drawlist->IdxBuffer.size();
+						draw_data.TotalVtxCount += vertex_buffer_size;
+					}
+				}
+			}
+			draw_data.CmdLists = drawlists;
 			draw_data.Valid = true;
-			ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+			if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
+				ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+			}
 		}
 
-		// Render rest of UI
+		// Render the rest of the ImGui draw data (submitted on the main thread)
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;
