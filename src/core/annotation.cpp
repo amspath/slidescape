@@ -484,7 +484,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	if (annotation_set->is_edit_mode) {
 		// For most edit operations, including those targeting a coordinate node, we want to be biased toward the
 		// selected annotation (otherwise we might end up interacting with a non-selected annotation instead)
-		hit_result = get_annotation_hit_result(annotation_set, scene->mouse,
+		hit_result = get_annotation_hit_result(app_state, annotation_set, scene->mouse,
 											   300.0f * scene->zoom.screen_point_width,
 											   +5.0f * scene->zoom.screen_point_width);
 
@@ -500,7 +500,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 	if (!annotation_set->is_edit_mode || need_select_deselect) {
 		// NOTE: There is a small negative bias for clicking on selected annotations, so that you are more
 		// likely to switch over to another annotation instead of deselecting the one you are on.
-		hit_result = get_annotation_hit_result(annotation_set, scene->mouse,
+		hit_result = get_annotation_hit_result(app_state, annotation_set, scene->mouse,
 		                                       300.0f * scene->zoom.screen_point_width,
 		                                       -5.0f * scene->zoom.screen_point_width);
 	}
@@ -647,19 +647,26 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 			annotation_set->is_insert_coordinate_mode = false;
 			annotation_set->force_insert_mode = false;
 			annotation_set->is_split_mode = false;
-		} else if (scene->is_dragging && input->keyboard.key_ctrl.down && !scene->is_drag_vector_within_click_tolerance && line_segment_pixel_distance < 10.0f) {
+		} else if (scene->is_dragging && input->keyboard.key_ctrl.down && !scene->is_drag_vector_within_click_tolerance) {
 			// Multi-select by holding down Ctrl and dragging
-			bool did_select = false;
-			if (!hit_annotation->selected) {
-				hit_annotation->selected = true;
-				did_select = true;
+			float select_tolerance = 20.0f * scene->zoom.screen_point_width;
+			for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+				annotation_t* annotation = get_active_annotation(annotation_set, i);
+ 				if (annotation->line_segment_distance_last_updated_frame == app_state->frame_counter && annotation->line_segment_distance_to_cursor < select_tolerance) {
+					bool did_select = false;
+					if (!annotation->selected) {
+						annotation->selected = true;
+						did_select = true;
+					}
+
+					// Feature for quickly assigning the same annotation group to the next selected annotation.
+					if (did_select && annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
+						annotation->group_id = annotation_set->last_assigned_annotation_group;
+						notify_annotation_set_modified(annotation_set);
+					}
+				}
 			}
 
-			// Feature for quickly assigning the same annotation group to the next selected annotation.
-			if (did_select && hit_annotation->selected && auto_assign_last_group && annotation_set->last_assigned_group_is_valid) {
-				hit_annotation->group_id = annotation_set->last_assigned_annotation_group;
-				notify_annotation_set_modified(annotation_set);
-			}
 		}
 
 	}
@@ -758,7 +765,7 @@ bool is_point_within_annotation_bounds(annotation_t* annotation, v2f point, floa
 }
 
 // Determine which annotation & coordinate are closest to a certain point in space (e.g., the mouse cursor position)
-annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected) {
+annotation_hit_result_t get_annotation_hit_result(app_state_t* app_state, annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected) {
 	annotation_hit_result_t hit_result = {};
 	hit_result.annotation_index = -1;
 	hit_result.line_segment_coordinate_index = -1;
@@ -794,6 +801,10 @@ annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_s
 				                                                                          point, &t_clamped,
 				                                                                          &projected_point,
 				                                                                          &line_segment_distance);
+				// Store for later use
+				annotation->line_segment_distance_to_cursor = line_segment_distance;
+				annotation->line_segment_distance_last_updated_frame = app_state->frame_counter;
+
 				float biased_line_segment_distance = line_segment_distance - bias;
 				if (nearest_line_segment_coordinate_index >= 0 && biased_line_segment_distance < shortest_biased_line_segment_distance) {
 					shortest_biased_line_segment_distance = biased_line_segment_distance;
@@ -1350,11 +1361,11 @@ void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_se
 		float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
 		float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
 		float span = MAX(span_x, span_y);
-		float span_in_pixels = span / scene->zoom.screen_point_width;
+		float span_in_pixels = span / scene->zoom.pixel_width;
 		bool need_full_draw = true;
 		if (span_in_pixels < 2.0f) {
 			need_full_draw = false;
-			thickness = CLAMP(span_in_pixels, 0.5f, thickness);
+			thickness = CLAMP(span_in_pixels, 1.0f, 2.0f) * 0.3f * thickness;
 		}
 
 		if (annotation->coordinate_count > 0) {

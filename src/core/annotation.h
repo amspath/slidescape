@@ -73,6 +73,10 @@ typedef struct annotation_t {
 	u32 valid_flags; // keeps track of whether derived calculations are valid
 	u32 fallback_valid_flags; // if invalidated, keep track of whether an old/outdated derived calculation exists
 
+	// Volatile parameters that change every frame
+	float line_segment_distance_to_cursor;
+	i64 line_segment_distance_last_updated_frame;
+
 	// TODO: use flags here?
 	bool8 selected;
 	bool8 has_properties;
@@ -214,7 +218,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 bounds2f bounds_for_annotation(annotation_t* annotation);
 void annotation_recalculate_bounds_if_necessary(annotation_t* annotation);
 bool is_point_within_annotation_bounds(annotation_t* annotation, v2f point, float tolerance_margin);
-annotation_hit_result_t get_annotation_hit_result(annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected);
+annotation_hit_result_t get_annotation_hit_result(app_state_t* app_state, annotation_set_t* annotation_set, v2f point, float bounds_check_tolerance, float bias_for_selected);
 i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t* annotation, v2f point, float* t_ptr, v2f* projected_point_ptr, float* distance_ptr);
 void deselect_annotation_coordinates(annotation_set_t* annotation_set);
 void notify_annotation_set_modified(annotation_set_t* annotation_set);
