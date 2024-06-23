@@ -29,9 +29,8 @@ v2f world_pos_to_screen_pos(scene_t* scene, v2f world_pos) {
 //	};
 //	return transformed_pos;
 
-	//TODO (pvalkema): @Performance: calculate once and re-use
-	float sin_theta = sinf(scene->rotation);
-	float cos_theta = cosf(scene->rotation);
+	float sin_theta = scene->sin_rotation;
+	float cos_theta = scene->cos_rotation;
 
 	v2f rel_to_camera = v2f_subtract(world_pos, scene->camera); // relative to camera in world units
 	v2f rotated = {rel_to_camera.x * cos_theta - rel_to_camera.y * sin_theta, rel_to_camera.y * cos_theta + rel_to_camera.x * sin_theta };
@@ -74,6 +73,8 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->camera = V2F(0.0f, 0.0f); // center camera at origin
 	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);
 	scene->rotation = 0.0f;
+	scene->sin_rotation = 0.0f;
+	scene->cos_rotation = 1.0f;
 	scene->is_mpp_known = false;
 	scene->enable_grid = false;
 	scene->enable_annotations = true;

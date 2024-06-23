@@ -900,8 +900,8 @@ v2f get_2d_control_from_input(input_t* input, bool allow_keyboard_input) {
 
 static inline void scene_update_camera_bounds(scene_t* scene) {
 //	scene->camera_bounds = bounds_from_center_point(scene->camera, scene->r_minus_l, scene->t_minus_b);
-	float sin_theta = sinf(scene->rotation);
-	float cos_theta = cosf(scene->rotation);
+	float sin_theta = scene->sin_rotation;
+	float cos_theta = scene->cos_rotation;
 
 	float right = 0.5f * scene->r_minus_l;
 	float left = -right;
@@ -1285,6 +1285,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					if (scene->rotation <= -2.0f * IM_PI) {
 						scene->rotation += 2.0f * IM_PI;
 					}
+					scene->sin_rotation = sinf(scene->rotation);
+					scene->cos_rotation = cosf(scene->rotation);
 
 				} else {
 					if (use_zoom_animation) {
@@ -1724,7 +1726,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		draw_grid(scene);
 //		i64 start = get_clock();
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
-//		console_print_verbose("draw_annotations() took %.03f ms\n", get_seconds_elapsed(start, get_clock()));
+//		console_print_verbose("draw_annotations() took %.01f ms\n", get_seconds_elapsed(start, get_clock()) * 1000.0f);
 		draw_selection_box(scene);
 		draw_scale_bar(&scene->scale_bar);
 	}

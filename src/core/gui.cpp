@@ -1108,6 +1108,8 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			ImGui::SliderFloat("Rotation", &app_state->scene.rotation, -1.0f * IM_PI, 1.0f * IM_PI);
 			if (ImGui::Button("Reset rotation")) {
 				app_state->scene.rotation = 0.0f;
+				app_state->scene.sin_rotation = 0.0f;
+				app_state->scene.cos_rotation = 1.0f;
 			}
 
             // Options for adjusting level offsets

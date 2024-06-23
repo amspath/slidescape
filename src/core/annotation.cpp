@@ -452,7 +452,7 @@ void create_point_annotation(annotation_set_t* annotation_set, v2f pos) {
 }
 
 // TODO: think about what we want to do with this functionality; remove?
-bool want_cycle_annotations = false;
+bool want_cycle_annotations = true;
 
 void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* input) {
 	annotation_set_t* annotation_set = &scene->annotation_set;
@@ -1358,14 +1358,16 @@ void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_se
 		u32 annotation_color = *(u32*)(&base_color);
 
 		// Decide whether we are zoomed in far enough to make out any details (if not, we'll skip full draw)
-		float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
-		float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
-		float span = MAX(span_x, span_y);
-		float span_in_pixels = span / scene->zoom.pixel_width;
 		bool need_full_draw = true;
-		if (span_in_pixels < 2.0f) {
-			need_full_draw = false;
-			thickness = CLAMP(span_in_pixels, 1.0f, 2.0f) * 0.3f * thickness;
+		if ((annotation->valid_flags & ANNOTATION_VALID_BOUNDS) && !annotation->is_open) {
+			float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
+			float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
+			float span = MAX(span_x, span_y);
+			float span_in_pixels = span / scene->zoom.pixel_width;
+			if (span_in_pixels < 2.0f) {
+				need_full_draw = false;
+				thickness = CLAMP(span_in_pixels, 1.0f, 2.0f) * 0.3f * thickness;
+			}
 		}
 
 		if (annotation->coordinate_count > 0) {
@@ -1479,7 +1481,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 	// https://github.com/ocornut/imgui/issues/6406#issuecomment-1563002902
 	// https://github.com/ocornut/imgui/issues/6167
 	// https://github.com/ocornut/imgui/issues/5776
-	i32 annotations_per_batch = 1000;
+	i32 annotations_per_batch = 2000;
 	i32 annotation_batch_count = (annotation_set->active_annotation_count + annotations_per_batch - 1) / annotations_per_batch;
 	global_active_extra_drawlists = MAX(annotation_batch_count, global_active_extra_drawlists);
 	if (global_active_extra_drawlists > MAX_EXTRA_DRAWLISTS) {
@@ -1571,14 +1573,16 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 
 		// Decide whether we are zoomed in far enough to make out any details (if not, we'll skip full draw)
 		// TODO: Refactor
-		float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
-		float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
-		float span = MAX(span_x, span_y);
-		float span_in_pixels = span / scene->zoom.screen_point_width;
 		bool need_full_draw = true;
-		if (span_in_pixels < 2.0f) {
-			need_full_draw = false;
-			thickness = CLAMP(span_in_pixels, 0.5f, thickness);
+		if ((annotation->valid_flags & ANNOTATION_VALID_BOUNDS) && !annotation->is_open) {
+			float span_x = annotation->bounds.max.x - annotation->bounds.min.x;
+			float span_y = annotation->bounds.max.y - annotation->bounds.min.y;
+			float span = MAX(span_x, span_y);
+			float span_in_pixels = span / scene->zoom.screen_point_width;
+			if (span_in_pixels < 2.0f) {
+				need_full_draw = false;
+				thickness = CLAMP(span_in_pixels, 0.5f, thickness);
+			}
 		}
 
 		if (annotation->coordinate_count > 0) {
