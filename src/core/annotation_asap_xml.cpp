@@ -435,6 +435,14 @@ const char* get_annotation_type_name(annotation_type_enum type) {
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out) {
 	ASSERT(annotation_set);
 	ASSERT(filename_out);
+
+	// Get an exclusive lock on this annotation_set_t instance (theoretically, a worker thread might also be busy saving)
+	// We want this to always succeed in the end, so keep trying until we get it
+	while (!atomic_compare_exchange(&annotation_set->is_saving_in_progress, 1, 0)) {
+		console_print("save_asap_xml_annotations(): failed to get an exclusive lock on the annotation set, retrying...\n");
+		platform_sleep(100);
+	}
+
 	FILE* fp = fopen(filename_out, "wb");
 	if (fp) {
 //		const char* base_tag = "<ASAP_Annotations><Annotations>";
@@ -535,4 +543,5 @@ void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* fil
 
 
 	}
+	annotation_set->is_saving_in_progress = false; // release lock
 }

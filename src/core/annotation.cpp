@@ -2668,6 +2668,11 @@ void destroy_annotation(annotation_t* annotation) {
 }
 
 void destroy_annotation_set(annotation_set_t* annotation_set) {
+	// If saving is happening asynchronously, we need to wait for it to complete.
+	while (!atomic_compare_exchange(&annotation_set->is_saving_in_progress, 1, 0)) {
+		console_print("destroy_annotation_set(): failed to get an exclusive lock on the annotation set, retrying...\n");
+		platform_sleep(100);
+	}
 	// destroy old state
 	for (i32 i = 0; i < annotation_set->stored_annotation_count; ++i) {
 		destroy_annotation(annotation_set->stored_annotations + i);
@@ -2755,7 +2760,82 @@ void save_geojson_annotations(annotation_set_t* annotation_set, const char* file
 	}
 }
 
-void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay) {
+annotation_set_t* duplicate_annotation_set(annotation_set_t* annotation_set) {
+	annotation_set_t* copy = (annotation_set_t*)malloc(sizeof(annotation_set_t));
+	*copy = *annotation_set;
+
+	copy->stored_annotations = NULL;
+	arrsetlen(copy->stored_annotations, copy->stored_annotation_count);
+	ASSERT(copy->stored_annotation_count == arrlen(annotation_set->stored_annotations));
+	// Annotations need to be individually deep copied (they contain their own array of coordinates)
+	for (i32 i = 0; i < copy->stored_annotation_count; ++i) {
+		copy->stored_annotations[i] = duplicate_annotation(annotation_set->stored_annotations + i);
+	}
+
+	copy->active_annotation_indices = NULL;
+	arrsetlen(copy->active_annotation_indices, copy->active_annotation_count);
+	memcpy(copy->active_annotation_indices, annotation_set->active_annotation_indices, arrlen(annotation_set->active_annotation_indices) * sizeof(i32));
+
+	copy->stored_groups = NULL;
+	arrsetlen(copy->stored_groups, arrlen(annotation_set->stored_groups));
+	memcpy(copy->stored_groups, annotation_set->stored_groups, arrlen(annotation_set->stored_groups) * sizeof(annotation_group_t));
+
+	copy->active_group_indices = NULL;
+	arrsetlen(copy->active_group_indices, copy->active_group_count);
+	memcpy(copy->active_group_indices, annotation_set->active_group_indices, arrlen(annotation_set->active_group_indices) * sizeof(i32));
+
+	copy->stored_features = NULL;
+	arrsetlen(copy->stored_features, arrlen(annotation_set->stored_features));
+	memcpy(copy->stored_features, annotation_set->stored_features, arrlen(annotation_set->stored_features) * sizeof(annotation_feature_t));
+
+	copy->active_feature_indices = NULL;
+	arrsetlen(copy->active_feature_indices, copy->active_feature_count);
+	memcpy(copy->active_feature_indices, annotation_set->active_feature_indices, arrlen(annotation_set->active_feature_indices) * sizeof(i32));
+
+	annotation_set->coco.is_valid = false;
+
+	return copy;
+}
+
+static void save_asap_xml_annotations_with_backup(app_state_t* app_state, annotation_set_t* annotation_set, const char* filename_out) {
+	// Backup original XML file to .orig
+	if (annotation_set->asap_xml_filename[0] != '\0' && annotation_set->annotations_were_loaded_from_file) {
+		char backup_filename[4096];
+		snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->asap_xml_filename);
+		if (!file_exists(backup_filename)) {
+			rename(annotation_set->asap_xml_filename, backup_filename);
+		}
+	}
+
+	save_asap_xml_annotations(annotation_set, filename_out);
+}
+
+typedef struct save_asap_xml_async_task_t {
+	app_state_t* app_state;
+	annotation_set_t* annotation_set;
+	const char* filename_out;
+	volatile i32* in_progress_state;
+} save_asap_xml_async_task_t;
+
+static void save_asap_xml_async_func(i32 logical_thread_id, void* userdata) {
+	save_asap_xml_async_task_t* task = (save_asap_xml_async_task_t*) userdata;
+	// Try once to get an exclusive lock, on the original annotation_set_t (not the deep copy we made for safety)
+	// (if we fail here, somebody else is already attempting to save -> don't interfere, they have higher priority)
+	if (atomic_compare_exchange(task->in_progress_state, 1, 0)) {
+
+//		console_print("threading test: sleeping...\n");
+//		platform_sleep(10000);
+//		console_print("threading test: proceeding with save\n");
+
+		save_asap_xml_annotations_with_backup(task->app_state, task->annotation_set, task->filename_out);
+		*task->in_progress_state = 0;
+	}
+	// Destroy the deep copy of the annotation set we received
+	destroy_annotation_set(task->annotation_set);
+	free(task->annotation_set);
+}
+
+void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay, bool async) {
 	if (!annotation_set->modified) return; // no changes, nothing to do
 
 	bool proceed = force_ignore_delay;
@@ -2768,15 +2848,6 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 	}
 	if (proceed) {
 		if (annotation_set->export_as_asap_xml) {
-			// Backup original XML file to .orig
-			if (annotation_set->asap_xml_filename[0] != '\0' && annotation_set->annotations_were_loaded_from_file) {
-				char backup_filename[4096];
-				snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->asap_xml_filename);
-				if (!file_exists(backup_filename)) {
-					rename(annotation_set->asap_xml_filename, backup_filename);
-				}
-			}
-
 			// Construct a sensible filename
 			if (annotation_set->asap_xml_filename[0] == '\0') {
 				char image_name_buf[512];
@@ -2790,12 +2861,35 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				replace_file_extension(image_name_buf, sizeof(image_name_buf), "xml");
 				snprintf(annotation_set->asap_xml_filename, sizeof(annotation_set->asap_xml_filename), "%s%s", get_annotation_directory(app_state), image_name_buf);
 				annotation_set->asap_xml_filename[sizeof(annotation_set->asap_xml_filename)-1] = '\0';
-
 			}
 
-			save_asap_xml_annotations(annotation_set, annotation_set->asap_xml_filename);
+			if (async) {
+				// Saving large annotation sets on the main thread may lead to annoying stalls.
+				// If the situation allows for it, we can save the annotations in the background.
+
+				// For safety, we must first  prepare an immutable copy (we'll save that instead of the 'real' instance)
+				annotation_set_t* copy = duplicate_annotation_set(annotation_set);
+
+				save_asap_xml_async_task_t task = {
+					.app_state = app_state,
+					.annotation_set = copy,
+					.filename_out = annotation_set->asap_xml_filename,
+					.in_progress_state = &annotation_set->is_saving_in_progress,
+				};
+				if (work_queue_submit_task(&global_work_queue, save_asap_xml_async_func, &task, sizeof(save_asap_xml_async_task_t))) {
+					// annotations will be saved on a worker thread
+					// The copy will be destroyed after saving is done
+				} else {
+					destroy_annotation_set(copy);
+					free(copy);
+				}
+			} else {
+				// Save annotations synchronously on the main thread
+				save_asap_xml_annotations_with_backup(app_state, annotation_set, annotation_set->asap_xml_filename);
+			}
 		}
-		if (app_state->export_as_coco && annotation_set->coco_filename) {
+		// TODO: remove COCO support
+		/*if (app_state->export_as_coco && annotation_set->coco_filename) {
 			char backup_filename[4096];
 			snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->coco_filename);
 			if (!file_exists(backup_filename)) {
@@ -2810,7 +2904,7 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				fclose(fp);
 			}
 			memrw_destroy(&out);
-		}
+		}*/
 		annotation_set->modified = false;
 
 

@@ -363,7 +363,7 @@ bool was_button_released(button_state_t* button);
 bool was_key_pressed(input_t* input, i32 keycode);
 bool is_key_down(input_t* input, i32 keycode);
 void init_app_state(app_state_t* app_state, app_command_t command);
-void autosave(app_state_t* app_state, bool force_ignore_delay);
+void autosave(app_state_t* app_state, bool force_ignore_delay, bool async);
 void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void scene_update_camera_pos(scene_t* scene, v2f pos);
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool);

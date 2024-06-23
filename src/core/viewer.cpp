@@ -90,7 +90,7 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
 
 // TODO: make this based on scene (allow loading multiple images independently side by side)
 void unload_all_images(app_state_t *app_state) {
-	autosave(app_state, true); // save recent changes to annotations, if necessary
+	autosave(app_state, true, false); // save recent changes to annotations, if necessary
 
 	i32 current_image_count = arrlen(app_state->loaded_images);
 	if (current_image_count > 0) {
@@ -173,7 +173,7 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 	app_state->initialized = true;
 }
 
-void autosave(app_state_t* app_state, bool force_ignore_delay) {
+void autosave(app_state_t* app_state, bool force_ignore_delay, bool async) {
 	annotation_set_t* annotation_set = &app_state->scene.annotation_set;
 
     bool proceed = force_ignore_delay;
@@ -187,7 +187,7 @@ void autosave(app_state_t* app_state, bool force_ignore_delay) {
 
     if (proceed) {
         if (app_state->enable_autosave) {
-            save_annotations(app_state, annotation_set, force_ignore_delay);
+            save_annotations(app_state, annotation_set, force_ignore_delay, async);
         }
         if (app_state->remember_annotation_groups_as_template) {
             annotation_set_template_destroy(&app_state->scene.annotation_set_template);
@@ -1689,7 +1689,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			// Ctrl+S: save annotations manually
 			if (scene->annotation_set.modified) {
 				if (was_key_pressed(input, KEY_S) && input->keyboard.key_ctrl.down) {
-					save_annotations(app_state, &scene->annotation_set, true);
+					save_annotations(app_state, &scene->annotation_set, true, false);
 				}
 			}
 
@@ -1822,7 +1822,7 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	gui_draw(app_state, curr_input, app_state->client_viewport.w, app_state->client_viewport.h);
 //	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
 
-	autosave(app_state, false);
+	autosave(app_state, false, true);
 //	last_section = profiler_end_section(last_section, "autosave", 10.0f);
 
 	if (need_quit) {

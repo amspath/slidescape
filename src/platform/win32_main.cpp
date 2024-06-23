@@ -2101,7 +2101,7 @@ int main() {
 		wglSwapBuffers(glrc_hdc);
 	}
 
-	autosave(app_state, true); // save any unsaved changes
+	autosave(app_state, true, false); // save any unsaved changes
 
 	return 0;
 }

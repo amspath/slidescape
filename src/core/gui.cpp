@@ -282,7 +282,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool new_dataset_asap_xml;
 			bool new_dataset_coco;
 			bool new_dataset_geojson;
-			bool save_annotations;
 			bool select_region_create_box;
 			bool select_region_encompass_annotations;
 			bool select_region_whole_slide;
@@ -369,7 +368,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
                 if (ImGui::MenuItem("Open URI...", "Ctrl+U", &menu_items_clicked.open_uri)) {}
 				if (ImGui::MenuItem("Open remote WSI...", NULL, &menu_items_clicked.open_remote)) {}
 				ImGui::Separator();
-//				if (ImGui::MenuItem("Save XML annotations", NULL, &menu_items_clicked.save_annotations)) {}
 				if (ImGui::MenuItem("Show menu bar", "Alt+F12", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
 				if (enable_load_debug_coco_file) {
@@ -408,7 +406,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
         } else if (menu_items_clicked.close) {
 			menu_close_file(app_state);
 		} else if (menu_items_clicked.save) {
-			save_annotations(app_state, &app_state->scene.annotation_set, true);
+			save_annotations(app_state, &app_state->scene.annotation_set, true, false);
 		} else if (menu_items_clicked.open_remote) {
 			show_open_remote_window = true;
 		} else if (prev_fullscreen != is_fullscreen) {
@@ -416,8 +414,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (currently_fullscreen != is_fullscreen) {
 				toggle_fullscreen(app_state->main_window);
 			}
-		} else if(menu_items_clicked.save_annotations) {
-			save_asap_xml_annotations(&app_state->scene.annotation_set, "test_out.xml");
 		} else if (menu_items_clicked.select_region_create_box) {
 			app_state->mouse_mode = MODE_CREATE_SELECTION_BOX;
 		} else if (menu_items_clicked.select_region_encompass_annotations) {
@@ -941,7 +937,7 @@ void save_changes_modal(app_state_t* app_state, annotation_set_t* annotation_set
 //		ImGui::PopStyleVar();
 
 		if (ImGui::Button("Save", ImVec2(120, 0)) || was_key_pressed(app_state->input, KEY_Return)) {
-			save_annotations(app_state, annotation_set, true);
+			save_annotations(app_state, annotation_set, true, false);
 			show_save_quit_prompt = false;
 			is_program_running = false;
 			ImGui::CloseCurrentPopup();

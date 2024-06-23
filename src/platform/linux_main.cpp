@@ -814,7 +814,7 @@ int main(int argc, const char** argv)
 
     }
 
-    autosave(app_state, true); // save any unsaved changes
+    autosave(app_state, true, false); // save any unsaved changes
 
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
