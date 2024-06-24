@@ -506,6 +506,11 @@ void draw_layers_window(app_state_t* app_state) {
 		ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, TEXT_BASE_WIDTH * 18.0f);
 		ImGui::TableHeadersRow();
 
+		i32 enabled_image_count = 0; // //TODO: calculate once and keep track?
+		for (i32 i = 0; i < image_count; ++i) {
+			if (app_state->loaded_images[i]->is_enabled) ++enabled_image_count;
+		}
+
 		for (i32 image_index = 0; image_index < image_count; ++image_index) {
 			image_t* image = app_state->loaded_images[image_index];
 			ImGui::TableNextRow();
@@ -518,7 +523,41 @@ void draw_layers_window(app_state_t* app_state) {
 			ImGui::TableNextColumn();
 			char checkbox_label[32];
 			snprintf(checkbox_label, sizeof(checkbox_label), "##layers_checkbox_%d", image_index);
-			ImGui::Checkbox(checkbox_label, &image->is_enabled);
+
+			bool checkbox_disabled = false;
+			if ((image->is_enabled && enabled_image_count == 1) /*|| (!image->is_enabled && enabled_image_count == 2)*/) {
+				ImGui::BeginDisabled();
+				checkbox_disabled = true;
+			}
+
+			if (ImGui::Checkbox(checkbox_label, &image->is_enabled)) {
+				if (!image->is_enabled && app_state->enabled_image_count == 1) {
+					image->is_enabled = true; // don't allow the number of enabled images to drop to zero.
+				} else if (image->is_enabled && app_state->enabled_image_count >= 2) {
+					// don't allow the number of enabled images to grow above 2.
+					// -> disable either the last checked image or the one we just pressed
+					if (app_state->last_layer_enabled < image_count) {
+						image_t* last_image = app_state->loaded_images[app_state->last_layer_enabled];
+						if (last_image->is_valid && last_image->is_enabled) {
+							last_image->is_enabled = false;
+							layers_window_selected_image_index = app_state->last_layer_enabled;
+							app_state->last_layer_enabled = image_index;
+						} else {
+							image->is_enabled = false;
+						}
+					} else {
+						image->is_enabled = false;
+					}
+				} else if (image->is_enabled) {
+					app_state->last_layer_enabled = image_index;
+					layers_window_selected_image_index = image_index;
+				}
+			}
+			// TODO: recount enabled image count
+
+			if (checkbox_disabled) {
+				ImGui::EndDisabled();
+			}
 
 			// Display layer name
 			ImGui::TableNextColumn();
@@ -604,7 +643,7 @@ void draw_layers_window(app_state_t* app_state) {
     }
 	ImGui::Text("Currently displayed layer: %d.\nPress Space or F5 to toggle layers.", app_state->scene.active_layer);
 
-	ImGui::SliderFloat("Layer transition", &target_layer_time, 0.0f, 1.0f);
+	ImGui::SliderFloat("Layer transition", &app_state->scene.target_layer_time, 0.0f, 1.0f);
     if (disable_layer_transition_control) {
         ImGui::EndDisabled();
     }

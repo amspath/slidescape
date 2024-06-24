@@ -226,6 +226,8 @@ typedef struct scene_t {
 	u32 entity_count;
 	entity_t entities[MAX_ENTITIES];
 	i32 active_layer;
+	float target_layer_time;
+	float layer_time;
 	annotation_set_t annotation_set;
     annotation_set_template_t annotation_set_template;
 	bool clicked;
@@ -314,7 +316,10 @@ typedef struct app_state_t {
 	float black_level;
 	float white_level;
 	image_t** loaded_images; // array
-	i32 displayed_image;
+	i32 last_layer_enabled;
+	i32 enabled_image_count;
+	i32 enabled_image_indices[2];
+	i32 base_image_index;
 	bool is_any_image_loaded;
 	caselist_t caselist;
 	case_t* selected_case;

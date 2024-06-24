@@ -68,14 +68,29 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
 	arrput(app_state->active_resources, image->resource_id);
 	app_state->scene.active_layer = arrlen(app_state->loaded_images)-1;
     layers_window_selected_image_index = app_state->scene.active_layer;
-    layer_time = 0.0f;
-    target_layer_time = 0.0f;
 	if (need_zoom_reset) {
 		app_state->scene.need_zoom_reset = true;
 	}
     image_t* added_image = arrlast(app_state->loaded_images);
+
+	// Enable the new image as a displayable layer
+	i32 enabled_image_count = 0;
+	for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
+		if (app_state->loaded_images[i]->is_enabled) ++enabled_image_count;
+	}
+	if (enabled_image_count < 2) {
+		added_image->is_enabled = true;
+		app_state->last_layer_enabled = app_state->scene.active_layer;
+		app_state->scene.layer_time = 0.0f;
+		app_state->scene.target_layer_time = 0.0f;
+	} else {
+		// TODO: disable previous layer?
+	}
+
+	// TODO: recount enabled image count
+
     if (need_image_registration && arrlen(app_state->loaded_images) > 1) {
-        target_layer_time = 1.0f;
+	    app_state->scene.target_layer_time = 1.0f;
         image_t* parent_image = app_state->loaded_images[0];
         image_transform_t transform = do_image_registration(parent_image, added_image, 1);
         if (transform.is_valid) {
@@ -987,22 +1002,26 @@ void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool) {
 bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input, float delta_time) {
     bool consume_directional_control = false;
     i32 image_count = arrlen(app_state->loaded_images);
-    if (image_count > 1) {
+	i32 enabled_count = 0;
+	for (i32 i = 0; i < image_count; ++i) {
+		if (app_state->loaded_images[i]->is_enabled) ++enabled_count;
+	}
+    if (enabled_count > 1) {
         if (was_key_pressed(input, KEY_F5) || ((!gui_want_capture_keyboard) && (was_key_pressed(input, KEY_Space)))) {
-            if (target_layer_time == 0.5f) {
-                target_layer_time += 0.001f;
+            if (scene->target_layer_time == 0.5f) {
+	            scene->target_layer_time += 0.001f;
             }
-            target_layer_time = roundf(1.0f - target_layer_time);
+	        scene->target_layer_time = roundf(1.0f - scene->target_layer_time);
         }
         if (!gui_want_capture_keyboard) {
             if (was_key_pressed(input, KEY_B)) {
-                target_layer_time = 0.5f;
+	            scene->target_layer_time = 0.5f;
             }
             if (is_key_down(input, KEY_B)) {
                 if (scene->control.y != 0.0f || scene->control.x != 0.0f) {
                     scene->panning_velocity = V2F(0.0f,0.0f);
-                    target_layer_time += delta_time * scene->control.x * 1.0f;
-                    target_layer_time = CLAMP(target_layer_time, 0.0f, 1.0f);
+	                scene->target_layer_time += delta_time * scene->control.x * 1.0f;
+	                scene->target_layer_time = CLAMP(scene->target_layer_time, 0.0f, 1.0f);
                     consume_directional_control = true;
                 }
             }
@@ -1019,17 +1038,20 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
         }
     }
 
-    // TODO: change active layer
-    scene->active_layer = (i32)roundf(target_layer_time);
+    if ((i32)roundf(scene->target_layer_time) == 0) {
+		scene->active_layer = app_state->enabled_image_indices[0];
+	} else {
+	    scene->active_layer = app_state->enabled_image_indices[1];
+	}
 
     {
         float adjust_speed = 8.0f * delta_time;
-        if (layer_time < target_layer_time) {
-            float delta = MIN((target_layer_time - layer_time), adjust_speed);
-            layer_time += delta;
-        } else if (layer_time > target_layer_time) {
-            float delta = MIN((layer_time - target_layer_time), adjust_speed);
-            layer_time -= delta;
+        if (scene->layer_time < scene->target_layer_time) {
+            float delta = MIN((scene->target_layer_time - scene->layer_time), adjust_speed);
+	        scene->layer_time += delta;
+        } else if (scene->layer_time > scene->target_layer_time) {
+            float delta = MIN((scene->layer_time - scene->target_layer_time), adjust_speed);
+	        scene->layer_time -= delta;
         }
     }
     return consume_directional_control; // directional input not consumed
@@ -1079,6 +1101,13 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	app_state->allow_idling_next_frame = true; // but we might set it to false later
 
 	i32 image_count = arrlen(app_state->loaded_images);
+	app_state->enabled_image_count = 0;
+	app_state->enabled_image_indices[0] = 0;
+	for (i32 i = 0; i < image_count; ++i) {
+		if (app_state->loaded_images[i]->is_enabled) {
+			app_state->enabled_image_indices[app_state->enabled_image_count++] = i;
+		}
+	}
 	ASSERT(image_count >= 0);
 	app_state->is_any_image_loaded = (image_count > 0);
 
@@ -1096,17 +1125,17 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		return;
 	}
 
-	image_t* displayed_image = app_state->loaded_images[app_state->displayed_image];
-	ASSERT(displayed_image->type == IMAGE_TYPE_WSI);
+	image_t* base_image = app_state->loaded_images[app_state->base_image_index];
+	ASSERT(base_image->type == IMAGE_TYPE_WSI);
 
 	// Do actions that need to performed only once, when a new image has been loaded
-	if (displayed_image->is_freshly_loaded) {
-		set_window_title(app_state->main_window, displayed_image->name);
+	if (base_image->is_freshly_loaded) {
+		set_window_title(app_state->main_window, base_image->name);
 		app_state->is_window_title_set_for_image = true;
 		// Workaround for drag onto window being registered as a click
 		input->mouse_buttons[0].down = false;
 		input->mouse_buttons[0].transition_count = 0;
-		displayed_image->is_freshly_loaded = false;
+		base_image->is_freshly_loaded = false;
 	}
 
 	if (input) {
@@ -1207,10 +1236,10 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 	}
 
-	if (displayed_image->type == IMAGE_TYPE_WSI) {
+	if (base_image->type == IMAGE_TYPE_WSI) {
 		if (scene->need_zoom_reset) {
-			float times_larger_x = (float)displayed_image->width_in_pixels / (float)client_width;
-			float times_larger_y = (float)displayed_image->height_in_pixels / (float)client_height;
+			float times_larger_x = (float)base_image->width_in_pixels / (float)client_width;
+			float times_larger_y = (float)base_image->height_in_pixels / (float)client_height;
 			float times_larger = MAX(times_larger_x, times_larger_y);
 			float desired_zoom_pos = ceilf(log2f(times_larger * 1.1f));
 
@@ -1225,14 +1254,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				desired_zoom_pos = 0.0f;
 			}
 
-			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, displayed_image->mpp_x, displayed_image->mpp_y);
-			scene->camera.x = displayed_image->width_in_um / 2.0f;
-			scene->camera.y = displayed_image->height_in_um / 2.0f;
+			init_zoom_state(&scene->zoom, desired_zoom_pos, 1.0f, base_image->mpp_x, base_image->mpp_y);
+			scene->camera.x = base_image->width_in_um / 2.0f;
+			scene->camera.y = base_image->height_in_um / 2.0f;
 			scene->rotation = 0.0f;
 
 			scene->need_zoom_reset = false;
 		}
-		scene->is_mpp_known = displayed_image->is_mpp_known;
+		scene->is_mpp_known = base_image->is_mpp_known;
 
 		zoom_state_t old_zoom = scene->zoom;
 
@@ -1396,8 +1425,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						// TODO: fix pivot point calculation when rotated
 						if (used_mouse_to_zoom) {
 							scene->zoom_pivot = scene->mouse;
-							scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, displayed_image->width_in_um);
-							scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, displayed_image->height_in_um);
+							scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, base_image->width_in_um);
+							scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, base_image->height_in_um);
 						} else {
 							scene->zoom_pivot = scene->camera;
 						}
@@ -1636,16 +1665,16 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			}
 
 			// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
-			ASSERT(displayed_image->mpp_x > 0.0f && displayed_image->mpp_y > 0.0f);
-			if (displayed_image->backend == IMAGE_BACKEND_TIFF) {
+			ASSERT(base_image->mpp_x > 0.0f && base_image->mpp_y > 0.0f);
+			if (base_image->backend == IMAGE_BACKEND_TIFF) {
 				if (scene->has_selection_box) {
 					rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
 					bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);
 					scene->crop_bounds = selection_bounds;
-					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, displayed_image->mpp_x, displayed_image->mpp_y);
+					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, base_image->mpp_x, base_image->mpp_y);
 					scene->can_export_region = true;
 				} else if (scene->is_cropped) {
-					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, displayed_image->mpp_x, displayed_image->mpp_y);
+					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, base_image->mpp_x, base_image->mpp_y);
 					scene->can_export_region = true;
 				} else {
 					scene->can_export_region = false;
@@ -1731,11 +1760,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		draw_scale_bar(&scene->scale_bar);
 	}
 
-	if (image_count <= 1) {
+	if (app_state->enabled_image_count <= 1) {
 		// Render everything at once
 //		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
-		image_t* image = app_state->loaded_images[0];
+		image_t* image = app_state->loaded_images[app_state->enabled_image_indices[0]];
 		update_and_render_image(app_state, image);
 	} else {
 		// We are rendering the scene in two passes.
@@ -1746,19 +1775,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			init_layer_framebuffers(app_state);
 		}
 
+		i32 running_framebuffer_index = 0;
+		// TODO: iterate over enabled image indices?
 		for (i32 image_index = 0; image_index < image_count; ++image_index) {
 
-			framebuffer_t* framebuffer = layer_framebuffers + image_index;
-			maybe_resize_overlay(framebuffer, client_width, client_height);
+			image_t* image = app_state->loaded_images[image_index];
+			if (image->is_enabled) {
+				framebuffer_t* framebuffer = layer_framebuffers + running_framebuffer_index;
+				maybe_resize_overlay(framebuffer, client_width, client_height);
 
-			glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
-			viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+				glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
+				viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
-//			if (image_index == scene->active_layer) {
-				image_t* image = app_state->loaded_images[image_index];
 				update_and_render_image(app_state, image);
-//			}
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+				glBindFramebuffer(GL_FRAMEBUFFER, 0);
+				++running_framebuffer_index;
+			}
+			if (running_framebuffer_index == 2) {
+				break; // only 2 images can be drawn together at the same time
+			}
 		}
 
 		// Second pass
@@ -1766,7 +1802,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
 		glUseProgram(finalblit_shader.program);
-		glUniform1f(finalblit_shader.u_t, layer_time);
+		glUniform1f(finalblit_shader.u_t, scene->layer_time);
 		glBindVertexArray(vao_screen);
 		glDisable(GL_DEPTH_TEST); // because we want to make sure the quad always renders in front of everything else
 		glActiveTexture(GL_TEXTURE0);

@@ -124,8 +124,6 @@ extern i32 global_active_extra_drawlists INIT(= 0);
 
 extern i32 viewer_min_level INIT(= -2);
 extern i32 viewer_max_level INIT(= 10);
-extern float layer_time INIT(= 1.0f);
-extern float target_layer_time INIT(= 1.0f);
 
 // annotation.cpp
 extern bool auto_assign_last_group;
