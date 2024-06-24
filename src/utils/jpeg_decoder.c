@@ -7,10 +7,13 @@
 #endif
 #include "jpeglib.h"
 
+#include "setjmp.h" // we need to use setjmp()/longjmp() for JPEG error handling
+
 static void on_error(j_common_ptr cinfo) {
     char buffer[JMSG_LENGTH_MAX];
     (*cinfo->err->format_message) (cinfo, buffer);
     console_print_error("JPEG decoding error: %s\n", buffer);
+	longjmp(cinfo->client_data, 10001);
 }
 
 static void empty_impl(j_decompress_ptr cinfo) {
@@ -69,12 +72,21 @@ void setup_jpeg_source(j_decompress_ptr cinfo, uint8_t *input_ptr, uint32_t inpu
 
 EMSCRIPTEN_KEEPALIVE
 bool jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_ptr, uint32_t input_length, uint8_t *output_ptr, bool is_YCbCr) {
-	struct jpeg_decompress_struct cinfo;
-	struct jpeg_error_mgr jerr;
+	struct jpeg_decompress_struct cinfo = {};
+	struct jpeg_error_mgr jerr = {};
 
 	// Setup error handling
 	cinfo.err = jpeg_std_error(&jerr);
 	jerr.error_exit = on_error;
+
+	jmp_buf on_err_jmp_buffer = {};
+	cinfo.client_data = (void*)on_err_jmp_buffer;
+	int r = setjmp(on_err_jmp_buffer);
+	if (r != 0) {
+		// We encountered an error during JPEG decoding -> handle the failure gracefully
+		jpeg_destroy_decompress(&cinfo);
+		return false;
+	}
 
 	jpeg_create_decompress(&cinfo);
 
@@ -83,7 +95,7 @@ bool jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_
 	if (jpeg_read_header(&cinfo, FALSE) != JPEG_HEADER_TABLES_ONLY) {
 		printf("Failed to load table\n");
 		jpeg_destroy_decompress(&cinfo);
-		return FALSE;
+		return false;
 	}
 
 	// Read tile data
@@ -91,7 +103,7 @@ bool jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_
 	if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
 		printf("Failed to read header\n");
 		jpeg_destroy_decompress(&cinfo);
-		return FALSE;
+		return false;
 	}
 
 	cinfo.jpeg_color_space = is_YCbCr ? JCS_YCbCr : JCS_RGB;
@@ -115,16 +127,25 @@ bool jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_
 
 	jpeg_destroy_decompress(&cinfo);
 
-	return TRUE;
+	return true;
 }
 
 u8* jpeg_decode_image(u8* input_ptr, u32 input_length, i32* width, i32* height, i32 *channels_in_file) {
-	struct jpeg_decompress_struct cinfo;
-	struct jpeg_error_mgr jerr;
+	struct jpeg_decompress_struct cinfo = {};
+	struct jpeg_error_mgr jerr = {};
 
 	// Setup error handling
 	cinfo.err = jpeg_std_error(&jerr);
 	jerr.error_exit = on_error;
+
+	jmp_buf on_err_jmp_buffer = {};
+	cinfo.client_data = (void*)on_err_jmp_buffer;
+	int r = setjmp(on_err_jmp_buffer);
+	if (r != 0) {
+		// We arrived via longjmp and encountered an error -> handle the failure gracefully
+		jpeg_destroy_decompress(&cinfo);
+		return false;
+	}
 
 	jpeg_create_decompress(&cinfo);
 
@@ -162,12 +183,21 @@ u8* jpeg_decode_image(u8* input_ptr, u32 input_length, i32* width, i32* height, 
 }
 
 u8* jpeg_decode_ndpi_image(u8* input_ptr, u32 input_length, i32 width, i32 height, i32 *channels_in_file) {
-    struct jpeg_decompress_struct cinfo;
-    struct jpeg_error_mgr jerr;
+    struct jpeg_decompress_struct cinfo = {};
+    struct jpeg_error_mgr jerr = {};
 
     // Setup error handling
     cinfo.err = jpeg_std_error(&jerr);
     jerr.error_exit = on_error;
+
+	jmp_buf on_err_jmp_buffer = {};
+	cinfo.client_data = (void*)on_err_jmp_buffer;
+	int r = setjmp(on_err_jmp_buffer);
+	if (r != 0) {
+		// We arrived via longjmp and encountered an error -> handle the failure gracefully
+		jpeg_destroy_decompress(&cinfo);
+		return false;
+	}
 
     jpeg_create_decompress(&cinfo);
 
@@ -221,10 +251,21 @@ void destroy_buffer(uint8_t *p) {
 
 void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** tables_buffer, u64* tables_size_ptr,
                       u8** jpeg_buffer, u64* jpeg_size_ptr, bool use_rgb) {
-	struct jpeg_compress_struct cinfo;
-	struct jpeg_error_mgr jerr;
+	struct jpeg_compress_struct cinfo = {};
+	struct jpeg_error_mgr jerr = {};
 
+	// Setup error handling
 	cinfo.err = jpeg_std_error(&jerr);
+	jerr.error_exit = on_error;
+
+	jmp_buf on_err_jmp_buffer = {};
+	cinfo.client_data = (void*)on_err_jmp_buffer;
+	int r = setjmp(on_err_jmp_buffer);
+	if (r != 0) {
+		// We arrived via longjmp and encountered an error -> handle the failure gracefully
+		jpeg_destroy_compress(&cinfo);
+		return;
+	}
 
 	jpeg_create_compress(&cinfo);
 	cinfo.image_width = width;
@@ -265,10 +306,21 @@ void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** table
 }
 
 void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg_buffer, u64* jpeg_size_ptr) {
-	struct jpeg_compress_struct cinfo;
-	struct jpeg_error_mgr jerr;
+	struct jpeg_compress_struct cinfo = {};
+	struct jpeg_error_mgr jerr = {};
 
+	// Setup error handling
 	cinfo.err = jpeg_std_error(&jerr);
+	jerr.error_exit = on_error;
+
+	jmp_buf on_err_jmp_buffer = {};
+	cinfo.client_data = (void*)on_err_jmp_buffer;
+	int r = setjmp(on_err_jmp_buffer);
+	if (r != 0) {
+		// We arrived via longjmp and encountered an error -> handle the failure gracefully
+		jpeg_destroy_compress(&cinfo);
+		return;
+	}
 
 	jpeg_create_compress(&cinfo);
 	cinfo.image_width = width;
