@@ -136,7 +136,8 @@ void linux_init_multithreading() {
 	global_active_worker_thread_count = global_worker_thread_count;
 
 	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
-	global_high_priority_work_queue = global_work_queue; // Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
+	// Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
+	global_high_priority_work_queue = work_queue_create_with_existing_semaphore(global_work_queue.semaphore, 1024);
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
 	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
 

@@ -51,6 +51,19 @@ work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count) {
 	return queue;
 }
 
+work_queue_t work_queue_create_with_existing_semaphore(void* semaphore_handle, i32 entry_count) {
+	work_queue_t queue = {0};
+
+#if WINDOWS
+	queue.semaphore = (HANDLE)semaphore_handle;
+#else
+	queue.semaphore = (sem_t*)semaphore_handle;
+#endif
+	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
+	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));
+	return queue;
+}
+
 void work_queue_destroy(work_queue_t* queue) {
 	if (queue->entries) {
 		free(queue->entries);
@@ -190,7 +203,7 @@ bool work_queue_do_work(work_queue_t* queue, int logical_thread_index) {
 bool work_queue_is_work_in_progress(work_queue_t* queue) {
 	// If we are checking the global work queue while running a task from that same queue, then we only want to know
 	// whether any OTHER tasks are running. So in that case we need to subtract the call depth.
-	i32 call_depth = (queue == &global_work_queue) ? work_queue_call_depth : 0;
+	i32 call_depth = ((queue == &global_work_queue) || (queue == &global_high_priority_work_queue)) ? work_queue_call_depth : 0;
 	bool result = (queue->completion_goal - call_depth > queue->completion_count);
 	return result;
 }

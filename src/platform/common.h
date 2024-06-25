@@ -288,7 +288,7 @@ typedef struct str_t {
 
 #define SQUARE(x) ((x)*(x))
 
-#define memset_zero(x) memset((x), 0, sizeof(*x))
+#define memset_zero(x) memset((x), 0, sizeof(*(x)))
 
 #define KILOBYTES(n) (1024LL*(n))
 #define MEGABYTES(n) (1024LL*KILOBYTES(n))
@@ -302,7 +302,7 @@ typedef struct str_t {
 #define __FILENAME__ __FILE__
 #endif
 
-#define fatal_error(message) _fatal_error(__FILE__, __LINE__, __func__, "" message)
+#define fatal_error(message) _ssc_fatal_error(__FILE__, __LINE__, __func__, "" message)
 #if FATAL_ERROR_DONT_INLINE
 #define FATAL_ERROR_INLINE_SPECIFIER
 // Not inlining _fatal_error() shaves a few kilobytes off the executable size.
@@ -316,7 +316,7 @@ void _fatal_error(const char* source_filename, i32 line, const char* func, const
 #define FATAL_ERROR_INLINE_SPECIFIER FORCE_INLINE
 #endif //FATAL_ERROR_DONT_INLINE
 #ifdef FATAL_ERROR_IMPLEMENTATION
-FATAL_ERROR_INLINE_SPECIFIER void _fatal_error(const char* source_filename, i32 line, const char* func, const char* message) {
+FATAL_ERROR_INLINE_SPECIFIER void _ssc_fatal_error(const char* source_filename, i32 line, const char* func, const char* message) {
 	fprintf(stderr, "%s(): %s:%d\n", func, source_filename, line);
 	if (message[0] != '\0') fprintf(stderr, "Error: %s\n", message);
 	fprintf(stderr, "A fatal error occurred (aborting).\n");

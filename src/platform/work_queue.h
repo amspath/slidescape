@@ -64,6 +64,7 @@ typedef struct work_queue_t {
 } work_queue_t;
 
 work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count);
+work_queue_t work_queue_create_with_existing_semaphore(void* semaphore_handle, i32 entry_count);
 void work_queue_destroy(work_queue_t* queue);
 i32 work_queue_get_entry_count(work_queue_t* queue);
 bool work_queue_submit_task(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);

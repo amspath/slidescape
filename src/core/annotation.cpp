@@ -1463,8 +1463,10 @@ void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_se
 
 void draw_annotation_batch_func(i32 logical_thread_index, void* userdata)  {
 	annotation_batch_data_t* data = (annotation_batch_data_t*) userdata;
-	if (data) {
+	if (data && data->annotation_set) {
 		draw_annotation_batch(data->app_state, data->scene, data->annotation_set, data->camera_min, data->start_index, data->batch_size, data->completion_counter, logical_thread_index, data->draw_list_index);
+	} else {
+		fatal_error("invalid task data");
 	}
 }
 
@@ -1506,7 +1508,9 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				.draw_list_index = batch,
 				.completion_counter = &completion_counter,
 			};
-			work_queue_submit_task(&global_high_priority_work_queue, draw_annotation_batch_func, &batch_data, sizeof(batch_data));
+			if (!work_queue_submit_task(&global_high_priority_work_queue, draw_annotation_batch_func, &batch_data, sizeof(batch_data))) {
+				draw_annotation_batch(app_state, scene, annotation_set, camera_min, start_index, batch_size, &completion_counter, 0, batch);
+			}
 		}
 		while (completion_counter < annotation_batch_count) {
 			if (work_queue_is_work_waiting_to_start(&global_high_priority_work_queue)) {

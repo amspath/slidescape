@@ -540,7 +540,7 @@ void draw_layers_window(app_state_t* app_state) {
 						image_t* last_image = app_state->loaded_images[app_state->last_layer_enabled];
 						if (last_image->is_valid && last_image->is_enabled) {
 							last_image->is_enabled = false;
-							layers_window_selected_image_index = app_state->last_layer_enabled;
+							layers_window_selected_image_index = image_index;
 							app_state->last_layer_enabled = image_index;
 						} else {
 							image->is_enabled = false;
