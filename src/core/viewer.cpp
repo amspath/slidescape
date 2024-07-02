@@ -1027,7 +1027,7 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
             }
             if (is_key_down(input, KEY_N)) {
                 if (scene->control.y != 0.0f || scene->control.x != 0.0f) {
-                    i32 overlay_image_index = 1;
+                    i32 overlay_image_index = layers_window_selected_image_index;
                     image_t* image_to_nudge = app_state->loaded_images[overlay_image_index];
                     v2f delta = v2f_scale(delta_time * 10.0f, scene->control);
                     image_to_nudge->origin_offset = v2f_add(image_to_nudge->origin_offset, delta);
