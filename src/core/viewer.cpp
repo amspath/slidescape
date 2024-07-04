@@ -122,6 +122,8 @@ void unload_all_images(app_state_t *app_state) {
 	app_state->scene.is_cropped = false;
 	app_state->scene.has_selection_box = false;
 	viewer_switch_tool(app_state, TOOL_NONE);
+
+	global_export_save_as_filename[0] = '\0'; // reset output filename hint after export
 }
 
 bool was_button_pressed(button_state_t* button) {

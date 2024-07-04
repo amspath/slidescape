@@ -230,8 +230,9 @@ bool gui_draw_selected_annotation_submenu_section(app_state_t* app_state, scene_
 
         // Option for setting the selection box around the selected annotation(s)
         if (annotation_set->selection_count >= 1) {
-            if (ImGui::MenuItem("Set export region")) {
+            if (ImGui::MenuItem("Export region...")) {
                 set_region_encompassing_selected_annotations(annotation_set, scene);
+	            show_export_region_dialog = true;
             }
         }
 	}
@@ -696,30 +697,6 @@ void draw_export_region_dialog(app_state_t* app_state) {
 				}
 				ImGui::NewLine();
 
-				if (display_export_annotations_checkbox) {
-					ImGui::Checkbox("Also export annotations", &also_export_annotations);
-					if (also_export_annotations) {
-						if (ImGui::TreeNodeEx("Annotation export options", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
-
-
-							bool dummy_checkbox_value = false;
-							bool* checkbox_value_ptr = &allow_coordinates_outside_region;
-							if (!also_export_annotations) {
-								ImGui::BeginDisabled();
-								checkbox_value_ptr = &dummy_checkbox_value;
-							}
-							ImGui::Checkbox("Allow coordinates to extend outside selected region", checkbox_value_ptr);
-
-							if (!also_export_annotations) {
-								ImGui::EndDisabled();
-							}
-						}
-					}
-					ImGui::NewLine();
-				}
-
-
-
 //				ImGui::Text("Selected region (pixel coordinates):\nx=%d\ny=%d\nwidth=%d\nheight=%d",
 //							 pixel_bounds.left, pixel_bounds.top,
 //							 pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top);
@@ -744,6 +721,29 @@ void draw_export_region_dialog(app_state_t* app_state) {
 						}
 					}
 
+				}
+				ImGui::NewLine();
+
+				if (display_export_annotations_checkbox) {
+					ImGui::Checkbox("Also export annotations", &also_export_annotations);
+					if (also_export_annotations) {
+						if (ImGui::TreeNodeEx("Annotation export options", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+
+
+							bool dummy_checkbox_value = false;
+							bool* checkbox_value_ptr = &allow_coordinates_outside_region;
+							if (!also_export_annotations) {
+								ImGui::BeginDisabled();
+								checkbox_value_ptr = &dummy_checkbox_value;
+							}
+							ImGui::Checkbox("Allow coordinates to extend outside selected region", checkbox_value_ptr);
+
+							if (!also_export_annotations) {
+								ImGui::EndDisabled();
+							}
+						}
+					}
+					ImGui::NewLine();
 				}
 			}
 
