@@ -40,7 +40,8 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 		} else if (strcmp(arg, "--export") == 0) {
 			app_command.headless = true;
 			app_command.command = COMMAND_EXPORT;
-			app_command.export_command.with_annotations = true;
+			app_command.export_command.with_annotations = false;
+			// TODO: allow use as conversion utility without need for ROI
 			app_command.export_command.error = COMMAND_EXPORT_ERROR_NO_ROI;
 			// slidescape 1.tiff --export --roi "Annotation 0"
 			++arg_index;
@@ -55,8 +56,23 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 					}
 				} else if (strcmp(arg, "--no-annotations") == 0) {
 					app_command.export_command.with_annotations = false;
+				} else if (strcmp(arg, "--with-annotations") == 0) {
+					app_command.export_command.with_annotations = true;
+				} else if (strcmp(arg, "--quality") == 0) {
+					if (arg_index < argc) {
+						++arg_index;
+						arg = args[arg_index];
+						i32 new_quality = atoi(arg);
+						if (new_quality > 0 && new_quality <= 100) {
+							tiff_export_jpeg_quality = new_quality;
+						} else {
+							console_print_error("Invalid JPEG quality setting '%s', defaulting to %d\n", arg, tiff_export_jpeg_quality);
+						}
+					}
 				}
 			}
+		} else  if (strcmp(arg, "--verbose") == 0) {
+			is_verbose_mode = true;
 		} else {
 			// Unknown command, assume that it's an input file
 			arrput(app_command.inputs, arg);

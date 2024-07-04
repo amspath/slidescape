@@ -678,8 +678,9 @@ int main(int argc, const char** argv)
     init_opengl_stuff(app_state);
 
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
-    if (g_argc > 1) {
-        const char* filename = g_argv[1];
+	if (arrlen(app_command.inputs) > 0) {
+		// TODO: allow loading multiple files from the commandline?
+		const char* filename = app_command.inputs[0];
         load_generic_file(app_state, filename, 0);
     }
 

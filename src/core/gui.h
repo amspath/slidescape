@@ -147,7 +147,7 @@ extern bool show_coco_editor_window;
 
 extern i32 desired_region_export_format;
 extern u16 tiff_export_desired_color_space INIT(= TIFF_PHOTOMETRIC_YCBCR);//TIFF_PHOTOMETRIC_RGB;
-extern i32 tiff_export_jpeg_quality INIT(= 80);
+extern i32 tiff_export_jpeg_quality INIT(= 90);
 
 #undef INIT
 #undef extern

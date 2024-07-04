@@ -673,7 +673,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 		ImGui::BeginGroup();
 		ImGui::BeginChild("item view", ImVec2(0, -lines_at_bottom * ImGui::GetFrameHeightWithSpacing())); // Leave room for 2 lines below us
 
-		static bool also_export_annotations = true;
+		static bool also_export_annotations = false;
 		static bool allow_coordinates_outside_region = false;
 
 		if (scene->can_export_region) {
