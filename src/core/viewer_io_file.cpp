@@ -58,10 +58,13 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	// TODO: better/more explicit allocator (instead of some setting some hard-coded pointers)
 	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 	u8* temp_memory = (u8*)malloc(pixel_memory_size);
+
+	// TODO: for darkfield, use 0x00 as background
+	u32 image_background_color = 0xFFFFFFFF; // white
 	memset(temp_memory, 0xFF, pixel_memory_size);
-//	u8* compressed_tile_data = NULL;
 
 	bool failed = false;
+	bool is_empty = false; // we might 'discover' that the tile is empty for OpenSlide backend (-> read_region() would return all zeroes)
 	ASSERT(image->type == IMAGE_TYPE_WSI);
 	if (image->backend == IMAGE_BACKEND_TIFF) {
 		tiff_t* tiff = &image->tiff;
@@ -101,6 +104,23 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		i64 x = (tile_x * level_image->tile_width) << level;
 		i64 y = (tile_y * level_image->tile_height) << level;
 		openslide.read_region(wsi->osr, (u32*)temp_memory, x, y, wsi_file_level, level_image->tile_width, level_image->tile_height);
+
+		// Check for (partially) empty tiles
+		u32 pixel_count = level_image->tile_width * level_image->tile_height;
+		u32* pixels = (u32*)temp_memory;
+		u32 nonempty_pixel_count = 0;
+		for (i32 i = 0; i < pixel_count; ++i) {
+			// Fill in any empty pixels with the background color.
+			u32 p = pixels[i];
+			nonempty_pixel_count += (p > 0);
+			pixels[i] = p ? p : image_background_color;
+		}
+		if (nonempty_pixel_count == 0) {
+			// Tile is entirely empty.
+			console_print_verbose("thread %d: tile level %d, tile %d (%d, %d): openslide.read_region() returned zeroes (empty tile)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
+			failed = true;
+			is_empty = true;
+		}
 	} else if (image->backend == IMAGE_BACKEND_DICOM) {
 		u8* pixels = dicom_wsi_decode_tile_to_bgra(&image->dicom, level, tile_index);
 		if (pixels) {
@@ -150,6 +170,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.scale = level;
 	completion_task.tile_index = tile_index;
 	completion_task.want_gpu_residency = true;
+	completion_task.failed = true;
+	completion_task.is_empty = is_empty;
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	if (task->completion_callback) {

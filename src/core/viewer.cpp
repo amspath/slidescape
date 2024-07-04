@@ -367,6 +367,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 							free(task->pixel_memory);
 						}
 					} else {
+						// TODO: handle possible I/O errors? Don't just assume the tile was empty!
 						tile->is_empty = true; // failed; don't resubmit!
 					}
 				}
@@ -1666,7 +1667,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
 			ASSERT(base_image->mpp_x > 0.0f && base_image->mpp_y > 0.0f);
-			if (base_image->backend == IMAGE_BACKEND_TIFF) {
+			if (base_image->backend == IMAGE_BACKEND_TIFF || base_image->backend == IMAGE_BACKEND_OPENSLIDE) {
 				if (scene->has_selection_box) {
 					rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
 					bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);

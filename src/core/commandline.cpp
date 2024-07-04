@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2024  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -164,7 +164,7 @@ int app_command_execute(app_state_t* app_state) {
 								char filename_hint[512];
 								export_region_get_name_hint(app_state, filename_hint, sizeof(filename_hint));
 
-								export_cropped_bigtiff(app_state, image, &image->tiff, world_bounds, pixel_bounds,
+								export_cropped_bigtiff(app_state, image, world_bounds, pixel_bounds,
 								                       filename_hint, 512,
 								                       tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
 							}

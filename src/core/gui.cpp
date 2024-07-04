@@ -855,6 +855,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 
 			if (proceed_with_export) {
 				switch(image->backend) {
+					case IMAGE_BACKEND_OPENSLIDE:
 					case IMAGE_BACKEND_TIFF: {
 						u32 export_flags = 0;
 						if (display_export_annotations_checkbox) {
@@ -865,7 +866,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 								export_flags |= EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
 							}
 						}
-						begin_export_cropped_bigtiff(app_state, image, &image->tiff, scene->crop_bounds, scene->selection_pixel_bounds,
+						begin_export_cropped_bigtiff(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
 						                             filename_buffer, 512,
 						                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
 						gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);

@@ -441,9 +441,9 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 				if (entry.callback == export_notify_load_tile_completed) {
 					benaphore_lock(&image->lock);
 					viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
+					tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 					if (task->pixel_memory) {
 						bool need_free_pixel_memory = true;
-						tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 						if (tile) {
 							tile->is_submitted_for_loading = false;
 							if (tile->need_gpu_residency) {
@@ -466,6 +466,8 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 						if (need_free_pixel_memory) {
 							free(task->pixel_memory);
 						}
+					} else {
+						tile->is_empty = true;
 					}
 					benaphore_unlock(&image->lock);
 
@@ -597,11 +599,9 @@ void export_bigtiff_encode_level(app_state_t* app_state, image_t* image, export_
 	free(level_task->source_tiles);
 }
 
-bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
+bool export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
                               u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags) {
-	if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
-		return false;
-	}
+
 
 	switch(desired_photometric_interpretation) {
 		case TIFF_PHOTOMETRIC_YCBCR: break;
@@ -612,14 +612,21 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 	}
 
 	// TODO: make ASAP understand the resolution in the exported file
+	u32 tile_width = image->tile_width;
+	u32 tile_height = image->tile_height;
+	if (image->backend == IMAGE_BACKEND_TIFF) {
+		tiff_t* tiff = &image->tiff;
+		if (!(tiff && tiff->main_image_ifd && (tiff->mpp_x > 0.0f) && (tiff->mpp_y > 0.0f))) {
+			return false;
+		}
+		tiff_ifd_t* source_level0_ifd = tiff->main_image_ifd;
+		tile_width = source_level0_ifd->tile_width;
+		tile_height = source_level0_ifd->tile_height;
+		bool is_tile_aligned = ((level0_bounds.left % tile_width) == 0) && ((level0_bounds.top % tile_height) == 0);
 
-	tiff_ifd_t* source_level0_ifd = tiff->main_image_ifd;
-	u32 tile_width = source_level0_ifd->tile_width;
-	u32 tile_height = source_level0_ifd->tile_height;
-	bool is_tile_aligned = ((level0_bounds.left % tile_width) == 0) && ((level0_bounds.top % tile_height) == 0);
-
-	bool need_reuse_tiles = is_tile_aligned && (desired_photometric_interpretation == source_level0_ifd->color_space)
-	                        && (export_tile_width == tile_width) && (tile_width == tile_height); // only allow square tiles for re-use
+		bool need_reuse_tiles = is_tile_aligned && (desired_photometric_interpretation == source_level0_ifd->color_space)
+		                        && (export_tile_width == tile_width) && (tile_width == tile_height); // only allow square tiles for re-use
+	}
 
 	export_task_data_t export_task = {0};
 	export_task.source_tile_width = tile_width;
@@ -655,11 +662,41 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		memrw_push_back(&tag_buffer, &header, 8);
 
 		// NOTE: the downsampling level does not necessarily equal the ifd index.
-		i32 source_ifd_index = 0;
-		tiff_ifd_t* source_ifd = source_level0_ifd;
+
+		// TODO: reconstruct tiles from level0 instead of doing it this way
+		if (image->backend == IMAGE_BACKEND_TIFF) {
+			tiff_t* tiff = &image->tiff;
+			tiff_ifd_t* source_ifd = tiff->main_image_ifd;
+			i32 source_ifd_index = 0;
+			for (i32 level = 0; level < image->level_count; ++level) {
+				export_level_task_data_t* level_task_data = export_task.level_task_datas + level;
+
+				// Find an IFD for this downsampling level
+				if (source_ifd->downsample_level == level) {
+					level_task_data->is_represented = true;
+				} else {
+					++source_ifd_index;
+					bool found = false;
+					for (i32 i = source_ifd_index; i < tiff->level_image_ifd_count; ++i) {
+						tiff_ifd_t* ifd = tiff->level_images_ifd + i;
+						if (ifd->downsample_level == level) {
+							found = true;
+							level_task_data->is_represented = true;
+							source_ifd_index = i;
+							source_ifd = ifd;
+							break;
+						}
+					}
+					if (!found) {
+						console_print_verbose("Warning: source TIFF does not contain level %d, will be skipped\n", level);
+						continue;
+					}
+				}
+			}
+		}
+
 		i32 export_ifd_count = 0;
 		i32 export_max_level = 0;
-
 
 		// Tags that are the same for all image levels
 		raw_bigtiff_tag_t tag_new_subfile_type = {TIFF_TAG_NEW_SUBFILE_TYPE, TIFF_UINT32, 1, .offset = TIFF_FILETYPE_REDUCEDIMAGE};
@@ -681,25 +718,10 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 
 			export_level_task_data_t* level_task_data = export_task.level_task_datas + level;
 
-			// Find an IFD for this downsampling level
-			if (source_ifd->downsample_level != level) {
-				++source_ifd_index;
-				bool found = false;
-				for (i32 i = source_ifd_index; i < tiff->level_image_ifd_count; ++i) {
-					tiff_ifd_t* ifd = tiff->level_images_ifd + i;
-					if (ifd->downsample_level == level) {
-						found = true;
-						level_task_data->is_represented = true;
-						source_ifd_index = i;
-						source_ifd = ifd;
-						break;
-					}
-				}
-				if (!found) {
-#if DO_DEBUG
-					console_print("Warning: source TIFF does not contain level %d, will be skipped\n", level);
-#endif
-					continue;
+			// TODO: reconstruct tiles from level0 instead of doing it this way
+			if (image->backend == IMAGE_BACKEND_TIFF) {
+				if (!level_task_data->is_represented) {
+					continue; // skip
 				}
 			}
 
@@ -762,11 +784,11 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 			level_task_data->source_tiles = calloc(source_tile_count, sizeof(tile_t*));
 			for (i32 rel_source_tile_y = 0; rel_source_tile_y < source_bounds_height_in_tiles; ++rel_source_tile_y) {
 				i32 abs_source_tile_y = level_task_data->source_tile_bounds.top + rel_source_tile_y;
-				bool out_of_bounds = (abs_source_tile_y < 0 || abs_source_tile_y >= source_ifd->height_in_tiles);
+				bool out_of_bounds = (abs_source_tile_y < 0 || abs_source_tile_y >= source_level_image->height_in_tiles);
 				if (!out_of_bounds) {
 					for (i32 rel_source_tile_x = 0; rel_source_tile_x < source_bounds_width_in_tiles; ++rel_source_tile_x) {
 						i32 abs_source_tile_x = level_task_data->source_tile_bounds.left + rel_source_tile_x;
-						out_of_bounds = (abs_source_tile_x < 0 || abs_source_tile_x >= source_ifd->width_in_tiles);
+						out_of_bounds = (abs_source_tile_x < 0 || abs_source_tile_x >= source_level_image->height_in_tiles);
 						if (!out_of_bounds) {
 							tile_t* tile = get_tile(source_level_image, abs_source_tile_x, abs_source_tile_y);
 							level_task_data->source_tiles[rel_source_tile_y * source_bounds_width_in_tiles + rel_source_tile_x] = tile;
@@ -820,21 +842,11 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 				tag_x_resolution.offset = *(u64*)(&resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution); // 282
 				++tag_count_for_ifd;
-			} else if (source_ifd->x_resolution.b != 0) {
-				// TODO: remove this fallback?
-				tag_x_resolution.offset = *(u64*)(&source_ifd->x_resolution);
-				memrw_push_bigtiff_tag(&tag_buffer, &tag_x_resolution); // 282
-				++tag_count_for_ifd;
 			}
 			raw_bigtiff_tag_t tag_y_resolution = {TIFF_TAG_Y_RESOLUTION, TIFF_RATIONAL, 1, 0};
 			if (image->is_mpp_known) {
 				tiff_rational_t resolution = float_to_tiff_rational((1.0f / image->mpp_y) * downsample_factor * 10000.0f);
 				tag_y_resolution.offset = *(u64*)(&resolution);
-				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution); // 283
-				++tag_count_for_ifd;
-			} else if (source_ifd->y_resolution.b != 0) {
-				// TODO: remove this fallback?
-				tag_y_resolution.offset = *(u64*)(&source_ifd->y_resolution);
 				memrw_push_bigtiff_tag(&tag_buffer, &tag_y_resolution); // 283
 				++tag_count_for_ifd;
 			}
@@ -954,8 +966,8 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 		}
 		fclose(export_task.fp);
 
+		success = true;
 		console_print("Exported region to '%s'\n", filename);
-
 	}
 
 	if (export_flags & EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS) {
@@ -978,7 +990,6 @@ bool32 export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* ti
 typedef struct export_region_task_t {
 	app_state_t* app_state;
 	image_t* image;
-	tiff_t* tiff;
 	bounds2f world_bounds;
 	bounds2i level0_bounds;
 	const char* filename;
@@ -990,7 +1001,7 @@ typedef struct export_region_task_t {
 
 void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 	export_region_task_t* task = (export_region_task_t*) userdata;
-	bool success = export_cropped_bigtiff(task->app_state, task->image, task->tiff, task->world_bounds, task->level0_bounds,
+	bool success = export_cropped_bigtiff(task->app_state, task->image, task->world_bounds, task->level0_bounds,
 	                                      task->filename, task->export_tile_width,
 	                                      task->desired_photometric_interpretation, task->quality, task->export_flags);
 	global_tiff_export_progress = 1.0f;
@@ -999,12 +1010,11 @@ void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 //	atomic_decrement(&task->isyntax->refcount); // TODO: release
 }
 
-void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, tiff_t* tiff, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
+void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
                                   u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags) {
 	export_region_task_t task = {0};
 	task.app_state = app_state;
 	task.image = image;
-	task.tiff = tiff;
 	task.world_bounds = world_bounds;
 	task.level0_bounds = level0_bounds;
 	task.filename = filename;

@@ -117,6 +117,8 @@ typedef struct viewer_notify_tile_completed_task_t {
 	i32 tile_height;
 	i32 resource_id;
 	bool want_gpu_residency;
+	bool is_empty; // TODO: check this value
+	bool failed;
 } viewer_notify_tile_completed_task_t;
 
 
