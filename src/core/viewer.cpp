@@ -1667,7 +1667,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
 			ASSERT(base_image->mpp_x > 0.0f && base_image->mpp_y > 0.0f);
-			if (base_image->backend == IMAGE_BACKEND_TIFF || base_image->backend == IMAGE_BACKEND_OPENSLIDE) {
+			if (base_image->backend == IMAGE_BACKEND_TIFF || base_image->backend == IMAGE_BACKEND_OPENSLIDE || base_image->backend == IMAGE_BACKEND_DICOM) {
 				if (scene->has_selection_box) {
 					rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
 					bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);

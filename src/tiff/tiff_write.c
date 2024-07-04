@@ -788,7 +788,7 @@ bool export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f wor
 				if (!out_of_bounds) {
 					for (i32 rel_source_tile_x = 0; rel_source_tile_x < source_bounds_width_in_tiles; ++rel_source_tile_x) {
 						i32 abs_source_tile_x = level_task_data->source_tile_bounds.left + rel_source_tile_x;
-						out_of_bounds = (abs_source_tile_x < 0 || abs_source_tile_x >= source_level_image->height_in_tiles);
+						out_of_bounds = (abs_source_tile_x < 0 || abs_source_tile_x >= source_level_image->width_in_tiles);
 						if (!out_of_bounds) {
 							tile_t* tile = get_tile(source_level_image, abs_source_tile_x, abs_source_tile_y);
 							level_task_data->source_tiles[rel_source_tile_y * source_bounds_width_in_tiles + rel_source_tile_x] = tile;

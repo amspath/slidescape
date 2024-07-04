@@ -90,10 +90,12 @@ void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
 	size_t original_len = strlen(filename);
 	char* end = filename + original_len;
 	char* append_pos = end; // where we will add the new extension
+	bool didnt_find_period = false;
 	// Strip the original extension
 	for (char* pos = end - 1; pos >= filename; --pos) {
 		if (*pos == '/' || *pos == '\\') {
 			// gone too far, default to end of original filename
+			didnt_find_period = true;
 			break;
 		}
 		if (*pos == '.') {
@@ -106,9 +108,15 @@ void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
 			}
 		}
 	}
+	char* buffer_end = filename + max_len;
+	if (didnt_find_period) {
+		// Add the missing period
+		if (append_pos < buffer_end) {
+			*append_pos++ = '.';
+		}
+	}
 	// Now append the new extension
 	const char* new_ext_pos = new_ext;
-	char* buffer_end = filename + max_len;
 	for (i32 append_len = (buffer_end - append_pos); append_len > 0; --append_len) {
 		*append_pos = *new_ext_pos;
 		if (*new_ext_pos == '\0') break;

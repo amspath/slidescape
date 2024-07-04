@@ -190,6 +190,8 @@ typedef struct image_t {
 
 
 static inline tile_t* get_tile(level_image_t* image_level, i32 tile_x, i32 tile_y) {
+	ASSERT(tile_x >= 0 && tile_x < image_level->width_in_tiles);
+	ASSERT(tile_y >= 0 && tile_y < image_level->height_in_tiles);
 	i32 tile_index = tile_y * image_level->width_in_tiles + tile_x;
 	ASSERT(tile_index >= 0 && tile_index < image_level->tile_count);
 	tile_t* result = image_level->tiles + tile_index;

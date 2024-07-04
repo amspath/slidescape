@@ -165,7 +165,7 @@ int app_command_execute(app_state_t* app_state) {
 								export_region_get_name_hint(app_state, filename_hint, sizeof(filename_hint));
 
 								export_cropped_bigtiff(app_state, image, world_bounds, pixel_bounds,
-								                       filename_hint, 512,
+								                       filename_hint, image->tile_width,
 								                       tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
 							}
 

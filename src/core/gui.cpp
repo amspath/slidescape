@@ -761,15 +761,17 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					strncpy(new_name_hint, image->name, buffer_size);
 					// Strip filename extension
 					size_t len = strlen(new_name_hint);
+					i32 append_pos = len;
 					for (i32 pos = len-1; pos >= 1; --pos) {
 						if (new_name_hint[pos] == '.') {
-							new_name_hint[pos] = '\0';
-							// add '_region'
-							strncpy(new_name_hint + pos, "_region", buffer_size - pos);
-							name_hint = new_name_hint;
+							append_pos = pos;
 							break;
 						}
 					}
+					new_name_hint[append_pos] = '\0';
+					// add '_region'
+					strncpy(new_name_hint + append_pos, "_region", buffer_size - append_pos);
+					name_hint = new_name_hint;
 				}
 			}
 		}
@@ -856,6 +858,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 			if (proceed_with_export) {
 				switch(image->backend) {
 					case IMAGE_BACKEND_OPENSLIDE:
+					case IMAGE_BACKEND_DICOM:
 					case IMAGE_BACKEND_TIFF: {
 						u32 export_flags = 0;
 						if (display_export_annotations_checkbox) {
@@ -866,10 +869,16 @@ void draw_export_region_dialog(app_state_t* app_state) {
 								export_flags |= EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
 							}
 						}
-						begin_export_cropped_bigtiff(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
-						                             filename_buffer, 512,
-						                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
-						gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
+						if (image->tile_width == image->tile_height) {
+							begin_export_cropped_bigtiff(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
+							                             filename_buffer, image->tile_width,
+							                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
+							gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
+						} else {
+							gui_add_modal_message_popup("Error##draw_export_region_dialog",
+							                            "Error: source image tile width and height must be equal for exporting.\n");
+							console_print_error("Error: source image tile width and height must be equal for exporting\n");
+						}
 					} break;
 					default: {
 						gui_add_modal_message_popup("Error##draw_export_region_dialog",
