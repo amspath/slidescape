@@ -569,22 +569,19 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			need_quit = true;
 		} break;
 
-#if 1
 		case WM_SETCURSOR: {
-			if (!gui_want_capture_mouse) {
-				result = DefWindowProcA(window, message, wparam, lparam);
-			}
-			/*if (!result) { // only process this message if ImGui hasn't changed the cursor already
-				if (show_cursor) {
-//				    SetCursor(the_cursor);
-					result = DefWindowProcA(window, message, wparam, lparam);
+			if (message == WM_SETCURSOR) {
+				u16 hit_test_result = LOWORD(lparam);
+				if (hit_test_result >= HTLEFT && hit_test_result <= HTBOTTOMRIGHT) {
+					gui_user_can_resize_at_window_edge = true;
+					return DefWindowProcW(window, message, wparam, lparam);
 				} else {
-					SetCursor(NULL); // hide the cursor when dragging
+					gui_user_can_resize_at_window_edge = false;
+					SetCursor(global_cursor_arrow);
 				}
-			}*/
+			}
 
 		} break;
-#endif
 
 		case WM_DESTROY: {
 			// TODO: Handle this as an error - recreate window?

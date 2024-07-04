@@ -309,7 +309,9 @@ void mouse_show() {
 }
 
 void update_cursor() {
-	SetCursor(global_current_cursor);
+	if (!gui_user_can_resize_at_window_edge) {
+		SetCursor(global_current_cursor);
+	}
 }
 
 void set_cursor_default() {

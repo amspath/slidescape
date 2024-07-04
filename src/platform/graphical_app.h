@@ -199,6 +199,7 @@ extern const char* global_settings_dir;
 extern char global_export_save_as_filename[512];
 extern bool save_file_dialog_open;
 extern bool gui_want_capture_mouse;
+extern bool gui_user_can_resize_at_window_edge;
 extern bool gui_want_capture_keyboard;
 extern work_queue_t global_export_completion_queue; // TODO: refactor
 
