@@ -577,7 +577,8 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 					return DefWindowProcW(window, message, wparam, lparam);
 				} else {
 					gui_user_can_resize_at_window_edge = false;
-					SetCursor(global_cursor_arrow);
+					// NOTE: cursor is set each frame from gui_draw(), where update_cursor() is called
+//					SetCursor(global_cursor_arrow);
 				}
 			}
 
@@ -824,7 +825,7 @@ bool win32_process_pending_messages(input_t* input, HWND window, bool allow_idli
 						if (is_down && message.hwnd && alt_down) {
 							toggle_fullscreen(message.hwnd);
 						}
-					}
+					} break;
 				}
 
 
