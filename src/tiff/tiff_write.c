@@ -125,6 +125,7 @@ static u64 add_large_bigtiff_tag(memrw_t* tag_buffer, memrw_t* data_buffer, memr
 }
 
 typedef struct export_level_task_data_t {
+	i32 level;
 	bool is_represented;
 	u64 offset_of_tile_offsets;
 	u64 offset_of_tile_bytecounts;
@@ -153,6 +154,7 @@ typedef struct export_task_data_t {
 	volatile i32 tiles_left_to_compress_in_batch;
 	FILE* fp;
 	bool use_rgb;
+	bool allow_sparse_tile_storage;
 	bool is_valid;
 	export_level_task_data_t level_task_datas[WSI_MAX_LEVELS];
 } export_task_data_t;
@@ -285,7 +287,8 @@ void construct_new_tile_from_source_tiles(export_task_data_t* export_task, expor
 					}
 #endif
 
-	bool skip = (contributing_source_tiles_count == 0); // empty tiles would only waste space, so skip them
+	// empty tiles would only waste space, so skip them
+	bool skip = export_task->allow_sparse_tile_storage && (contributing_source_tiles_count == 0);
 	if (!skip) {
 		u8* compressed_buffer = NULL;
 		u64 compressed_size = 0;
@@ -294,6 +297,8 @@ void construct_new_tile_from_source_tiles(export_task_data_t* export_task, expor
 
 		*jpeg_buffer = compressed_buffer;
 		*jpeg_size = compressed_size;
+	} else {
+		console_print_verbose("Skipped empty tile %d, %d (level %d)\n", export_tile_x, export_tile_y, level_task->level);
 	}
 
 	free(dest);
@@ -633,6 +638,7 @@ bool export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f wor
 	export_task.export_tile_width = export_tile_width;
 	export_task.quality = quality;
 	export_task.use_rgb = (desired_photometric_interpretation == TIFF_PHOTOMETRIC_RGB);
+	export_task.allow_sparse_tile_storage = false;
 	export_task.total_tiles_to_export = 0;
 
 	FILE* fp = fopen64(filename, "wb");
@@ -670,6 +676,7 @@ bool export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f wor
 			i32 source_ifd_index = 0;
 			for (i32 level = 0; level < image->level_count; ++level) {
 				export_level_task_data_t* level_task_data = export_task.level_task_datas + level;
+				level_task_data->level = level;
 
 				// Find an IFD for this downsampling level
 				if (source_ifd->downsample_level == level) {
