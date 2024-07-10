@@ -1261,6 +1261,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene->camera.x = base_image->width_in_um / 2.0f;
 			scene->camera.y = base_image->height_in_um / 2.0f;
 			scene->rotation = 0.0f;
+			scene->sin_rotation = 0.0f;
+			scene->cos_rotation = 1.0f;
 
 			scene->need_zoom_reset = false;
 		}
