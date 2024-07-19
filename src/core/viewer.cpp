@@ -1060,6 +1060,19 @@ bool scene_control_layers(app_state_t* app_state, scene_t* scene, input_t* input
     return consume_directional_control; // directional input not consumed
 }
 
+void recount_enabled_images(app_state_t* app_state) {
+	i32 image_count = arrlen(app_state->loaded_images);
+	app_state->enabled_image_count = 0;
+	app_state->enabled_image_indices[0] = 0;
+	for (i32 i = 0; i < image_count; ++i) {
+		if (app_state->loaded_images[i]->is_enabled) {
+			app_state->enabled_image_indices[app_state->enabled_image_count++] = i;
+		}
+	}
+	ASSERT(image_count >= 0);
+	app_state->is_any_image_loaded = (image_count > 0);
+}
+
 void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client_width, i32 client_height, float delta_time) {
 
 	// Release the temporary memory that was allocated the previous frame.
@@ -1103,16 +1116,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	app_state->allow_idling_next_frame = true; // but we might set it to false later
 
+	recount_enabled_images(app_state);
 	i32 image_count = arrlen(app_state->loaded_images);
-	app_state->enabled_image_count = 0;
-	app_state->enabled_image_indices[0] = 0;
-	for (i32 i = 0; i < image_count; ++i) {
-		if (app_state->loaded_images[i]->is_enabled) {
-			app_state->enabled_image_indices[app_state->enabled_image_count++] = i;
-		}
-	}
-	ASSERT(image_count >= 0);
-	app_state->is_any_image_loaded = (image_count > 0);
 
 	if (!app_state->is_export_in_progress) {
 		viewer_process_completion_queue(app_state);
@@ -1322,6 +1327,27 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 					scene->sin_rotation = sinf(scene->rotation);
 					scene->cos_rotation = cosf(scene->rotation);
 
+				} else if (input->keyboard.key_alt.down && arrlen(app_state->loaded_images) > 1) {
+					// Quickly scroll through different layers using the mouse wheel.
+					// TODO: fix alt key 'hanging' after e.g. alt+tab
+					bool layer_changed = false;
+					if (input->mouse_z < 0 && scene->active_layer < arrlen(app_state->loaded_images) - 1) {
+						++scene->active_layer;
+						layer_changed = true;
+					} else if (input->mouse_z > 0 && scene->active_layer > 0) {
+						--scene->active_layer;
+						layer_changed = true;
+					}
+					if (layer_changed) {
+						layers_window_selected_image_index = app_state->scene.active_layer;
+						app_state->last_layer_enabled = app_state->scene.active_layer;
+						scene->layer_time = 0.0f;
+						scene->target_layer_time = 0.0f;
+						for (i32 i = 0; i < arrlen(app_state->loaded_images); ++i) {
+							app_state->loaded_images[i]->is_enabled = (app_state->scene.active_layer == i);
+						}
+						recount_enabled_images(app_state);
+					}
 				} else {
 					if (use_zoom_animation) {
 						// We want to snap to multiples of 0.5 levels when zooming in discrete increments using the mouse wheel.
