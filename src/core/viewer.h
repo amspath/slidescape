@@ -300,6 +300,7 @@ struct app_command_t {
 	command_enum command;
 	struct app_command_export_t {
 		const char* roi;
+		bool use_first_roi;
 		bool with_annotations;
 		command_export_error_enum error;
 	} export_command;
@@ -448,6 +449,7 @@ extern bool debug_draw_isyntax_valid_data_envelopes INIT(= false);
 extern i32 global_next_resource_id INIT(= 1000);
 
 extern float global_tiff_export_progress; // TODO: change to task-local variable?
+extern const char* global_export_region_filename_postfix INIT(= "_region");
 
 extern bool is_dicom_available;
 extern bool is_dicom_loading_done;

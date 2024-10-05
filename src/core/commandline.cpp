@@ -30,7 +30,6 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 	// Skip argument 0 (= the executable path)
 	argc = ATLEAST(0, argc - 1);
 	const char** args = argv + 1;
-	i32 arg_index = 0;
 	for (i32 arg_index = 0; arg_index < argc; ++arg_index) {
 		const char* arg = args[arg_index];
 		if (strcmp(arg, "--version") == 0) {
@@ -54,6 +53,9 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 						app_command.export_command.roi = arg;
 						app_command.export_command.error = COMMAND_EXPORT_ERROR_NONE;
 					}
+				} else if (strcmp(arg, "--first-roi") == 0) {
+					app_command.export_command.use_first_roi = true;
+					app_command.export_command.error = COMMAND_EXPORT_ERROR_NONE;
 				} else if (strcmp(arg, "--no-annotations") == 0) {
 					app_command.export_command.with_annotations = false;
 				} else if (strcmp(arg, "--with-annotations") == 0) {
@@ -69,6 +71,15 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 							console_print_error("Invalid JPEG quality setting '%s', defaulting to %d\n", arg, tiff_export_jpeg_quality);
 						}
 					}
+				} else if (strcmp(arg, "--postfix") == 0) {
+					if (arg_index < argc) {
+						++arg_index;
+						arg = args[arg_index];
+						global_export_region_filename_postfix = arg;
+					}
+				} else {
+					--arg_index; // not recognized, try again one level up
+					break;
 				}
 			}
 		} else  if (strcmp(arg, "--verbose") == 0) {
@@ -106,7 +117,7 @@ void export_region_get_name_hint(app_state_t* app_state, char* output_buffer, si
 					if (new_name_hint[pos] == '.') {
 						new_name_hint[pos] = '\0';
 						// add '_region'
-						strncpy(new_name_hint + pos, "_region", buffer_size - pos);
+						strncpy(new_name_hint + pos, global_export_region_filename_postfix, buffer_size - pos);
 						name_hint = new_name_hint;
 						break;
 					}
@@ -145,7 +156,7 @@ int app_command_execute(app_state_t* app_state) {
 			if (load_generic_file(app_state, filename, 0)) {
 				if (arrlen(app_state->loaded_images) > 0) {
 					image_t* image = app_state->loaded_images[0];
-					if (image->backend == IMAGE_BACKEND_TIFF) {
+					if (image->backend == IMAGE_BACKEND_TIFF || image->backend == IMAGE_BACKEND_OPENSLIDE || image->backend == IMAGE_BACKEND_DICOM) {
 						u32 export_flags = 0;
 						// TODO: allow configuration
 						if (command->export_command.with_annotations) {
@@ -162,7 +173,7 @@ int app_command_execute(app_state_t* app_state) {
 							annotation_t* roi_annotation;
 							for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 								annotation_t* annotation = get_active_annotation(&app_state->scene.annotation_set, i);
-								if (strncmp(annotation->name, command->export_command.roi, COUNT(annotation->name)-1) == 0) {
+								if (command->export_command.use_first_roi || strncmp(annotation->name, command->export_command.roi, COUNT(annotation->name)-1) == 0) {
 									found_roi = true;
 									roi_annotation = annotation;
 									// Makes no sense to export the annotations if the only one existing is the one specifying what to export
