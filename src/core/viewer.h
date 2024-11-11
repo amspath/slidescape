@@ -44,6 +44,7 @@ typedef enum viewer_file_type_enum {
 	VIEWER_FILE_TYPE_SIMPLE_IMAGE,
 	VIEWER_FILE_TYPE_TIFF,
 	VIEWER_FILE_TYPE_NDPI,
+	VIEWER_FILE_TYPE_MRXS,
 	VIEWER_FILE_TYPE_DICOM,
 	VIEWER_FILE_TYPE_ISYNTAX,
 	VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE,
@@ -62,14 +63,18 @@ typedef struct file_info_t {
 	bool is_directory;
 	bool is_regular_file;
 	bool is_image;
+    bool is_openslide_compatible;
 	u8 header[256];
 } file_info_t;
 
 typedef struct directory_info_t {
 	file_info_t* dicom_files; // array
+    file_info_t* nondicom_files; // array
+    directory_info_t* directories; // array
 	bool contains_dicom_files;
 	bool contains_nondicom_images;
-	bool is_valid;
+    bool contains_mrxs_files;
+    bool is_valid;
 } directory_info_t;
 
 #define BYTES_PER_PIXEL 4
@@ -391,6 +396,7 @@ void set_annotation_directory(app_state_t* app_state, const char* path);
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
 file_info_t viewer_get_file_info(const char* filename);
+void viewer_directory_info_destroy(directory_info_t* info);
 
 // viewer_io_remote.cpp
 void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);

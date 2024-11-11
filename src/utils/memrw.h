@@ -30,6 +30,7 @@ typedef struct memrw_t {
 	u64 used_size;
 	u64 used_count;
 	u64 capacity;
+    bool is_growing_disallowed;
 } memrw_t;
 
 

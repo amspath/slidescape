@@ -97,6 +97,7 @@ typedef enum {
     IMAGE_BACKEND_OPENSLIDE,
     IMAGE_BACKEND_ISYNTAX,
     IMAGE_BACKEND_DICOM,
+    IMAGE_BACKEND_MRXS,
 } image_backend_enum;
 
 typedef struct tile_t {

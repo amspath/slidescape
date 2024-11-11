@@ -21,6 +21,9 @@
 
 void memrw_maybe_grow(memrw_t* buffer, u64 new_size) {
 	if (new_size > buffer->capacity) {
+        if (buffer->is_growing_disallowed) {
+            fatal_error("fixed-capacity buffer is overflowing");
+        }
 		u64 new_capacity = next_pow2(new_size);
 		void* new_ptr = realloc(buffer->data, new_capacity);
 		if (!new_ptr) fatal_error();

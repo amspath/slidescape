@@ -44,6 +44,7 @@ mem_t* platform_allocate_mem_buffer(size_t capacity) {
 	mem_t* result = (mem_t*) malloc(allocation_size);
 	result->len = 0;
 	result->capacity = capacity;
+    result->cursor = 0;
 	return result;
 }
 
@@ -59,6 +60,7 @@ mem_t* platform_read_entire_file(const char* filename) {
 				((u8*)result)[allocation_size-1] = '\0';
 				result->len = filesize;
 				result->capacity = filesize;
+                result->cursor = 0;
 				size_t bytes_read = file_stream_read(result->data, filesize, fp);
 				if (bytes_read != filesize) {
 					fatal_error();
@@ -70,6 +72,36 @@ mem_t* platform_read_entire_file(const char* filename) {
 	return result;
 }
 
+i64 mem_write(void* src, mem_t* mem, size_t bytes_to_write) {
+    i32 bytes_left = mem->capacity - mem->cursor;
+    if (bytes_left >= 1) {
+        bytes_to_write = MIN(bytes_to_write, (size_t)bytes_left);
+        memcpy(mem->data + mem->cursor, src, bytes_to_write);
+        mem->cursor += bytes_to_write;
+        mem->len = MAX(mem->cursor, (i64)mem->len);
+        return bytes_to_write;
+    }
+    return 0;
+}
+
+i64 mem_read(void* dest, mem_t* mem, size_t bytes_to_read) {
+    i64 bytes_left = mem->len - mem->cursor;
+    if (bytes_left >= 1) {
+        bytes_to_read = MIN(bytes_to_read, (size_t)bytes_left);
+        memcpy(dest, mem->data + mem->cursor, bytes_to_read);
+        mem->cursor += bytes_to_read;
+        return bytes_to_read;
+    }
+    return 0;
+}
+
+void mem_seek(mem_t* mem, i32 offset) {
+    if (offset >= 0 && (u32)offset < mem->len) {
+        mem->cursor = offset;
+    } else {
+        fatal_error();
+    };
+}
 
 u64 file_read_at_offset(void* dest, file_stream_t fp, u64 offset, u64 num_bytes) {
 	i64 prev_read_pos = file_stream_get_pos(fp);

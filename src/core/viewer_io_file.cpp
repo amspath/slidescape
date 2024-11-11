@@ -16,9 +16,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "tif_lzw.h"
-#include "dicom.h"
-#include "dicom_wsi.h"
+
 
 // TODO: refactor
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
@@ -319,7 +317,9 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 
 static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 	if (file->is_regular_file) {
-        if (strlen(file->ext) == 0) { // no extension
+        if (strcasecmp(file->basename, "Slidedat.ini") == 0) {
+            return VIEWER_FILE_TYPE_MRXS;
+        } else if (strlen(file->ext) == 0) { // no extension
             if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
                 return VIEWER_FILE_TYPE_DICOM;
             } else {
@@ -348,6 +348,8 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 			return VIEWER_FILE_TYPE_DICOM;
 		} else if (strcasecmp(file->ext, "isyntax") == 0 || strcasecmp(file->ext, "i2syntax") == 0) {
 			return VIEWER_FILE_TYPE_ISYNTAX;
+        } else if (strcasecmp(file->ext, "mrxs") == 0) {
+            return VIEWER_FILE_TYPE_MRXS;
 		} else {
 			if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
 				return VIEWER_FILE_TYPE_DICOM;
@@ -392,13 +394,16 @@ file_info_t viewer_get_file_info(const char* filename) {
 					file.type = viewer_determine_file_type(&file);
 					switch(file.type) {
 						default: break;
-						case VIEWER_FILE_TYPE_SIMPLE_IMAGE:
-						case VIEWER_FILE_TYPE_TIFF:
-						case VIEWER_FILE_TYPE_DICOM:
-						case VIEWER_FILE_TYPE_NDPI:
-						case VIEWER_FILE_TYPE_ISYNTAX:
-						case VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE:
-							file.is_image = true;
+                        case VIEWER_FILE_TYPE_TIFF:
+                        case VIEWER_FILE_TYPE_NDPI:
+                        case VIEWER_FILE_TYPE_MRXS:
+                        case VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE:
+                            file.is_openslide_compatible = true;
+                            // fallthrough
+                        case VIEWER_FILE_TYPE_SIMPLE_IMAGE:
+                        case VIEWER_FILE_TYPE_DICOM:
+                        case VIEWER_FILE_TYPE_ISYNTAX:
+                            file.is_image = true;
 							break;
 					}
 				} else {
@@ -416,6 +421,13 @@ file_info_t viewer_get_file_info(const char* filename) {
 
 void viewer_directory_info_destroy(directory_info_t* info) {
 	arrfree(info->dicom_files);
+	arrfree(info->nondicom_files);
+    if (info->directories) {
+        for (i32 i = 0; i < arrlen(info->directories); ++i) {
+            viewer_directory_info_destroy(info->directories + i);
+        }
+    }
+	arrfree(info->directories);
 	info->is_valid = false;
 }
 
@@ -432,17 +444,19 @@ directory_info_t viewer_get_directory_info(const char* path) {
 			if (file.is_valid) {
 				if (file.is_directory) {
 					directory_info_t subdir_info = viewer_get_directory_info(full_filename);
-					// TODO: handle directory inside directory...
-
-					viewer_directory_info_destroy(&subdir_info);
+                    arrput(directory.directories, subdir_info);
 				} else if (file.is_regular_file) {
 					if (file.type == VIEWER_FILE_TYPE_DICOM) {
 						directory.contains_dicom_files = true;
 						arrput(directory.dicom_files, file);
 					} else {
+                        arrput(directory.nondicom_files, file);
 						if (file.is_image) {
 							directory.contains_nondicom_images = true;
 						}
+                        if (file.type == VIEWER_FILE_TYPE_MRXS) {
+                            directory.contains_mrxs_files = true;
+                        }
 					}
 				}
 			}
@@ -579,12 +593,14 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 		} else if (file.is_directory) {
 			directory_info_t directory = viewer_get_directory_info(filename);
 			if (directory.is_valid) {
-				if (directory.contains_dicom_files) {
-					file.type = VIEWER_FILE_TYPE_DICOM;
-					console_print("Trying to open a directory '%s'\n", filename);
+                console_print("Trying to open a directory '%s'\n", filename);
+                if (directory.contains_dicom_files) {
+                    file.type = VIEWER_FILE_TYPE_DICOM;
 					success = viewer_load_new_image(app_state, &file, &directory, filetype_hint);
-
-				}
+				} else if (directory.contains_mrxs_files) {
+                    file.type = VIEWER_FILE_TYPE_MRXS;
+                    success = viewer_load_new_image(app_state, &file, &directory, filetype_hint);
+                }
 			}
 			viewer_directory_info_destroy(&directory); // TODO: transfer ownership of directory structure info?
 		}
@@ -709,22 +725,31 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 		}
 	} else if (file->type == VIEWER_FILE_TYPE_DICOM) {
 
-		if (file->is_regular_file) {
-			// TODO: load the rest of the directory
-			dicom_series_t dicom = {};
-			if (dicom_open_from_file(&dicom, file)) {
+        if (file->is_regular_file) {
+            // TODO: load the rest of the directory
+            dicom_series_t dicom = {};
+            if (dicom_open_from_file(&dicom, file)) {
 
-			}
-		} else if (file->is_directory && directory) {
-			dicom_series_t dicom = {};
-			if (dicom_open_from_directory(&dicom, directory)) {
-				init_image_from_dicom(image, &dicom, is_overlay);
-				return image;
-			} else {
-				dicom_destroy(&dicom);
-			}
-		}
-	} else {
+            }
+        } else if (file->is_directory && directory) {
+            dicom_series_t dicom = {};
+            if (dicom_open_from_directory(&dicom, directory)) {
+                init_image_from_dicom(image, &dicom, is_overlay);
+                return image;
+            } else {
+                dicom_destroy(&dicom);
+            }
+        }
+    } /*else if (file->type == VIEWER_FILE_TYPE_MRXS) {
+        if (file->is_regular_file) {
+
+        } else if (file->is_directory && directory) {
+            mrxs_t mrxs = {};
+            if (mrxs_open_from_directory(&mrxs, file, directory)) {
+
+            }
+        }
+	} */else {
 		// Try to load the file using OpenSlide
 		if (!is_openslide_available) {
 			if (!is_openslide_loading_done) {

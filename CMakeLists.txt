@@ -80,6 +80,7 @@ include_directories("${CMAKE_SOURCE_DIR}/src/core")
 include_directories("${CMAKE_SOURCE_DIR}/src/dicom")
 include_directories("${CMAKE_SOURCE_DIR}/src/imgui")
 include_directories("${CMAKE_SOURCE_DIR}/src/isyntax")
+include_directories("${CMAKE_SOURCE_DIR}/src/mrxs")
 include_directories("${CMAKE_SOURCE_DIR}/src/platform")
 include_directories("${CMAKE_SOURCE_DIR}/src/tiff")
 include_directories("${CMAKE_SOURCE_DIR}/src/utils")
@@ -221,6 +222,7 @@ set(VIEWER_SOURCE_FILES
         tiff/tif_lzw.c
         isyntax/isyntax.c
         isyntax/isyntax_streamer.c
+        mrxs/mrxs.c
         imgui/imgui.cpp
         imgui/imgui_demo.cpp
         imgui/imgui_draw.cpp

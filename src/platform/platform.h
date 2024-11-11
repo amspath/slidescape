@@ -61,6 +61,7 @@ typedef struct app_state_t app_state_t;
 typedef struct mem_t {
 	size_t len;
 	size_t capacity;
+    i64 cursor;
 	u8 data[0];
 } mem_t;
 
@@ -135,6 +136,9 @@ static inline void platform_semaphore_wait(semaphore_handle_t semaphore) {
 u8* platform_alloc(size_t size);
 mem_t* platform_allocate_mem_buffer(size_t capacity);
 mem_t* platform_read_entire_file(const char* filename);
+i64 mem_write(void* src, mem_t* mem, size_t bytes_to_write);
+i64 mem_read(void* dest, mem_t* mem, size_t bytes_to_read);
+void mem_seek(mem_t* mem, i32 offset);
 u64 file_read_at_offset(void* dest, file_stream_t fp, u64 offset, u64 num_bytes);
 
 int platform_stat(const char* filename, struct stat* st);
