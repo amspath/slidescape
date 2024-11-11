@@ -726,6 +726,33 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 
 }
 
+// How to calculate the area of a polygon, see:
+//http://gbenro-myinventions.blogspot.com/2014/08/geometry-of-plane-areas-and-2-x-2.html?showComment=1457999073412&m=1
+float area_for_annotation(annotation_t* annotation) {
+    float area = 0.0f;
+    if (annotation->coordinate_count >=3) {
+        v2f prev_coord = annotation->coordinates[annotation->coordinate_count-1];
+        double sum_of_determinants = 0.0f;
+        for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+            v2f coord = annotation->coordinates[i];
+            sum_of_determinants += ((double)prev_coord.x * (double)coord.y - (double)prev_coord.y * (double)coord.x);
+            prev_coord = coord;
+        }
+        area = sum_of_determinants * 0.5f;
+        if (area < 0.0f) {
+            area = -area;
+        }
+    }
+    return area;
+}
+
+void annotation_recalculate_area_if_necessary(annotation_t* annotation) {
+    if (!(annotation->valid_flags & ANNOTATION_VALID_AREA)) {
+        annotation->area = area_for_annotation(annotation);
+        annotation->valid_flags |= ANNOTATION_VALID_AREA;
+    }
+}
+
 // Create a 2D bounding box that encompasses all of the annotation's coordinates
 bounds2f bounds_for_annotation(annotation_t* annotation) {
 	bounds2f result = { +FLT_MAX, +FLT_MAX, -FLT_MAX, -FLT_MAX };
@@ -1771,6 +1798,35 @@ void center_scene_on_annotation(scene_t* scene, annotation_t* annotation) {
 	scene_update_camera_pos(scene, center);
 }
 
+static i32 get_selected_annotation_group_index(annotation_set_t* annotation_set) {
+    i32 annotation_group_index = -1;
+    annotation_t* selected_annotation = NULL;
+    for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
+        annotation_t* annotation = get_active_annotation(annotation_set, i);
+        if (annotation->selected) {
+            selected_annotation = annotation;
+            if (annotation_group_index == -1) {
+                annotation_group_index = annotation->group_id;
+            } else if (annotation_group_index != annotation->group_id) {
+                annotation_group_index = -2; // multiple groups selected
+            }
+        }
+    }
+    return annotation_group_index;
+}
+
+static const char* annotation_get_selected_preview_string(annotation_set_t* annotation_set) {
+    const char* annotation_name_preview_string = "(nothing selected)";
+    if (annotation_set->selection_count > 0) {
+        if (annotation_set->selection_count == 1) {
+            annotation_name_preview_string = annotation_set->selected_annotations[0]->name;
+        } else {
+            annotation_name_preview_string = "(multiple selected)";
+        }
+    }
+    return annotation_name_preview_string;
+}
+
 void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 	scene_t* scene = &app_state->scene;
@@ -1793,32 +1849,11 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 	feature_item_previews[annotation_set->active_feature_count] = "";
 
 	// find group corresponding to the currently selected annotations
-	i32 annotation_group_index = -1;
-    annotation_t* selected_annotation = NULL;
-	for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
-		annotation_t* annotation = get_active_annotation(annotation_set, i);
-		if (annotation->selected) {
-            selected_annotation = annotation;
-			if (annotation_group_index == -1) {
-				annotation_group_index = annotation->group_id;
-			} else if (annotation_group_index != annotation->group_id) {
-				annotation_group_index = -2; // multiple groups selected
-			}
-
-		}
-	}
+	i32 annotation_group_index = get_selected_annotation_group_index(annotation_set);
 	bool nothing_selected = (annotation_group_index == -1);
 	bool multiple_groups_selected = (annotation_group_index == -2);
-
     bool multiple_annotations_selected = annotation_set->selection_count > 0;
-    const char* annotation_name_preview_string = "(nothing selected)";
-    if (annotation_set->selection_count > 0) {
-        if (annotation_set->selection_count == 1) {
-            annotation_name_preview_string = selected_annotation->name;
-        } else {
-            annotation_name_preview_string = "(multiple selected)";
-        }
-    }
+    const char* annotation_name_preview_string = annotation_get_selected_preview_string(annotation_set);
 
 	// Detect hotkey presses for group assignment
 	bool* hotkey_pressed = (bool*) alloca(annotation_set->active_group_count * sizeof(bool));
@@ -2346,6 +2381,19 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 		ImGui::Begin("Assign", &show_annotation_group_assignment_window);
 
         ImGui::TextUnformatted(annotation_name_preview_string);
+        if (annotation_set->selection_count >= 1) {
+            float total_area = 0.0f;
+            for (i32 i = 0; i < annotation_set->selection_count; ++i) {
+                annotation_t* selected = annotation_set->selected_annotations[i];
+                annotation_recalculate_area_if_necessary(selected);
+                total_area += selected->area;
+            }
+            ImGui::Text("Area: %.3f mm2\n", total_area * 1e-6f);
+        } else {
+            ImGui::BeginDisabled();
+            ImGui::TextUnformatted("Area: n/a\n");
+            ImGui::EndDisabled();
+        }
 
 		ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
 		if (ImGui::BeginTabBar("Feature assignment tab bar", tab_bar_flags))
@@ -2646,6 +2694,28 @@ void draw_annotation_palette_window() {
 
 
 	}
+}
+
+// TODO: flesh this out?
+void draw_annotation_inspector(app_state_t* app_state, annotation_set_t* annotation_set) {
+    if (show_annotation_inspector_window && annotation_set->selection_count > 0) {
+        ImGui::SetNextWindowPos(ImVec2(50,50), ImGuiCond_FirstUseEver, ImVec2());
+        ImGui::SetNextWindowSize(ImVec2(200,200), ImGuiCond_FirstUseEver);
+
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
+        if (ImGui::Begin("##annotation_inspector", &show_annotation_palette_window, window_flags)) {
+
+            const char* name_preview = annotation_get_selected_preview_string(annotation_set);
+            ImGui::TextUnformatted(name_preview);
+            if (annotation_set->selection_count == 1) {
+                annotation_t* selected = annotation_set->selected_annotations[0];
+                annotation_recalculate_area_if_necessary(selected);
+                ImGui::Text("Area: %.3f mm2\n", selected->area * 1e-6f);
+            }
+
+            ImGui::End();
+        }
+    }
 }
 
 annotation_t duplicate_annotation(annotation_t* annotation) {

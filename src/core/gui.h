@@ -141,6 +141,7 @@ extern bool show_delete_annotation_prompt;
 extern bool show_save_quit_prompt;
 extern bool dont_ask_to_delete_annotations;
 extern bool show_annotation_palette_window INIT(=true);
+extern bool show_annotation_inspector_window INIT(=false);
 
 // gui_coco.cpp
 extern bool show_coco_editor_window;

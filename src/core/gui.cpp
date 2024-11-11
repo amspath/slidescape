@@ -1448,6 +1448,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state, input);
 	}
+//  draw_annotation_inspector(app_state, &app_state->scene.annotation_set);
 //	draw_annotation_palette_window();
 
 

@@ -238,6 +238,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 void draw_annotations_window(app_state_t* app_state, input_t* input);
 void annotation_modal_dialog(app_state_t* app_state, annotation_set_t* annotation_set);
 void draw_annotation_palette_window();
+void draw_annotation_inspector(app_state_t* app_state, annotation_set_t* annotation_set);
 annotation_t duplicate_annotation(annotation_t* annotation);
 void destroy_annotation(annotation_t* annotation);
 void destroy_annotation_set(annotation_set_t* annotation_set);
