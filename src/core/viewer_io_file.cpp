@@ -317,7 +317,7 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 
 static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 	if (file->is_regular_file) {
-        if (strcasecmp(file->basename, "Slidedat.ini") == 0) {
+        if (strcasecmp(file->filename_in_directory, "Slidedat.ini") == 0) {
             return VIEWER_FILE_TYPE_MRXS;
         } else if (strlen(file->ext) == 0) { // no extension
             if (is_file_a_dicom_file(file->header, MIN(file->filesize, sizeof(file->header)))) {
@@ -365,19 +365,19 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 file_info_t viewer_get_file_info(const char* filename) {
 	file_info_t file = {};
 	size_t filename_len = strlen(filename);
-	if (filename_len >= sizeof(file.filename)) {
+	if (filename_len >= sizeof(file.full_filename)) {
 		console_print_error("viewer_get_file_info(): filename too long (length=%u): '%s'\n", filename_len, filename);
 		return file;
 	}
-	memcpy(file.filename, filename, filename_len);
+	memcpy(file.full_filename, filename, filename_len);
 	const char* ext = get_file_extension(filename);
 	strncpy(file.ext, ext, sizeof(file.ext) - 1);
-    const char* basename = one_past_last_slash(filename, filename_len);
-    strncpy(file.basename, basename, filename_len);
-    i64 prefix_len = basename - filename;
-    if (prefix_len > 0 && prefix_len < filename_len) {
-        strncpy(file.dirname_with_trailing_slash, filename, prefix_len);
-    }
+    file.filename_in_directory = one_past_last_slash(file.full_filename, filename_len);
+	i64 prefix_len = file.filename_in_directory - file.full_filename;
+    ASSERT(prefix_len >= 0 && prefix_len < filename_len);
+	if (prefix_len > 0 && prefix_len < filename_len) {
+		strncpy(file.filename_prefix, filename, prefix_len);
+	}
 
 	struct stat st;
 	if (platform_stat(filename, &st) == 0) {
@@ -494,8 +494,8 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
             // Check if there is an associated ASAP XML or COCO JSON annotations file
             char temp_filename[512];
             temp_filename[0] = '\0';
-            const char* prefix = (app_state->annotation_directory[0] != '\0') ? app_state->annotation_directory : file->dirname_with_trailing_slash;
-            snprintf(temp_filename, sizeof(temp_filename), "%s%s", prefix, file->basename);
+            const char* prefix = (app_state->annotation_directory[0] != '\0') ? app_state->annotation_directory : file->filename_prefix;
+            snprintf(temp_filename, sizeof(temp_filename), "%s%s", prefix, file->filename_in_directory);
             bool were_annotations_loaded = false;
 
             // Load JSON first
@@ -546,7 +546,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
             }
         }
 
-		console_print("Loaded '%s'\n", file->filename);
+		console_print("Loaded '%s'\n", file->full_filename);
 		if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 			console_print("   iSyntax: loading took %g seconds\n", image->isyntax.loading_time);
 		}
@@ -675,7 +675,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
         parent_image = app_state->loaded_images[0];
     }
 
-	const char* filename = file->filename;
+	const char* filename = file->full_filename;
 	size_t filename_len = strlen(filename);
 	const char* name = one_past_last_slash(filename, filename_len);
 	strncpy(image->name, name, sizeof(image->name)-1);
@@ -740,16 +740,39 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
                 dicom_destroy(&dicom);
             }
         }
-    } /*else if (file->type == VIEWER_FILE_TYPE_MRXS) {
+    } else if (file->type == VIEWER_FILE_TYPE_MRXS) {
+		mrxs_t mrxs = {0};
+		mrxs_set_work_queue(&mrxs, &global_work_queue);
+		bool opened_successfully = false;
         if (file->is_regular_file) {
+			// Strip .mrxs extension to get the name of the corresponding slide folder
+	        char basename[512];
+			strncpy(basename, filename, sizeof(basename));
+	        char* end = basename + filename_len;
+	        for (char* pos = end - 1; pos >= basename; --pos) {
+		        if (*pos == '.') {
+			        *pos = '\0';
+					break;
+		        }
+		        if (*pos == '/' || *pos == '\\') {
+			        break;
+		        }
+	        }
+	        file_info_t slide_dir_file_info = viewer_get_file_info(basename);
+			if (slide_dir_file_info.is_directory) {
+				opened_successfully = mrxs_open_from_directory(&mrxs, &slide_dir_file_info, NULL);
+			}
 
         } else if (file->is_directory && directory) {
-            mrxs_t mrxs = {};
-            if (mrxs_open_from_directory(&mrxs, file, directory)) {
-
-            }
+			// We directly opened the slide folder instead of the .mrxs
+	        opened_successfully = mrxs_open_from_directory(&mrxs, file, NULL);
         }
-	} */else {
+		if (opened_successfully) {
+			// init
+		} else {
+			mrxs_destroy(&mrxs);
+		}
+	} else {
 		// Try to load the file using OpenSlide
 		if (!is_openslide_available) {
 			if (!is_openslide_loading_done) {

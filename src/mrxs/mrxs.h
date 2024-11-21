@@ -57,10 +57,34 @@ enum mrxs_hier_val_enum {
     MRXS_HIER_VAL_ZOOMLEVEL,
 };
 
+#pragma pack(push, 1)
+typedef struct mrxs_hier_entry_t {
+	u32 image;
+	u32 offset;
+	u32 length;
+	u32 file;
+} mrxs_hier_entry_t;
+
+typedef struct mrxs_nonhier_entry_t {
+	u32 padding1;
+	u32 padding2;
+	u32 offset;
+	u32 length;
+	u32 file;
+} mrxs_nonhier_entry_t;
+#pragma pack(pop)
+
+typedef struct mrxs_tile_t {
+	mrxs_hier_entry_t hier_entry;
+} mrxs_tile_t;
+
 typedef struct mrxs_level_t {
 //    i32 level;
     const char* section_name;
     i32 hier_val_index;
+	mrxs_tile_t* tiles;
+	i32 width_in_tiles;
+	i32 height_in_tiles;
 } mrxs_level_t;
 
 typedef struct mrxs_hier_val_t {
@@ -87,19 +111,25 @@ typedef struct mrxs_t {
     memrw_t string_pool; // NOTE: need destroy
     const char* index_dat_filename;
     const char** dat_filenames; // NOTE: need free
+	file_handle_t* dat_file_handles; // NOTE: need free
     i32 dat_count;
     i32 hier_count;
+	i32 hier_val_count;
     i32 nonhier_count;
     mrxs_hier_t* hier; // NOTE: need free
     mrxs_nonhier_t* nonhier; // NOTE: need free
     i32 slide_zoom_level_hier_index;
     i32 base_width_in_tiles;
     i32 base_height_in_tiles;
-    mrxs_level_t levels[16];
+	i32 level_count;
+	mrxs_level_t levels[16];
+	work_queue_t* work_submission_queue;
+	volatile i32 refcount;
     bool is_valid;
 } mrxs_t;
 
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory);
+void mrxs_set_work_queue(mrxs_t* mrxs, work_queue_t* queue);
 void mrxs_destroy(mrxs_t* mrxs);
 
 #ifdef __cplusplus

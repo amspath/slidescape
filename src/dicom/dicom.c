@@ -1124,9 +1124,9 @@ dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file
 
 	// TODO: pipe all debug output to private memrw_t for dumping it onto the console later (enable concurrent loading?)
 
-	file_stream_t fp = file_stream_open_for_reading(file->filename);
+	file_stream_t fp = file_stream_open_for_reading(file->full_filename);
 	if (fp) {
-		strncpy(instance.filename, file->filename, MIN(sizeof(instance.filename), sizeof(file->filename))-1);
+		strncpy(instance.filename, file->full_filename, MIN(sizeof(instance.filename), sizeof(file->full_filename)) - 1);
 		size_t chunk_size = KILOBYTES(64);
 		size_t bytes_to_read = MIN(chunk_size, file->filesize);
 
@@ -1137,10 +1137,10 @@ dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file
 
 			if (bytes_read == bytes_to_read) {
 				if (is_file_a_dicom_file(buffer.data, bytes_read)) {
-					console_print_verbose("Found DICOM file: '%s'\n", file->filename);
+					console_print_verbose("Found DICOM file: '%s'\n", file->full_filename);
 					i64 payload_offset = sizeof(dicom_header_t);
 					if (dicom_series->debug_output_file) {
-						fprintf(dicom_series->debug_output_file, "\nFile: %s\n\n", file->filename);
+						fprintf(dicom_series->debug_output_file, "\nFile: %s\n\n", file->full_filename);
 					}
 					i64 payload_bytes = ((i64)buffer.used_size - payload_offset);
 					ASSERT(payload_bytes > 0);

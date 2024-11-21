@@ -26,20 +26,6 @@
 #include <ctype.h> // for isspace()
 
 
-typedef struct mrxs_hier_entry_t {
-    u32 image;
-    u32 offset;
-    u32 length;
-    u32 file;
-} mrxs_hier_entry_t;
-
-typedef struct mrxs_nonhier_entry_t {
-    u32 padding1;
-    u32 padding2;
-    u32 offset;
-    u32 length;
-    u32 file;
-} mrxs_nonhier_entry_t;
 
 static file_stream_t open_file_in_directory(const char* dirname, const char* filename) {
     char buffer[512];
@@ -247,20 +233,62 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
         }
         free(lines);
     }
-    if (!mrxs->index_dat_filename || arrlen(mrxs->dat_filenames) == 0) {
+    if (!mrxs->index_dat_filename || mrxs->dat_count == 0 || !mrxs->dat_filenames) {
         success = false;
     }
     return success;
 }
 
+bool mrxs_read_index_dat_slide_zoom_level(mrxs_t* mrxs, mem_t* index_dat, mrxs_hier_val_t* hier_val) {
+	i32 scale = hier_val->index;
+	if (!(scale >= 0 && scale < mrxs->level_count)) {
+		return false;
+	}
+	mrxs_level_t* level = mrxs->levels + scale;
+
+	i32 page_count = 0; // the first page doesn't count, it always has 0 entries
+	for (;;) {
+		u32 entry_count = 0;
+		u32 next_ptr = 0;
+		mem_read(&entry_count, index_dat, 4);
+		mem_read(&next_ptr, index_dat, 4);
+		if (entry_count > 0) {
+			// read entries
+			for (i32 j = 0; j < entry_count; ++j) {
+				mrxs_hier_entry_t entry = {};
+				mem_read(&entry, index_dat, sizeof(entry));
+				i32 tile_index_x = entry.image % mrxs->base_width_in_tiles;
+				i32 tile_index_y = entry.image / mrxs->base_width_in_tiles;
+				tile_index_x >>= scale;
+				tile_index_y >>= scale;
+				if (tile_index_x < level->width_in_tiles && tile_index_y < level->height_in_tiles) {
+					mrxs_tile_t* tile = level->tiles + tile_index_y * level->width_in_tiles + tile_index_x;
+					tile->hier_entry = entry;
+					DUMMY_STATEMENT;
+				} else {
+					DUMMY_STATEMENT;
+				}
+				DUMMY_STATEMENT;
+			}
+		}
+		if (next_ptr != 0 && next_ptr < index_dat->len) {
+			mem_seek(index_dat, next_ptr);
+			++page_count;
+		} else {
+			break; // last page reached
+		}
+	}
+	return true;
+}
+
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory) {
     bool success = false;
 
-    mem_t* slidedat_ini = read_entire_file_in_directory(file->filename, "Slidedat.ini");
+    mem_t* slidedat_ini = read_entire_file_in_directory(file->full_filename, "Slidedat.ini");
 
     if (slidedat_ini) {
         if (mrxs_parse_slidedat_ini(mrxs, slidedat_ini)) {
-            mem_t* index_dat = read_entire_file_in_directory(file->filename, mrxs->index_dat_filename);
+            mem_t* index_dat = read_entire_file_in_directory(file->full_filename, mrxs->index_dat_filename);
             if (index_dat) {
                 char version[6] = {};
                 char slide_id[33] = {};
@@ -272,31 +300,56 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
                 mem_read(&nonhier_root, index_dat, 4);
 
                 bool failed = false;
-                if (hier_root > 0 && hier_root < file->filesize) {
-                    mem_seek(index_dat, hier_root);
-                    u32* record_ptrs = malloc(mrxs->hier_count * sizeof(u32));
-                    for (i32 i = 0; i < mrxs->hier_count; ++i) {
-                        u32 record_ptr = record_ptrs[i];
-                        mem_seek(index_dat, record_ptr);
+                if (hier_root > 0 && hier_root < index_dat->len) {
 
+					// Initialize some basic stuff
+					mrxs_hier_t* hier_zoom_levels = mrxs->hier + mrxs->slide_zoom_level_hier_index;
+					mrxs->level_count = hier_zoom_levels->count;
+					for (i32 i = 0; i < mrxs->level_count; ++i) {
+						mrxs_level_t* level = mrxs->levels + i;
+						level->width_in_tiles = (mrxs->base_width_in_tiles + (1 << i) - 1) >> i;
+						level->height_in_tiles = (mrxs->base_height_in_tiles + (1 << i) - 1) >> i;
+						u32 tile_count = level->width_in_tiles * level->height_in_tiles;
+						level->tiles = calloc(tile_count, sizeof(mrxs_tile_t ));
+					}
 
-                    }
+	                // There is one record stored for each HIER_i_VAL_j combination (all in a flat array)
+					i32 record_index = 0;
+	                for (i32 hier_index = 0; hier_index < mrxs->hier_count; ++hier_index) {
+		                mrxs_hier_t* hier = mrxs->hier + hier_index;
+		                for (i32 val_index = 0; val_index < hier->count; ++val_index, ++record_index) {
+			                mrxs_hier_val_t* hier_val = hier->val + val_index;
 
-                    free(record_ptrs);
+			                mem_seek(index_dat, hier_root + record_index * sizeof(u32));
+			                u32 record_ptr = 0;
+			                mem_read(&record_ptr, index_dat, 4);
+			                mem_seek(index_dat, record_ptr);
+							if (hier->name == MRXS_HIER_SLIDE_ZOOM_LEVEL && hier_val->type == MRXS_HIER_VAL_ZOOMLEVEL) {
+								if (!mrxs_read_index_dat_slide_zoom_level(mrxs, index_dat, hier_val)) {
+									goto label_failed;
+								}
+							}
+
+		                }
+	                }
+
                 } else {
-                    failed = true;
+					label_failed:
+					failed = true;
                     // TODO: error condition
                 }
 
-                if (!failed && nonhier_root > 0 && nonhier_root < file->filesize) {
+                if (!failed && nonhier_root > 0 && nonhier_root < index_dat->len) {
                     mem_seek(index_dat, nonhier_root);
-                    u32* record_ptrs = malloc(mrxs->nonhier_count * sizeof(u32));
-                    for (i32 i = 0; i < mrxs->nonhier_count; ++i) {
-                        u32 record_ptr = record_ptrs[i];
-
-                    }
-
-                    free(record_ptrs);
+//                    u32* record_ptrs = malloc(mrxs->nonhier_count * sizeof(u32));
+//	                mem_read(record_ptrs, index_dat, mrxs->nonhier_count * sizeof(u32));
+//                    for (i32 i = 0; i < mrxs->nonhier_count; ++i) {
+//                        u32 record_ptr = record_ptrs[i];
+//
+//                    }
+//
+//                    free(record_ptrs);
+					success = true;
                 } else {
                     failed = true;
                     // TODO: error condition
@@ -308,11 +361,63 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
         free(slidedat_ini);
     }
 
-//    file_stream_t fp = file_stream_open_for_reading(filename);
-//    if (fp) {
-//
-//        file_stream_close(fp);
-//    }
+	if (success) {
+		ASSERT(mrxs->dat_filenames && mrxs->dat_count > 0);
+		mrxs->dat_file_handles = malloc(mrxs->dat_count * sizeof(file_handle_t));
+		//TODO: measure performance, maybe move to worker threads?
+		for (i32 i = 0; i < mrxs->dat_count; ++i) {
+			const char* dat_filename = mrxs->dat_filenames[i];
+			file_handle_t file_handle = open_file_handle_for_simultaneous_access(dat_filename);
+			if (!file_handle) {
+				success = false;
+				console_print_error("Error: Could not open file for asynchronous I/O: %s\n", dat_filename);
+				break;
+			}
+			mrxs->dat_file_handles[i] = file_handle;
+		}
+	}
+
 
     return success;
+}
+
+// Set the work queue to submit parallel jobs to
+// TODO(pvalkema): rethink this?
+void mrxs_set_work_queue(mrxs_t* mrxs, work_queue_t* queue) {
+	mrxs->work_submission_queue = queue;
+}
+
+void mrxs_destroy(mrxs_t* mrxs) {
+	while (mrxs->refcount > 0) {
+		platform_sleep(1);
+		if (mrxs->work_submission_queue) {
+			work_queue_do_work(mrxs->work_submission_queue, 0);
+		} else {
+			static bool already_printed = false;
+			if (!already_printed) {
+				console_print_error("mrxs_destroy(): work_submission_queue not set; refcount = %d, waiting to reach 0\n", mrxs->refcount);
+				already_printed = true;
+			}
+		}
+	}
+	if (mrxs->dat_file_handles) {
+		for (i32 i = 0; i < mrxs->dat_count; ++i) {
+			file_handle_t file_handle = mrxs->dat_file_handles[i];
+			if (file_handle) {
+				file_handle_close(file_handle);
+			}
+		}
+		free(mrxs->dat_file_handles);
+	}
+	memrw_destroy(&mrxs->string_pool);
+	if (mrxs->dat_filenames) {
+		free(mrxs->dat_filenames);
+	}
+	if (mrxs->hier) {
+		free(mrxs->hier);
+	}
+	if (mrxs->nonhier) {
+		free(mrxs->nonhier);
+	}
+	memset(mrxs, 0, sizeof(mrxs_t));
 }

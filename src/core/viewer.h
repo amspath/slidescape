@@ -53,9 +53,9 @@ typedef enum viewer_file_type_enum {
 } viewer_file_type_enum;
 
 typedef struct file_info_t {
-	char filename[512];
-    char dirname_with_trailing_slash[512];
-    char basename[512];
+	char full_filename[512];
+	char filename_prefix[512]; // directory name + trailing slash
+	const char* filename_in_directory;
 	char ext[16];
 	i64 filesize;
 	viewer_file_type_enum type;
@@ -69,12 +69,12 @@ typedef struct file_info_t {
 
 typedef struct directory_info_t {
 	file_info_t* dicom_files; // array
-    file_info_t* nondicom_files; // array
-    directory_info_t* directories; // array
+	file_info_t* nondicom_files; // array
+	directory_info_t* directories; // array
 	bool contains_dicom_files;
 	bool contains_nondicom_images;
-    bool contains_mrxs_files;
-    bool is_valid;
+	bool contains_mrxs_files;
+	bool is_valid;
 } directory_info_t;
 
 #define BYTES_PER_PIXEL 4
