@@ -463,6 +463,14 @@ jsimd_can_h2v2_fancy_upsample(void)
 GLOBAL(int)
 jsimd_can_h2v1_fancy_upsample(void)
 {
+	//
+	//
+	//
+	// NOTE(Falcury): disabling this because the SIMD code is giving me crashes!
+	return 0;
+	//
+	//
+	//
   init_simd();
 
   /* The code is optimised for these values only */

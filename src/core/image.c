@@ -549,6 +549,124 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
     return image->is_valid;
 }
 
+bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
+	image->type = IMAGE_TYPE_WSI;
+	image->backend = IMAGE_BACKEND_MRXS;
+	image->mrxs = *mrxs;
+	mrxs = &image->mrxs;
+	image->is_freshly_loaded = true;
+
+	image->mpp_x = mrxs->mpp_x;
+	image->mpp_y = mrxs->mpp_y;
+	image->is_mpp_known = mrxs->is_mpp_known;
+	if (image->mpp_x <= 0.0f || image->mpp_y <= 0.0f) {
+		image->is_mpp_known = false;
+		image->mpp_x = 1.0f;
+		image->mpp_y = 1.0f;
+	}
+
+	image->tile_width = mrxs->tile_width;
+	image->tile_height = mrxs->tile_height;
+	image->width_in_pixels = mrxs->tile_width * mrxs->base_width_in_tiles;
+	image->width_in_um = image->width_in_pixels * image->mpp_x;
+	image->height_in_pixels = mrxs->tile_height * mrxs->base_height_in_tiles;
+	image->height_in_um = image->height_in_pixels * image->mpp_y;
+	// TODO: fix code duplication with tiff_deserialize()
+	if (mrxs->level_count > 0 && image->tile_width) {
+
+		memset(image->level_images, 0, sizeof(image->level_images));
+		image->level_count = mrxs->level_count;
+
+		if (image->level_count > WSI_MAX_LEVELS) {
+			fatal_error();
+		}
+
+		for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
+			level_image_t* level_image = image->level_images + level_index;
+			mrxs_level_t* mrxs_level = mrxs->levels + level_index;
+
+			level_image->exists = true;
+			level_image->needs_indexing = false;
+			level_image->pyramid_image_index = level_index; // not used
+			level_image->downsample_factor = exp2f((float)level_index);
+			level_image->width_in_pixels = mrxs_level->width_in_tiles * mrxs->tile_width; // TODO: check that this is right
+			level_image->height_in_pixels = mrxs_level->height_in_tiles * mrxs->tile_height; // TODO: check that this is right
+			level_image->width_in_tiles = mrxs_level->width_in_tiles;
+			ASSERT(level_image->width_in_tiles > 0);
+			level_image->height_in_tiles = mrxs_level->height_in_tiles;
+			ASSERT(level_image->height_in_tiles > 0);
+			level_image->tile_count = mrxs_level->height_in_tiles * mrxs_level->width_in_tiles;
+			level_image->tile_width = mrxs_level->tile_width;
+			level_image->tile_height = mrxs_level->tile_height;
+			if (mrxs_level->tile_width != image->tile_width) {
+				ASSERT(!"tile width is not equal across all levels");
+				return false;
+			}
+			if (mrxs_level->tile_height != image->tile_height) {
+				ASSERT(!"tile height is not equal across all levels");
+				return false;
+			}
+			level_image->um_per_pixel_x = level_image->downsample_factor * mrxs->mpp_x;
+			level_image->um_per_pixel_y = level_image->downsample_factor * mrxs->mpp_y;
+			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * mrxs_level->tile_width;
+			level_image->y_tile_side_in_um = level_image->um_per_pixel_x * mrxs_level->tile_width;
+			ASSERT(level_image->x_tile_side_in_um > 0);
+			ASSERT(level_image->y_tile_side_in_um > 0);
+			level_image->origin_offset = V2F(0,0); //mrxs_level->origin_offset;
+			level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
+			for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+				tile_t* tile = level_image->tiles + tile_index;
+				// Facilitate some introspection by storing self-referential information
+				// in the tile_t struct. This is needed for some specific cases where we
+				// pass around pointers to tile_t structs without caring exactly where they
+				// came from.
+				// (Specific example: we use this when exporting a selected region as BigTIFF)
+				tile->tile_index = tile_index;
+				tile->tile_x = tile_index % level_image->width_in_tiles;
+				tile->tile_y = tile_index / level_image->width_in_tiles;
+
+				mrxs_tile_t* mrxs_tile = mrxs_level->tiles + tile_index;
+				if (mrxs_tile->hier_entry.length == 0) {
+					tile->is_empty = true;
+				}
+			}
+			DUMMY_STATEMENT;
+		}
+	}
+
+	/*isyntax_image_t* macro_image = isyntax->images + isyntax->macro_image_index;
+	if (macro_image->image_type == ISYNTAX_IMAGE_TYPE_MACROIMAGE) {
+		if (macro_image->pixels) {
+			image->macro_image.pixels = macro_image->pixels;
+			macro_image->pixels = NULL; // transfer ownership
+			image->macro_image.width = macro_image->width;
+			image->macro_image.height = macro_image->height;
+			image->macro_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
+			image->macro_image.world_pos.x = -((float)base_level_instance->offset_x * isyntax->mpp_x);
+			image->macro_image.world_pos.y = -((float)base_level_instance->offset_y * isyntax->mpp_y);
+			image->macro_image.is_valid = true;
+		}
+	}
+	isyntax_image_t* label_image = isyntax->images + isyntax->label_image_index;
+	if (label_image->image_type == ISYNTAX_IMAGE_TYPE_LABELIMAGE) {
+		if (label_image->pixels) {
+			image->label_image.pixels = label_image->pixels;
+			label_image->pixels = NULL; // transfer ownership
+			image->label_image.width = label_image->width;
+			image->label_image.height = label_image->height;
+			image->label_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
+//			image->label_image.world_pos.x = -((float)wsi_image->offset_x * isyntax->mpp_x);
+//			image->label_image.world_pos.y = -((float)wsi_image->offset_y * isyntax->mpp_y);
+			image->label_image.is_valid = true;
+		}
+	}*/
+
+
+	image->is_valid = true;
+	image->is_freshly_loaded = true;
+	return image->is_valid;
+}
+
 bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overlay) {
     image->type = IMAGE_TYPE_WSI;
     image->backend = IMAGE_BACKEND_STBI;
@@ -1034,6 +1152,8 @@ void image_destroy(image_t* image) {
 				isyntax_destroy(&image->isyntax);
 			} else if (image->backend == IMAGE_BACKEND_DICOM) {
 				dicom_destroy(&image->dicom);
+			} else if (image->backend == IMAGE_BACKEND_MRXS) {
+				mrxs_destroy(&image->mrxs);
 			} else if (image->backend == IMAGE_BACKEND_STBI) {
 				if (image->simple.pixels) {
 					stbi_image_free(image->simple.pixels);

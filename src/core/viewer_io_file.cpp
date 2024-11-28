@@ -127,6 +127,14 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		} else {
 			failed = true;
 		}
+	} else if (image->backend == IMAGE_BACKEND_MRXS) {
+		u8* pixels = mrxs_decode_tile_to_bgra(&image->mrxs, level, tile_index);
+		if (pixels) {
+			free(temp_memory);
+			temp_memory = pixels;
+		} else {
+			failed = true;
+		}
 	} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 //		console_print_error("thread %d: tile level %d, tile %d (%d, %d): TYRING\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		ASSERT(!"invalid code path");
@@ -740,7 +748,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
                 dicom_destroy(&dicom);
             }
         }
-    } else if (file->type == VIEWER_FILE_TYPE_MRXS) {
+    } else if (debug_use_native_mrxs_backed && file->type == VIEWER_FILE_TYPE_MRXS) {
 		mrxs_t mrxs = {0};
 		mrxs_set_work_queue(&mrxs, &global_work_queue);
 		bool opened_successfully = false;
@@ -768,7 +776,8 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 	        opened_successfully = mrxs_open_from_directory(&mrxs, file, NULL);
         }
 		if (opened_successfully) {
-			// init
+			init_image_from_mrxs(image, &mrxs, is_overlay);
+			return image;
 		} else {
 			mrxs_destroy(&mrxs);
 		}

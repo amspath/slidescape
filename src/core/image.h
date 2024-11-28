@@ -22,6 +22,7 @@
 #include "mathutils.h"
 
 // backends
+#include "mrxs.h"
 #include "openslide_api.h"
 #include "tiff.h"
 #include "isyntax.h"
@@ -169,6 +170,7 @@ typedef struct image_t {
         isyntax_t isyntax;
         wsi_t openslide_wsi;
         dicom_series_t dicom;
+		mrxs_t mrxs;
     };
     i32 level_count;
     u32 tile_width;
@@ -226,6 +228,7 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
 u8* decode_associated_image_from_isyntax(isyntax_t* isyntax, isyntax_image_t* image);
 bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay);
 bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overlay);
+bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay);
 bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overlay);
 void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay);
 bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format);

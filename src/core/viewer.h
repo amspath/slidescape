@@ -462,6 +462,8 @@ extern bool is_dicom_loading_done;
 extern bool is_openslide_available;
 extern bool is_openslide_loading_done;
 
+extern bool debug_use_native_mrxs_backed INIT(= false);
+
 #undef INIT
 #undef extern
 

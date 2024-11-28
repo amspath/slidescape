@@ -22,6 +22,7 @@
 #include "stringutils.h"
 #include "listing.h"
 #include "viewer.h" // for file_info_t and directory_info_t
+ #include "jpeg_decoder.h"
 
 #include <ctype.h> // for isspace()
 
@@ -41,7 +42,7 @@ static mem_t* read_entire_file_in_directory(const char* dirname, const char* fil
     return platform_read_entire_file(buffer);
 }
 
-static void mrxs_slidedat_ini_parse_section_name(char* section_name, enum mrxs_section_enum* section, i32* layer, i32* level) {
+static void mrxs_slidedat_ini_parse_section_name(mrxs_t* mrxs, char* section_name, enum mrxs_section_enum* section, i32* layer, i32* level) {
     if (strncmp(section_name, "GENERAL", 7) == 0) {
         *section = MRXS_SECTION_GENERAL;
     } else if (strncmp(section_name, "HIERARCHICAL", 12) == 0) {
@@ -49,40 +50,48 @@ static void mrxs_slidedat_ini_parse_section_name(char* section_name, enum mrxs_s
     } else if (strncmp(section_name, "DATAFILE", 8) == 0) {
         *section = MRXS_SECTION_DATAFILE;
     } else {
-        size_t section_name_len = strlen(section_name);
-        char* next_name_part = NULL;
-        if (strncmp(section_name, "LAYER_", 6) == 0) {
-            next_name_part = find_next_token(section_name + 6, '_');
-            if (next_name_part) {
-                if (strncmp(next_name_part, "SECTION", 7) == 0) {
-                    *section = MRXS_SECTION_LAYER_N_SECTION;
-                } else if (strncmp(next_name_part, "LEVEL_", 6) == 0) {
-                    *section = MRXS_SECTION_LAYER_N_LEVEL_N_SECTION;
-                }
-            } else {
-                *section = MRXS_SECTION_UNKNOWN; // error condition
-            }
-        } else if (strncmp(section_name, "NONHIERLAYER_", 13) == 0) {
-            next_name_part = find_next_token(section_name + 13, '_');
-            if (next_name_part) {
-                if (strncmp(next_name_part, "SECTION", 7) == 0) {
-                    *section = MRXS_SECTION_NONHIERLAYER_N_SECTION;
-                } else if (strncmp(next_name_part, "LEVEL_", 6) == 0) {
-                    *section = MRXS_SECTION_NONHIERLAYER_N_LEVEL_N_SECTION;
-                }
-            } else {
-                *section = MRXS_SECTION_UNKNOWN; // error condition
-            }
-        }
-        if (next_name_part) {
-            strip_character(next_name_part, '_');
-            if (*section == MRXS_SECTION_LAYER_N_SECTION || *section == MRXS_SECTION_NONHIERLAYER_N_SECTION) {
-                *layer = atoi(next_name_part);
-            } else if (*section == MRXS_SECTION_LAYER_N_LEVEL_N_SECTION || *section == MRXS_SECTION_NONHIERLAYER_N_LEVEL_N_SECTION) {
-                *layer = atoi(next_name_part);
-                *level = atoi(next_name_part + 6);
-            }
-        }
+
+	    // Check which (non)hier/val combination this section belongs to
+	    for (i32 i = 0; i < mrxs->hier_count; ++i) {
+		    mrxs_hier_t* hier = mrxs->hier + i;
+		    if (!hier->is_ini_section_parsed && hier->section && strcmp(section_name, hier->section) == 0) {
+			    *section = MRXS_SECTION_LAYER_N_SECTION;
+				*layer = i;
+				*level = -1;
+			    hier->is_ini_section_parsed = true; // assume each section occurs only once, don't check twice
+			    return;
+		    }
+		    for (i32 j = 0; j < hier->val_count; ++j) {
+			    mrxs_hier_val_t* hier_val = hier->val + j;
+			    if (!hier_val->is_ini_section_parsed && strcmp(section_name, hier_val->section) == 0) {
+				    *section = MRXS_SECTION_LAYER_N_LEVEL_N_SECTION;
+				    *layer = i;
+				    *level = j;
+				    hier_val->is_ini_section_parsed = true; // assume each section occurs only once, don't check twice
+				    return;
+			    }
+		    }
+	    }
+	    for (i32 i = 0; i < mrxs->nonhier_count; ++i) {
+		    mrxs_nonhier_t* nonhier = mrxs->nonhier + i;
+		    if (!nonhier->is_ini_section_parsed && nonhier->section && strcmp(section_name, nonhier->section) == 0) {
+			    *section = MRXS_SECTION_NONHIERLAYER_N_SECTION;
+			    *layer = i;
+			    *level = -1;
+			    nonhier->is_ini_section_parsed = true; // assume each section occurs only once, don't check twice
+			    return;
+		    }
+		    for (i32 j = 0; j < nonhier->val_count; ++j) {
+			    mrxs_nonhier_val_t* nonhier_val = nonhier->val + j;
+			    if (!nonhier_val->is_ini_section_parsed && strcmp(section_name, nonhier_val->section) == 0) {
+				    *section = MRXS_SECTION_NONHIERLAYER_N_LEVEL_N_SECTION;
+				    *layer = i;
+				    *level = j;
+				    nonhier_val->is_ini_section_parsed = true; // assume each section occurs only once, don't check twice
+				    return;
+			    }
+		    }
+	    }
     }
 }
 
@@ -92,7 +101,7 @@ static inline const char* mrxs_string_pool_push(mrxs_t* mrxs, const char* s) {
 
 bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
     bool success = true;
-    mrxs->string_pool = memrw_create(KILOBYTES(64));
+    mrxs->string_pool = memrw_create(slidedat_ini->len);
     mrxs->string_pool.is_growing_disallowed = true; // we want stable string pointers, so the buffer can't realloc()
     size_t num_lines = 0;
     char** lines = split_into_lines((char*)slidedat_ini->data, &num_lines);
@@ -100,14 +109,29 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
         enum mrxs_section_enum section = MRXS_SECTION_UNKNOWN;
         i32 layer = -1;
         i32 level = -1;
+		char section_name[128] = "";
         for (i32 line_index = 0; line_index < num_lines; ++line_index) {
             char* line = lines[line_index];
             while (*(u8*)line >= 128) {
                 ++line; // skip the first few characters which may be invalid
             }
             if (line[0] == '[') {
-                char* section_name = line + 1;
-                mrxs_slidedat_ini_parse_section_name(section_name, &section, &layer, &level);
+				// Section name: strip [ and ] characters from the string, then parse further
+				char* pos = line + 1;
+				while (isspace(*pos)) {
+					++pos;
+				}
+				strncpy(section_name, pos, sizeof(section_name));
+                size_t len = strlen(section_name);
+				pos = section_name + len - 1;
+				while (pos > section_name) {
+					if (*pos == ']') {
+						*pos = '\0';
+						break;
+					}
+					--pos;
+				}
+                mrxs_slidedat_ini_parse_section_name(mrxs, section_name, &section, &layer, &level);
             } else {
                 char* value = find_next_token(line, '=');
                 if (!value) {
@@ -174,13 +198,13 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
                                         hier->name = MRXS_HIER_SCAN_INFO_LAYER;
                                     }
                                 } else if (strcmp(key_part2, "COUNT") == 0) {
-                                    hier->count = atoi(value);
-                                    hier->val = calloc(hier->count, sizeof(mrxs_hier_val_t));
+                                    hier->val_count = atoi(value);
+                                    hier->val = calloc(hier->val_count, sizeof(mrxs_hier_val_t));
                                 } else if (strcmp(key_part2, "SECTION") == 0) {
                                     hier->section = mrxs_string_pool_push(mrxs, value);
                                 } else if (strncmp(key_part2, "VAL_", 3) == 0) {
                                     i32 val_index = atoi(key_part2 + 4);
-                                    if (val_index >= 0 && val_index < hier->count) {
+                                    if (val_index >= 0 && val_index < hier->val_count) {
                                         mrxs_hier_val_t* hier_val = hier->val + val_index;
                                         char* key_part3 = find_next_token(key_part2 + 4, '_');
                                         if (key_part3 == NULL) {
@@ -224,6 +248,40 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
                         }
                     } break;
 
+
+					case MRXS_SECTION_LAYER_N_LEVEL_N_SECTION: {
+						ASSERT(layer != -1 && level != -1);
+						if (layer != -1 && level != -1) {
+							mrxs_hier_t* hier = mrxs->hier + layer;
+							mrxs_hier_val_t* hier_val = hier->val + level;
+
+							if (hier_val->type == MRXS_HIER_VAL_ZOOMLEVEL) {
+								mrxs_level_t* mrxs_level = mrxs->levels + hier_val->index;
+								if (strcmp(key, "DIGITIZER_WIDTH") == 0) {
+									mrxs_level->tile_width = atoi(value);
+								} else if (strcmp(key, "DIGITIZER_HEIGHT") == 0) {
+									mrxs_level->tile_height = atoi(value);
+								} else if (strcmp(key, "MICROMETER_PER_PIXEL_X") == 0) {
+									mrxs_level->um_per_pixel_x = atof(value);
+								} else if (strcmp(key, "MICROMETER_PER_PIXEL_Y") == 0) {
+									mrxs_level->um_per_pixel_y = atof(value);
+								} else if (strcmp(key, "IMAGE_FILL_COLOR_BGR") == 0) {
+									mrxs_level->image_fill_color_bgr = atoi(value);
+								} else if (strcmp(key, "IMAGE_FORMAT") == 0) {
+									if (strcmp(value, "JPEG") == 0) {
+										mrxs_level->image_format = MRXS_IMAGE_FORMAT_JPEG;
+									} else if (strcmp(value, "PNG") == 0) {
+										mrxs_level->image_format = MRXS_IMAGE_FORMAT_PNG;
+									} else if (strcmp(value, "BMP") == 0) {
+										mrxs_level->image_format = MRXS_IMAGE_FORMAT_BMP;
+									} else {
+										mrxs_level->image_format = MRXS_IMAGE_FORMAT_UNKNOWN;
+									}
+								}
+							}
+						}
+					} break;
+
                     case MRXS_SECTION_UNKNOWN:
                     default: {
 
@@ -236,6 +294,20 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
     if (!mrxs->index_dat_filename || mrxs->dat_count == 0 || !mrxs->dat_filenames) {
         success = false;
     }
+
+	mrxs_level_t* base_level = mrxs->levels + 0;
+	if (base_level->um_per_pixel_x > 0.0f && base_level->um_per_pixel_y > 0.0f) {
+		mrxs->is_mpp_known = true;
+		mrxs->mpp_x = base_level->um_per_pixel_x;
+		mrxs->mpp_y = base_level->um_per_pixel_y;
+	} else {
+		mrxs->is_mpp_known = false;
+		mrxs->mpp_x = 1.0f;
+		mrxs->mpp_y = 1.0f;
+	}
+	mrxs->tile_width = base_level->tile_width;
+	mrxs->tile_height = base_level->tile_height;
+
     return success;
 }
 
@@ -304,7 +376,7 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 
 					// Initialize some basic stuff
 					mrxs_hier_t* hier_zoom_levels = mrxs->hier + mrxs->slide_zoom_level_hier_index;
-					mrxs->level_count = hier_zoom_levels->count;
+					mrxs->level_count = hier_zoom_levels->val_count;
 					for (i32 i = 0; i < mrxs->level_count; ++i) {
 						mrxs_level_t* level = mrxs->levels + i;
 						level->width_in_tiles = (mrxs->base_width_in_tiles + (1 << i) - 1) >> i;
@@ -317,7 +389,7 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 					i32 record_index = 0;
 	                for (i32 hier_index = 0; hier_index < mrxs->hier_count; ++hier_index) {
 		                mrxs_hier_t* hier = mrxs->hier + hier_index;
-		                for (i32 val_index = 0; val_index < hier->count; ++val_index, ++record_index) {
+		                for (i32 val_index = 0; val_index < hier->val_count; ++val_index, ++record_index) {
 			                mrxs_hier_val_t* hier_val = hier->val + val_index;
 
 			                mem_seek(index_dat, hier_root + record_index * sizeof(u32));
@@ -367,7 +439,10 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 		//TODO: measure performance, maybe move to worker threads?
 		for (i32 i = 0; i < mrxs->dat_count; ++i) {
 			const char* dat_filename = mrxs->dat_filenames[i];
-			file_handle_t file_handle = open_file_handle_for_simultaneous_access(dat_filename);
+			char full_dat_filename[512];
+			snprintf(full_dat_filename, sizeof(full_dat_filename), "%s" PATH_SEP "%s", file->full_filename, dat_filename);
+			full_dat_filename[sizeof(full_dat_filename) - 1] = '\0';
+			file_handle_t file_handle = open_file_handle_for_simultaneous_access(full_dat_filename);
 			if (!file_handle) {
 				success = false;
 				console_print_error("Error: Could not open file for asynchronous I/O: %s\n", dat_filename);
@@ -379,6 +454,43 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 
 
     return success;
+}
+
+u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
+	u8* result = NULL;
+	if (level >= 0 && level < mrxs->level_count) {
+		mrxs_level_t* mrxs_level = mrxs->levels + level;
+		if (tile_index >= 0 && tile_index < mrxs_level->width_in_tiles * mrxs_level->height_in_tiles) {
+			mrxs_tile_t* tile = mrxs_level->tiles + tile_index;
+			mrxs_hier_entry_t hier_entry = tile->hier_entry;
+			if (mrxs->dat_file_handles && hier_entry.file < mrxs->dat_count) {
+				file_handle_t file_handle = mrxs->dat_file_handles[hier_entry.file];
+				if (file_handle) {
+					u8* compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, hier_entry.length);
+					size_t bytes_read = file_handle_read_at_offset(compressed_tile_data, file_handle, hier_entry.offset, hier_entry.length);
+					if (bytes_read == hier_entry.length) {
+						if (mrxs_level->image_format == MRXS_IMAGE_FORMAT_JPEG) {
+							// JPEG compression
+							i32 width = 0;
+							i32 height = 0;
+							i32 channels_in_file = 0;
+							u8* pixels = jpeg_decode_image(compressed_tile_data, hier_entry.length, &width, &height, &channels_in_file);
+							if (pixels && width == mrxs->tile_width && height == mrxs->tile_height && channels_in_file == 4) {
+								// success
+								result = pixels;
+							} else {
+								if (pixels) free(pixels);
+								result = NULL;
+							}
+						} else {
+							console_print_error("mrxs_decode_tile_to_bgra(): unknown or unsupported image format: %d\n", mrxs_level->image_format);
+						}
+					}
+				}
+			}
+		}
+	}
+	return result;
 }
 
 // Set the work queue to submit parallel jobs to

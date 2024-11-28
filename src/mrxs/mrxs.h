@@ -23,7 +23,7 @@ extern "C" {
 #endif
 
 #include "common.h"
-#include "viewer.h" // for file_info_t and directory_info_t
+#include "platform.h" // for file_handle_t
 
 enum mrxs_section_enum {
     MRXS_SECTION_UNKNOWN = 0,
@@ -57,6 +57,17 @@ enum mrxs_hier_val_enum {
     MRXS_HIER_VAL_ZOOMLEVEL,
 };
 
+enum mrxs_nonhier_val_enum {
+	MRXS_NONHIER_VAL_UNKNOWN = 0,
+};
+
+enum mrxs_image_format_enum {
+	MRXS_IMAGE_FORMAT_UNKNOWN = 0,
+	MRXS_IMAGE_FORMAT_JPEG,
+	MRXS_IMAGE_FORMAT_PNG,
+	MRXS_IMAGE_FORMAT_BMP,
+};
+
 #pragma pack(push, 1)
 typedef struct mrxs_hier_entry_t {
 	u32 image;
@@ -85,26 +96,44 @@ typedef struct mrxs_level_t {
 	mrxs_tile_t* tiles;
 	i32 width_in_tiles;
 	i32 height_in_tiles;
+	i32 tile_width;
+	i32 tile_height;
+	float um_per_pixel_x;
+	float um_per_pixel_y;
+	u32 image_fill_color_bgr;
+	enum mrxs_image_format_enum image_format;
 } mrxs_level_t;
 
 typedef struct mrxs_hier_val_t {
-    enum mrxs_hier_val_enum type;
     const char* name;
-    const char* section;
-    i32 index;
+	const char* section;
+	enum mrxs_hier_val_enum type;
+	i32 index;
+	bool is_ini_section_parsed;
 } mrxs_hier_val_t;
 
+typedef struct mrxs_nonhier_val_t {
+	const char* name;
+	const char* section;
+	enum mrxs_nonhier_val_enum type;
+	i32 index;
+	bool is_ini_section_parsed;
+} mrxs_nonhier_val_t;
+
 typedef struct mrxs_hier_t {
-    enum mrxs_hier_enum name;
-    i32 count;
-    const char* section;
-    mrxs_hier_val_t* val;
+	enum mrxs_hier_enum name;
+	i32 val_count;
+	mrxs_hier_val_t* val;
+	const char* section;
+	bool is_ini_section_parsed;
 } mrxs_hier_t;
 
 typedef struct mrxs_nonhier_t {
     enum mrxs_nonhier_enum name;
-    i32 count;
-    const char* section;
+	i32 val_count;
+	mrxs_nonhier_val_t* val;
+	const char* section;
+	bool is_ini_section_parsed;
 } mrxs_nonhier_t;
 
 typedef struct mrxs_t {
@@ -114,7 +143,6 @@ typedef struct mrxs_t {
 	file_handle_t* dat_file_handles; // NOTE: need free
     i32 dat_count;
     i32 hier_count;
-	i32 hier_val_count;
     i32 nonhier_count;
     mrxs_hier_t* hier; // NOTE: need free
     mrxs_nonhier_t* nonhier; // NOTE: need free
@@ -123,12 +151,22 @@ typedef struct mrxs_t {
     i32 base_height_in_tiles;
 	i32 level_count;
 	mrxs_level_t levels[16];
+	i32 tile_width;
+	i32 tile_height;
+	float mpp_x;
+	float mpp_y;
+	bool is_mpp_known;
 	work_queue_t* work_submission_queue;
 	volatile i32 refcount;
     bool is_valid;
 } mrxs_t;
 
+// forward declarations so we don't need to include viewer.h
+typedef struct file_info_t file_info_t;
+typedef struct directory_info_t directory_info_t;
+
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory);
+u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index);
 void mrxs_set_work_queue(mrxs_t* mrxs, work_queue_t* queue);
 void mrxs_destroy(mrxs_t* mrxs);
 

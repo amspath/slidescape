@@ -80,11 +80,19 @@ HANDLE win32_open_overlapped_file_handle(const char* filename) {
 	                            FILE_ATTRIBUTE_NORMAL | /*FILE_FLAG_SEQUENTIAL_SCAN |*/
 	                            /*FILE_FLAG_NO_BUFFERING |*/ FILE_FLAG_OVERLAPPED,
 	                            NULL);
+	if (handle == INVALID_HANDLE_VALUE) {
+		win32_diagnostic("CreateFileW");
+	}
 	return handle;
 }
 
 file_handle_t open_file_handle_for_simultaneous_access(const char* filename) {
-	return win32_open_overlapped_file_handle(filename);
+	HANDLE handle = win32_open_overlapped_file_handle(filename);
+	if (handle == INVALID_HANDLE_VALUE) {
+		return 0; //NOTE: can a valid handle ever be 0?
+	} else {
+		return handle;
+	}
 }
 
 void file_handle_close(file_handle_t file_handle) {
