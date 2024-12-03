@@ -100,7 +100,8 @@ static inline const char* mrxs_string_pool_push(mrxs_t* mrxs, const char* s) {
 }
 
 bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
-    bool success = true;
+    i64 start = get_clock();
+	bool success = true;
     mrxs->string_pool = memrw_create(slidedat_ini->len);
     mrxs->string_pool.is_growing_disallowed = true; // we want stable string pointers, so the buffer can't realloc()
     size_t num_lines = 0;
@@ -272,7 +273,7 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
 										mrxs_level->image_format = MRXS_IMAGE_FORMAT_JPEG;
 									} else if (strcmp(value, "PNG") == 0) {
 										mrxs_level->image_format = MRXS_IMAGE_FORMAT_PNG;
-									} else if (strcmp(value, "BMP") == 0) {
+									} else if (strcmp(value, "BMP24") == 0) {
 										mrxs_level->image_format = MRXS_IMAGE_FORMAT_BMP;
 									} else {
 										mrxs_level->image_format = MRXS_IMAGE_FORMAT_UNKNOWN;
@@ -307,6 +308,8 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
 	}
 	mrxs->tile_width = base_level->tile_width;
 	mrxs->tile_height = base_level->tile_height;
+
+	console_print_verbose("Parsing Slidedat.ini took %g seconds.\n", get_seconds_elapsed(start, get_clock()));
 
     return success;
 }
@@ -356,13 +359,15 @@ bool mrxs_read_index_dat_slide_zoom_level(mrxs_t* mrxs, mem_t* index_dat, mrxs_h
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory) {
     bool success = false;
 
+	i64 start = get_clock();
     mem_t* slidedat_ini = read_entire_file_in_directory(file->full_filename, "Slidedat.ini");
 
     if (slidedat_ini) {
         if (mrxs_parse_slidedat_ini(mrxs, slidedat_ini)) {
             mem_t* index_dat = read_entire_file_in_directory(file->full_filename, mrxs->index_dat_filename);
-            if (index_dat) {
-                char version[6] = {};
+	        if (index_dat) {
+		        i64 index_parse_start = get_clock();
+		        char version[6] = {};
                 char slide_id[33] = {};
                 u32 hier_root = 0;
                 u32 nonhier_root = 0;
@@ -428,10 +433,14 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
                 }
 
                 free(index_dat);
+
+		        console_print_verbose("Parsing index took %g seconds.\n", get_seconds_elapsed(index_parse_start, get_clock()));
             }
         }
         free(slidedat_ini);
     }
+	i64 clock_index_loaded = get_clock();
+	console_print_verbose("Slidedat.ini and index loaded in %g seconds.\n", get_seconds_elapsed(start, clock_index_loaded));
 
 	if (success) {
 		ASSERT(mrxs->dat_filenames && mrxs->dat_count > 0);
@@ -451,6 +460,7 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 			mrxs->dat_file_handles[i] = file_handle;
 		}
 	}
+	console_print_verbose("Opening file handles to %d dat files took %g seconds.\n", mrxs->dat_count, get_seconds_elapsed(clock_index_loaded, get_clock()));
 
 
     return success;
