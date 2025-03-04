@@ -775,7 +775,7 @@ int main(int argc, const char** argv)
 		    static ImDrawData draw_data = ImDrawData();
 		    draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
 		    draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
-		    draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+		    draw_data.FramebufferScale = io.DisplayFramebufferScale;
 		    draw_data.TotalIdxCount = 0;
 		    draw_data.TotalVtxCount = 0;
 		    draw_data.CmdListsCount = 0;
