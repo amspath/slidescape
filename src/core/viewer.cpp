@@ -948,22 +948,22 @@ void scene_update_camera_pos(scene_t* scene, v2f pos) {
 	scene_update_camera_bounds(scene);
 }
 
-static void scene_update_mouse_pos(app_state_t* app_state, scene_t* scene, v2f client_mouse_xy) {
-	if (client_mouse_xy.x >= 0 && client_mouse_xy.y < app_state->client_viewport.w * app_state->display_scale_factor &&
-			client_mouse_xy.y >= 0 && client_mouse_xy.y < app_state->client_viewport.h * app_state->display_scale_factor) {
+static void scene_update_mouse_pos(scene_t* scene, v2f scene_mouse_xy) {
+	if (scene_mouse_xy.x >= 0 && scene_mouse_xy.y < scene->viewport.w &&
+        scene_mouse_xy.y >= 0 && scene_mouse_xy.y < scene->viewport.h) {
 		if (scene->rotation == 0.0f) {
-			scene->mouse.x = scene->camera_bounds.min.x + client_mouse_xy.x * scene->zoom.screen_point_width;
-			scene->mouse.y = scene->camera_bounds.min.y + client_mouse_xy.y * scene->zoom.screen_point_width;
+			scene->mouse.x = scene->camera_bounds.min.x + scene_mouse_xy.x * scene->zoom.screen_point_width;
+			scene->mouse.y = scene->camera_bounds.min.y + scene_mouse_xy.y * scene->zoom.screen_point_width;
 		} else {
 			// Calculate mouse pos in polar coordinates, and use that to translate to world position
-			float client_mouse_x_from_center = (app_state->client_viewport.w * 0.5f) - client_mouse_xy.x;
-			float client_mouse_y_from_center = (app_state->client_viewport.h * 0.5f) - client_mouse_xy.y;
-			float client_distance_from_center = v2f_length(V2F(client_mouse_x_from_center, client_mouse_y_from_center));
-			if (client_distance_from_center == 0.0f) {
+			float scene_mouse_x_from_center = (scene->viewport.w * 0.5f) - scene_mouse_xy.x;
+			float scene_mouse_y_from_center = (scene->viewport.h * 0.5f) - scene_mouse_xy.y;
+			float scene_distance_from_center = v2f_length(V2F(scene_mouse_x_from_center, scene_mouse_y_from_center));
+			if (scene_distance_from_center == 0.0f) {
 				scene->mouse = scene->camera;
 			} else {
-				float theta = atan2f(client_mouse_y_from_center, client_mouse_x_from_center);
-				float radius = scene->zoom.screen_point_width * client_distance_from_center;
+				float theta = atan2f(scene_mouse_y_from_center, scene_mouse_x_from_center);
+				float radius = scene->zoom.screen_point_width * scene_distance_from_center;
 
 				scene->mouse.x = scene->camera.x - cosf(theta - scene->rotation) * radius;
 				scene->mouse.y = scene->camera.y - sinf(theta - scene->rotation) * radius;
@@ -1288,7 +1288,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		if (input) {
 			controller_input_t* controller = get_preferred_controller(input);
 
-			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
+			scene_update_mouse_pos(scene, input->mouse_xy);
 
 			if (scene->right_clicked) {
 				scene->right_clicked_pos = scene->mouse;
@@ -1321,6 +1321,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				if (input->keyboard.key_ctrl.down) {
 					// Rotate counterclockwise when scrolling down, and clockwise when scrolling up.
 					// TODO(pvalkema): rotate smoothly when use_zoom_animation is true
+                    // TODO: ctrl+drag to rotate the view?
 					scene->rotation += input->mouse_z * ((1.0f / 18.0f) * IM_PI);
 					if (scene->rotation >= 2.0f * IM_PI) {
 						scene->rotation -= 2.0f * IM_PI;
@@ -1460,8 +1461,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						// TODO: fix pivot point calculation when rotated
 						if (used_mouse_to_zoom) {
 							scene->zoom_pivot = scene->mouse;
-							scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, base_image->width_in_um);
-							scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, base_image->height_in_um);
+//							scene->zoom_pivot.x = CLAMP(scene->zoom_pivot.x, 0, base_image->width_in_um);
+//							scene->zoom_pivot.y = CLAMP(scene->zoom_pivot.y, 0, base_image->height_in_um);
 						} else {
 							scene->zoom_pivot = scene->camera;
 						}
@@ -1522,7 +1523,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				scene_update_camera_bounds(scene);
 
 				// The camera was updated, so we need to update the mouse position
-				scene_update_mouse_pos(app_state, scene, input->mouse_xy);
+				scene_update_mouse_pos(scene, input->mouse_xy);
 
 			}
 
@@ -1557,7 +1558,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			scene->r_minus_l = scene->zoom.pixel_width * (float) client_width;
 			scene->t_minus_b = scene->zoom.pixel_height * (float) client_height;
 			scene_update_camera_bounds(scene);
-			scene_update_mouse_pos(app_state, scene, input->mouse_xy);
+			scene_update_mouse_pos(scene, input->mouse_xy);
 
 			if (!gui_want_capture_keyboard) {
 				u32 key_modifiers_without_shift = input->keyboard.modifiers & ~KMOD_SHIFT;
@@ -1633,7 +1634,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 					// camera has been updated (now we need to recalculate some things)
 					scene_update_camera_bounds(scene);
-					scene_update_mouse_pos(app_state, scene, input->mouse_xy);
+					scene_update_mouse_pos(scene, input->mouse_xy);
 				}
 
 				if (!gui_want_capture_mouse) {
