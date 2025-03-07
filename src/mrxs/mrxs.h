@@ -38,7 +38,7 @@ enum mrxs_section_enum {
 
 enum mrxs_hier_enum {
     MRXS_HIER_UNKNOWN = 0,
-    MRXS_HIER_SLIDE_ZOOM_LEVEL = 0,
+    MRXS_HIER_SLIDE_ZOOM_LEVEL,
     MRXS_HIER_SLIDE_FILTER_LEVEL,
     MRXS_HIER_MICROSCOPE_FOCUS_LEVEL,
     MRXS_HIER_SCAN_INFO_LAYER,
@@ -46,7 +46,7 @@ enum mrxs_hier_enum {
 
 enum mrxs_nonhier_enum {
     MRXS_NONHIER_UNKNOWN = 0,
-    MRXS_NONHIER_SCAN_DATA_LAYER = 0,
+    MRXS_NONHIER_SCAN_DATA_LAYER,
     MRXS_NONHIER_STITCHING_LAYER,
     MRXS_NONHIER_STITCHING_INTENSITY_LAYER,
     MRXS_NONHIER_VIMSLIDE_HISTOGRAM_DATA,
@@ -59,6 +59,19 @@ enum mrxs_hier_val_enum {
 
 enum mrxs_nonhier_val_enum {
 	MRXS_NONHIER_VAL_UNKNOWN = 0,
+    MRXS_NONHIER_VAL_SCANDATALAYER_SCANMAP,
+    MRXS_NONHIER_VAL_SCANDATALAYER_XMLINFOHEADER,
+    MRXS_NONHIER_VAL_SCANDATALAYER_SLIDETHUMBNAIL,
+    MRXS_NONHIER_VAL_SCANDATALAYER_SLIDEBARCODE,
+    MRXS_NONHIER_VAL_SCANDATALAYER_SLIDEPREVIEW,
+    MRXS_NONHIER_VAL_SCANDATALAYER_STAGEPOSITIONMAP,
+    MRXS_NONHIER_VAL_SCANDATALAYER_EMPTY,
+    MRXS_NONHIER_VAL_PROFILEXMLHEADER,
+    MRXS_NONHIER_VAL_PROFILEXML,
+    MRXS_NONHIER_VAL_SCANNEDFOVSMAP,
+    MRXS_NONHIER_VAL_DATALEVEL_V1_0,
+    MRXS_NONHIER_VAL_STITCHING_INTENSITY_LEVEL,
+    MRXS_NONHIER_VAL_VIMSLIDE_HISTOGRAM_DATA_DEFAULT,
 };
 
 enum mrxs_image_format_enum {
@@ -117,6 +130,8 @@ typedef struct mrxs_nonhier_val_t {
 	const char* section;
 	enum mrxs_nonhier_val_enum type;
 	i32 index;
+    i32 imagenumber_x;
+    i32 imagenumber_y;
 	bool is_ini_section_parsed;
 } mrxs_nonhier_val_t;
 
@@ -136,6 +151,22 @@ typedef struct mrxs_nonhier_t {
 	bool is_ini_section_parsed;
 } mrxs_nonhier_t;
 
+#pragma pack(push, 1)
+typedef struct mrxs_slide_position_t {
+    u8 flag;
+    i32 x;
+    i32 y;
+} mrxs_slide_position_t;
+#pragma pack(pop)
+
+typedef struct mrxs_simple_image_t {
+    enum mrxs_image_format_enum format;
+    i32 width;
+    i32 height;
+    bool flip;
+    mrxs_nonhier_entry_t entry;
+} mrxs_simple_image_t;
+
 typedef struct mrxs_t {
     memrw_t string_pool; // NOTE: need destroy
     const char* index_dat_filename;
@@ -149,6 +180,16 @@ typedef struct mrxs_t {
     i32 slide_zoom_level_hier_index;
     i32 base_width_in_tiles;
     i32 base_height_in_tiles;
+    u8 slide_version_major;
+    u8 slide_version_minor;
+    i32 camera_image_divisions_per_slide;
+    mrxs_nonhier_entry_t stitching_intensity_layer_entry;
+    i32 camera_position_count;
+    mrxs_slide_position_t* camera_positions;
+    mrxs_simple_image_t scanmap_image;
+    mrxs_simple_image_t stageposmap_image;
+    mrxs_simple_image_t thumbnail_image;
+    mrxs_simple_image_t barcode_image;
 	i32 level_count;
 	mrxs_level_t levels[16];
 	i32 tile_width;

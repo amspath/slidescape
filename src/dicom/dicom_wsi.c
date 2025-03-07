@@ -396,11 +396,13 @@ u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 t
 		ASSERT(!"unknown length");
 		return NULL;
 	}
-	u8* compressed_tile_data = (u8*)arena_push_size(&local_thread_memory->temp_arena, read_size);
+    temp_memory_t temp = begin_temp_memory_on_local_thread();
+	u8* compressed_tile_data = (u8*)arena_push_size(temp.arena, read_size);
 	file_handle_read_at_offset(compressed_tile_data, instance->file_handle, dicom_tile->data_offset_in_file, read_size);
 
 	// TODO: handle native pixel data instead of encapsulated
 	i64 data_size = dicom_defragment_encapsulated_pixel_data_frame(compressed_tile_data, read_size);
+    u8* result = NULL;
 	if (data_size > 0) {
 		if (instance->lossy_image_compression_method == DICOM_LOSSY_IMAGE_COMPRESSION_METHOD_ISO_10918_1) {
 			// JPEG compression
@@ -410,10 +412,10 @@ u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 t
 			u8* pixels = jpeg_decode_image(compressed_tile_data, data_size, &width, &height, &channels_in_file);
 			if (pixels && width == instance->columns && height == instance->rows && channels_in_file == 4) {
 				// success
-				return pixels;
+				result = pixels;
 			} else {
 				if (pixels) free(pixels);
-				return NULL;
+				result = NULL;
 			}
 		} else {
             const char* method = "unknown";
@@ -423,5 +425,6 @@ u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 t
             console_print_error("DICOM tile decode: unsupported lossy image compression method (%s)\n", method);
         }
 	}
-	return NULL;
+    release_temp_memory(&temp);
+	return result;
 }
