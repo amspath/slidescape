@@ -180,7 +180,6 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 	app_state->clear_color = V4F(1.0f, 1.0f, 1.0f, 1.00f);
 	app_state->black_level = 0.10f;
 	app_state->white_level = 0.95f;
-    // TODO: switch back to builtin TIFF backend once read_region() works
 	app_state->use_builtin_tiff_backend = true; // If disabled, revert to OpenSlide when loading TIFF files.
 
 	app_state->keyboard_base_panning_speed = 10.0f;
@@ -652,6 +651,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			glUniform1f(basic_shader.u_white_level, 1.0f);
 		}
 		glUniform1i(basic_shader.u_use_transparent_filter, scene->use_transparent_filter);
+		glUniform1i(basic_shader.u_draw_outlines, scene->draw_outlines);
 		if (scene->use_transparent_filter) {
 			glUniform3fv(basic_shader.u_transparent_color, 1, (GLfloat *) &app_state->scene.transparent_color);
 			glUniform1f(basic_shader.u_transparent_tolerance, app_state->scene.transparent_tolerance);

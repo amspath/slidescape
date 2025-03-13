@@ -748,7 +748,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
                 dicom_destroy(&dicom);
             }
         }
-    } else if (debug_use_native_mrxs_backed && file->type == VIEWER_FILE_TYPE_MRXS) {
+    } else if (debug_use_native_mrxs_backend && file->type == VIEWER_FILE_TYPE_MRXS) {
 		mrxs_t mrxs = {0};
 		mrxs_set_work_queue(&mrxs, &global_work_queue);
 		bool opened_successfully = false;

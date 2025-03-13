@@ -11,6 +11,7 @@ uniform float white_level;
 uniform vec3 transparent_color;
 uniform float transparent_tolerance;
 uniform bool use_transparent_filter;
+uniform bool draw_outlines;
 
 out vec4 fragColor;
 
@@ -31,5 +32,10 @@ void main() {
     }
     color = (color - black_level) * (1.0f / (white_level - black_level));
 
-    fragColor = vec4(opacity * color + (1.0f-opacity) * bg_color, opacity);
+    if (draw_outlines && (fs_in.tex_coord.x < 0.01f || fs_in.tex_coord.x > 0.99f || fs_in.tex_coord.y < 0.01f || fs_in.tex_coord.y > 0.99f)) {
+        fragColor = vec4(1, 0, 0, 1);
+    } else {
+        fragColor = vec4(opacity * color + (1.0f-opacity) * bg_color, opacity);
+    }
+
 }

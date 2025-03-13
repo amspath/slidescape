@@ -133,6 +133,14 @@ void write_stringified_shaders() {
 
 void load_shader(u32 shader, const char* source_filename) {
 	mem_t* shader_source_file = platform_read_entire_file(source_filename);
+#if APPLE && DO_DEBUG
+    // On macOS, if inside app bundle, the shader source might not be found; try again
+    if (!shader_source_file) {
+        char adjusted_filename[256];
+        snprintf(adjusted_filename, sizeof(adjusted_filename), "../../../%s", source_filename);
+        shader_source_file = platform_read_entire_file(adjusted_filename);
+    }
+#endif
 	const char* shader_source = NULL;
 	bool32 source_from_file = false;
 

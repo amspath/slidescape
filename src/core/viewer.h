@@ -257,6 +257,7 @@ typedef struct scene_t {
 	v3f transparent_color;
 	float transparent_tolerance;
 	bool use_transparent_filter;
+    bool draw_outlines;
 	scale_bar_t scale_bar;
 	bool is_mpp_known;
 	bool enable_grid;

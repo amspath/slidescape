@@ -1156,6 +1156,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				app_state->scene.sin_rotation = 0.0f;
 				app_state->scene.cos_rotation = 1.0f;
 			}
+            ImGui::Checkbox("Draw tile outlines", &app_state->scene.draw_outlines);
 
             // Options for adjusting level offsets
             if (arrlen(app_state->loaded_images) > 0) {
@@ -1309,6 +1310,24 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 					}
 					ImGui::EndCombo();
 				}
+
+                ImGui::Text("\nMRXS backend");
+                const char* mrxs_backends[] = {"Built-in", "OpenSlide"};
+                if (ImGui::BeginCombo("##mrxs_backend", mrxs_backends[1 - debug_use_native_mrxs_backend],
+                                      combo_flags)) // The second parameter is the label previewed before opening the combo.
+                {
+                    if (ImGui::Selectable(mrxs_backends[0], debug_use_native_mrxs_backend)) {
+                        debug_use_native_mrxs_backend = true;
+                    }
+                    if (debug_use_native_mrxs_backend) ImGui::SetItemDefaultFocus();
+                    if (is_openslide_available) {
+                        if (ImGui::Selectable(mrxs_backends[1], !debug_use_native_mrxs_backend)) {
+                            debug_use_native_mrxs_backend = false;
+                        }
+                        if (!debug_use_native_mrxs_backend) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
 
 				ImGui::NewLine();
 
