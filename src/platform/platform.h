@@ -105,6 +105,7 @@ typedef struct system_info_t {
     i32 logical_cpu_count;
     i32 suggested_total_thread_count;
     bool is_macos;
+    bool running_from_app_bundle;
 } system_info_t;
 
 
