@@ -213,6 +213,7 @@ set(VIEWER_SOURCE_FILES
         core/slide_score.c
         core/image.c
         core/image_registration.c
+        core/image_resize.c
         dicom/dicom.c
         dicom/dicom_dict.c
         dicom/dicom_wsi.c

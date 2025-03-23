@@ -111,6 +111,7 @@ Slidescape embeds code from the following projects, under their respective licen
 * [libtiff](https://gitlab.com/libtiff/libtiff) (LZW decoder from libtiff)
 * [minfft](https://github.com/aimukhin/minfft) (Fast Fourier Transform library)
 * [HTTP parser](https://github.com/nodejs/http-parser) (HTTP parser)
+* [Pillow](https://github.com/python-pillow/Pillow/tree/main) (image resampling)
 
 Uses [SDL2](https://www.libsdl.org/download-2.0.php) and [GLEW](http://glew.sourceforge.net/) on Linux/macOS.
 
