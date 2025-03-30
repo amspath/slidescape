@@ -1076,6 +1076,7 @@ typedef struct image_draft_t {
     image_draft_level_t levels[10];
     image_t* source_image;
     bounds2i source_level0_bounds;
+    i32 source_base_level;
     float base_downsample_factor_x;
     float base_downsample_factor_y;
     memrw_t tag_buffer;
@@ -1129,46 +1130,6 @@ void shrink_tile_and_propagate_to_next_level(image_draft_t* draft, image_draft_t
     }
 }
 
-void construct_base_tile_with_resampling(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
-    float supertile_width = (float)draft->tile_width / draft->base_downsample_factor_x;
-    float supertile_height = (float)draft->tile_height / draft->base_downsample_factor_y; // TODO: allow specifying export tile height?
-
-    i32 supertile_width_read = ((i32)ceilf(supertile_width) + 8);
-    i32 supertile_height_read = ((i32)ceilf(supertile_height) + 8);
-
-    temp_memory_t temp = begin_temp_memory_on_local_thread();
-    image_buffer_t supertile = create_bgra_image_buffer_using_arena(temp.arena, supertile_width_read, supertile_height_read);
-    image_buffer_t resized_tile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
-
-    for (i32 target_tile_y = 0; target_tile_y < draft->levels[0].height_in_tiles; ++target_tile_y) {
-        float supertile_y = draft->source_level0_bounds.top + supertile_height * target_tile_y;
-        i32 supertile_read_y = (i32)floorf(supertile_y) - 4;
-        float supertile_offset_y = supertile_y - (float)supertile_read_y;
-
-        for (i32 target_tile_x = 0; target_tile_x < draft->levels[0].width_in_tiles; ++target_tile_x) {
-
-            float supertile_x = draft->source_level0_bounds.left + supertile_width * target_tile_x;
-            i32 supertile_read_x = (i32)floorf(supertile_x) - 4;
-            float supertile_offset_x = supertile_x - (float)supertile_read_x;
-
-            image_read_region(draft->source_image, 0, supertile_read_x, supertile_read_y, supertile_width_read, supertile_height_read, supertile.pixels, supertile.pixel_format);
-            rect2f box = {supertile_offset_x, supertile_offset_y, supertile_width, supertile_height};
-
-            if (image_resample_lanczos3(&supertile, &resized_tile, box)) {
-//                        stbi_write_png("debug_resample_result.png", export_tile_width, export_tile_width, 4, resized_tile.pixels, resized_tile.width * resized_tile.channels);
-                DUMMY_STATEMENT;
-//                tile->buffer = resized_tile;
-                shrink_tile_and_propagate_to_next_level(draft, tile);
-
-            } else {
-                destroy_image_buffer(&resized_tile);
-            }
-        }
-    }
-    release_temp_memory(&temp);
-
-}
-
 void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
 
     bool use_rgb = (draft->desired_photometric_interpretation == TIFF_PHOTOMETRIC_RGB);
@@ -1196,24 +1157,31 @@ void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t* tile,
 
 }
 
-void construct_base_tile_with_resampling2(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
+void construct_base_tile_with_resampling(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
 
     temp_memory_t temp = begin_temp_memory_on_local_thread();
-    // TODO: check arena capacity before allocating using the arena
     bool supertile_need_destroy = false;
     bool resized_tile_need_destroy = false;
-    image_buffer_t supertile = create_bgra_image_buffer_using_arena(temp.arena, draft->supertile_width_read, draft->supertile_height_read);
     image_buffer_t resized_tile = create_bgra_image_buffer_using_arena(temp.arena, draft->tile_width, draft->tile_height);
+    if (!resized_tile.is_valid) {
+        resized_tile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
+        resized_tile_need_destroy = true;
+    }
+    image_buffer_t supertile = create_bgra_image_buffer_using_arena(temp.arena, draft->supertile_width_read, draft->supertile_height_read);
+    if (!supertile.is_valid) {
+        supertile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
+        supertile_need_destroy = true;
+    }
 
-    float supertile_y = draft->source_level0_bounds.top + draft->supertile_height * tile->tile_y;
+    float supertile_y = draft->source_level0_bounds.top + draft->supertile_height * (tile->tile_y << draft->source_base_level);
     i32 supertile_read_y = (i32)floorf(supertile_y) - 4;
     float supertile_offset_y = supertile_y - (float)supertile_read_y;
 
-    float supertile_x = draft->source_level0_bounds.left + draft->supertile_width * tile->tile_x;
+    float supertile_x = draft->source_level0_bounds.left + draft->supertile_width * (tile->tile_x << draft->source_base_level);
     i32 supertile_read_x = (i32)floorf(supertile_x) - 4;
     float supertile_offset_x = supertile_x - (float)supertile_read_x;
 
-    image_read_region(draft->source_image, 0, supertile_read_x, supertile_read_y,
+    image_read_region(draft->source_image, draft->source_base_level, supertile_read_x, supertile_read_y,
                       draft->supertile_width_read, draft->supertile_height_read, supertile.pixels,
                       supertile.pixel_format);
     rect2f box = {supertile_offset_x, supertile_offset_y, draft->supertile_width, draft->supertile_height};
@@ -1237,7 +1205,7 @@ void construct_base_tile_with_resampling2(image_draft_t* draft, image_draft_tile
 void construct_tiles_recursive(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
     ASSERT(tile->level >= 0);
     if (tile->level == 0) {
-        construct_base_tile_with_resampling2(draft, tile, fp);
+        construct_base_tile_with_resampling(draft, tile, fp);
     } else {
         // find child tiles
         image_draft_level_t* child_level = draft->levels + tile->level - 1;
@@ -1516,6 +1484,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
 
     float downsample_factor_x = 1.0f;
     float downsample_factor_y = 1.0f;
+    i32 source_base_level = 0;
     if (need_resize) {
         // Only resize if the target resolution is actually different, otherwise don't bother.
         downsample_factor_x = image->mpp_x / target_mpp.x;
@@ -1523,10 +1492,24 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
         if (fabs(1.0f - downsample_factor_x) + fabs(1.0f - downsample_factor_y) < 0.001f) {
             need_resize = false;
         }
+        float largest_downsample_factor = MAX(downsample_factor_x, downsample_factor_y);
+        ASSERT(largest_downsample_factor > 0.0f);
+        if (largest_downsample_factor < 0.25f) {
+            float source_mpp_x = image->mpp_x;
+            float source_mpp_y = image->mpp_y;
+            do {
+                source_mpp_x *= 2.0f;
+                source_mpp_y *= 2.0f;
+                ++source_base_level;
+                downsample_factor_x = source_mpp_x / target_mpp.x;
+                downsample_factor_y = source_mpp_y / target_mpp.y;
+                largest_downsample_factor = MAX(downsample_factor_x, downsample_factor_y);
+            } while (largest_downsample_factor < 0.25f);
+        }
     }
 
-    i32 target_level0_width_in_pixels = level0_bounds.right - level0_bounds.left;
-    i32 target_level0_height_in_pixels = level0_bounds.bottom - level0_bounds.top;
+    i32 target_level0_width_in_pixels = (level0_bounds.right - level0_bounds.left) >> source_base_level;
+    i32 target_level0_height_in_pixels = (level0_bounds.bottom - level0_bounds.top) >> source_base_level;
     if (need_resize) {
         target_level0_width_in_pixels = roundf((float)target_level0_width_in_pixels * downsample_factor_x);
         target_level0_height_in_pixels = roundf((float)target_level0_height_in_pixels * downsample_factor_y);
@@ -1546,6 +1529,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
 
     draft.source_image = image;
     draft.source_level0_bounds = level0_bounds;
+    draft.source_base_level = source_base_level;
     draft.base_downsample_factor_x = downsample_factor_x;
     draft.base_downsample_factor_y = downsample_factor_y;
     draft.supertile_width = (float)draft.tile_width / draft.base_downsample_factor_x;

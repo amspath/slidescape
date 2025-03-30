@@ -80,8 +80,11 @@ image_buffer_t create_bgra_image_buffer_using_arena(arena_t* arena, i32 width, i
     result.stride_in_pixels = width;
     result.stride_in_bytes = width * 4;
     result.pixel_format = PIXEL_FORMAT_U8_BGRA;
-    result.pixels = arena_push_size(arena, width * height * 4);
-    result.is_valid = true;
+    size_t size = width * height * 4;
+    if ((arena->used + size) <= arena->size) {
+        result.pixels = arena_push_size(arena, width * height * 4);
+        result.is_valid = true;
+    }
     return result;
 }
 
