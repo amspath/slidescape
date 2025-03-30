@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -111,6 +111,8 @@ typedef struct mrxs_level_t {
 	i32 height_in_tiles;
 	i32 tile_width;
 	i32 tile_height;
+    float overlap_x;
+    float overlap_y;
 	float um_per_pixel_x;
 	float um_per_pixel_y;
 	u32 image_fill_color_bgr;
@@ -180,6 +182,8 @@ typedef struct mrxs_t {
     i32 slide_zoom_level_hier_index;
     i32 base_width_in_tiles;
     i32 base_height_in_tiles;
+    i32 base_width_in_pixels;
+    i32 base_height_in_pixels;
     u8 slide_version_major;
     u8 slide_version_minor;
     i32 camera_image_divisions_per_slide;
@@ -197,6 +201,7 @@ typedef struct mrxs_t {
 	float mpp_x;
 	float mpp_y;
 	bool is_mpp_known;
+    bool has_overlapping_tiles;
 	work_queue_t* work_submission_queue;
 	volatile i32 refcount;
     bool is_valid;

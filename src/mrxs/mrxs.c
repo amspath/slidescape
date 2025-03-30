@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -355,7 +355,11 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
 									mrxs_level->tile_width = atoi(value);
 								} else if (strcmp(key, "DIGITIZER_HEIGHT") == 0) {
 									mrxs_level->tile_height = atoi(value);
-								} else if (strcmp(key, "MICROMETER_PER_PIXEL_X") == 0) {
+								} else if (strcmp(key, "OVERLAP_X") == 0) {
+                                    mrxs_level->overlap_x = atof(value);
+                                } else if (strcmp(key, "OVERLAP_Y") == 0) {
+                                    mrxs_level->overlap_y = atof(value);
+                                } else if (strcmp(key, "MICROMETER_PER_PIXEL_X") == 0) {
 									mrxs_level->um_per_pixel_x = atof(value);
 								} else if (strcmp(key, "MICROMETER_PER_PIXEL_Y") == 0) {
 									mrxs_level->um_per_pixel_y = atof(value);
@@ -581,6 +585,33 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 						level->tiles = calloc(tile_count, sizeof(mrxs_tile_t ));
 					}
 
+                    // Additional initialization to deal with slides with overlapping images
+                    mrxs_level_t* base_level = mrxs->levels + 0;
+                    mrxs->has_overlapping_tiles = (base_level->overlap_x != 0.0f || base_level->overlap_y != 0.0f);
+                    if (mrxs->has_overlapping_tiles) {
+                        // Calculate the actual width and height of the image
+                        float base_width = 0.0f;
+                        for (i32 i = 0; i < base_level->width_in_tiles; ++i) {
+                            base_width += base_level->tile_width;
+                            if ((i + 1) % mrxs->camera_image_divisions_per_slide == 0 && i != base_level->width_in_tiles - 1) {
+                                base_width -= base_level->overlap_x;
+                            }
+                        }
+                        float base_height = 0.0f;
+                        for (i32 i = 0; i < base_level->height_in_tiles; ++i) {
+                            base_height += base_level->tile_height;
+                            if ((i + 1) % mrxs->camera_image_divisions_per_slide == 0 && i != base_level->height_in_tiles - 1) {
+                                base_height -= base_level->overlap_y;
+                            }
+                        }
+                        mrxs->base_width_in_pixels = roundf(base_width);
+                        mrxs->base_height_in_pixels = roundf(base_height);
+
+                    } else {
+                        mrxs->base_width_in_pixels = base_level->width_in_tiles * base_level->tile_width;
+                        mrxs->base_height_in_pixels = base_level->height_in_tiles * base_level->tile_height;
+                    }
+
 	                // There is one record stored for each HIER_i_VAL_j combination (all in a flat array)
 					i32 record_index = 0;
 	                for (i32 hier_index = 0; hier_index < mrxs->hier_count; ++hier_index) {
@@ -666,10 +697,13 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 
         console_print_verbose("Opening file handles to %d dat files took %g seconds.\n", mrxs->dat_count, get_seconds_elapsed(clock_index_loaded, get_clock()));
 
-        // Read slide position file
-        mrxs_load_slide_position_file(mrxs);
-    }
+        if (mrxs->has_overlapping_tiles) {
+            // Load the slide position file
+            mrxs_load_slide_position_file(mrxs);
+        }
 
+
+    }
 
     return success;
 }
@@ -734,22 +768,29 @@ u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
 	u8* result = NULL;
 	if (level >= 0 && level < mrxs->level_count) {
 		mrxs_level_t* mrxs_level = mrxs->levels + level;
-		if (tile_index >= 0 && tile_index < mrxs_level->width_in_tiles * mrxs_level->height_in_tiles) {
-			mrxs_tile_t* tile = mrxs_level->tiles + tile_index;
-			mrxs_hier_entry_t hier_entry = tile->hier_entry;
-			if (mrxs->dat_file_handles && hier_entry.file < mrxs->dat_count) {
-				file_handle_t file_handle = mrxs->dat_file_handles[hier_entry.file];
-				if (file_handle) {
-                    temp_memory_t temp = begin_temp_memory_on_local_thread();
-					u8* compressed_tile_data = (u8*)arena_push_size(temp.arena, hier_entry.length);
-					size_t bytes_read = file_handle_read_at_offset(compressed_tile_data, file_handle, hier_entry.offset, hier_entry.length);
-					if (bytes_read == hier_entry.length) {
-                        result = mrxs_decode_image_to_bgra(compressed_tile_data, hier_entry.length, mrxs_level->image_format, mrxs->tile_width, mrxs->tile_height);
-					}
-                    release_temp_memory(&temp);
-				}
-			}
-		}
+        if (!mrxs->has_overlapping_tiles) {
+            // No overlapping tiles -> relatively straightforward
+            if (tile_index >= 0 && tile_index < mrxs_level->width_in_tiles * mrxs_level->height_in_tiles) {
+                mrxs_tile_t* tile = mrxs_level->tiles + tile_index;
+                mrxs_hier_entry_t hier_entry = tile->hier_entry;
+                if (mrxs->dat_file_handles && hier_entry.file < mrxs->dat_count) {
+                    file_handle_t file_handle = mrxs->dat_file_handles[hier_entry.file];
+                    if (file_handle) {
+                        temp_memory_t temp = begin_temp_memory_on_local_thread();
+                        u8* compressed_tile_data = (u8*)arena_push_size(temp.arena, hier_entry.length);
+                        size_t bytes_read = file_handle_read_at_offset(compressed_tile_data, file_handle, hier_entry.offset, hier_entry.length);
+                        if (bytes_read == hier_entry.length) {
+                            result = mrxs_decode_image_to_bgra(compressed_tile_data, hier_entry.length, mrxs_level->image_format, mrxs->tile_width, mrxs->tile_height);
+                        }
+                        release_temp_memory(&temp);
+                    }
+                }
+            }
+        } else {
+            // Overlapping tiles -> more complicated situation
+            // TODO: implement this code path
+
+        }
 	}
 	return result;
 }
