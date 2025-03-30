@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -164,13 +164,14 @@ typedef struct image_t {
     bool is_deleted; // TODO: prevent delay due to refcount > 0 when closing WSI (garbage collect off the main thread)
     bool is_enabled;
     bool is_overlay;
+    bool is_background_black; // if false: background = white (for brightfield)
     union {
         simple_image_t simple;
         tiff_t tiff;
         isyntax_t isyntax;
         wsi_t openslide_wsi;
         dicom_series_t dicom;
-		mrxs_t mrxs;
+        mrxs_t mrxs;
     };
     i32 level_count;
     u32 tile_width;

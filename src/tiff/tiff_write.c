@@ -1083,6 +1083,7 @@ typedef struct image_draft_t {
     memrw_t fixups_buffer;
     tiff_header_t header;
     bool is_mpp_known;
+    bool is_background_black;
     v2f mpp;
     u64 image_data_base_offset;
     u64 current_image_data_write_offset;
@@ -1538,6 +1539,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
     draft.tile_width = export_tile_width;
     draft.tile_height = export_tile_width;
     draft.is_mpp_known = true;
+    draft.is_background_black = image->is_background_black;
     draft.mpp = target_mpp;
     draft.desired_photometric_interpretation = desired_photometric_interpretation;
     draft.quality = quality;

@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -896,6 +896,18 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                 intermediate_pixel_buffer = malloc(w * h * sizeof(uint32_t));
             }
             openslide.read_region(image->openslide_wsi.osr, intermediate_pixel_buffer, x, y, level, w, h);
+
+            // Check for (partially) empty tiles
+            u32 pixel_count = w * h;
+            u32* pixels = (u32*)intermediate_pixel_buffer;
+            u32 nonempty_pixel_count = 0;
+            u32 image_background_color = image->is_background_black ? 0 /*black*/ : 0xFFFFFFFF; // white
+            for (i32 i = 0; i < pixel_count; ++i) {
+                // Fill in any empty pixels with the background color.
+                u32 p = pixels[i];
+                nonempty_pixel_count += (p > 0);
+                pixels[i] = p ? p : image_background_color;
+            }
         } break;
 		case IMAGE_BACKEND_TIFF:
 		case IMAGE_BACKEND_DICOM:
@@ -1083,6 +1095,16 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
         if (intermediate_pixel_format == PIXEL_FORMAT_U8_BGRA) {
             if (desired_pixel_format == PIXEL_FORMAT_F32_Y) {
                 image_convert_u8_rgba_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
+            } else if (desired_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+                // swap RGBA to BGRA
+                i32 pixel_count = w * h;
+                for (i32 i = 0; i < pixel_count; ++i) {
+                    // assume little-endian order: 0xAABBGGRR
+                    // TODO: big-endian compatibility
+                    u32 pixel = ((u32*)intermediate_pixel_buffer)[i];
+                    u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF)<<16) | ((pixel>>16) & 0xFF);
+                    ((u32*)dest)[i] = new_pixel;
+                }
             } else {
                 console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented\n", intermediate_pixel_format, desired_pixel_format);
                 success = false;

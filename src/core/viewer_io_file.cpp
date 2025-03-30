@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -57,9 +57,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 	u8* temp_memory = (u8*)malloc(pixel_memory_size);
 
-	// TODO: for darkfield, use 0x00 as background
-	u32 image_background_color = 0xFFFFFFFF; // white
-	memset(temp_memory, 0xFF, pixel_memory_size);
+	u32 image_background_color = image->is_background_black ? 0 /*black*/ : 0xFFFFFFFF; // white
+    u8 image_background_byte = image->is_background_black ? 0 /*black*/ : 0xFF; // white
+	memset(temp_memory, image_background_byte, pixel_memory_size);
 
 	bool failed = false;
 	bool is_empty = false; // we might 'discover' that the tile is empty for OpenSlide backend (-> read_region() would return all zeroes)
