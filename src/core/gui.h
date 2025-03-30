@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -148,6 +148,8 @@ extern bool show_coco_editor_window;
 
 extern i32 desired_region_export_format;
 extern u16 tiff_export_desired_color_space INIT(= TIFF_PHOTOMETRIC_YCBCR);//TIFF_PHOTOMETRIC_RGB;
+extern bool tiff_export_match_input_resolution INIT(= true);
+extern float tiff_export_mpp;
 extern i32 tiff_export_jpeg_quality INIT(= 90);
 
 #undef INIT

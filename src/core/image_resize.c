@@ -59,6 +59,41 @@ PERFORMANCE OF THIS SOFTWARE.
 
 #include <math.h>
 
+image_buffer_t create_bgra_image_buffer(i32 width, i32 height) {
+    image_buffer_t result = {};
+    result.width = width;
+    result.height = height;
+    result.channels = 4;
+    result.stride_in_pixels = width;
+    result.stride_in_bytes = width * 4;
+    result.pixel_format = PIXEL_FORMAT_U8_BGRA;
+    result.pixels = calloc(1, width * height * 4);
+    result.is_valid = true;
+    return result;
+}
+
+image_buffer_t create_bgra_image_buffer_using_arena(arena_t* arena, i32 width, i32 height) {
+    image_buffer_t result = {};
+    result.width = width;
+    result.height = height;
+    result.channels = 4;
+    result.stride_in_pixels = width;
+    result.stride_in_bytes = width * 4;
+    result.pixel_format = PIXEL_FORMAT_U8_BGRA;
+    result.pixels = arena_push_size(arena, width * height * 4);
+    result.is_valid = true;
+    return result;
+}
+
+void destroy_image_buffer(image_buffer_t* image_buffer) {
+    if (image_buffer->pixels) {
+        free(image_buffer->pixels);
+        image_buffer->pixels = NULL;
+        image_buffer->is_valid = false;
+    }
+}
+
+
 #define MAKE_UINT32(u0, u1, u2, u3) ((u32)(u0) | ((u32)(u1) << 8) | ((u32)(u2) << 16) | ((u32)(u3) << 24))
 
 static float sinc_filter(float x) {
@@ -428,8 +463,8 @@ bool image_resample_lanczos3(image_buffer_t* in, image_buffer_t* out, rect2f box
         i32 *bounds_vert;
         float* kk_horiz;
         float* kk_vert;
-        i32 ksize_horiz = precompute_coeffs(in->width, box.x, box.w, out->width, &filter, &bounds_horiz, &kk_horiz);
-        i32 ksize_vert = precompute_coeffs(in->height, box.y, box.h, out->height, &filter, &bounds_vert, &kk_vert);
+        i32 ksize_horiz = precompute_coeffs(in->width, box.x, box.x + box.w, out->width, &filter, &bounds_horiz, &kk_horiz);
+        i32 ksize_vert = precompute_coeffs(in->height, box.y, box.y + box.h, out->height, &filter, &bounds_vert, &kk_vert);
 
         // First used row in the source image
         i32 ybox_first = bounds_vert[0];
@@ -492,6 +527,59 @@ bool image_resample_lanczos3(image_buffer_t* in, image_buffer_t* out, rect2f box
     }
 }
 
+bool image_shrink_2x2(image_buffer_t* in, image_buffer_t* out, rect2i box) {
+    if (in->pixel_format != out->pixel_format) {
+        return false;
+    }
+
+    int xscale = 2, yscale = 2;
+    int x, y;
+    u32 ss0, ss1, ss2, ss3;
+    u32 amend = yscale * xscale / 2;
+    for (y = 0; y < box.h / yscale; y++) {
+        int yy = box.y + y * yscale;
+        u8 *line0 = (u8 *)in->pixels + (yy + 0) * in->stride_in_bytes;
+        u8 *line1 = (u8 *)in->pixels + (yy + 1) * in->stride_in_bytes;
+        if (in->channels == 2) {
+            for (x = 0; x < box.w / xscale; x++) {
+                int xx = box.x + x * xscale;
+                u32 v;
+                ss0 = line0[xx * 4 + 0] + line0[xx * 4 + 4] + line1[xx * 4 + 0] + line1[xx * 4 + 4];
+                ss3 = line0[xx * 4 + 3] + line0[xx * 4 + 7] + line1[xx * 4 + 3] + line1[xx * 4 + 7];
+                v = MAKE_UINT32((ss0 + amend) >> 2, 0, 0, (ss3 + amend) >> 2);
+                memcpy(out->pixels + y * out->stride_in_bytes + x * sizeof(v), &v, sizeof(v));
+            }
+        } else if (in->channels == 3) {
+            for (x = 0; x < box.w / xscale; x++) {
+                int xx = box.x + x * xscale;
+                u32 v;
+                ss0 = line0[xx * 4 + 0] + line0[xx * 4 + 4] + line1[xx * 4 + 0] + line1[xx * 4 + 4];
+                ss1 = line0[xx * 4 + 1] + line0[xx * 4 + 5] + line1[xx * 4 + 1] + line1[xx * 4 + 5];
+                ss2 = line0[xx * 4 + 2] + line0[xx * 4 + 6] + line1[xx * 4 + 2] + line1[xx * 4 + 6];
+                v = MAKE_UINT32((ss0 + amend) >> 2, (ss1 + amend) >> 2, (ss2 + amend) >> 2, 0);
+                memcpy(out->pixels + y * out->stride_in_bytes + x * sizeof(v), &v, sizeof(v));
+            }
+        } else {  // bands == 4
+            for (x = 0; x < box.w / xscale; x++) {
+                int xx = box.x + x * xscale;
+                u32 v;
+                ss0 = line0[xx * 4 + 0] + line0[xx * 4 + 4] + line1[xx * 4 + 0] + line1[xx * 4 + 4];
+                ss1 = line0[xx * 4 + 1] + line0[xx * 4 + 5] + line1[xx * 4 + 1] + line1[xx * 4 + 5];
+                ss2 = line0[xx * 4 + 2] + line0[xx * 4 + 6] + line1[xx * 4 + 2] + line1[xx * 4 + 6];
+                ss3 = line0[xx * 4 + 3] + line0[xx * 4 + 7] + line1[xx * 4 + 3] + line1[xx * 4 + 7];
+                v = MAKE_UINT32(
+                        (ss0 + amend) >> 2,
+                        (ss1 + amend) >> 2,
+                        (ss2 + amend) >> 2,
+                        (ss3 + amend) >> 2
+                );
+                memcpy(out->pixels + y * out->stride_in_bytes + x * sizeof(v), &v, sizeof(v));
+            }
+        }
+    }
+    return true;
+}
+
 #if 0
 #include "stb_image.h"
 #include "stb_image_write.h"
@@ -507,21 +595,63 @@ void debug_test_resample() {
         buffer.width = x;
         buffer.height = y;
         buffer.channels = 4;
+        buffer.stride_in_bytes = x * 4;
+        buffer.stride_in_pixels = x;
         buffer.pixel_format = PIXEL_FORMAT_U8_RGBA;
 
         image_buffer_t out = {};
         out.width = 256;
         out.height = 256;
         out.channels = 4;
+        out.stride_in_bytes = 256 * 4;
+        out.stride_in_pixels = 256;
         out.pixel_format = PIXEL_FORMAT_U8_RGBA;
         out.pixels = calloc(1, out.width * out.height * out.channels);
 
-        rect2f box = {100.0f, 300.0f, 1000.0f, 1000.0f};
+        rect2f box = {500.0f, 500.0f, 512.0f, 512.0f};
+        i64 start = get_clock();
         if (image_resample_lanczos3(&buffer, &out, box)) {
+            console_print("Debug image resample test: resampling took %g s.\n", get_seconds_elapsed(start, get_clock()));
             stbi_write_png("debug_resample_result.png", out.width, out.height, 4, out.pixels, out.width * out.channels);
         }
 
     }
 
 }
+
+void debug_test_shrink2x2() {
+    i32 x = 0;
+    i32 y = 0;
+    i32 channels_in_file = 0;
+    image_buffer_t buffer = {};
+    buffer.pixels = stbi_load("../../../Bodleian.jpg", &x, &y, &channels_in_file, 4);
+    if (buffer.pixels) {
+
+        buffer.width = x;
+        buffer.height = y;
+        buffer.channels = 4;
+        buffer.stride_in_bytes = x * 4;
+        buffer.stride_in_pixels = x;
+        buffer.pixel_format = PIXEL_FORMAT_U8_RGBA;
+
+        image_buffer_t out = {};
+        out.width = 256;
+        out.height = 256;
+        out.channels = 4;
+        out.stride_in_bytes = 256 * 4;
+        out.stride_in_pixels = 256;
+        out.pixel_format = PIXEL_FORMAT_U8_RGBA;
+        out.pixels = calloc(1, out.width * out.height * out.channels);
+
+        rect2i box = {500, 500, 512, 512};
+        i64 start = get_clock();
+        if (image_shrink_2x2(&buffer, &out, box)) {
+            console_print("Debug image shrink test: 2x2 shrink took %g s.\n", get_seconds_elapsed(start, get_clock()));
+            stbi_write_png("debug_shrink_result.png", out.width, out.height, 4, out.pixels, out.width * out.channels);
+        }
+
+    }
+
+}
+
 #endif

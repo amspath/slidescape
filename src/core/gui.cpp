@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -656,6 +656,9 @@ void draw_layers_window(app_state_t* app_state) {
 void draw_export_region_dialog(app_state_t* app_state) {
 	if (show_export_region_dialog) {
 		ImGui::OpenPopup("Export region");
+        if (tiff_export_match_input_resolution) {
+            tiff_export_mpp = app_state->loaded_images[0]->mpp_x;
+        }
 		show_export_region_dialog = false;
 	}
 	gui_make_next_window_appear_in_center_of_screen();
@@ -722,6 +725,24 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					}
 
 				}
+
+                if (ImGui::TreeNodeEx("Output resolution", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
+                    if (ImGui::Checkbox("Match input resolution", &tiff_export_match_input_resolution)) {
+                        tiff_export_mpp = image->mpp_x;
+                    }
+                    if (tiff_export_match_input_resolution) {
+                        ImGui::BeginDisabled();
+                    }
+                    float magnification = (0.25f * 40.0f) / tiff_export_mpp;
+                    if (ImGui::SliderFloat("Magnification", &magnification, 1.0f,  (0.25f * 40.0f) / image->mpp_x, "%g", 0)) {
+                        tiff_export_mpp = (0.25f * 40.0f) / magnification;
+                    }
+                    if (ImGui::InputFloat("Resolution (µm/pixel)", &tiff_export_mpp, 0.0f, 0.0f, "%g", 0)) {}
+                    if (tiff_export_match_input_resolution) {
+                        ImGui::EndDisabled();
+                    }
+                }
+
 				ImGui::NewLine();
 
 				if (display_export_annotations_checkbox) {
@@ -870,9 +891,18 @@ void draw_export_region_dialog(app_state_t* app_state) {
 							}
 						}
 						if (image->tile_width == image->tile_height) {
-							begin_export_cropped_bigtiff(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
-							                             filename_buffer, image->tile_width,
-							                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
+                            if (tiff_export_match_input_resolution) {
+                                // Old code path: export TIFF by sampling from the existing pyramid
+                                begin_export_cropped_bigtiff(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
+                                                             filename_buffer, image->tile_width,
+                                                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
+                            } else {
+                                // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
+                                begin_export_crop_with_resample(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
+                                                             filename_buffer, image->tile_width,
+                                                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags,
+                                                             V2F(tiff_export_mpp, tiff_export_mpp));
+                            }
 							gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
 						} else {
 							gui_add_modal_message_popup("Error##draw_export_region_dialog",
