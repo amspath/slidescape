@@ -71,7 +71,20 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 							console_print_error("Invalid JPEG quality setting '%s', defaulting to %d\n", arg, tiff_export_jpeg_quality);
 						}
 					}
-				} else if (strcmp(arg, "--postfix") == 0) {
+				} else if (strcmp(arg, "--mpp") == 0) {
+                    if (arg_index < argc) {
+                        ++arg_index;
+                        arg = args[arg_index];
+                        tiff_export_mpp = atof(arg);
+                        tiff_export_match_input_resolution = false;
+                    }
+                } else if (strcmp(arg, "--tile-size") == 0) {
+                    if (arg_index < argc) {
+                        ++arg_index;
+                        arg = args[arg_index];
+                        tiff_export_tile_width = atoi(arg);
+                    }
+                } else if (strcmp(arg, "--postfix") == 0) {
 					if (arg_index < argc) {
 						++arg_index;
 						arg = args[arg_index];
@@ -191,9 +204,19 @@ int app_command_execute(app_state_t* app_state) {
 								char filename_hint[512];
 								export_region_get_name_hint(app_state, filename_hint, sizeof(filename_hint));
 
-								export_cropped_bigtiff(app_state, image, world_bounds, pixel_bounds,
-								                       filename_hint, image->tile_width,
-								                       tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
+                                if (tiff_export_match_input_resolution) {
+                                    // Old code path: export TIFF by sampling from the existing pyramid
+                                    export_cropped_bigtiff(app_state, image, world_bounds, pixel_bounds,
+                                                           filename_hint, image->tile_width,
+                                                           tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
+                                } else {
+                                    // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
+                                    export_cropped_bigtiff_with_resample(app_state, image, world_bounds,pixel_bounds,
+                                                                         filename_hint, tiff_export_tile_width,
+                                                                         tiff_export_desired_color_space,
+                                                                         tiff_export_jpeg_quality, export_flags, true,
+                                                                         V2F(tiff_export_mpp, tiff_export_mpp));
+                                }
 							}
 
 

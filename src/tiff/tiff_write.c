@@ -1666,8 +1666,8 @@ void export_cropped_bigtiff_with_resample_func(i32 logical_thread_index, void* u
 //	atomic_decrement(&task->isyntax->refcount); // TODO: release
 }
 
-void begin_export_crop_with_resample(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
-                                     u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags, v2f target_mpp) {
+void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
+                                                u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags, v2f target_mpp) {
 
     export_region_task_t task = {0};
     task.app_state = app_state;
