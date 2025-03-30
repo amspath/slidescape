@@ -29,60 +29,19 @@
 
 #include "stb_image_write.h" //for debugging only
 
-enum export_region_format_enum {
-	EXPORT_REGION_FORMAT_BIGTIFF = 0,
-	EXPORT_REGION_FORMAT_JPEG = 1,
-	EXPORT_REGION_FORMAT_PNG = 2,
-};
-
-typedef struct encode_tile_task_t {
-	image_t* image;
-	tiff_t* tiff;
-	tiff_ifd_t* ifd;
-	i32 level;
-	u32 export_tile_width;
-	i32 export_tile_x;
-	i32 export_tile_y;
-	bounds2i pixel_bounds;
-} encode_tile_task_t;
-
-void encode_tile_func(i32 logical_thread_index, void* userdata) {
-	encode_tile_task_t* task = (encode_tile_task_t*) userdata;
-	image_t* image = task->image;
-	tiff_t* tiff = task->tiff;
-	tiff_ifd_t* ifd = task->ifd;
-	i32 level = task->level;
-	u32 export_tile_width = task->export_tile_width;
-	i32 export_tile_x = task->export_tile_x;
-	i32 export_tile_y = task->export_tile_y;
-	bounds2i pixel_bounds = task->pixel_bounds;
-
-	i32 export_width_in_pixels = pixel_bounds.right - pixel_bounds.left;
-	i32 export_height_in_pixels = pixel_bounds.bottom - pixel_bounds.top;
-	ASSERT(export_width_in_pixels > 0);
-	ASSERT(export_height_in_pixels > 0);
-
-	bounds2i source_tile_bounds = pixel_bounds;
-	source_tile_bounds.left = div_floor(pixel_bounds.left, export_tile_width);
-	source_tile_bounds.top = div_floor(pixel_bounds.top, export_tile_width);
-	source_tile_bounds.right = div_floor(pixel_bounds.right, export_tile_width);
-	source_tile_bounds.bottom = div_floor(pixel_bounds.bottom, export_tile_width);
-
-	i32 source_bounds_width_in_tiles = source_tile_bounds.right - source_tile_bounds.left;
-	i32 source_bounds_height_in_tiles = source_tile_bounds.bottom - source_tile_bounds.top;
-	u32 source_tile_count = source_bounds_width_in_tiles * source_bounds_height_in_tiles;
-
-	cached_tile_t* source_tiles = alloca(source_tile_count * sizeof(cached_tile_t));
-	u8* dest_pixels = malloc(export_tile_width * export_tile_width * 4);
-
-	for (i32 source_tile_y = 0; source_tile_y < source_bounds_height_in_tiles; ++source_tile_y) {
-		for (i32 source_tile_x = 0; source_tile_x < source_bounds_width_in_tiles; ++source_tile_x) {
-
-			// load the tile into memory
-		}
-	}
-
-}
+typedef struct export_region_task_t {
+    app_state_t* app_state;
+    image_t* image;
+    bounds2f world_bounds;
+    bounds2i level0_bounds;
+    const char* filename;
+    u32 export_tile_width;
+    u16 desired_photometric_interpretation;
+    i32 quality;
+    u32 export_flags;
+    bool need_resize;
+    v2f target_mpp;
+} export_region_task_t;
 
 typedef struct offset_fixup_t {
 	u64 offset_to_fix;
@@ -125,6 +84,7 @@ static u64 add_large_bigtiff_tag(memrw_t* tag_buffer, memrw_t* data_buffer, memr
 	}
 }
 
+#if 0
 typedef struct export_level_task_data_t {
 	i32 level;
 	bool is_represented;
@@ -995,19 +955,6 @@ bool export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f wor
 	return success;
 }
 
-typedef struct export_region_task_t {
-	app_state_t* app_state;
-	image_t* image;
-	bounds2f world_bounds;
-	bounds2i level0_bounds;
-	const char* filename;
-	u32 export_tile_width;
-	u16 desired_photometric_interpretation;
-	i32 quality;
-	u32 export_flags;
-    bool need_resize;
-    v2f target_mpp;
-} export_region_task_t;
 
 void export_cropped_bigtiff_func(i32 logical_thread_index, void* userdata) {
 	export_region_task_t* task = (export_region_task_t*) userdata;
@@ -1043,6 +990,7 @@ void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds
 		app_state->is_export_in_progress = false;
 	};
 }
+#endif
 
 typedef struct image_draft_tile_t {
     image_buffer_t buffer;
@@ -1085,6 +1033,7 @@ typedef struct image_draft_t {
     tiff_header_t header;
     bool is_mpp_known;
     bool is_background_black;
+    bool need_resize;
     v2f mpp;
     u64 image_data_base_offset;
     u64 current_image_data_write_offset;
@@ -1098,7 +1047,7 @@ typedef struct image_draft_t {
     i32 quality;
 } image_draft_t;
 
-void shrink_tile_and_propagate_to_next_level(image_draft_t* draft, image_draft_tile_t* tile) {
+static void shrink_tile_and_propagate_to_next_level(image_draft_t* draft, image_draft_tile_t* tile) {
     if (tile->level + 1 < draft->level_count) {
 
         // Find the parent tile and initialize an image buffer for it if needed
@@ -1130,7 +1079,7 @@ void shrink_tile_and_propagate_to_next_level(image_draft_t* draft, image_draft_t
     }
 }
 
-void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
+static void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
 
     bool use_rgb = (draft->desired_photometric_interpretation == TIFF_PHOTOMETRIC_RGB);
 
@@ -1157,52 +1106,87 @@ void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t* tile,
 
 }
 
-void construct_base_tile_with_resampling(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
+static void construct_base_tile_with_resampling(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
 
     temp_memory_t temp = begin_temp_memory_on_local_thread();
-    bool supertile_need_destroy = false;
-    bool resized_tile_need_destroy = false;
-    image_buffer_t resized_tile = create_bgra_image_buffer_using_arena(temp.arena, draft->tile_width, draft->tile_height);
-    if (!resized_tile.is_valid) {
-        resized_tile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
-        resized_tile_need_destroy = true;
-    }
-    image_buffer_t supertile = create_bgra_image_buffer_using_arena(temp.arena, draft->supertile_width_read, draft->supertile_height_read);
-    if (!supertile.is_valid) {
-        supertile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
-        supertile_need_destroy = true;
+
+
+    if (draft->need_resize) {
+        bool supertile_need_destroy = false;
+        bool resized_tile_need_destroy = false;
+        image_buffer_t resized_tile = create_bgra_image_buffer_using_arena(temp.arena, draft->tile_width, draft->tile_height);
+        if (!resized_tile.is_valid) {
+            resized_tile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
+            resized_tile_need_destroy = true;
+        }
+        image_buffer_t supertile = create_bgra_image_buffer_using_arena(temp.arena, draft->supertile_width_read, draft->supertile_height_read);
+        if (!supertile.is_valid) {
+            supertile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
+            supertile_need_destroy = true;
+        }
+
+        float supertile_y = draft->source_level0_bounds.top + draft->supertile_height * (tile->tile_y << draft->source_base_level);
+        i32 supertile_read_y = (i32)floorf(supertile_y) - 4;
+        float supertile_offset_y = supertile_y - (float)supertile_read_y;
+
+        float supertile_x = draft->source_level0_bounds.left + draft->supertile_width * (tile->tile_x << draft->source_base_level);
+        i32 supertile_read_x = (i32)floorf(supertile_x) - 4;
+        float supertile_offset_x = supertile_x - (float)supertile_read_x;
+
+        if (image_read_region(draft->source_image, draft->source_base_level, supertile_read_x, supertile_read_y,
+                              draft->supertile_width_read, draft->supertile_height_read, supertile.pixels,
+                              supertile.pixel_format)) {
+            rect2f box = {supertile_offset_x, supertile_offset_y, draft->supertile_width, draft->supertile_height};
+
+            if (image_resample_lanczos3(&supertile, &resized_tile, box)) {
+//              stbi_write_png("debug_resample_result.png", draft->tile_width, draft->tile_width, 4, resized_tile.pixels, resized_tile.width * resized_tile.channels);
+                tile->buffer = resized_tile;
+                shrink_tile_and_propagate_to_next_level(draft, tile);
+                write_finished_bigtiff_tile(draft, tile, fp);
+            } else {
+                // TODO: handle error condition
+            }
+        } else {
+            // TODO: handle error condition
+        }
+
+        if (supertile_need_destroy) {
+            destroy_image_buffer(&supertile);
+        }
+        if (resized_tile_need_destroy) {
+            destroy_image_buffer(&resized_tile);
+        }
+    } else {
+        // no need to resize
+        bool tile_need_destroy = false;
+        image_buffer_t tile_buffer = create_bgra_image_buffer_using_arena(temp.arena, draft->tile_width, draft->tile_height);
+        if (!tile_buffer.is_valid) {
+            tile_buffer = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
+            tile_need_destroy = true;
+        }
+
+        i32 x = draft->source_level0_bounds.left + draft->tile_width * tile->tile_x;
+        i32 y = draft->source_level0_bounds.top + draft->tile_height * tile->tile_y;
+        if (image_read_region(draft->source_image, draft->source_base_level, x, y,
+                          draft->tile_width, draft->tile_height, tile_buffer.pixels,
+                          tile_buffer.pixel_format)) {
+            tile->buffer = tile_buffer;
+            shrink_tile_and_propagate_to_next_level(draft, tile);
+            write_finished_bigtiff_tile(draft, tile, fp);
+        } else {
+            // TODO: handle error condition
+        }
+
+        if (tile_need_destroy) {
+            destroy_image_buffer(&tile_buffer);
+        }
     }
 
-    float supertile_y = draft->source_level0_bounds.top + draft->supertile_height * (tile->tile_y << draft->source_base_level);
-    i32 supertile_read_y = (i32)floorf(supertile_y) - 4;
-    float supertile_offset_y = supertile_y - (float)supertile_read_y;
 
-    float supertile_x = draft->source_level0_bounds.left + draft->supertile_width * (tile->tile_x << draft->source_base_level);
-    i32 supertile_read_x = (i32)floorf(supertile_x) - 4;
-    float supertile_offset_x = supertile_x - (float)supertile_read_x;
-
-    image_read_region(draft->source_image, draft->source_base_level, supertile_read_x, supertile_read_y,
-                      draft->supertile_width_read, draft->supertile_height_read, supertile.pixels,
-                      supertile.pixel_format);
-    rect2f box = {supertile_offset_x, supertile_offset_y, draft->supertile_width, draft->supertile_height};
-
-    if (image_resample_lanczos3(&supertile, &resized_tile, box)) {
-//        stbi_write_png("debug_resample_result.png", draft->tile_width, draft->tile_width, 4, resized_tile.pixels, resized_tile.width * resized_tile.channels);
-        tile->buffer = resized_tile;
-        shrink_tile_and_propagate_to_next_level(draft, tile);
-        write_finished_bigtiff_tile(draft, tile, fp);
-    }
-
-    if (supertile_need_destroy) {
-        destroy_image_buffer(&supertile);
-    }
-    if (resized_tile_need_destroy) {
-        destroy_image_buffer(&resized_tile);
-    }
     release_temp_memory(&temp);
 }
 
-void construct_tiles_recursive(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
+static void construct_tiles_recursive(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
     ASSERT(tile->level >= 0);
     if (tile->level == 0) {
         construct_base_tile_with_resampling(draft, tile, fp);
@@ -1234,7 +1218,7 @@ void construct_tiles_recursive(image_draft_t* draft, image_draft_tile_t* tile, f
     }
 }
 
-void image_draft_prepare_bigtiff_ifds_and_tags(image_draft_t* draft) {
+static void image_draft_prepare_bigtiff_ifds_and_tags(image_draft_t* draft) {
     // We will prepare all the tags, and push them into a temporary buffer, to be written to file later.
     // For non-inlined tags, the 'offset' field gets a placeholder offset because we don't know yet
     // where the tag data will be located in the file. For such tags we will:
@@ -1435,7 +1419,7 @@ void image_draft_prepare_bigtiff_ifds_and_tags(image_draft_t* draft) {
 
 }
 
-void image_draft_write_bigtiff_ifds_and_small_data(image_draft_t* draft, file_stream_t fp) {
+static void image_draft_write_bigtiff_ifds_and_small_data(image_draft_t* draft, file_stream_t fp) {
     fwrite(draft->tag_buffer.data, draft->tag_buffer.used_size, 1, fp);
     fwrite(draft->small_data_buffer.data, draft->small_data_buffer.used_size, 1,fp);
     draft->image_data_base_offset = draft->tag_buffer.used_size + draft->small_data_buffer.used_size;
@@ -1523,6 +1507,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
     draft.tile_height = export_tile_width;
     draft.is_mpp_known = true;
     draft.is_background_black = image->is_background_black;
+    draft.need_resize = need_resize;
     draft.mpp = target_mpp;
     draft.desired_photometric_interpretation = desired_photometric_interpretation;
     draft.quality = quality;
@@ -1667,7 +1652,7 @@ void export_cropped_bigtiff_with_resample_func(i32 logical_thread_index, void* u
 }
 
 void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
-                                                u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags, v2f target_mpp) {
+                                                u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags, bool need_resize, v2f target_mpp) {
 
     export_region_task_t task = {0};
     task.app_state = app_state;
@@ -1679,7 +1664,7 @@ void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t*
     task.desired_photometric_interpretation = desired_photometric_interpretation;
     task.quality = quality;
     task.export_flags = export_flags;
-    task.need_resize = true;
+    task.need_resize = need_resize;
     task.target_mpp = target_mpp;
 
     global_tiff_export_progress = 0.0f;

@@ -39,7 +39,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
 void begin_export_cropped_bigtiff(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
                                   u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags);
 void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
-                                                u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags, v2f target_mpp);
+                                                u32 export_tile_width, u16 desired_photometric_interpretation, i32 quality, u32 export_flags, bool need_resize, v2f target_mpp);
 
 #ifdef __cplusplus
 }

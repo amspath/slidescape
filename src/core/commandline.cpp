@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -203,20 +203,12 @@ int app_command_execute(app_state_t* app_state) {
 
 								char filename_hint[512];
 								export_region_get_name_hint(app_state, filename_hint, sizeof(filename_hint));
-
-                                if (tiff_export_match_input_resolution) {
-                                    // Old code path: export TIFF by sampling from the existing pyramid
-                                    export_cropped_bigtiff(app_state, image, world_bounds, pixel_bounds,
-                                                           filename_hint, image->tile_width,
-                                                           tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
-                                } else {
-                                    // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
-                                    export_cropped_bigtiff_with_resample(app_state, image, world_bounds,pixel_bounds,
-                                                                         filename_hint, tiff_export_tile_width,
-                                                                         tiff_export_desired_color_space,
-                                                                         tiff_export_jpeg_quality, export_flags, true,
-                                                                         V2F(tiff_export_mpp, tiff_export_mpp));
-                                }
+                                // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
+                                export_cropped_bigtiff_with_resample(app_state, image, world_bounds,pixel_bounds,
+                                                                     filename_hint, tiff_export_tile_width,
+                                                                     tiff_export_desired_color_space,
+                                                                     tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
+                                                                     V2F(tiff_export_mpp, tiff_export_mpp));
 							}
 
 

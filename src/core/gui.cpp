@@ -891,20 +891,13 @@ void draw_export_region_dialog(app_state_t* app_state) {
 							}
 						}
 						if (image->tile_width == image->tile_height) {
-                            if (tiff_export_match_input_resolution) {
-                                // Old code path: export TIFF by sampling from the existing pyramid
-                                begin_export_cropped_bigtiff(app_state, image, scene->crop_bounds, scene->selection_pixel_bounds,
-                                                             filename_buffer, image->tile_width,
-                                                             tiff_export_desired_color_space, tiff_export_jpeg_quality, export_flags);
-                            } else {
-                                // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
-                                begin_export_cropped_bigtiff_with_resample(app_state, image, scene->crop_bounds,
-                                                                           scene->selection_pixel_bounds,
-                                                                           filename_buffer, image->tile_width,
-                                                                           tiff_export_desired_color_space,
-                                                                           tiff_export_jpeg_quality, export_flags,
-                                                                           V2F(tiff_export_mpp, tiff_export_mpp));
-                            }
+                            // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
+                            begin_export_cropped_bigtiff_with_resample(app_state, image, scene->crop_bounds,
+                                                                       scene->selection_pixel_bounds,
+                                                                       filename_buffer, image->tile_width,
+                                                                       tiff_export_desired_color_space,
+                                                                       tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
+                                                                       V2F(tiff_export_mpp, tiff_export_mpp));
 							gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
 						} else {
 							gui_add_modal_message_popup("Error##draw_export_region_dialog",
