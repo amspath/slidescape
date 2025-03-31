@@ -33,6 +33,7 @@ const char stringified_shader_source__basic_frag[] =
 	"uniform vec3 transparent_color;\n"
 	"uniform float transparent_tolerance;\n"
 	"uniform bool use_transparent_filter;\n"
+	"uniform bool draw_outlines;\n"
 	"\n"
 	"out vec4 fragColor;\n"
 	"\n"
@@ -53,7 +54,12 @@ const char stringified_shader_source__basic_frag[] =
 	"    }\n"
 	"    color = (color - black_level) * (1.0f / (white_level - black_level));\n"
 	"\n"
-	"    fragColor = vec4(opacity * color + (1.0f-opacity) * bg_color, opacity);\n"
+	"    if (draw_outlines && (fs_in.tex_coord.x < 0.01f || fs_in.tex_coord.x > 0.99f || fs_in.tex_coord.y < 0.01f || fs_in.tex_coord.y > 0.99f)) {\n"
+	"        fragColor = vec4(1, 0, 0, 1);\n"
+	"    } else {\n"
+	"        fragColor = vec4(opacity * color + (1.0f-opacity) * bg_color, opacity);\n"
+	"    }\n"
+	"\n"
 	"}\n";
 
 const char stringified_shader_source__finalblit_vert[] = 
