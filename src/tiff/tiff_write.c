@@ -1121,7 +1121,7 @@ static void construct_base_tile_with_resampling(image_draft_t* draft, image_draf
         }
         image_buffer_t supertile = create_bgra_image_buffer_using_arena(temp.arena, draft->supertile_width_read, draft->supertile_height_read);
         if (!supertile.is_valid) {
-            supertile = create_bgra_image_buffer(draft->tile_width, draft->tile_height);
+            supertile = create_bgra_image_buffer(draft->supertile_width_read, draft->supertile_height_read);
             supertile_need_destroy = true;
         }
 
