@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1700,25 +1700,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 				}
 			}
 
-			// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
-			ASSERT(base_image->mpp_x > 0.0f && base_image->mpp_y > 0.0f);
-			if (base_image->backend == IMAGE_BACKEND_TIFF || base_image->backend == IMAGE_BACKEND_OPENSLIDE || base_image->backend == IMAGE_BACKEND_DICOM) {
-				if (scene->has_selection_box) {
-					rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
-					bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);
-					scene->crop_bounds = selection_bounds;
-					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, base_image->mpp_x, base_image->mpp_y);
-					scene->can_export_region = true;
-				} else if (scene->is_cropped) {
-					scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, base_image->mpp_x, base_image->mpp_y);
-					scene->can_export_region = true;
-				} else {
-					scene->can_export_region = false;
-				}
-			} else {
-				scene->can_export_region = false;
-			}
-
+			scene_determine_if_export_is_possible(scene, base_image);
 
 			// Update dragging of objects
 			if (app_state->mouse_mode == MODE_DRAG_ANNOTATION_NODE) {

@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema
+  Copyright (c) 2019-2025, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -154,6 +154,21 @@ unsigned char * base64_decode(const unsigned char *src, size_t len,
 	return out;
 }
 // end of base64 decoder.
+
+// Wrapper for base64_decode, taking into account possible extra (invalid) characters at the end
+u8* isyntax_base64_decode(const char* src, size_t len, size_t *out_len) {
+	char last_char = src[len-1];
+	if (last_char == '/') {
+		len--; // The last character may cause the base64 decoding to fail if invalid
+		last_char = src[len-1];
+	}
+	while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
+		--len;
+		last_char = src[len-1];
+	}
+	u8* decoded = base64_decode((u8*)src, len, out_len);
+	return decoded;
+}
 
 // similar to atoi(), but also returning the string position so we can chain calls one after another.
 static const char* atoi_and_advance(const char* str, i32* dest) {
@@ -376,7 +391,16 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 					// Value will likely be "5.0" for v1 iSyntax files, "100.5" for v2 iSyntax files
 					isyntax->data_model_major_version = atoi(value);
 				} break;
-				case 0x1002: /*PIM_DP_UFS_BARCODE*/                    {} break; // "<base64-encoded barcode value>"
+				case 0x1002: /*PIM_DP_UFS_BARCODE*/ {
+					// "<base64-encoded barcode value>"
+					size_t decoded_len = 0;
+					char* decoded = (char*) isyntax_base64_decode(value, value_len, &decoded_len);
+					if (decoded) {
+						memcpy(isyntax->barcode, decoded, MIN(decoded_len, sizeof(isyntax->barcode)-1));
+						free(decoded);
+					}
+					isyntax->is_barcode_read = true;
+				} break;
 				case 0x1003: /*PIM_DP_SCANNED_IMAGES*/                 {} break;
 				case 0x1010: /*PIM_DP_SCANNER_RACK_PRIORITY*/          {} break; // "<u16>"
 			}
@@ -586,23 +610,13 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x2013: /*UFS_IMAGE_PIXEL_TRANSFORMATION_METHOD*/      {} break;
 				case 0x2014: { /*UFS_IMAGE_BLOCK_HEADER_TABLE*/      // data model <100
 					// NOTE: mutually exclusive with UFS_IMAGE_BLOCK_HEADERS (either one or the other must be present)
-					size_t decoded_capacity = value_len;
-					size_t decoded_len = 0;
-					i32 last_char = value[value_len-1];
 /*
 					FILE* test_out = file_stream_open_for_writing("test_b64.out");
 					file_stream_write(value, value_len, test_out);
 					file_stream_close(test_out);
 */
-					if (last_char == '/') {
-						value_len--; // The last character may cause the base64 decoding to fail if invalid
-						last_char = value[value_len-1];
-					}
-					while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
-						--value_len;
-						last_char = value[value_len-1];
-					}
-					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
+					size_t decoded_len = 0;
+					u8* decoded = isyntax_base64_decode(value, value_len, &decoded_len);
 					if (decoded) {
 
 						u32 header_size = *(u32*) decoded + 0;
@@ -670,23 +684,13 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x2016: /*UFS_IMAGE_CLUSTER_HEADER_TEMPLATES*/ {} break; // data model >= 100
 				case 0x2017: /*UFS_IMAGE_DIMENSIONS_OVER_CLUSTER*/  {} break;
 				case 0x201F: /*UFS_IMAGE_CLUSTER_HEADER_TABLE*/ { // data model >= 100
-					size_t decoded_capacity = value_len;
-					size_t decoded_len = 0;
-					i32 last_char = value[value_len-1];
 /*
 					FILE* test_out = file_stream_open_for_writing("test_b64.out");
 					file_stream_write(value, value_len, test_out);
 					file_stream_close(test_out);
 */
-					if (last_char == '/') {
-						value_len--; // The last character may cause the base64 decoding to fail if invalid
-						last_char = value[value_len-1];
-					}
-					while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
-						--value_len;
-						last_char = value[value_len-1];
-					}
-					u8* decoded = base64_decode((u8*)value, value_len, &decoded_len);
+					size_t decoded_len = 0;
+					u8* decoded = isyntax_base64_decode(value, value_len, &decoded_len);
 					if (decoded) {
 						u8* decoded_end = decoded + decoded_len;
 						u32 header_size = *(u32*) decoded + 0;
@@ -997,6 +1001,9 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 		if (c == '\0') {
 			// This should never trigger; iSyntax file is corrupt!
 			return isyntax_parse_xml_header_failure(isyntax);
+		}
+		if (isyntax->open_flags & LIBISYNTAX_OPEN_FLAG_READ_BARCODE_ONLY && isyntax->is_barcode_read) {
+			return isyntax_parse_xml_header_failure(isyntax); // abort early, return as if failed
 		}
 		yxml_ret_t r = yxml_parse(x, c);
 		if (r == YXML_OK) {
@@ -2953,10 +2960,12 @@ void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue) {
 }
 
 
-bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators) {
+bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open_flags_t flags) {
 
 	console_print_verbose("Attempting to open iSyntax: %s\n", filename);
 	ASSERT(isyntax);
+
+	isyntax->open_flags = flags;
 
 	int ret = 0; (void)ret;
 	file_stream_t fp = file_stream_open_for_reading(filename);
@@ -2977,6 +2986,9 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 				isyntax_level_t* level = wsi_image->levels + i;
 				if (level->tiles != NULL) free(level->tiles);
 			}
+		}
+		if (isyntax->open_flags & LIBISYNTAX_OPEN_FLAG_READ_BARCODE_ONLY && isyntax->is_barcode_read) {
+			success = true; // Aborted early on purpose for fast barcode reading.
 		}
 		return success;
 	}
@@ -3405,7 +3417,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators
 			size_t ll_coeff_block_allocator_capacity_in_blocks = block_allocator_maximum_capacity_in_blocks / 4;
 			size_t h_coeff_block_size = ll_coeff_block_size * 3;
 			size_t h_coeff_block_allocator_capacity_in_blocks = ll_coeff_block_allocator_capacity_in_blocks * 3;
-			if (init_allocators) {
+			if (flags & LIBISYNTAX_OPEN_FLAG_INIT_ALLOCATORS) {
 				isyntax->ll_coeff_block_allocator = malloc(sizeof(block_allocator_t));
 				isyntax->h_coeff_block_allocator = malloc(sizeof(block_allocator_t));
 				*isyntax->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
@@ -3481,6 +3493,8 @@ void isyntax_destroy(isyntax_t* isyntax) {
         if (isyntax->h_coeff_block_allocator->is_valid) {
             block_allocator_destroy(isyntax->h_coeff_block_allocator);
         }
+		free(isyntax->ll_coeff_block_allocator);
+		free(isyntax->h_coeff_block_allocator);
     }
 	if (isyntax->black_dummy_coeff) {
 		free(isyntax->black_dummy_coeff);
@@ -3525,6 +3539,9 @@ void isyntax_destroy(isyntax_t* isyntax) {
 				}
 			}
 		}
+	}
+	if (isyntax->cache) {
+		libisyntax_cache_destroy(isyntax->cache);
 	}
 	file_handle_close(isyntax->file_handle);
 }

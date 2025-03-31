@@ -223,6 +223,8 @@ set(VIEWER_SOURCE_FILES
         tiff/tif_lzw.c
         isyntax/isyntax.c
         isyntax/isyntax_streamer.c
+        isyntax/isyntax_reader.c
+        isyntax/libisyntax.c
         mrxs/mrxs.c
         imgui/imgui.cpp
         imgui/imgui_demo.cpp

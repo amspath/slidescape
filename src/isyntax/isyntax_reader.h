@@ -16,8 +16,9 @@ typedef struct isyntax_cache_t {
     benaphore_t mutex;
     // TODO(avirodov): int refcount;
     int target_cache_size;
-    block_allocator_t ll_coeff_block_allocator;
-    block_allocator_t h_coeff_block_allocator;
+    block_allocator_t* ll_coeff_block_allocator;
+    block_allocator_t* h_coeff_block_allocator;
+	bool is_block_allocator_owned;
     int allocator_block_width;
     int allocator_block_height;
 } isyntax_cache_t;

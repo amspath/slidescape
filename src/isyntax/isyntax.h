@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema
+  Copyright (c) 2019-2025, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -368,6 +368,7 @@ typedef struct isyntax_xml_parser_t {
 } isyntax_xml_parser_t;
 
 typedef struct isyntax_t {
+	enum libisyntax_open_flags_t open_flags;
 	i64 filesize;
 	file_handle_t file_handle;
 	isyntax_image_t images[16];
@@ -393,10 +394,13 @@ typedef struct isyntax_t {
 	icoeff_t* white_dummy_coeff;
 	block_allocator_t* ll_coeff_block_allocator;
 	block_allocator_t* h_coeff_block_allocator;
-    bool32 is_block_allocator_owned;
+    bool is_block_allocator_owned;
 	float loading_time;
 	float total_rgb_transform_time;
 	i32 data_model_major_version; // <100 (usually 5) for iSyntax format v1, >= 100 for iSyntax format v2
+	char barcode[64];
+	bool is_barcode_read;
+	isyntax_cache_t* cache;
 	work_queue_t* work_submission_queue;
 	volatile i32 refcount;
 } isyntax_t;
@@ -404,7 +408,7 @@ typedef struct isyntax_t {
 // function prototypes
 bool isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
 void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue);
-bool isyntax_open(isyntax_t* isyntax, const char* filename, bool init_allocators);
+bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open_flags_t flags);
 void isyntax_destroy(isyntax_t* isyntax);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);
 void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y, block_allocator_t* ll_coeff_block_allocator,

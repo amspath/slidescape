@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -222,6 +222,29 @@ void draw_selection_box(scene_t* scene) {
 		}
 		rgba_t rgba = {0, 0, 0, 128};
 		gui_draw_polygon_outline(points, 4, rgba, true, 5.0f, NULL);
+	}
+}
+
+
+void scene_determine_if_export_is_possible(scene_t* scene, image_t* image) {
+	// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
+	ASSERT(image->mpp_x > 0.0f && image->mpp_y > 0.0f);
+	// TODO: add image backend structs
+	if (image->backend == IMAGE_BACKEND_TIFF || image->backend == IMAGE_BACKEND_OPENSLIDE || image->backend == IMAGE_BACKEND_DICOM || image->backend == IMAGE_BACKEND_ISYNTAX) {
+		if (scene->has_selection_box) {
+			rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
+			bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);
+			scene->crop_bounds = selection_bounds;
+			scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, image->mpp_x, image->mpp_y);
+			scene->can_export_region = true;
+		} else if (scene->is_cropped) {
+			scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, image->mpp_x, image->mpp_y);
+			scene->can_export_region = true;
+		} else {
+			scene->can_export_region = false;
+		}
+	} else {
+		scene->can_export_region = false;
 	}
 }
 

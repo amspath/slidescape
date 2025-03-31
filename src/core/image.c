@@ -20,6 +20,7 @@
 #include "platform.h"
 #include "image.h"
 #include "jpeg_decoder.h"
+#include "isyntax_reader.h" // for isyntax_cache_t
 
 #define STBI_ASSERT(x) ASSERT(x)
 #include "stb_image.h" // for stbi_image_free()
@@ -1084,6 +1085,38 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 
 
 
+		} break;
+		case IMAGE_BACKEND_ISYNTAX: {
+			enum isyntax_pixel_format_t translated_pixel_format = 0;
+			if (desired_pixel_format == PIXEL_FORMAT_U8_BGRA) {
+				intermediate_pixel_format = PIXEL_FORMAT_U8_BGRA;
+				translated_pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
+			} else if (desired_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+				intermediate_pixel_format = PIXEL_FORMAT_U8_RGBA;
+				translated_pixel_format = LIBISYNTAX_PIXEL_FORMAT_RGBA;
+			} else {
+				console_print_error("image_read_region(): unknown/unsupported pixel format for backend '%s'\n", get_image_backend_name(image));
+				return false;
+			}
+			isyntax_t* isyntax = &image->isyntax;
+			if (!isyntax->cache) {
+				i32 cache_size = 2000;
+				if (libisyntax_cache_create("isyntax-to-tiff cache", cache_size, &isyntax->cache) != LIBISYNTAX_OK) {
+					fatal_error("Failed to create iSyntax cache");
+					return false;
+				}
+				// Inject the already initialized block allocators to the cache
+				isyntax_cache_t* cache = isyntax->cache;
+				cache->allocator_block_width = isyntax->block_width;
+				cache->allocator_block_height = isyntax->block_height;
+				cache->ll_coeff_block_allocator = isyntax->ll_coeff_block_allocator;
+				cache->h_coeff_block_allocator = isyntax->h_coeff_block_allocator;
+				cache->is_block_allocator_owned = false;
+			}
+			if (libisyntax_read_region(&image->isyntax, isyntax->cache, level, x, y, w, h, dest, translated_pixel_format) != LIBISYNTAX_OK) {
+				console_print_error("image_read_region(): unknown error in libisyntax_read_region()\n");
+				return false;
+			}
 		} break;
     }
 

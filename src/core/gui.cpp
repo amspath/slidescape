@@ -161,15 +161,12 @@ void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, sc
 }
 
 bool enable_load_debug_coco_file;
-bool enable_load_debug_isyntax_file;
 const char* coco_test_filename = "coco_test_in.json";
-const char* isyntax_test_filename = "1.isyntax";
 
 static void check_presence_of_debug_test_files() {
 	static bool checked;
 	if (!checked) {
 		enable_load_debug_coco_file = file_exists(coco_test_filename);
-		enable_load_debug_isyntax_file = file_exists(isyntax_test_filename);
 		checked = true;
 	}
 }
@@ -290,7 +287,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool crop_region;
 			bool export_region;
 			bool load_coco_test_file;
-			bool load_isyntax_test_file;
 			bool reset_zoom;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
@@ -374,9 +370,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (enable_load_debug_coco_file) {
 					if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
 				}
-				if (enable_load_debug_isyntax_file) {
-					if (ImGui::MenuItem("Load iSyntax test file", NULL, &menu_items_clicked.load_isyntax_test_file, enable_load_debug_isyntax_file)) {}
-				}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
 				ImGui::Separator();
@@ -454,11 +447,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			coco_t coco = {};
 			if (load_coco_from_file(&coco, coco_test_filename)) {
 				save_coco(&coco);
-			}
-		} else if (menu_items_clicked.load_isyntax_test_file) {
-			isyntax_t isyntax = {};
-			isyntax_set_work_queue(&isyntax, &global_work_queue);
-			if (isyntax_open(&isyntax, isyntax_test_filename, true)) {
 			}
 		} else if (menu_items_clicked.reset_zoom) {
 			scene->need_zoom_reset = true;
@@ -655,6 +643,14 @@ void draw_layers_window(app_state_t* app_state) {
 
 void draw_export_region_dialog(app_state_t* app_state) {
 	if (show_export_region_dialog) {
+		scene_determine_if_export_is_possible(&app_state->scene, app_state->loaded_images[0]);
+		if (!app_state->scene.can_export_region) {
+			// TODO: add image backend structs
+			// TODO: why can't we specify a reason here?
+			gui_add_modal_message_popup("Error##draw_export_region_dialog",
+			                            "Exporting a region is not possible.\n");
+			console_print_error("Error: exporting a region is not possible.\n");
+		}
 		ImGui::OpenPopup("Export region");
         if (tiff_export_match_input_resolution) {
             tiff_export_mpp = app_state->loaded_images[0]->mpp_x;
@@ -880,6 +876,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 				switch(image->backend) {
 					case IMAGE_BACKEND_OPENSLIDE:
 					case IMAGE_BACKEND_DICOM:
+					case IMAGE_BACKEND_ISYNTAX:
 					case IMAGE_BACKEND_TIFF: {
 						u32 export_flags = 0;
 						if (display_export_annotations_checkbox) {
@@ -890,6 +887,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 								export_flags |= EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
 							}
 						}
+						// TODO: remove this limitation
 						if (image->tile_width == image->tile_height) {
                             // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
                             begin_export_cropped_bigtiff_with_resample(app_state, image, scene->crop_bounds,

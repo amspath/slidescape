@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema
+  Copyright (c) 2019-2025, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -301,6 +301,7 @@ static void isyntax_do_first_load(isyntax_streamer_t* streamer) {
 	console_print("   iSyntax: loading the first %d tiles took %g seconds\n", tiles_loaded, get_seconds_elapsed(start_first_load, get_clock()));
 //	console_print("   total RGB transform time: %g seconds\n", total_rgb_transform_time);
 
+	// TODO: should we skip this? The coeffs might be needed again after all
 	i32 blocks_freed = 0;
 	for (i32 i = 0; i < levels_in_chunk; ++i) {
 		scale = wsi->max_scale - i;
@@ -315,6 +316,8 @@ static void isyntax_do_first_load(isyntax_streamer_t* streamer) {
 				channel->coeff_h = NULL;
 				++blocks_freed;
 			}
+			tile->has_h = false;
+			tile->has_ll = false;
 		}
 	}
 //	console_print("   blocks allocated and freed: %d\n", blocks_freed);

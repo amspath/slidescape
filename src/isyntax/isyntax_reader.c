@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema, Alexandr Virodov
+  Copyright (c) 2019-2025, Pieter Valkema, Alexandr Virodov
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -112,9 +112,9 @@ static void isyntax_openslide_load_tile_coefficients_ll_or_h(isyntax_cache_t* ca
         ASSERT(codeblock->color_component == (u32)color);
         ASSERT(codeblock->scale == (u32)tile->tile_scale);
         if (is_ll) {
-            tile->color_channels[color].coeff_ll = (icoeff_t *) block_alloc(&cache->ll_coeff_block_allocator);
+            tile->color_channels[color].coeff_ll = (icoeff_t *) block_alloc(cache->ll_coeff_block_allocator);
         } else {
-            tile->color_channels[color].coeff_h = (icoeff_t *) block_alloc(&cache->h_coeff_block_allocator);
+            tile->color_channels[color].coeff_h = (icoeff_t *) block_alloc(cache->h_coeff_block_allocator);
         }
         // TODO(avirodov): fancy allocators, for multiple sequential blocks (aka chunk). Or let OS do the caching.
         // Adding 7 safety bytes so bitstream_lsb_read() won't access out of bounds in isyntax_hulsken_decompress().
@@ -206,7 +206,7 @@ static void isyntax_openslide_idwt(isyntax_cache_t* cache, isyntax_t* isyntax, i
         ASSERT(pixels_buffer != NULL); // Shouldn't be asking for idwt at level 0 if we're not going to use the result for pixels.
         isyntax_load_tile(isyntax, &isyntax->images[isyntax->wsi_image_index],
                                  tile->tile_scale, tile->tile_x, tile->tile_y,
-                                 &cache->ll_coeff_block_allocator,
+                                 cache->ll_coeff_block_allocator,
                                  pixels_buffer, pixel_format);
         return;
     }
@@ -216,7 +216,7 @@ static void isyntax_openslide_idwt(isyntax_cache_t* cache, isyntax_t* isyntax, i
         //  the lls in the tile. Currently need to recompute idwt.
         isyntax_load_tile(isyntax, &isyntax->images[isyntax->wsi_image_index],
                           tile->tile_scale, tile->tile_x, tile->tile_y,
-                          &cache->ll_coeff_block_allocator,
+                          cache->ll_coeff_block_allocator,
                           pixels_buffer, pixel_format);
         return;
     }
@@ -231,7 +231,7 @@ static void isyntax_openslide_idwt(isyntax_cache_t* cache, isyntax_t* isyntax, i
 
     isyntax_load_tile(isyntax, &isyntax->images[isyntax->wsi_image_index],
                       tile->tile_scale, tile->tile_x, tile->tile_y,
-                      &cache->ll_coeff_block_allocator,
+                      cache->ll_coeff_block_allocator,
                       /*pixels_buffer=*/NULL, /*pixel_format=*/0);
 }
 
@@ -332,6 +332,14 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
 
     isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
     isyntax_level_t* level = &wsi->levels[scale];
+
+	if (!(tile_x >= 0 && tile_x < level->width_in_tiles && tile_y > 0 && tile_y < level->height_in_tiles)) {
+		// Read out of bounds -> set to all white
+		memset(pixels_buffer, 0xff, isyntax->tile_width * isyntax->tile_height * 4);
+		benaphore_unlock(&cache->mutex);
+		return;
+	}
+
     isyntax_tile_t *tile = &level->tiles[level->width_in_tiles * tile_y + tile_x];
     // printf("=== isyntax_openslide_load_tile scale=%d tile_x=%d tile_y=%d\n", scale, tile_x, tile_y);
     if (!tile->exists) {
@@ -402,11 +410,11 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
         tile_list_remove(&cache->cache_list, tile);
         for (int i = 0; i < 3; ++i) {
             if (tile->has_ll) {
-                block_free(&cache->ll_coeff_block_allocator, tile->color_channels[i].coeff_ll);
+                block_free(cache->ll_coeff_block_allocator, tile->color_channels[i].coeff_ll);
                 tile->color_channels[i].coeff_ll = NULL;
             }
             if (tile->has_h) {
-                block_free(&cache->h_coeff_block_allocator, tile->color_channels[i].coeff_h);
+                block_free(cache->h_coeff_block_allocator, tile->color_channels[i].coeff_h);
                 tile->color_channels[i].coeff_h = NULL;
             }
         }
