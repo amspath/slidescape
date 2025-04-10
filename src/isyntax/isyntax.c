@@ -1000,12 +1000,9 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 
 	// parse XML byte for byte
 	char* doc = xml_header;
+	yxml_ret_t prev_r = YXML_OK;
 	for (i64 remaining_length = chunk_length; remaining_length > 0; --remaining_length, ++doc) {
 		int c = *doc;
-		if (c == '\0') {
-			// This should never trigger; iSyntax file is corrupt!
-			return isyntax_parse_xml_header_failure(isyntax);
-		}
 		if (isyntax->open_flags & LIBISYNTAX_OPEN_FLAG_READ_BARCODE_ONLY && isyntax->is_barcode_read) {
 			return isyntax_parse_xml_header_failure(isyntax); // abort early, return as if failed
 		}
@@ -1013,6 +1010,16 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 		if (r == YXML_OK) {
 			continue; // nothing worthy of note has happened -> continue
 		} else if (r < 0) {
+			// Syntax error; iSyntax file might be corrupt?
+			if (r == YXML_ESYN && c == '\0') {
+				// Zeroes are not expected to occur and would tend to suggest a corrupted file.
+				// However, some iSyntax files apparently have a sequence of zeroes between the end of the XML header
+				// and the End of Table (EOT) marker (3 bytes "\r\n\x04"). We need to allow for this situation.
+				if (prev_r == YXML_ELEMEND && parser->node_stack_index == 0) {
+					success = true;
+					return isyntax_parse_xml_header_cleanup(isyntax, success);
+				}
+			}
 			return isyntax_parse_xml_header_failure(isyntax);
 		} else if (r > 0) {
 			// token
@@ -1393,6 +1400,7 @@ static bool isyntax_parse_xml_header(isyntax_t* isyntax, char* xml_header, i64 c
 				}
 			}
 		}
+		prev_r = r;
 	}
 
 	success = true;
