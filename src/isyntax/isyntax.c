@@ -157,14 +157,16 @@ unsigned char * base64_decode(const unsigned char *src, size_t len,
 
 // Wrapper for base64_decode, taking into account possible extra (invalid) characters at the end
 u8* isyntax_base64_decode(const char* src, size_t len, size_t *out_len) {
-	char last_char = src[len-1];
-	if (last_char == '/') {
-		len--; // The last character may cause the base64 decoding to fail if invalid
-		last_char = src[len-1];
-	}
-	while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
-		--len;
-		last_char = src[len-1];
+	if (len > 0) {
+		char last_char = src[len-1];
+		if (last_char == '/') {
+			len--; // The last character may cause the base64 decoding to fail if invalid
+			last_char = src[len-1];
+		}
+		while (last_char == '\n' || last_char == '\r' || last_char == ' ') {
+			--len;
+			last_char = src[len-1];
+		}
 	}
 	u8* decoded = base64_decode((u8*)src, len, out_len);
 	return decoded;
@@ -393,11 +395,13 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 				} break;
 				case 0x1002: /*PIM_DP_UFS_BARCODE*/ {
 					// "<base64-encoded barcode value>"
-					size_t decoded_len = 0;
-					char* decoded = (char*) isyntax_base64_decode(value, value_len, &decoded_len);
-					if (decoded) {
-						memcpy(isyntax->barcode, decoded, MIN(decoded_len, sizeof(isyntax->barcode)-1));
-						free(decoded);
+					if (value_len > 0) {
+						size_t decoded_len = 0;
+						char* decoded = (char*) isyntax_base64_decode(value, value_len, &decoded_len);
+						if (decoded) {
+							memcpy(isyntax->barcode, decoded, MIN(decoded_len, sizeof(isyntax->barcode)-1));
+							free(decoded);
+						}
 					}
 					isyntax->is_barcode_read = true;
 				} break;
