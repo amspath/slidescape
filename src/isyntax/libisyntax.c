@@ -384,8 +384,6 @@ void libisyntax_cache_destroy(isyntax_cache_t* isyntax_cache) {
         if (isyntax_cache->h_coeff_block_allocator->is_valid) {
             block_allocator_destroy(isyntax_cache->h_coeff_block_allocator);
         }
-        free(isyntax_cache->ll_coeff_block_allocator);
-        free(isyntax_cache->h_coeff_block_allocator);
     }
 
     benaphore_destroy(&isyntax_cache->mutex);

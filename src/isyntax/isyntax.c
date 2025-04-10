@@ -3493,8 +3493,6 @@ void isyntax_destroy(isyntax_t* isyntax) {
         if (isyntax->h_coeff_block_allocator->is_valid) {
             block_allocator_destroy(isyntax->h_coeff_block_allocator);
         }
-		free(isyntax->ll_coeff_block_allocator);
-		free(isyntax->h_coeff_block_allocator);
     }
 	if (isyntax->black_dummy_coeff) {
 		free(isyntax->black_dummy_coeff);

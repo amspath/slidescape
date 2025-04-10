@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema
+  Copyright (c) 2019-2025, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -73,7 +73,7 @@ void block_allocator_destroy(block_allocator_t* allocator) {
 	if (allocator->chunks) free(allocator->chunks);
 	if (allocator->free_list_storage) free(allocator->free_list_storage);
 	benaphore_destroy(&allocator->lock);
-	memset(allocator, 0, sizeof(block_allocator_t));
+	free(allocator);
 }
 
 void* block_alloc(block_allocator_t* allocator) {

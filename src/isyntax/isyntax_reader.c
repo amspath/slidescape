@@ -333,7 +333,7 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
     isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
     isyntax_level_t* level = &wsi->levels[scale];
 
-	if (!(tile_x >= 0 && tile_x < level->width_in_tiles && tile_y > 0 && tile_y < level->height_in_tiles)) {
+	if (!(tile_x >= 0 && tile_x < level->width_in_tiles && tile_y >= 0 && tile_y < level->height_in_tiles)) {
 		// Read out of bounds -> set to all white
 		memset(pixels_buffer, 0xff, isyntax->tile_width * isyntax->tile_height * 4);
 		benaphore_unlock(&cache->mutex);
