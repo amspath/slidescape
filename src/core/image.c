@@ -1113,6 +1113,15 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				cache->h_coeff_block_allocator = isyntax->h_coeff_block_allocator;
 				cache->is_block_allocator_owned = false;
 			}
+
+			// NOTE: libisyntax adjusts the x and y read position to account for the iSyntax padding area.
+			// However, Slidescape keeps the (0,0) origin at the edge of the padding area instead (not the actual image).
+			// So we need to pre-emptively 'undo' the offsetting that libisyntax does.
+			// TODO: change Slidescape origin to keep coordinate system the same as libisyntax?
+			int32_t offset = ((3 << isyntax->images[0].level_count) - 3) >> level;
+			x -= offset;
+			y -= offset;
+
 			if (libisyntax_read_region(&image->isyntax, isyntax->cache, level, x, y, w, h, dest, translated_pixel_format) != LIBISYNTAX_OK) {
 				console_print_error("image_read_region(): unknown error in libisyntax_read_region()\n");
 				return false;
