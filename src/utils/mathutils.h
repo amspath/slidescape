@@ -160,6 +160,7 @@ bounds2f bounds_from_pivot_point(v2f pivot, v2f pivot_relative_pos, float r_minu
 bounds2f bounds_from_points(v2f* points, i32 point_count);
 polygon4v2f rotated_rectangle(float width, float height, float rotation);
 bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float mpp_y);
+bounds2f pixel_bounds_to_world_bounds(bounds2i pixel_bounds, float mpp_x, float mpp_y);
 rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y);
 v2f project_point_on_line_segment(v2f point, v2f line_start, v2f line_end, float* t_ptr);
 bool v2f_within_bounds(bounds2f bounds, v2f point);

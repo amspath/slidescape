@@ -244,6 +244,15 @@ bounds2i world_bounds_to_pixel_bounds(bounds2f* world_bounds, float mpp_x, float
 	return pixel_bounds;
 }
 
+bounds2f pixel_bounds_to_world_bounds(bounds2i pixel_bounds, float mpp_x, float mpp_y) {
+	bounds2f world_bounds = {0};
+	world_bounds.left = pixel_bounds.left * mpp_x;
+	world_bounds.top = pixel_bounds.top * mpp_y;
+	world_bounds.right = pixel_bounds.right * mpp_x;
+	world_bounds.bottom = pixel_bounds.bottom * mpp_y;
+	return world_bounds;
+}
+
 rect2f pixel_rect_to_world_rect(rect2i pixel_rect, float mpp_x, float mpp_y) {
 	rect2f world_rect = {0};
 	world_rect.x = pixel_rect.x * mpp_x;
