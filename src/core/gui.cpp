@@ -303,10 +303,8 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			if (ImGui::MenuItem("Save", "Ctrl+S", &menu_items_clicked.save, can_save)) {}
 			ImGui::Separator();
 
-			if (ImGui::BeginMenu("Export", scene->can_export_region)) {
-				if (ImGui::MenuItem("Export region...", NULL, &menu_items_clicked.export_region, scene->can_export_region)) {}
-				ImGui::EndMenu();
-			}
+			if (ImGui::MenuItem("Export...", NULL, &menu_items_clicked.export_region, scene->can_export_region)) {}
+
 			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4", &menu_items_clicked.exit_program)) {}
 			ImGui::EndMenu();
@@ -643,7 +641,8 @@ void draw_layers_window(app_state_t* app_state) {
 
 void draw_export_region_dialog(app_state_t* app_state) {
 	if (show_export_region_dialog) {
-		scene_determine_if_export_is_possible(&app_state->scene, app_state->loaded_images[0]);
+		image_t* image = (arrlen(app_state->loaded_images) > 0) ? app_state->loaded_images[0] : NULL;
+		scene_determine_if_export_is_possible(&app_state->scene, image);
 		if (!app_state->scene.can_export_region) {
 			// TODO: add image backend structs
 			// TODO: why can't we specify a reason here?
@@ -680,6 +679,8 @@ void draw_export_region_dialog(app_state_t* app_state) {
 			if (image->mpp_x > 0.0f && image->mpp_y > 0.0f) {
 				bounds2i pixel_bounds = scene->selection_pixel_bounds;
 
+				ImGui::Text("Region to export: %s", scene->selection_description);
+
 				if (ImGui::TreeNodeEx("Adjust region", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
 					rect2i export_rect = {pixel_bounds.left, pixel_bounds.top, pixel_bounds.right - pixel_bounds.left, pixel_bounds.bottom - pixel_bounds.top};
 					bool changed = false;
@@ -689,6 +690,10 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					changed |= ImGui::InputInt("Height##export_pixel_bounds", &export_rect.h);
 
 					if (changed) {
+						if (!scene->has_selection_box) {
+							scene->has_selection_box = true;
+						}
+						scene->selection_description = "selected area (modified)";
 						scene->selection_box = pixel_rect_to_world_rect(export_rect, image->mpp_x, image->mpp_y);
 						scene->selection_pixel_bounds = BOUNDS2I(export_rect.x, export_rect.y, export_rect.x + export_rect.w, export_rect.y + export_rect.h);
 //						pixel_bounds = scene->selection_pixel_bounds;
@@ -786,8 +791,9 @@ void draw_export_region_dialog(app_state_t* app_state) {
 						}
 					}
 					new_name_hint[append_pos] = '\0';
-					// add '_region'
-					strncpy(new_name_hint + append_pos, "_region", buffer_size - append_pos);
+					// TODO: allow custom postfix?
+					// add '_export'
+					strncpy(new_name_hint + append_pos, ".exported", buffer_size - append_pos);
 					name_hint = new_name_hint;
 				}
 			}

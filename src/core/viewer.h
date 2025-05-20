@@ -254,6 +254,7 @@ typedef struct scene_t {
 	bounds2i selection_pixel_bounds;
 	bool can_export_region;
 	bool is_cropped;
+	const char* selection_description;
 	v3f transparent_color;
 	float transparent_tolerance;
 	bool use_transparent_filter;

@@ -1128,6 +1128,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 	if (image_count == 0) {
+		scene->can_export_region = false;
 		if (app_state->is_window_title_set_for_image) {
 			reset_window_title(app_state->main_window);
 			app_state->is_window_title_set_for_image = false;
