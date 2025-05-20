@@ -529,6 +529,19 @@ bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer
 	}
 }
 
+void win32_process_xinput_button(button_state_t* old_state, WORD xinput_state, DWORD button_bit, button_state_t* new_state) {
+	new_state->down = (xinput_state & button_bit) == button_bit;
+	new_state->transition_count = (old_state->down != new_state->down) ? 1 : 0;
+}
+
+void win32_process_keyboard_event(button_state_t* new_state, bool32 down_boolean) {
+	down_boolean = (down_boolean != 0);
+	if (new_state->down != down_boolean) {
+		new_state->down = (bool8)down_boolean;
+		++new_state->transition_count;
+	}
+}
+
 LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = ImGui_ImplWin32_WndProcHandler(window, message, wparam, lparam);
 //	return result;
@@ -629,6 +642,13 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
 #endif
+		case WM_KILLFOCUS: {
+			// Lost focus -> release all keys
+			controller_input_t* keyboard_input = &curr_input->keyboard;
+			for (i32 i = 0; i < COUNT(keyboard_input->buttons); ++i) {
+				win32_process_keyboard_event(&keyboard_input->buttons[i], false);
+			}
+		} break;
 
 		default: {
 			result = DefWindowProcA(window, message, wparam, lparam);
@@ -636,19 +656,6 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 
 	}
 	return result;
-}
-
-void win32_process_xinput_button(button_state_t* old_state, WORD xinput_state, DWORD button_bit, button_state_t* new_state) {
-	new_state->down = (xinput_state & button_bit) == button_bit;
-	new_state->transition_count = (old_state->down != new_state->down) ? 1 : 0;
-}
-
-void win32_process_keyboard_event(button_state_t* new_state, bool32 down_boolean) {
-	down_boolean = (down_boolean != 0);
-	if (new_state->down != down_boolean) {
-		new_state->down = (bool8)down_boolean;
-		++new_state->transition_count;
-	}
 }
 
 // returns true if there was an idle period, false otherwise.
