@@ -793,7 +793,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					new_name_hint[append_pos] = '\0';
 					// TODO: allow custom postfix?
 					// add '_export'
-					strncpy(new_name_hint + append_pos, ".exported", buffer_size - append_pos);
+					strncpy(new_name_hint + append_pos, global_export_region_filename_postfix, buffer_size - append_pos);
 					name_hint = new_name_hint;
 				}
 			}

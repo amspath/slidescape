@@ -459,7 +459,7 @@ extern bool debug_draw_isyntax_valid_data_envelopes INIT(= false);
 extern i32 global_next_resource_id INIT(= 1000);
 
 extern float global_tiff_export_progress; // TODO: change to task-local variable?
-extern const char* global_export_region_filename_postfix INIT(= "_region");
+extern const char* global_export_region_filename_postfix INIT(= ".exported");
 
 extern bool is_dicom_available;
 extern bool is_dicom_loading_done;

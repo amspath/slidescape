@@ -933,49 +933,78 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 		case IMAGE_BACKEND_STBI:{
 			level_image_t* level_image = image->level_images + level;
 
+			i32 tile_width = (i32)level_image->tile_width;
+			i32 tile_height = (i32)level_image->tile_height;
+
+			i32 start_tile_x;
+			i32 end_tile_x;
+			i32 x_remainder;
+			i32 x_remainder_last;
+
+			if (x > 0) {
+				start_tile_x = x / tile_width;
+				end_tile_x = (x + w - 1) / tile_width;
+				x_remainder = x % tile_width;
+				x_remainder_last = (x + w - 1) % tile_width;
+			} else {
+				start_tile_x = -(-x / tile_width);
+				end_tile_x = -(-(x + w - 1) / tile_width);
+				x_remainder = (x % tile_width + tile_width) % tile_width;
+				x_remainder_last = ((x + w - 1) % tile_width + tile_width) % tile_width;
+			}
+
+			i32 start_tile_y;
+			i32 end_tile_y;
+			i32 y_remainder;
+			i32 y_remainder_last;
+
+			if (y > 0) {
+				start_tile_y = y / tile_height;
+				end_tile_y = (y + h - 1) / tile_height;
+				y_remainder = y % tile_height;
+				y_remainder_last = (y + h - 1) % tile_height;
+			} else {
+				start_tile_y = -(-y / tile_height);
+				end_tile_y = -(-(y + h - 1) / tile_height);
+				y_remainder = (y % tile_height + tile_height) % tile_height;
+				y_remainder_last = ((y + h - 1) % tile_height + tile_height) % tile_height;
+			}
+
+			// Read all source tiles needed for this region
 			bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)level_image->width_in_tiles, (i32)level_image->height_in_tiles);
-			i32 local_x = x << level;
-			i32 local_y = y << level;
-			i32 tile_width = level_image->tile_width;
-			i32 tile_height = level_image->tile_height;
-			i32 tile_x0 = local_x / tile_width;
-			i32 tile_y0 = local_y / tile_height;
-			i32 tile_x1 = (local_x + w - 1) / tile_width + 1;
-			i32 tile_y1 = (local_y + h - 1) / tile_height + 1;
-			bounds2i region_tiles = BOUNDS2I(tile_x0, tile_y0, tile_x1, tile_y1);
+			bounds2i region_tiles = BOUNDS2I(start_tile_x, start_tile_y, end_tile_x + 1, end_tile_y + 1);
 			bounds2i tiles_within_level_bounds = clip_bounds2i(region_tiles, level_tiles_bounds);
+			i32 width_in_tiles_to_read = tiles_within_level_bounds.right - tiles_within_level_bounds.left;
+			i32 height_in_tiles_to_read = tiles_within_level_bounds.bottom - tiles_within_level_bounds.top;
 
-			i32 width_in_tiles = tiles_within_level_bounds.right - tiles_within_level_bounds.left;
-			i32 height_in_tiles = tiles_within_level_bounds.bottom - tiles_within_level_bounds.top;
-
-			if (width_in_tiles > 0 && height_in_tiles > 0) {
-				load_tile_task_t* wishlist = calloc(width_in_tiles * height_in_tiles, sizeof(load_tile_task_t));
+			if (width_in_tiles_to_read > 0 && height_in_tiles_to_read > 0) {
+				load_tile_task_t *wishlist = calloc(width_in_tiles_to_read * height_in_tiles_to_read, sizeof(load_tile_task_t));
 				i32 tiles_to_load = 0;
 
 				work_queue_t read_completion_queue = work_queue_create("/imagereadregionsem",
-                                                                       width_in_tiles * height_in_tiles);
+				                                                       width_in_tiles_to_read * height_in_tiles_to_read);
 
 				// request tiles
 				benaphore_lock(&image->lock);
 				for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
-						tile_t* tile = get_tile(level_image, tile_x, tile_y);
+						tile_t *tile = get_tile(level_image, tile_x, tile_y);
 						if (tile->is_empty) continue; // no need to load empty tiles
 						if (tile->is_cached && tile->pixels) {
 							//TODO: retain
 							continue; // already cached
 						}
 						tile->need_keep_in_cache = true;
-						wishlist[tiles_to_load++] = (load_tile_task_t){
-							.resource_id = image->resource_id,
-							.image = image, .tile = tile, .level = level,
-							.tile_x = tile->tile_x,
-							.tile_y = tile->tile_y,
-							.need_gpu_residency = tile->need_gpu_residency,
-							.need_keep_in_cache = true,
-							.invert_colors = invert_colors,
-							.completion_queue = &read_completion_queue,
-                            .refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
+						wishlist[tiles_to_load++] = (load_tile_task_t) {
+								.resource_id = image->resource_id,
+								.image = image, .tile = tile, .level = level,
+								.tile_x = tile->tile_x,
+								.tile_y = tile->tile_y,
+								.need_gpu_residency = tile->need_gpu_residency,
+								.need_keep_in_cache = true,
+								.invert_colors = invert_colors,
+								.completion_queue = &read_completion_queue,
+								.refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
 						};
 
 					}
@@ -990,7 +1019,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						work_queue_entry_t entry = work_queue_get_next_entry(&read_completion_queue);
 						if (entry.is_valid) {
 							benaphore_lock(&image->lock);
-                            work_queue_mark_entry_completed(&read_completion_queue);
+							work_queue_mark_entry_completed(&read_completion_queue);
 							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 							if (task->pixel_memory) {
 								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
@@ -1003,14 +1032,16 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							benaphore_unlock(&image->lock);
 						}
 					} else if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
-                        work_queue_do_work(&global_work_queue, 0);
+						work_queue_do_work(&global_work_queue, 0);
 					} else {
 						platform_sleep(1);
 					}
 				}
-                work_queue_destroy(&read_completion_queue);
-			}
+				work_queue_destroy(&read_completion_queue);
+				free(wishlist);
 
+
+			}
 
 			intermediate_pixel_format = PIXEL_FORMAT_U8_BGRA;
 			if (desired_pixel_format == intermediate_pixel_format) {
@@ -1019,74 +1050,45 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				intermediate_pixel_buffer = malloc(w * h * sizeof(uint32_t));
 			}
 
+			// Fill in background
+			u8 image_background_color = image->is_background_black ? 0 /*black*/ : 0xFF; // white
+			memset(intermediate_pixel_buffer, image_background_color, w * h * sizeof(uint32_t));
 
-			// reconstruct the tiles into the requested region
-			i32 x0_tile_offset = local_x % tile_width;
-			i32 y0_tile_offset = local_y % tile_height;
-			i32 x1_tile_offset = ((local_x + w - 1) % tile_width) + 1;
-			i32 y1_tile_offset = ((local_y + h - 1) % tile_height) + 1;
-			int bg_value = 0xFF; // for memset() (white)
-			for (i32 tile_y = region_tiles.min.y; tile_y < region_tiles.max.y; ++tile_y) {
-				i32 dest_y = (tile_y - region_tiles.min.y) * tile_height;
-				if (tile_y > region_tiles.min.y) {
-					dest_y -= y0_tile_offset;
-				}
+			// Allocate memory for tile pixels (will reuse for consecutive libisyntax_tile_read() calls)
+//			uint32_t* tile_pixels = (uint32_t*)malloc(tile_width * tile_height * sizeof(uint32_t));
 
-				i32 copy_height = tile_height;
-				i32 copy_y0 = 0;
-				i32 copy_y1 = tile_height;
-				if (tile_y == region_tiles.min.y) {
-					copy_height -= y0_tile_offset;
-					copy_y0 = y0_tile_offset;
-				}
-				if (tile_y == region_tiles.max.y-1) {
-					copy_height -= (tile_height - y1_tile_offset);
-					copy_y1 = y1_tile_offset;
-				}
+			// Read tiles and copy the relevant portion of each tile to the region
+			for (i32 tile_y = start_tile_y; tile_y <= end_tile_y; ++tile_y) {
+				for (i32 tile_x = start_tile_x; tile_x <= end_tile_x; ++tile_x) {
+					// Calculate the portion of the tile to be copied
+					i32 src_x = (tile_x == start_tile_x) ? x_remainder : 0;
+					i32 src_y = (tile_y == start_tile_y) ? y_remainder : 0;
+					i32 dest_x = (tile_x == start_tile_x) ? 0 : (tile_x - start_tile_x) * tile_width - x_remainder;
+					i32 dest_y = (tile_y == start_tile_y) ? 0 : (tile_y - start_tile_y) * tile_height - y_remainder;
+					i32 copy_width = (tile_x == end_tile_x) ? x_remainder_last - src_x + 1 : tile_width - src_x;
+					i32 copy_height = (tile_y == end_tile_y) ? y_remainder_last - src_y + 1 : tile_height - src_y;
 
-				for (i32 tile_x = region_tiles.min.x; tile_x < region_tiles.max.x; ++tile_x) {
-					i32 dest_x = (tile_x - region_tiles.min.x) * tile_width;
-					if (tile_x > region_tiles.min.x) {
-						dest_x -= x0_tile_offset;
-					}
-
-					i32 copy_width = tile_width;
-					i32 copy_x0 = 0;
-					i32 copy_x1 = tile_width;
-					if (tile_x == region_tiles.min.x) {
-						copy_width -= x0_tile_offset;
-						copy_x0 = x0_tile_offset;
-					}
-					if (tile_x == region_tiles.max.x-1) {
-						copy_width -= (tile_width - x1_tile_offset);
-						copy_x1 = x1_tile_offset;
-					}
-
-					bool copied = false;
 					if (tile_x >= 0 && tile_y >= 0 && tile_x < level_image->width_in_tiles && tile_y < level_image->height_in_tiles) {
-						// fill the area covered by this tile (if it exists)
+						// Source tile is within range -> try to read its pixels
 						tile_t* tile = get_tile(level_image, tile_x, tile_y);
 						if (!tile->is_empty && tile->is_cached && tile->pixels) {
-							uint32_t* row = (uint32_t*)intermediate_pixel_buffer + dest_y * w + dest_x;
-							for (i32 src_y = copy_y0; src_y < copy_y1; ++src_y) {
-								memcpy(row, (uint32_t*)tile->pixels + src_y * tile_width + copy_x0, copy_width * sizeof(uint32_t));
-								row += w;
+							// Copy the relevant portion of the tile to the region
+							u32* pixels = (u32*)tile->pixels;
+							for (int64_t i = 0; i < copy_height; ++i) {
+								int64_t dest_index = (dest_y + i) * w + dest_x;
+								int64_t src_index = (src_y + i) * tile_width + src_x;
+								memcpy(((u32*)intermediate_pixel_buffer) + dest_index,
+								       pixels + src_index,
+								       copy_width * sizeof(uint32_t));
 							}
-							copied = true;
 						}
 					}
-					if (!copied) {
-						// if the tile does not exist, fill the area with white
-						uint32_t* row = (uint32_t*)intermediate_pixel_buffer + dest_y * w + dest_x;
-						for (i32 src_y = copy_y0; src_y < copy_y1; ++src_y) {
-							memset(row, bg_value, copy_width * sizeof(uint32_t));
-							row += w;
-						}
-					}
+
 				}
 			}
 
 			// release tiles
+			// TODO: proper tile caching
 			benaphore_lock(&image->lock);
 			for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 				for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {

@@ -526,7 +526,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			i32 num_tasks_on_wishlist = 0;
 			float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
 
-			for (i32 scale = highest_visible_scale; scale >= lowest_visible_scale; --scale) {
+			for (i32 scale = lowest_visible_scale; scale <= highest_visible_scale; ++scale) {
 				ASSERT(scale >= 0 && scale < COUNT(image->level_images));
 				level_image_t *drawn_level = image->level_images + scale;
 				if (!drawn_level->exists) {
