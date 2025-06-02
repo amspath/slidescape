@@ -147,6 +147,17 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	}
 
 
+	if (task->invert_colors) {
+		u32 pixel_count = level_image->tile_width * level_image->tile_height;
+		u8* pos = temp_memory;
+		for (u32 j = 0; j < pixel_count; ++j) {
+			pos[0] = 255 - pos[0];
+			pos[1] = 255 - pos[1];
+			pos[2] = 255 - pos[2];
+			pos += 4;
+		}
+	}
+
 	if (failed && temp_memory != NULL) {
 		free(temp_memory);
 		temp_memory = NULL;

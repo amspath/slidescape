@@ -870,8 +870,26 @@ void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 comp
     }
 }
 
+void do_invert_colors(u8* pixels, i32 w, i32 h, enum pixel_format_enum pixel_format) {
+	if (pixel_format == PIXEL_FORMAT_U8_BGRA || pixel_format == PIXEL_FORMAT_U8_RGBA) {
+		u32 pixel_count = w * h;
+		u8* pos = pixels;
+		for (u32 j = 0; j < pixel_count; ++j) {
+			pos[0] = 255 - pos[0];
+			pos[1] = 255 - pos[1];
+			pos[2] = 255 - pos[2];
+			pos += 4;
+		}
+	} else {
+		console_print_error("do_invert_colors(): unsupported/unknown pixel format\n");
+	}
+}
+
 bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format) {
     ASSERT(dest != NULL);
+
+	// TODO: make inverting colors configurable
+	bool8 invert_colors = false;
 
 	if (w <= 0 || h <= 0) {
 		return false;
@@ -955,6 +973,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							.tile_y = tile->tile_y,
 							.need_gpu_residency = tile->need_gpu_residency,
 							.need_keep_in_cache = true,
+							.invert_colors = invert_colors,
 							.completion_queue = &read_completion_queue,
                             .refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
 						};
@@ -1128,6 +1147,11 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			}
 		} break;
     }
+
+	if (intermediate_pixel_buffer && invert_colors) {
+		do_invert_colors(intermediate_pixel_buffer, w, h, intermediate_pixel_format);
+	}
+
 
     bool success = true;
     if (intermediate_pixel_format == desired_pixel_format) {

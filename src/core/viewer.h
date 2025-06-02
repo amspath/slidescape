@@ -109,6 +109,7 @@ typedef struct load_tile_task_t {
 	i32 priority;
 	bool8 need_gpu_residency;
 	bool8 need_keep_in_cache;
+	bool8 invert_colors;
 	work_queue_callback_t* completion_callback;
 	work_queue_t* completion_queue;
     i32 refcount_to_decrement;
