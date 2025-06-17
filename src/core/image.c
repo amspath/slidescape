@@ -941,34 +941,26 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			i32 x_remainder;
 			i32 x_remainder_last;
 
-			if (x > 0) {
-				start_tile_x = x / tile_width;
-				end_tile_x = (x + w - 1) / tile_width;
-				x_remainder = x % tile_width;
-				x_remainder_last = (x + w - 1) % tile_width;
-			} else {
-				start_tile_x = -(-x / tile_width);
-				end_tile_x = -(-(x + w - 1) / tile_width);
-				x_remainder = (x % tile_width + tile_width) % tile_width;
-				x_remainder_last = ((x + w - 1) % tile_width + tile_width) % tile_width;
-			}
+			// Round down to the next lower multiple of tile_width, even when x < 0
+			start_tile_x = (x >= 0) ? x / tile_width : (x - tile_width + 1) / tile_width;
+			end_tile_x = ((x + w - 1) >= 0) ? (x + w - 1) / tile_width : ((x + w - 1) - tile_width + 1) / tile_width;
+
+			// Normalize the remainder into [0, tile_width - 1], even for negative x.
+			x_remainder = ((x % tile_width) + tile_width) % tile_width;
+			x_remainder_last = (((x + w - 1) % tile_width) + tile_width) % tile_width;
 
 			i32 start_tile_y;
 			i32 end_tile_y;
 			i32 y_remainder;
 			i32 y_remainder_last;
 
-			if (y > 0) {
-				start_tile_y = y / tile_height;
-				end_tile_y = (y + h - 1) / tile_height;
-				y_remainder = y % tile_height;
-				y_remainder_last = (y + h - 1) % tile_height;
-			} else {
-				start_tile_y = -(-y / tile_height);
-				end_tile_y = -(-(y + h - 1) / tile_height);
-				y_remainder = (y % tile_height + tile_height) % tile_height;
-				y_remainder_last = ((y + h - 1) % tile_height + tile_height) % tile_height;
-			}
+			// Round down to the next lower multiple of tile_height, even when y < 0
+			start_tile_y = (y >= 0) ? y / tile_height : (y - tile_height + 1) / tile_height;
+			end_tile_y = ((y + h - 1) >= 0) ? (y + h - 1) / tile_height : ((y + h - 1) - tile_height + 1) / tile_height;
+
+			// Normalize the remainder into [0, tile_height - 1], even for negative y.
+			y_remainder = ((y % tile_height) + tile_height) % tile_height;
+			y_remainder_last = (((y + h - 1) % tile_height) + tile_height) % tile_height;
 
 			// Read all source tiles needed for this region
 			bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)level_image->width_in_tiles, (i32)level_image->height_in_tiles);
