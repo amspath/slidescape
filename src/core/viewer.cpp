@@ -707,6 +707,10 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				stencil_bounds = clip_bounds2f(stencil_bounds, scene->crop_bounds);
 			}
 
+			// Take a small bit off the right and bottom edges to prevent rendering black lines at the edge of the image
+			stencil_bounds.right -= 0.1f / image->mpp_x;
+			stencil_bounds.bottom -= 0.1f / image->mpp_y;
+
 			glEnable(GL_STENCIL_TEST);
 			glStencilFunc(GL_ALWAYS, 1, 0xFF);
 			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
