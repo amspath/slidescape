@@ -194,6 +194,14 @@ static void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t
     draft->current_image_data_write_offset += compressed_size;
     global_tiff_export_progress += draft->progress_per_exported_tile;
 
+	// Console 'progress bar': write 20 dots to stdout during export ....................
+	i32 prev_console_dots = global_tiff_export_progress_console_dots_written;
+	global_tiff_export_progress_console_dots_written = (i32)(global_tiff_export_progress * 20.0f + 0.5f);
+	i32 dots_to_write = global_tiff_export_progress_console_dots_written - prev_console_dots;
+	for (i32 i = 0; i < dots_to_write; ++i) {
+		putc('.', stdout);
+	}
+
     libc_free(compressed_buffer);
 
 }
@@ -752,6 +760,7 @@ void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t*
     task.target_mpp = target_mpp;
 
     global_tiff_export_progress = 0.0f;
+	global_tiff_export_progress_console_dots_written = 0;
     app_state->is_export_in_progress = true;
 
     //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy

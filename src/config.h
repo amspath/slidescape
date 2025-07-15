@@ -30,5 +30,5 @@
 #define LIBISYNTAX_NO_THREAD_POOL_IMPLEMENTATION
 
 #define APP_TITLE "Slidescape"
-#define APP_VERSION "0.48"
+#define APP_VERSION "0.48.13"
 
