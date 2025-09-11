@@ -62,6 +62,8 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_X_RESOLUTION = 282,
 	TIFF_TAG_Y_RESOLUTION = 283,
 	TIFF_TAG_PLANAR_CONFIGURATION = 284,
+	TIFF_TAG_X_POSITION = 286,
+	TIFF_TAG_Y_POSITION = 287,
 	TIFF_TAG_RESOLUTION_UNIT = 296,
 	TIFF_TAG_PAGE_NUMBER = 297,
 	TIFF_TAG_SOFTWARE = 305,
@@ -253,6 +255,8 @@ typedef struct tiff_ifd_t {
 	u64* tile_offsets;
 	u64* tile_byte_counts;
 	u16 samples_per_pixel;
+	u16 bits_per_sample;
+	u16 bytes_per_sample;
 	u16 sample_format;
 	i64 min_sample_value;
 	i64 max_sample_value; // TODO: use this field in a sensible way without requiring it being present
@@ -283,6 +287,8 @@ typedef struct tiff_ifd_t {
 	tiff_rational_t* reference_black_white;
 	tiff_rational_t x_resolution;
 	tiff_rational_t y_resolution;
+	tiff_rational_t x_position;
+	tiff_rational_t y_position;
 	tiff_resunit_enum resolution_unit;
     u32* ndpi_optimization_markers;
     u32 ndpi_optimization_count;

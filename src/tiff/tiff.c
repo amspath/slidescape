@@ -88,6 +88,8 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_STRIP_BYTE_COUNTS: result = "StripByteCounts"; break;
 		case TIFF_TAG_X_RESOLUTION: result = "XResolution"; break;
 		case TIFF_TAG_Y_RESOLUTION: result = "YResolution"; break;
+		case TIFF_TAG_X_POSITION: result = "XPosition"; break;
+		case TIFF_TAG_Y_POSITION: result = "YPosition"; break;
 		case TIFF_TAG_PLANAR_CONFIGURATION: result = "PlanarConfiguration"; break;
 		case TIFF_TAG_RESOLUTION_UNIT: result = "ResolutionUnit"; break;
 		case TIFF_TAG_PAGE_NUMBER: result = "PageNumber"; break;
@@ -434,13 +436,25 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				}
 			} break;
 			case TIFF_TAG_BITS_PER_SAMPLE: {
-				// TODO: Fix this for regular TIFF
 				if (!tag->data_is_offset) {
-					for (i32 i = 0; i < tag->data_count; ++i) {
-						u16 bits = *(u16*)&tag->data[i*2];
-						console_print_verbose("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
+					ifd->bits_per_sample = tag->data_u16; // assume all channels the same
+					if (is_verbose_mode) {
+						for (i32 i = 0; i < tag->data_count; ++i) {
+							u16 bits = *(u16*)&tag->data[i*2];
+							console_print_verbose("   channel %d: BitsPerSample=%d\n", i, bits); // expected to be 8
+						}
 					}
+				} else {
+					u16* integers = tiff_read_field_u16(tiff, tag);
+					ifd->bits_per_sample = integers[0]; // assume all channels the same
+					if (is_verbose_mode) {
+						for (i32 i = 0; i < tag->data_count; ++i) {
+							console_print_verbose("   channel %d: BitsPerSample=%d\n", i, integers[i]); // expected to be 8
+						}
+					}
+					free(integers);
 				}
+				ifd->bytes_per_sample = ifd->bits_per_sample / 8;
 			} break;
 			case TIFF_TAG_COMPRESSION: {
 				ifd->compression = tag->data_u16;
@@ -503,8 +517,18 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 				ifd->y_resolution = resolution;
 				console_print_verbose("   %g\n", tiff_rational_to_float(resolution));
 			} break;
+			case TIFF_TAG_X_POSITION: {
+				tiff_rational_t position = tiff_read_field_rational(tiff, tag);
+				ifd->x_position = position;
+				console_print_verbose("   %g\n", tiff_rational_to_float(position));
+			} break;
+			case TIFF_TAG_Y_POSITION: {
+				tiff_rational_t position = tiff_read_field_rational(tiff, tag);
+				ifd->y_position = position;
+				console_print_verbose("   %g\n", tiff_rational_to_float(position));
+			} break;
 			case TIFF_TAG_RESOLUTION_UNIT: {
-				ifd->resolution_unit = tag->data_u16; //
+				ifd->resolution_unit = tag->data_u16;
 			} break;
 			case TIFF_TAG_SOFTWARE: {
 				ifd->software = tiff_read_field_ascii(tiff, tag);
@@ -1652,7 +1676,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 
 //			    i64 start = get_clock();
 
-				size_t decompressed_size = level_ifd->tile_width * decompressed_height * level_ifd->samples_per_pixel;
+				size_t decompressed_size = level_ifd->tile_width * decompressed_height * level_ifd->samples_per_pixel * level_ifd->bytes_per_sample;
 				decompressed = (u8*)malloc(decompressed_size);
 
 				PseudoTIFF tif = {};
@@ -1741,23 +1765,44 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 					continue; // success
 				} else if (level_ifd->samples_per_pixel == 1) {
 
-
 					// Grayscale image
 					u64 pixel_count = level_ifd->tile_width * decompressed_height;
-					i32 source_pos = 0;
 					u32* pixels = (u32*)pixel_memory_dest;
+					if (level_ifd->bits_per_sample == 8) {
+						i32 source_pos = 0;
 
-					// assume palettized
-					for (u64 i = 0; i < pixel_count; ++i) {
-						u8 r = decompressed[source_pos]; // only the red channel is being used
-//						u8 g = decompressed[source_pos+1];
-//					    u8 b = decompressed[source_pos+2];
-//					    pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
-						u32 color = lookup_color_from_lut(r);
-//                      color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
-						pixels[i] = color;
-						source_pos+=1;
+						// assume palettized
+						// TODO: how to decide if it's a palettized image or not?
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u8 r = decompressed[source_pos]; // only the red channel is being used
+//						    u8 g = decompressed[source_pos+1];
+//					        u8 b = decompressed[source_pos+2];
+//					        pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
+							u32 color = lookup_color_from_lut(r);
+//                          color = BGRA_SET_ALPHA(color, 128); // TODO: make color lookup tables configurable
+							pixels[i] = color;
+							source_pos+=1;
+						}
+					} else if (level_ifd->bits_per_sample == 32) {
+						u32* source_pixels = (u32*)decompressed;
+						i32 source_pos = 0;
+						for (u64 i = 0; i < pixel_count; ++i) {
+							u32 as_u32 = source_pixels[source_pos];
+							float f = *(float*)(source_pixels + source_pos);
+							float normalized = f / 16000.0f;
+							u8 c = FLOAT_TO_BYTE(normalized);
+							u8 r = source_pixels[source_pos]; // only the red channel is being used
+//						    u8 g = source_pixels[source_pos+1];
+//					        u8 b = source_pixels[source_pos+2];
+//					        pixels[i]=(r<<16) | (g<<8) | b | (0xff << 24);
+//							u32 color = lookup_color_from_lut(r);
+                            u32 color = MAKE_BGRA(c, c, c, 255);
+							pixels[i] = color;
+							source_pos+=1;
+						}
 					}
+
+
 
 					/*u8 output_for_min_value = 0;
 					u8 output_for_max_value = 255;

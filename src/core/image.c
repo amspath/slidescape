@@ -163,9 +163,6 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
             memset(image->level_images, 0, sizeof(image->level_images));
             image->level_count = tiff.max_downsample_level + 1;
 
-            if (tiff.level_image_ifd_count > image->level_count) {
-                fatal_error();
-            }
             if (image->level_count > WSI_MAX_LEVELS) {
                 fatal_error();
             }
