@@ -452,65 +452,95 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
     image->height_in_pixels = base_level_instance->total_pixel_matrix_rows;
     image->height_in_um = base_level_instance->total_pixel_matrix_rows * image->mpp_y;
     // TODO: fix code duplication with tiff_deserialize()
-    if (dicom->wsi.level_count > 0 && image->tile_width) {
+    if (dicom->wsi.instance_count > 0 && image->tile_width) {
 
         memset(image->level_images, 0, sizeof(image->level_images));
-        image->level_count = dicom->wsi.level_count;
+        image->level_count = dicom->wsi.max_downsample_level + 1;
 
         if (image->level_count > WSI_MAX_LEVELS) {
             fatal_error();
         }
 
+	    i32 instance_index = 0;
+	    i32 next_instance_index_to_check_for_match = 0;
+	    dicom_instance_t* level_instance = dicom->wsi.level_instances[instance_index];
         for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
             level_image_t* level_image = image->level_images + level_index;
-            dicom_instance_t* level_instance = dicom->wsi.level_instances[level_index];
 
-            level_image->exists = true;
-            level_image->needs_indexing = level_instance->is_pixel_data_encapsulated && !level_instance->are_all_offsets_read;
-            level_image->pyramid_image_index = level_index; // not used
-            level_image->downsample_factor = exp2f((float)level_index);
-            level_image->width_in_pixels = level_instance->total_pixel_matrix_columns; // TODO: check that this is right
-            level_image->height_in_pixels = level_instance->total_pixel_matrix_rows; // TODO: check that this is right
-            level_image->width_in_tiles = level_instance->width_in_tiles;
-            ASSERT(level_image->width_in_tiles > 0);
-            level_image->height_in_tiles = level_instance->height_in_tiles;
-            ASSERT(level_image->height_in_tiles > 0);
-            level_image->tile_count = level_instance->tile_count;
-            level_image->tile_width = level_instance->columns;
-            level_image->tile_height = level_instance->rows;
-            if (level_instance->rows != image->tile_width) {
-                ASSERT(!"tile width is not equal across all levels");
-                return false;
-            }
-            if (level_instance->columns != image->tile_height) {
-                ASSERT(!"tile height is not equal across all levels");
-                return false;
-            }
-            level_image->um_per_pixel_x = level_image->downsample_factor * dicom->wsi.mpp_x;
-            level_image->um_per_pixel_y = level_image->downsample_factor * dicom->wsi.mpp_y;
-            level_image->x_tile_side_in_um = level_image->um_per_pixel_x * level_instance->columns;
-            level_image->y_tile_side_in_um = level_image->um_per_pixel_x * level_instance->rows;
-            ASSERT(level_image->x_tile_side_in_um > 0);
-            ASSERT(level_image->y_tile_side_in_um > 0);
-            level_image->origin_offset = level_instance->origin_offset;
-            level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
-            for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
-                tile_t* tile = level_image->tiles + tile_index;
-                // Facilitate some introspection by storing self-referential information
-                // in the tile_t struct. This is needed for some specific cases where we
-                // pass around pointers to tile_t structs without caring exactly where they
-                // came from.
-                // (Specific example: we use this when exporting a selected region as BigTIFF)
-                tile->tile_index = tile_index;
-                tile->tile_x = tile_index % level_image->width_in_tiles;
-                tile->tile_y = tile_index / level_image->width_in_tiles;
+	        i32 wanted_downsample_level = level_index;
+	        bool found_instance = false;
+	        for (instance_index = next_instance_index_to_check_for_match; instance_index < dicom->wsi.instance_count; ++instance_index) {
+		        level_instance = dicom->wsi.level_instances[instance_index];
+		        if (level_instance->downsample_level == wanted_downsample_level) {
+			        // match!
+			        found_instance = true;
+			        next_instance_index_to_check_for_match = instance_index + 1; // next iteration, don't reuse the same IFD!
+			        break;
+		        }
+	        }
 
-                dicom_tile_t* dicom_tile = level_instance->tiles + tile_index;
-                if (!dicom_tile->exists) {
-                    tile->is_empty = true;
-                }
-            }
-            DUMMY_STATEMENT;
+			if (found_instance) {
+				level_image->exists = true;
+				level_image->needs_indexing = level_instance->is_pixel_data_encapsulated && !level_instance->are_all_offsets_read;
+				level_image->pyramid_image_index = instance_index; // can differ from the level index if levels are missing
+				level_image->downsample_factor = exp2f((float)level_index);
+				level_image->width_in_pixels = level_instance->total_pixel_matrix_columns; // TODO: check that this is right
+				level_image->height_in_pixels = level_instance->total_pixel_matrix_rows; // TODO: check that this is right
+				level_image->width_in_tiles = level_instance->width_in_tiles;
+				ASSERT(level_image->width_in_tiles > 0);
+				level_image->height_in_tiles = level_instance->height_in_tiles;
+				ASSERT(level_image->height_in_tiles > 0);
+				level_image->tile_count = level_instance->tile_count;
+				level_image->tile_width = level_instance->columns;
+				level_image->tile_height = level_instance->rows;
+				if (level_instance->rows != image->tile_width) {
+					ASSERT(!"tile width is not equal across all levels");
+					return false;
+				}
+				if (level_instance->columns != image->tile_height) {
+					ASSERT(!"tile height is not equal across all levels");
+					return false;
+				}
+				level_image->um_per_pixel_x = level_image->downsample_factor * dicom->wsi.mpp_x;
+				level_image->um_per_pixel_y = level_image->downsample_factor * dicom->wsi.mpp_y;
+				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * level_instance->columns;
+				level_image->y_tile_side_in_um = level_image->um_per_pixel_x * level_instance->rows;
+				ASSERT(level_image->x_tile_side_in_um > 0);
+				ASSERT(level_image->y_tile_side_in_um > 0);
+				level_image->origin_offset = level_instance->origin_offset;
+				level_image->tiles = (tile_t*) calloc(1, level_image->tile_count * sizeof(tile_t));
+				for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+					tile_t* tile = level_image->tiles + tile_index;
+					// Facilitate some introspection by storing self-referential information
+					// in the tile_t struct. This is needed for some specific cases where we
+					// pass around pointers to tile_t structs without caring exactly where they
+					// came from.
+					// (Specific example: we use this when exporting a selected region as BigTIFF)
+					tile->tile_index = tile_index;
+					tile->tile_x = tile_index % level_image->width_in_tiles;
+					tile->tile_y = tile_index / level_image->width_in_tiles;
+
+					dicom_tile_t* dicom_tile = level_instance->tiles + tile_index;
+					if (!dicom_tile->exists) {
+						tile->is_empty = true;
+					}
+				}
+				DUMMY_STATEMENT;
+			} else {
+				// The current downsampling level has no corresponding DICOM instance :(
+				// So we need only some placeholder information.
+				level_image->exists = false;
+				level_image->downsample_factor = exp2f((float)wanted_downsample_level);
+				// Just in case anyone tries to divide by zero:
+				level_image->tile_width = image->tile_width;
+				level_image->tile_height = image->tile_height;
+				level_image->um_per_pixel_x = image->mpp_x * level_image->downsample_factor;
+				level_image->um_per_pixel_y = image->mpp_y * level_image->downsample_factor;
+				level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)image->tile_width;
+				level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)image->tile_height;
+			}
+
+
         }
     }
 
@@ -929,6 +959,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 		case IMAGE_BACKEND_DICOM:
 		case IMAGE_BACKEND_STBI:{
 			level_image_t* level_image = image->level_images + level;
+			ASSERT(level_image->exists);
 
 			i32 tile_width = (i32)level_image->tile_width;
 			i32 tile_height = (i32)level_image->tile_height;

@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1299,7 +1299,7 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 		// TODO: handle concatenations
 		console_print("DICOM: multiple instances with same image width - can't determine levels\n");
 	} else {
-		dicom->wsi.level_count = volume_count;
+		dicom->wsi.instance_count = volume_count;
 		for (i32 i = 0; i < volume_count; ++i) {
 			i32 instance_index = volume_image_widths[i].index;
 			dicom_instance_t* instance = dicom->instances + instance_index;
@@ -1308,7 +1308,7 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 		}
 	}
 
-	ASSERT(dicom->wsi.level_count > 0);
+	ASSERT(dicom->wsi.instance_count > 0);
 	dicom_instance_t* base_level_instance = dicom->wsi.level_instances[0];
 	ASSERT(base_level_instance);
 	if (base_level_instance) {
@@ -1323,7 +1323,7 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 
 
 	// Set up tiles
-	for (i32 i = 0; i < dicom->wsi.level_count; ++i) {
+	for (i32 i = 0; i < dicom->wsi.instance_count; ++i) {
 		dicom_instance_t* instance = dicom->wsi.level_instances[i];
 
         ASSERT(instance->tiles == NULL);
@@ -1371,6 +1371,65 @@ bool dicom_open_from_directory(dicom_series_t* dicom, directory_info_t* director
 			}
 		}
 
+	}
+
+	// Deduce downsample factors from the level dimensions.
+	// NOTE: also see tiff_post_init()
+	i32 last_downsample_level = 0;
+	for (i32 i = 0; i < volume_count; ++i) {
+		dicom_instance_t* instance = dicom->wsi.level_instances[i];
+		if (instance->tile_count == 0) {
+			ASSERT(!"level has no tiles"); // Sanity check: there should always be at least one tile
+			break;
+		}
+
+		float level_width = (float)instance->total_pixel_matrix_columns;
+		float raw_downsample_factor = base_level_instance->total_pixel_matrix_columns / level_width;
+		float raw_downsample_level = log2f(raw_downsample_factor);
+		i32 downsample_level = (i32) roundf(raw_downsample_level);
+
+		// Some TIFF files have the width/height set to an integer multiple of the tile size.
+		// For the most zoomed out levels, this makes it harder to calculate the actual downsampling level
+		// (because we might underestimate it). So we need to do extra work to deduce the downsampling
+		// level in these corner cases.
+		if (instance->total_pixel_matrix_columns % instance->columns == 0) {
+			if (instance->width_in_tiles >= 1 && instance->height_in_tiles >= 1) {
+				u32 min_possible_width = instance->columns * (instance->width_in_tiles-1) + 1;
+				u32 max_possible_width = instance->columns * (instance->width_in_tiles) ;
+				float downsample_factor_upper_bound = base_level_instance->total_pixel_matrix_columns / (float)min_possible_width;
+				float downsample_factor_lower_bound = base_level_instance->total_pixel_matrix_columns / (float)max_possible_width;
+
+				if (instance->total_pixel_matrix_rows % instance->rows == 0) {
+					// constrain further based on the vertical tile count
+					u32 min_possible_height = instance->rows * (instance->height_in_tiles-1) + 1;
+					u32 max_possible_height = instance->rows * (instance->height_in_tiles);
+
+					float downsample_factor_y_upper_bound = base_level_instance->total_pixel_matrix_rows / (float)min_possible_height;
+					float downsample_factor_y_lower_bound = base_level_instance->total_pixel_matrix_rows / (float)max_possible_height;
+
+					downsample_factor_upper_bound = MIN(downsample_factor_upper_bound, downsample_factor_y_upper_bound);
+					downsample_factor_lower_bound = MAX(downsample_factor_lower_bound, downsample_factor_y_lower_bound);
+				}
+
+				float level_lower_bound = log2f(downsample_factor_lower_bound);
+				float level_upper_bound = log2f(downsample_factor_upper_bound);
+
+				i32 discrete_level_lower_bound = (i32) ceilf(level_lower_bound);
+				i32 discrete_level_upper_bound = (i32) floorf(level_upper_bound);
+
+				if (discrete_level_lower_bound == discrete_level_upper_bound) {
+					downsample_level = discrete_level_lower_bound;
+				} else {
+					// ambiguity could not be resolved. Use last resort.
+					downsample_level = MIN(discrete_level_lower_bound, last_downsample_level + 1);
+				}
+				DUMMY_STATEMENT;
+			}
+		}
+
+		instance->downsample_level = last_downsample_level = downsample_level;
+		instance->downsample_factor = exp2f((float)instance->downsample_level);
+		dicom->wsi.max_downsample_level = MAX(instance->downsample_level, dicom->wsi.max_downsample_level);
 	}
 
 	// Reopen files for simultaneous access

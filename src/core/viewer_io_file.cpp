@@ -120,7 +120,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			is_empty = true;
 		}
 	} else if (image->backend == IMAGE_BACKEND_DICOM) {
-		u8* pixels = dicom_wsi_decode_tile_to_bgra(&image->dicom, level, tile_index);
+		u8* pixels = dicom_wsi_decode_tile_to_bgra(&image->dicom, level_image->pyramid_image_index, tile_index);
 		if (pixels) {
 			free(temp_memory);
 			temp_memory = pixels;

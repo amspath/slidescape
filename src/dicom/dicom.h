@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -426,6 +426,8 @@ typedef struct dicom_instance_t {
 	i32 tile_count;
 	i32 width_in_tiles;
 	i32 height_in_tiles;
+	float downsample_factor;
+	i32 downsample_level;
 	v2f origin_offset;
 	dicom_tile_t* tiles; // malloc'ed
 	dicom_plane_position_slide_t* per_frame_plane_position_slide; // array
@@ -433,7 +435,8 @@ typedef struct dicom_instance_t {
 
 typedef struct dicom_wsi_t {
 	dicom_instance_t* label_instance;
-	i32 level_count;
+	i32 instance_count;
+	i32 max_downsample_level;
 	dicom_instance_t* level_instances[16];
 	float mpp_x;
 	float mpp_y;

@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2025  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -375,8 +375,8 @@ void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_d
 	}
 }
 
-u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 scale, i32 tile_index) {
-	dicom_instance_t* instance = dicom_series->wsi.level_instances[scale];
+u8* dicom_wsi_decode_tile_to_bgra(dicom_series_t* dicom_series, i32 instance_index, i32 tile_index) {
+	dicom_instance_t* instance = dicom_series->wsi.level_instances[instance_index];
 	ASSERT(instance);
 	if (!instance) return NULL;
 	dicom_tile_t* dicom_tile = instance->tiles + tile_index;
