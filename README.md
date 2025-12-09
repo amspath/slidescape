@@ -15,7 +15,7 @@ The viewer has built-in support for:
 * Tiled TIFF and BigTIFF (including generic and Philips TIFF variants).
 * Philips iSyntax.
 * Simple images (JPEG, PNG).
-* DICOM (work-in-progress).
+* DICOM.
 
 Slidescape can also detect and load the [OpenSlide](https://github.com/openslide/openslide) library at runtime.
 If OpenSlide is present, the Aperio, Hamamatsu, Leica, MIRAX, Sakura, Trestle, and Ventana formats can additionally be loaded.
@@ -56,11 +56,72 @@ Annotations can be manipulated in a variety of ways:
 
 Changes to annotations are autosaved by default (a backup of the original unchanged XML file will be preserved with file extension `.orig`).
 
-### Image cropping
+### Image exporting
 
-Images in TIFF format can be cropped to a smaller size. This may be useful to reduce the file size, or to restrict the image to a specific region of interest.
+Slidescape has capabilities for converting, cropping and resizing WSIs. The output will be a new pyramidal TIFF file.
 
-To crop an image, select a region for cropping (`Edit` > `Select region`), then use `File` > `Export` > `Export region...` to export the file.
+To crop an image, you can specify a region of interest (ROI) by right-clicking a previously created annotation and selecting `Export region...`.
+
+Alternatively, you can specify the region to export using the menu (`Edit` > `Select export region`), then use `File` > `Export` > `Export...` to export the file.
+
+Resizing the WSI to a different resolution is also possible.
+
+### Command-line interface
+
+Image export operations can also be performed using a command-line interface.
+
+The basic command for export operations is:
+```
+slidescape <input files> --export 
+```
+
+You can specify a number of additional command-line flags:
+
+`--mpp <micrometers per pixel>`
+
+Specifies the desired output resolution. If not specified, the resolution of the input file will be matched (=default).
+If the output and input resolutions do not match, the WSI will be resampled to the new resolution.
+For resampling, the lanczos3 method is used (this similar to how e.g. the Python PIL library does this).
+
+`--quality <JPEG quality value>`
+
+Sets the output JPEG quality setting. Should be a value between 1 and 100.
+Choosing a higher JPEG compression quality can decrease image quality loss from recompression, at the cost of a higher file size.
+Typically used values are 80 or 90 (default: 90).
+
+`--tile-size <tile size in pixels>`
+
+Sets the tile size in pixels (default: 512).
+
+`--postfix <file name postfix>`
+
+Specifies the text to append to the input filename for the output file, before the final .tiff file extension (default: ".exported").
+Example: an input filename of `1.isyntax` with a postfix of ".exported" will generate an output filename of `1.exported.tiff`.
+
+`--roi <name of annotation>`
+
+Specifies the name of the region of interest (ROI) annotation in the associated XML file.
+The region to export will be set to a rectangle-shaped area bounded/encompassed by the specified annotation's coordinates.
+An XML annotation file with the same name as the input WSI file is required to be present.
+
+Example: `slidescape 1.mrxs 2.mrxs --export --roi "Annotation 0"`
+
+`--first-roi`
+
+Specifies that the first annotation present in the associated XML file should be used as the region of interest (ROI).
+The region to export will be set to a rectangle-shaped area bounded/encompassed by the annotation's coordinates.
+An XML annotation file with the same name as the input WSI file is required to be present.
+
+Example: `slidescape 1.mrxs 2.mrxs --export --first-roi`
+
+`--with-annotations`
+
+Enables saving of annotations within the region of interest (ROI), as specified by the `--roi` or `--first-roi` flags.
+If there any annotations are visible within the ROI, a new XML file will be created for the output WSI containing those annotations.
+
+Note that on Windows, the separate build `slidescape_console.exe` should be used instead of the regular `slidescape.exe`,
+in order to make console output visible. See [README_console.txt](doc/README_console.txt) for more information.
+
 
 
 ## How to build
@@ -119,7 +180,7 @@ The application icon was made by [Freepik](https://www.flaticon.com/authors/free
 
 ## License
 
-Copyright (C) 2019-2023 Pieter Valkema. 
+Copyright (C) 2019-2025 Pieter Valkema. 
 
 This program is free software: you can redistribute it and/or modify 
 it under the terms of the GNU General Public License as published by
