@@ -81,6 +81,9 @@ enum tiff_tag_code_enum {
 	TIFF_TAG_JPEG_TABLES = 347,
 	TIFF_TAG_YCBCRSUBSAMPLING = 530,
 	TIFF_TAG_REFERENCEBLACKWHITE = 532,
+	TIFF_TAG_XMP = 700,
+	TIFF_TAG_IMAGE_DEPTH = 32997,
+	TIGG_TAG_ICC_PROFILE_OFFSET = 34675,
 
     NDPI_TAG_ALWAYS_1 = 65420,
     NDPI_TAG_SOURCE_LENS = 65421,
@@ -235,6 +238,7 @@ enum subimage_type_enum {
 	TIFF_LEVEL_SUBIMAGE = 1,
 	TIFF_MACRO_SUBIMAGE = 2,
 	TIFF_LABEL_SUBIMAGE = 3,
+	TIFF_TISSUE_PROBABILITY_SUBIMAGE = 4,
 };
 
 typedef struct tiff_t tiff_t;
@@ -265,6 +269,8 @@ typedef struct tiff_ifd_t {
 	u64 software_length;
 	char* image_description;
 	u64 image_description_length;
+	char* xmp;
+	u64 xmp_length;
 	u8* jpeg_tables;
 	u64 jpeg_tables_length;
     u16 predictor;
@@ -292,8 +298,11 @@ typedef struct tiff_ifd_t {
 	tiff_resunit_enum resolution_unit;
     u32* ndpi_optimization_markers;
     u32 ndpi_optimization_count;
+	u64 icc_profile_offset;
+	u64 icc_profile_length;
     bool is_ndpi;
 	bool is_philips;
+	bool is_ventana;
 } tiff_ifd_t;
 
 
@@ -327,6 +336,7 @@ struct tiff_t {
 	bool is_big_endian;
 	bool is_philips;
     bool is_ndpi;
+	bool is_ventana;
 	bool is_mpp_known;
 	float mpp_x;
 	float mpp_y;

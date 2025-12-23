@@ -91,11 +91,13 @@ bool jpeg_decode_tile(uint8_t *table_ptr, uint32_t table_length, uint8_t *input_
 	jpeg_create_decompress(&cinfo);
 
 	// Load Jpeg table
-	setup_jpeg_source(&cinfo, table_ptr, table_length);
-	if (jpeg_read_header(&cinfo, FALSE) != JPEG_HEADER_TABLES_ONLY) {
-		printf("Failed to load table\n");
-		jpeg_destroy_decompress(&cinfo);
-		return false;
+	if (table_ptr && table_length > 0) {
+		setup_jpeg_source(&cinfo, table_ptr, table_length);
+		if (jpeg_read_header(&cinfo, FALSE) != JPEG_HEADER_TABLES_ONLY) {
+			printf("Failed to load table\n");
+			jpeg_destroy_decompress(&cinfo);
+			return false;
+		}
 	}
 
 	// Read tile data

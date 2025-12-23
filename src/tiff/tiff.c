@@ -108,6 +108,9 @@ const char* get_tiff_tag_name(u32 tag) {
 		case TIFF_TAG_JPEG_TABLES: result = "JPEGTables"; break;
 		case TIFF_TAG_YCBCRSUBSAMPLING: result = "YCbCrSubSampling"; break;
 		case TIFF_TAG_REFERENCEBLACKWHITE: result = "ReferenceBlackWhite"; break;
+		case TIFF_TAG_XMP: result = "XML"; break;
+		case TIFF_TAG_IMAGE_DEPTH: result = "ImageDepth"; break;
+		case TIGG_TAG_ICC_PROFILE_OFFSET: result = "ICCProfileOffset"; break;
 
         // NDPI tags
         case NDPI_TAG_SOURCE_LENS: result = "[NDPI] SourceLens"; break;
@@ -538,6 +541,10 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 					ifd->is_philips = true;
 					tiff->is_philips = true;
 				}
+				if (strncmp(ifd->software, "ScanOutputManager", 17) == 0) {
+					ifd->is_ventana = true;
+					tiff->is_ventana = true;
+				}
 			} break;
             case TIFF_TAG_PREDICTOR: {
                 ifd->predictor = tag->data_u16;
@@ -643,6 +650,20 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 					console_print_verbose("    [%d] = %d / %d\n", i, reference_black_white->a, reference_black_white->b);
 				}
 			} break;
+			case TIFF_TAG_XMP: {
+				ifd->software = tiff_read_field_ascii(tiff, tag);
+				ifd->software_length = tag->data_count;
+				console_print_verbose("    %.500s\n", ifd->software);
+			} break;
+			case TIFF_TAG_IMAGE_DEPTH: {
+				//stub
+			} break;
+			case TIGG_TAG_ICC_PROFILE_OFFSET: {
+				if (tag->data_is_offset) {
+					ifd->icc_profile_offset = tag->offset;
+					ifd->icc_profile_length = tag->data_count;
+				}
+			} break;
             case NDPI_TAG_ALWAYS_1: {
                 ifd->is_ndpi = true;
                 tiff->is_ndpi = true;
@@ -680,19 +701,28 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 	// Try to deduce what type of image this is (level, macro, or label).
 	// Unfortunately this does not seem to be very consistently specified in the TIFF files, so in part we have to guess.
-	if (ifd->image_description) {
-		if (strncmp(ifd->image_description, "Macro", 5) == 0) {
-			ifd->subimage_type = TIFF_MACRO_SUBIMAGE;
-			tiff->macro_image = ifd;
-			tiff->macro_image_index = ifd->ifd_index;
-		} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
-			ifd->subimage_type = TIFF_LABEL_SUBIMAGE;
-			tiff->label_image = ifd;
-			tiff->label_image_index = ifd->ifd_index;
-		} else if (strncmp(ifd->image_description, "level", 5) == 0) {
-			ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
+	if (ifd->is_ventana) {
+		switch (ifd->ifd_index) {
+			case 0: ifd->subimage_type = TIFF_LABEL_SUBIMAGE; break;
+			case 1: ifd->subimage_type = TIFF_TISSUE_PROBABILITY_SUBIMAGE; break;
+			default: ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
+		}
+	} else {
+		if (ifd->image_description) {
+			if (strncmp(ifd->image_description, "Macro", 5) == 0) {
+				ifd->subimage_type = TIFF_MACRO_SUBIMAGE;
+				tiff->macro_image = ifd;
+				tiff->macro_image_index = ifd->ifd_index;
+			} else if (strncmp(ifd->image_description, "Label", 5) == 0) {
+				ifd->subimage_type = TIFF_LABEL_SUBIMAGE;
+				tiff->label_image = ifd;
+				tiff->label_image_index = ifd->ifd_index;
+			} else if (strncmp(ifd->image_description, "level", 5) == 0) {
+				ifd->subimage_type = TIFF_LEVEL_SUBIMAGE;
+			}
 		}
 	}
+
 	// Guess that it must be a level image if it's not explicitly said to be something else
 	if (ifd->subimage_type == TIFF_UNKNOWN_SUBIMAGE /*0*/ && ifd->tile_width > 0) {
 		if (ifd->ifd_index == 0 /* main image */ || ifd->tiff_subfiletype & TIFF_FILETYPE_REDUCEDIMAGE) {
@@ -714,13 +744,18 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 
 // Calculate various derived values (better name for this procedure??)
 void tiff_post_init(tiff_t* tiff) {
-	// TODO: make more robust
-	// Assume the first IFD is the main image, and also level 0.
-	// (Are there any counterexamples out there?)
-	tiff->main_image_ifd = tiff->ifds;
-	tiff->main_image_ifd_index = 0;
+
+	// Most often the first IFD is the main image, and also level 0.
+	// However, this does not hold for all TIFF variants (e.g. Roche/Ventana .bif files use IFD index 2)
+	if (tiff->is_ventana && tiff->ifd_count >= 3) {
+		tiff->main_image_ifd = tiff->ifds + 2;
+		tiff->main_image_ifd_index = 2;
+	} else {
+		tiff->main_image_ifd = tiff->ifds;
+		tiff->main_image_ifd_index = 0;
+	}
 	tiff->level_images_ifd = tiff->main_image_ifd;
-	tiff->level_images_ifd_index = 0;
+	tiff->level_images_ifd_index = tiff->main_image_ifd_index;
 
 	// Determine the resolution of the base level
 	// TODO: if resolution tags are missing, try to extract this information from the iSyntax header
@@ -744,12 +779,14 @@ void tiff_post_init(tiff_t* tiff) {
 		tiff->max_downsample_level = 0;
 		i32 last_downsample_level = 0;
 		tiff->level_image_ifd_count = 0;
-		for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+
+		// TODO: handle images containing multiple pyramids
+		for (u64 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
 			tiff_ifd_t* ifd = tiff->ifds + ifd_index;
 			if (ifd->tile_count == 0) {
 				break; // not a tiled image, so cannot be part of the pyramid (could be macro or label image)
 			}
-			if (ifd_index == 0 || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
+			if (ifd_index == tiff->level_images_ifd_index || ifd->subimage_type == TIFF_LEVEL_SUBIMAGE) {
 				++tiff->level_image_ifd_count;
 			}
 
@@ -820,7 +857,7 @@ void tiff_post_init(tiff_t* tiff) {
 			float lowest_x = 1e10f;
 			float lowest_y = 1e10f;
 
-			for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+			for (u64 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
 				tiff_ifd_t* ifd = tiff->ifds + ifd_index;
 				if (ifd->x_resolution.b != 0 && ifd->y_resolution.b != 0) {
 					float res_x = tiff_rational_to_float(ifd->x_resolution);
@@ -839,7 +876,7 @@ void tiff_post_init(tiff_t* tiff) {
 					tiff->is_mpp_known = true;
 
 					// Update pixel and tile dimension information
-					for (i32 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
+					for (u64 ifd_index = tiff->level_images_ifd_index; ifd_index < tiff->ifd_count; ++ifd_index) {
 						tiff_ifd_t* ifd = tiff->ifds + ifd_index;
 						ifd->um_per_pixel_x = tiff->mpp_x * ifd->downsample_factor;
 						ifd->um_per_pixel_y = tiff->mpp_y * ifd->downsample_factor;
@@ -1370,6 +1407,7 @@ void tiff_destroy(tiff_t* tiff) {
 		if (ifd->tile_offsets) free(ifd->tile_offsets);
 		if (ifd->tile_byte_counts) free(ifd->tile_byte_counts);
 		if (ifd->image_description) free(ifd->image_description);
+		if (ifd->xmp) free(ifd->xmp);
 		if (ifd->software) free(ifd->software);
 		if (ifd->jpeg_tables) free(ifd->jpeg_tables);
 		if (ifd->reference_black_white) free(ifd->reference_black_white);

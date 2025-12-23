@@ -347,6 +347,7 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
         }
         if (strcasecmp(file->ext, "tiff") == 0 ||
             strcasecmp(file->ext, "tif") == 0 ||
+            strcasecmp(file->ext, "bif") == 0 ||
             strcasecmp(file->ext, "ptif") == 0)
         {
 			return VIEWER_FILE_TYPE_TIFF;
