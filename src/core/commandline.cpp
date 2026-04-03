@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2025  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,6 +22,9 @@
 // target/active directory: the directory of the input image
 // output directory: the directory where an export operation saves files to
 
+#include "common.h"
+#include "viewer.h"
+#include "gui.h" // for global data, TODO: refactor
 #include "tiff_write.h"
 
 app_command_t app_parse_commandline(int argc, const char** argv) {

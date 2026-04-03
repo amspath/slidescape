@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,65 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "common.h"
+#include "viewer.h"
+#include "shader.h"
 
-static u32 vbo_rect;
-static u32 ebo_rect;
-static u32 vao_rect;
-static bool32 rect_initialized;
+#include OPENGL_H
 
-static u32 vbo_screen;
-static u32 vao_screen;
-
-u32 default_texture_mag_filter = GL_NEAREST;
-u32 default_texture_min_filter = GL_LINEAR_MIPMAP_LINEAR;
-
-typedef struct framebuffer_t {
-	u32 framebuffer;
-	u32 texture;
-	u32 depth_stencil_rbo;
-	i32 width;
-	i32 height;
-	bool initialized;
-} framebuffer_t;
-
-framebuffer_t layer_framebuffers[2];
-
-static bool layer_framebuffers_initialized;
-//static u32 overlay_framebuffer;
-//static u32 overlay_texture;
-
-typedef struct basic_shader_t {
-	u32 program;
-	i32 u_projection_view_matrix;
-	i32 u_model_matrix;
-	i32 u_tex;
-	i32 u_black_level;
-	i32 u_white_level;
-	i32 u_background_color;
-	i32 u_transparent_color;
-	i32 u_transparent_tolerance;
-	i32 u_use_transparent_filter;
-	i32 u_draw_outlines;
-	i32 attrib_location_pos;
-	i32 attrib_location_tex_coord;
-} basic_shader_t;
-
-typedef struct finalblit_shader_t {
-	u32 program;
-	i32 u_texture0;
-	i32 u_texture1;
-	float u_t;
-	i32 attrib_location_pos;
-	i32 attrib_location_tex_coord;
-} finalblit_shader_t;
-
-basic_shader_t basic_shader;
-finalblit_shader_t finalblit_shader;
-
-u32 dummy_texture;
-
-bool finalize_textures_immediately = true;
-
+#define VIEWER_OPENGL_IMPL
+#include "viewer_opengl.h"
 
 void init_draw_rect() {
 	ASSERT(!rect_initialized);

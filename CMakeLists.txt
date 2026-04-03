@@ -202,6 +202,11 @@ set(VIEWER_SOURCE_FILES
         platform/shader.c
         platform/openslide_api.c
         core/viewer.cpp
+        core/viewer_opengl.cpp
+        core/viewer_io_file.cpp
+        core/viewer_io_remote.cpp
+        core/viewer_options.cpp
+        core/commandline.cpp
         core/scene.cpp
         core/gui.cpp
         core/console.cpp

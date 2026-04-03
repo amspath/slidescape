@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,6 +16,10 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "common.h"
+#include "viewer.h"
+#include "remote.h"
+#include "jpeg_decoder.h"
 
 void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;

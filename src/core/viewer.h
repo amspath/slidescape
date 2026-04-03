@@ -37,6 +37,7 @@ extern "C" {
 #include "openslide_api.h"
 #include "caselist.h"
 #include "annotation.h"
+#include "shader.h"
 
 
 typedef enum viewer_file_type_enum {
@@ -277,6 +278,7 @@ typedef struct pixel_transfer_state_t {
 	bool8 initialized;
 } pixel_transfer_state_t;
 
+typedef struct framebuffer_t framebuffer_t;
 
 typedef struct tile_streamer_t {
 	image_t* image;
@@ -387,8 +389,16 @@ void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client
 void do_after_scene_render(app_state_t* app_state, input_t* input);
 
 // viewer_opengl.cpp
+void init_draw_rect();
+void init_draw_normalized_quad();
+void draw_rect(u32 texture);
+pixel_transfer_state_t* submit_texture_upload_via_pbo(app_state_t *app_state, i32 width, i32 height,
+													  i32 bytes_per_pixel, u8 *pixels, bool finalize);
+void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state);
 u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
 void unload_texture(u32 texture);
+void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height);
+void init_layer_framebuffers(app_state_t* app_state);
 void init_opengl_stuff(app_state_t* app_state);
 void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height);
 

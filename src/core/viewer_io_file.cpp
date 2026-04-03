@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2025  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,7 +16,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "common.h"
+#include "viewer.h"
+#include "dicom_wsi.h"
+#include "stringutils.h"
+#include "listing.h"
+#include "stb_image.h"
 
+#include "gui.h" // for global data, TODO: refactor
 
 // TODO: refactor
 void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {

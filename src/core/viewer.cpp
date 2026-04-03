@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2025  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -58,13 +58,7 @@
 #include "shader.h"
 #include "ini.h"
 #include "image_registration.h"
-
-#include "viewer_opengl.cpp"
-#include "viewer_io_file.cpp"
-#include "viewer_io_remote.cpp"
-#include "viewer_options.cpp"
-#include "commandline.cpp"
-
+#include "viewer_opengl.h"
 
 
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration) {
