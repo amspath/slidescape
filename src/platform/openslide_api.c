@@ -91,8 +91,15 @@ bool init_openslide() {
 		library_handle = dlopen("/opt/local/lib/libopenslide.dylib", RTLD_LAZY);
 		if (!library_handle) {
 			// Check expected library path for Homebrew
-			library_handle = dlopen("/usr/local/opt/openslide/lib/libopenslide.dylib", RTLD_LAZY);
+			// The path difers for Apple Silicon and Intel. We'll check the Apple Silicon prefix first,
+			// and fall back on the Intel prefix if that fails.
+			library_handle = dlopen("/opt/homebrew/opt/openslide/lib/libopenslide.dylib", RTLD_LAZY);
+			if (!library_handle) {
+				// Check expected library path for Homebrew (Intel)
+				library_handle = dlopen("/usr/local/opt/openslide/lib/libopenslide.dylib", RTLD_LAZY);
+			}
 		}
+
 	}
 #else
 	void* library_handle = dlopen("libopenslide.so", RTLD_LAZY);
