@@ -122,13 +122,12 @@ void win32_init_gui(app_state_t* app_state) {
 	if (system_font_size >= 25.0f) {
 		// If the font size is large, light hinting gives better results because the result better resembles
 		// the original shape (at the cost of a little bit of fuzziness).
-		io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_LightHinting;
+		io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
 	} else {
 		// If the font size is small, mono hinting seems to give the most crisp results for white text on a
 		// dark background.
-		io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
+		io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
 	}
-	io.Fonts->Build();
 
 
 	// TODO: Windows high DPI code

@@ -542,6 +542,8 @@ void win32_process_keyboard_event(button_state_t* new_state, bool32 down_boolean
 	}
 }
 
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);                // Use ImGui::GetCurrentContext()
+
 LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
 	LRESULT result = ImGui_ImplWin32_WndProcHandler(window, message, wparam, lparam);
 //	return result;

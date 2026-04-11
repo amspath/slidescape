@@ -2667,7 +2667,7 @@ void draw_annotation_palette_window() {
 		ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse;
 		if (ImGui::Begin("##annotation_palette_window", &show_annotation_palette_window, window_flags)) {
 
-			ImGui::PushFont(global_icon_font);
+			ImGui::PushFont(global_icon_font, global_icon_font->LegacySize);
 			if (ImGui::Button(ICON_FA_HAND_PAPER_O "##palette_window")) {}
 			if (ImGui::Button(ICON_FA_ARROWS_H "##palette_window")) {}
 			if (ImGui::Button(ICON_FA_CIRCLE_O "##palette_window")) {}

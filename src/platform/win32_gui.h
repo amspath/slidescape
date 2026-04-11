@@ -28,8 +28,6 @@ extern "C" {
 void win32_gui_new_frame(app_state_t* app_state);
 
 void win32_init_gui(app_state_t* app_state);
-// from imgui_impl_win32.cpp
-LRESULT  ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #ifdef __cplusplus
 }

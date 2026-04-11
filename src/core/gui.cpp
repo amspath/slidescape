@@ -57,10 +57,10 @@ void imgui_create_context() {
 
 // Reset a drawlist to make it empty again (needs to be called at the beginning of every frame for each active drawlist)
 void gui_drawlist_reset_for_new_frame(ImDrawList* drawlist) {
-	// (no need to PopTextureID()/PopClipRect()) since we reset every frame
+	// (no need to PopTexture()/PopClipRect()) since we reset every frame
 	// see: https://github.com/ocornut/imgui/issues/6406#issuecomment-1632826410
 	drawlist->_ResetForNewFrame();
-	drawlist->PushTextureID(ImGui::GetIO().Fonts->TexID);
+	drawlist->PushTexture(ImGui::GetIO().Fonts->TexRef);
 	drawlist->PushClipRectFullScreen();
 }
 

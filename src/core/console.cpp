@@ -414,7 +414,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 		i32 item_count = arrlen(console_log_items);
 		if (item_count > 0) {
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
-			ImGui::PushFont(global_fixed_width_font);
+			ImGui::PushFont(global_fixed_width_font, global_fixed_width_font->LegacySize);
 			ImGuiListClipper clipper;
 			clipper.Begin(arrlen(console_log_items));
 			while (clipper.Step()) {
@@ -467,7 +467,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 	ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0,0,0,0.3f));
 	ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0,0,0,1.0f));
 	ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0,0,0,1.0f));
-	ImGui::PushFont(global_fixed_width_font);
+	ImGui::PushFont(global_fixed_width_font, global_fixed_width_font->LegacySize);
 
 	bool reclaim_focus = false;
 	if (ImGui::IsWindowAppearing()) {
