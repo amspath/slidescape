@@ -19,10 +19,6 @@
 #include "common.h"
 #include "mathutils.h"
 
-#ifndef IS_SERVER
-#include <glad/glad.h>
-#endif
-
 #include "lz4.h"
 
 #include "tiff.h"
@@ -979,21 +975,14 @@ bool32 open_tiff_file(tiff_t* tiff, const char* filename) {
 
 			// Prepare for Async I/O in the worker threads
 #if !IS_SERVER
-#if WINDOWS
 			// TODO: make async I/O platform agnostic
 			// TODO: set FILE_FLAG_NO_BUFFERING for maximum performance (but: need to align read requests to page size...)
 			// http://vec3.ca/using-win32-asynchronous-io/
-			tiff->file_handle = win32_open_overlapped_file_handle(filename);
-#else
-			tiff->file_handle = open(filename, O_RDONLY);
-			if (tiff->file_handle == -1) {
-				console_print_error("Error: Could not reopen %s for asynchronous I/O\n");
-				return false;
-			} else {
-				// success
+			tiff->file_handle = open_file_handle_for_simultaneous_access(filename);
+			if (!tiff->file_handle) {
+				console_print_error("Failed to reopen WSI for simultaneous access\n");
+				success = false;
 			}
-
-#endif
 #endif
 		}
 

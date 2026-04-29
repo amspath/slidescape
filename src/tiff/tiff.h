@@ -27,17 +27,6 @@ extern "C" {
 #include "platform.h"
 #include "intrinsics.h"
 
-#ifndef IS_SERVER
-#define IS_SERVER 0
-#endif
-#if !IS_SERVER
-#if WINDOWS
-#include "win32_graphical_app.h"
-#elif APPLE
-
-#endif
-#endif
-
 #define TIFF_LITTLE_ENDIAN 0x4949
 #define TIFF_BIG_ENDIAN 0x4D4D
 

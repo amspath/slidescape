@@ -197,12 +197,54 @@ else()
 endif()
 prepend_path(KEYCODE_SOURCE_FILES deps/keycode)
 
+
+
+
+set(SLIDESCAPE_NONGUI_BASE_FILES
+        src/platform/platform.c
+        src/platform/work_queue.c
+        src/platform/openslide_api.c
+        src/utils/stringutils.c
+        src/utils/mathutils.c
+        src/utils/memrw.c
+        src/utils/jpeg_decoder.c
+        src/utils/crc32.c
+        src/utils/block_allocator.c
+        src/utils/timerutils.c
+        src/utils/benaphore.c
+        src/utils/phasecorrelate.c
+        src/third_party/lz4.c
+        src/third_party/yxml.c
+        src/third_party/minfft.c
+        src/third_party/miniz_tinfl.c
+        src/third_party/ltalloc.cc
+        src/tiff/tiff.c
+        src/tiff/tiff_write.c
+        src/tiff/tiff_xml.c
+        src/tiff/tif_lzw.c
+        src/dicom/dicom.c
+        src/dicom/dicom_dict.c
+        src/dicom/dicom_wsi.c
+        src/isyntax/isyntax.c
+        src/isyntax/isyntax_reader.c
+        src/isyntax/isyntax_streamer.c
+        src/isyntax/libisyntax.c
+        src/mrxs/mrxs.c
+)
+if (WIN32)
+    list(APPEND SLIDESCAPE_NONGUI_BASE_FILES src/platform/win32_utils.c)
+else()
+    list(APPEND SLIDESCAPE_NONGUI_BASE_FILES src/platform/linux_utils.c)
+endif()
+add_library(slidescape_nongui STATIC ${SLIDESCAPE_NONGUI_BASE_FILES})
+target_compile_definitions(slidescape_nongui PRIVATE IS_SERVER=0)
+
+
+
+
 set(VIEWER_SOURCE_FILES
-        platform/platform.c
         platform/graphical_app.c
-        platform/work_queue.c
         platform/shader.c
-        platform/openslide_api.c
         core/viewer.cpp
         core/viewer_opengl.cpp
         core/viewer_io_file.cpp
@@ -221,18 +263,6 @@ set(VIEWER_SOURCE_FILES
         core/image.c
         core/image_registration.c
         core/image_resize.c
-        dicom/dicom.c
-        dicom/dicom_dict.c
-        dicom/dicom_wsi.c
-        tiff/tiff.c
-        tiff/tiff_write.c
-        tiff/tiff_xml.c
-        tiff/tif_lzw.c
-        isyntax/isyntax.c
-        isyntax/isyntax_streamer.c
-        isyntax/isyntax_reader.c
-        isyntax/libisyntax.c
-        mrxs/mrxs.c
         imgui/imgui.cpp
         imgui/imgui_demo.cpp
         imgui/imgui_draw.cpp
@@ -240,22 +270,8 @@ set(VIEWER_SOURCE_FILES
         imgui/imgui_tables.cpp
         imgui/backends/imgui_impl_opengl3.cpp
         imgui/misc/freetype/imgui_freetype.cpp
-        third_party/lz4.c
-        third_party/yxml.c
-        third_party/minfft.c
-        third_party/ltalloc.cc
         third_party/http_parser.c
-        third_party/miniz_tinfl.c
-        utils/stringutils.c
-        utils/mathutils.c
-        utils/memrw.c
         utils/triangulate.c
-        utils/jpeg_decoder.c
-        utils/crc32.c
-        utils/block_allocator.c
-        utils/timerutils.c
-        utils/benaphore.c
-        utils/phasecorrelate.c
         )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
@@ -283,13 +299,17 @@ set(LIBRARY_SOURCE_FILES
         ${MBEDTLS_SOURCE_FILES}
         ${KEYCODE_SOURCE_FILES})
 
+
+
+
+
 # client only supported on Windows x64 and macOS x64 for now
 if (WIN32)
     add_executable(slidescape         ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
     add_executable(slidescape_console ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
 
-    target_link_libraries(slidescape         user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
-    target_link_libraries(slidescape_console user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
+    target_link_libraries(slidescape         slidescape_nongui user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
+    target_link_libraries(slidescape_console slidescape_nongui user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
 
     # Hide the console window on (non-console) release builds
     target_link_options(slidescape PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
@@ -302,7 +322,7 @@ elseif(APPLE)
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slidescape MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slidescape PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/Info.plist")
-    target_link_libraries(slidescape "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices" "-framework Security")
+    target_link_libraries(slidescape "slidescape_nongui -framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices" "-framework Security")
     target_link_libraries(slidescape ${SDL2_LIBRARIES})
     set_target_properties(slidescape PROPERTIES OUTPUT_NAME Slidescape)
 
@@ -327,7 +347,7 @@ else()
     add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     find_package(SDL2 REQUIRED)
     include_directories(${SDL2_INCLUDE_DIRS})
-    target_link_libraries(slidescape pthread dl m GL GLEW SDL2)
+    target_link_libraries(slidescape slidescape_nongui pthread dl m GL GLEW SDL2)
 
     # Create slidescape.desktop and install/uninstall scripts, and copy them to the output directory
     configure_file(resources/slidescape.desktop.in slidescape.desktop)
@@ -340,6 +360,9 @@ else()
             COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/uninstall_desktop_file.sh")
 endif()
 target_compile_definitions(slidescape PRIVATE IS_SERVER=0)
+
+
+
 
 
 # Separately compiled tools:

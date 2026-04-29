@@ -20,8 +20,9 @@ target_include_directories(slidescape_tests PRIVATE
 )
 
 target_compile_definitions(slidescape_tests PRIVATE
-        IS_SERVER=1
+        IS_SERVER=0
         SLIDESCAPE_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/data_for_testing"
 )
+target_link_libraries(slidescape_tests PRIVATE slidescape_nongui)
 
 add_test(NAME slidescape_tests COMMAND slidescape_tests)
