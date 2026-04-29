@@ -18,11 +18,11 @@
 
 #pragma once
 
+#include "common.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "common.h"
 
 void strip_character(char* s, char character_to_strip);
 char* find_next_token(const char* s, char separator);

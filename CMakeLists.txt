@@ -386,3 +386,9 @@ add_executable(dicom_dict_gen
         src/third_party/ltalloc.cc
         )
 target_compile_definitions(dicom_dict_gen PRIVATE IS_SERVER=1)
+
+include(CTest)
+
+if (BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
