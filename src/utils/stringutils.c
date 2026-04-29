@@ -90,15 +90,16 @@ void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
 	size_t original_len = strlen(filename);
 	char* end = filename + original_len;
 	char* append_pos = end; // where we will add the new extension
-	bool didnt_find_period = false;
+	bool found_period = false;
 	// Strip the original extension
-	for (char* pos = end - 1; pos >= filename; --pos) {
+	for (char* pos = end; pos > filename;) {
+		--pos;
 		if (*pos == '/' || *pos == '\\') {
 			// gone too far, default to end of original filename
-			didnt_find_period = true;
 			break;
 		}
 		if (*pos == '.') {
+			found_period = true;
 			if (new_ext_len == 0) {
 				*pos = '\0'; // done: only strip extension
 				return;
@@ -109,7 +110,8 @@ void replace_file_extension(char* filename, i32 max_len, const char* new_ext) {
 		}
 	}
 	char* buffer_end = filename + max_len;
-	if (didnt_find_period) {
+	if (!found_period) {
+		if (new_ext_len == 0) return;
 		// Add the missing period
 		if (append_pos < buffer_end) {
 			*append_pos++ = '.';
@@ -137,7 +139,7 @@ char** split_into_lines(char* buffer, size_t* num_lines) {
 		if (c == '\n' || c == '\r') {
 			*pos = '\0';
 			newline = true;
-		} else if (newline || c == '\0') {
+		} else if (newline) {
 			size_t line_index = lines_counted++;
 			if (lines_counted > capacity) {
 				capacity = MAX(capacity, 8) * 2;
@@ -161,7 +163,7 @@ size_t count_lines(char* buffer) {
 		c = *pos;
 		if (c == '\n' || c == '\r') {
 			newline = true;
-		} else if (newline || c == '\0') {
+		} else if (newline) {
 			lines_counted++;
 			newline = false;
 		}
