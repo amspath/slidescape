@@ -9,6 +9,8 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
 
+option(BUILD_SLIDESERVER "Build the experimental slideserver executable" OFF)
+
 # Detect CPU type and whether we're building 64-bit or 32-bit code
 math(EXPR BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} CMAKE_SYSTEM_PROCESSOR_LC)
@@ -354,23 +356,25 @@ else()
     list(APPEND BASE_FILES src/platform/linux_utils.c)
 endif()
 
-set(SERVER_SOURCE_FILES
-        ${BASE_FILES}
-        src/server.c
-        src/tiff/tiff.c
-        src/utils/jpeg_decoder.c
-        src/utils/stringutils.c
-        src/utils/memrw.c
-        src/third_party/lz4.c
-        src/third_party/ltalloc.cc
-        )
-add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
-target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
+if (BUILD_SLIDESERVER)
+    set(SERVER_SOURCE_FILES
+            ${BASE_FILES}
+            src/server.c
+            src/tiff/tiff.c
+            src/utils/jpeg_decoder.c
+            src/utils/stringutils.c
+            src/utils/memrw.c
+            src/third_party/lz4.c
+            src/third_party/ltalloc.cc
+            )
+    add_executable(slideserver ${SERVER_SOURCE_FILES} ${JPEG_SOURCE_FILES} ${MBEDTLS_SOURCE_FILES})
+    target_compile_definitions(slideserver PRIVATE IS_SERVER=1)
 
-if (WIN32)
-    target_link_libraries(slideserver ws2_32 pthread)
-else()
-    target_link_libraries(slideserver pthread m)
+    if (WIN32)
+        target_link_libraries(slideserver ws2_32 pthread)
+    else()
+        target_link_libraries(slideserver pthread m)
+    endif()
 endif()
 
 add_executable(dicom_dict_gen
