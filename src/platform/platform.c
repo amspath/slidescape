@@ -122,7 +122,7 @@ bool is_directory(const char* path) {
 }
 
 
-void get_system_info(bool verbose) {
+system_info_t get_system_info(bool verbose) {
     system_info_t system_info = {0};
 #if WINDOWS
     SYSTEM_INFO win32_system_info;
@@ -150,12 +150,15 @@ void get_system_info(bool verbose) {
     if (verbose) console_print("There are %d logical CPU cores\n", system_info.logical_cpu_count);
     system_info.suggested_total_thread_count = MIN(system_info.logical_cpu_count, MAX_THREAD_COUNT);
 
-    //TODO(pvalkema): think about returning this instead of setting global state.
-    global_system_info = system_info;
+	return system_info;
 }
 
 
-void init_thread_memory(i32 logical_thread_index, system_info_t* system_info) {
+void init_thread_memory(system_info_t* system_info) {
+	if (local_thread_memory != NULL) {
+		ASSERT(!"init_thread_memory() called twice on the same thread");
+		return;
+	}
 	// Allocate a private memory buffer
 	u64 thread_memory_size = MEGABYTES(16);
 	local_thread_memory = (thread_memory_t*) malloc(thread_memory_size); // how much actually needed?
@@ -166,7 +169,14 @@ void init_thread_memory(i32 logical_thread_index, system_info_t* system_info) {
 #endif
 	thread_memory->thread_memory_raw_size = thread_memory_size;
 
-    u32 os_page_size = system_info->os_page_size;
+	u32 os_page_size = 0;
+	if (!system_info || system_info->os_page_size == 0) {
+		// Might not have called get_system_info() before??
+		system_info_t si = get_system_info(false);
+		os_page_size = si.os_page_size;
+	} else {
+		os_page_size = system_info->os_page_size;
+	}
 	thread_memory->aligned_rest_of_thread_memory = (void*)
 			((((u64)thread_memory + sizeof(thread_memory_t) + os_page_size - 1) / os_page_size) * os_page_size); // round up to next page boundary
 	thread_memory->thread_memory_usable_size = thread_memory_size - ((u64)thread_memory->aligned_rest_of_thread_memory - (u64)thread_memory);

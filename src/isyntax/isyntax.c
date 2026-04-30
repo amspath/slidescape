@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2025, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -255,7 +255,7 @@ static u8* isyntax_decode_jpeg_stream(u8* compressed, size_t compressed_len, i32
     i32 h = 0;
 
 #ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
-    // TODO: Why does this crash?
+    // TODO: Why does this crash? Need to update libjpeg-turbo sources, reproduce and see if it can be fixed upstream (if the bug still exists).
     // Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
     // jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
     // This causes the program to crash eventually when trying to free memory in free_pool().
@@ -3018,6 +3018,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 			// We don't know the length of the XML header, so we just read 'enough' data in a chunk and hope that we get it
 			// (and if not, read some more data until we get it)
 
+			init_timer(); // just in case this hasn't already been called once already
 			i64 load_begin = get_clock();
 			i64 io_begin = get_clock();
 			i64 io_ticks_elapsed = 0;

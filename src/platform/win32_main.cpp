@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1607,7 +1607,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 
 	atomic_increment(&global_worker_thread_idle_count);
 
-	init_thread_memory(thread_info->logical_thread_index, &global_system_info);
+	init_thread_memory(&global_system_info);
 	thread_memory_t* thread_memory = local_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
@@ -1680,7 +1680,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 }
 
 void win32_init_multithreading() {
-	init_thread_memory(0, &global_system_info);
+	init_thread_memory(&global_system_info);
 
 	global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
 	global_active_worker_thread_count = global_worker_thread_count;
@@ -1977,13 +1977,13 @@ int main() {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-	get_system_info(verbose_console);
+	global_system_info = get_system_info(verbose_console);
 
 	win32_setup_appdata();
 #ifndef DONT_REGISTER_FILETYPE_ASSOCIATIONS // suppress filetype associations on separate console build
 	win32_set_file_type_associations();
 #endif
-	win32_init_timer();
+	init_timer();
 	win32_init_multithreading();
 
 	app_state_t* app_state = &global_app_state;

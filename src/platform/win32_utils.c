@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2023, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -117,6 +117,7 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 		raw_read_size += KILOBYTES(4) - bytes_to_read_in_last_sector;
 	}
 
+	ASSERT(thread_memory != NULL);
 	temp_memory_t temp_memory = begin_temp_memory(&thread_memory->temp_arena);
 	i64 bytes_left_in_temp_memory = arena_get_bytes_left(&thread_memory->temp_arena);
 	bool need_free_temp_dest;
@@ -172,6 +173,10 @@ size_t win32_overlapped_read(thread_memory_t* thread_memory, HANDLE file_handle,
 }
 
 size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 offset, size_t bytes_to_read) {
+	if (local_thread_memory == NULL) {
+		init_thread_memory(&global_system_info);
+	}
+	ASSERT(local_thread_memory != NULL);
 	size_t bytes_read = win32_overlapped_read(local_thread_memory, file_handle, dest, bytes_to_read, offset);
 	return bytes_read;
 }

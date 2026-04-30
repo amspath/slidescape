@@ -237,7 +237,10 @@ else()
     list(APPEND SLIDESCAPE_NONGUI_BASE_FILES src/platform/linux_utils.c)
 endif()
 add_library(slidescape_nongui STATIC ${SLIDESCAPE_NONGUI_BASE_FILES})
-target_compile_definitions(slidescape_nongui PRIVATE IS_SERVER=0)
+target_compile_definitions(slidescape_nongui PRIVATE
+        IS_SERVER=0
+        ISYNTAX_JPEG_DECODER_USE_LIBJPEG=1
+)
 
 
 

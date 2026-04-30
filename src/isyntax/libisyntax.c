@@ -80,7 +80,7 @@ _Noreturn DWORD WINAPI thread_proc(void* parameter) {
 
 	atomic_increment(&global_worker_thread_idle_count);
 
-	init_thread_memory(thread_info->logical_thread_index, &global_system_info);
+	init_thread_memory(&global_system_info);
 	thread_memory_t* thread_memory = local_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
@@ -106,7 +106,7 @@ _Noreturn DWORD WINAPI thread_proc(void* parameter) {
 }
 
 static void init_thread_pool() {
-	init_thread_memory(0, &global_system_info);
+	init_thread_memory(&global_system_info);
 
     int total_thread_count = global_system_info.suggested_total_thread_count;
 	global_worker_thread_count = total_thread_count - 1;
@@ -138,7 +138,7 @@ static void* worker_thread(void* parameter) {
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
 
-    init_thread_memory(thread_info->logical_thread_index, &global_system_info);
+    init_thread_memory(&global_system_info);
 	atomic_increment(&global_worker_thread_idle_count);
 
 	for (;;) {
@@ -163,7 +163,7 @@ static void* worker_thread(void* parameter) {
 }
 
 static void init_thread_pool() {
-	init_thread_memory(0, &global_system_info);
+	init_thread_memory(&global_system_info);
     global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
     global_active_worker_thread_count = global_worker_thread_count;
 
@@ -234,7 +234,7 @@ isyntax_error_t libisyntax_init() {
     if (libisyntax_global_init_complete == false) {
 #ifndef LIBISYNTAX_NO_THREAD_POOL_IMPLEMENTATION
         // Actual initialization.
-        get_system_info(false);
+        global_system_info = get_system_info(false);
         DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
         init_thread_pool();
 #endif

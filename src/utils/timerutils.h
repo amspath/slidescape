@@ -24,14 +24,12 @@ extern "C" {
 
 #include "common.h"
 
+void init_timer(); // call this once, before calling get_clock()
 i64 get_clock();
 float get_seconds_elapsed(i64 start, i64 end);
 void platform_sleep(u32 ms);
 void platform_sleep_ns(i64 ns);
 
-#if WINDOWS
-void win32_init_timer(); // call this once, before calling get_clock()
-#endif
 
 #ifdef __cplusplus
 };

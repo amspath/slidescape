@@ -159,9 +159,9 @@ size_t file_handle_read_at_offset(void* dest, file_handle_t file_handle, u64 off
 bool file_exists(const char* filename);
 bool is_directory(const char* path);
 
-void get_system_info(bool verbose);
+system_info_t get_system_info(bool verbose);
 
-void init_thread_memory(i32 logical_thread_index, system_info_t* system_info);
+void init_thread_memory(system_info_t* system_info);
 
 // globals
 #if defined(PLATFORM_IMPL)

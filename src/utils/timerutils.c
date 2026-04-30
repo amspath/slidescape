@@ -38,7 +38,8 @@ static i64 performance_counter_frequency;
 static bool is_sleep_granular;
 static bool is_timer_initialized;
 
-void win32_init_timer() {
+void init_timer() {
+	if (is_timer_initialized) return;
 	LARGE_INTEGER perf_counter_frequency_result;
 	QueryPerformanceFrequency(&perf_counter_frequency_result);
 	performance_counter_frequency = perf_counter_frequency_result.QuadPart;
@@ -50,11 +51,11 @@ void win32_init_timer() {
 
 i64 get_clock() {
 #ifndef NO_TIMER_INITIALIZED_RUNTIME_CHECK
-	if (!is_timer_initialized) win32_init_timer();
+	if (!is_timer_initialized) init_timer();
 #else
 #ifndef NDEBUG
 	if (!is_timer_initialized) {
-		fatal_error("get_clock(): timer not initialized; on Windows, call win32_init_timer() once before calling get_clock()");
+		fatal_error("get_clock(): timer not initialized; on Windows, call init_timer() once before calling get_clock()");
 	}
 #endif
 #endif
@@ -78,6 +79,10 @@ void platform_sleep_ns(i64 ns) {
 #else
 
 #include <time.h>
+
+void init_timer(void) {
+	// no-op - this is only needed on Windows
+}
 
 i64 get_clock() {
 	struct timespec t = {};

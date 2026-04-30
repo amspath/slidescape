@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -109,7 +109,7 @@ static void* worker_thread(void* parameter) {
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
 
-    init_thread_memory(thread_info->logical_thread_index, &global_system_info);
+    init_thread_memory(&global_system_info);
 	atomic_increment(&global_worker_thread_idle_count);
 
 	for (;;) {
@@ -131,7 +131,7 @@ static void* worker_thread(void* parameter) {
 platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 
 void linux_init_multithreading() {
-	init_thread_memory(0, &global_system_info);
+	init_thread_memory(&global_system_info);
     global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
 	global_active_worker_thread_count = global_worker_thread_count;
 
@@ -405,7 +405,7 @@ int main(int argc, const char** argv)
 
 	console_printer_benaphore = benaphore_create();
     if (verbose_console) console_print("Starting up...\n");
-    get_system_info(verbose_console);
+    global_system_info = get_system_info(verbose_console);
 
 	app_state_t* app_state = &global_app_state;
 	init_app_state(app_state, app_command);
