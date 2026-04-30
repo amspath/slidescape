@@ -80,7 +80,7 @@ _Noreturn DWORD WINAPI thread_proc(void* parameter) {
 
 	atomic_increment(&global_worker_thread_idle_count);
 
-	init_thread_memory(&global_system_info);
+	init_thread_memory(thread_info->logical_thread_index, &global_system_info);
 	thread_memory_t* thread_memory = local_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
@@ -106,7 +106,7 @@ _Noreturn DWORD WINAPI thread_proc(void* parameter) {
 }
 
 static void init_thread_pool() {
-	init_thread_memory(&global_system_info);
+	init_thread_memory(0, &global_system_info);
 
     int total_thread_count = global_system_info.suggested_total_thread_count;
 	global_worker_thread_count = total_thread_count - 1;
@@ -138,7 +138,7 @@ static void* worker_thread(void* parameter) {
 
 //	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
 
-    init_thread_memory(&global_system_info);
+    init_thread_memory(thread_info->logical_thread_index, &global_system_info);
 	atomic_increment(&global_worker_thread_idle_count);
 
 	for (;;) {
@@ -163,7 +163,7 @@ static void* worker_thread(void* parameter) {
 }
 
 static void init_thread_pool() {
-	init_thread_memory(&global_system_info);
+	init_thread_memory(0, &global_system_info);
     global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
     global_active_worker_thread_count = global_worker_thread_count;
 
@@ -234,7 +234,7 @@ isyntax_error_t libisyntax_init() {
     if (libisyntax_global_init_complete == false) {
 #ifndef LIBISYNTAX_NO_THREAD_POOL_IMPLEMENTATION
         // Actual initialization.
-        global_system_info = get_system_info(false);
+        get_system_info(false);
         DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
         init_thread_pool();
 #endif
@@ -277,20 +277,108 @@ const isyntax_image_t* libisyntax_get_wsi_image(const isyntax_t* isyntax) {
     return isyntax->images + isyntax->wsi_image_index;
 }
 
+int32_t libisyntax_get_is_mpp_known(const isyntax_t* isyntax) {
+    return isyntax->is_mpp_known;
+}
+
+double libisyntax_get_mpp_x(const isyntax_t* isyntax) {
+    return isyntax->mpp_x;
+}
+
+double libisyntax_get_mpp_y(const isyntax_t* isyntax) {
+    return isyntax->mpp_y;
+}
+
 const isyntax_image_t* libisyntax_get_label_image(const isyntax_t* isyntax) {
 	return isyntax->images + isyntax->label_image_index;
 }
 
 const isyntax_image_t* libisyntax_get_macro_image(const isyntax_t* isyntax) {
-	return isyntax->images + isyntax->label_image_index;
+	return isyntax->images + isyntax->macro_image_index;
 }
 
 const char* libisyntax_get_barcode(const isyntax_t* isyntax) {
 	return isyntax->barcode;
 }
 
+const char* libisyntax_get_acquisition_datetime(const isyntax_t* isyntax) {
+	return isyntax->dicom_acquisition_datetime;
+}
+
+const char* libisyntax_get_manufacturer(const isyntax_t* isyntax) {
+	return isyntax->dicom_manufacturer;
+}
+
+const char* libisyntax_get_manufacturers_model_name(const isyntax_t* isyntax) {
+    return isyntax->dicom_manufacturers_model_name;
+}
+
+const char* libisyntax_scale_unit(const isyntax_t* isyntax) {
+    return isyntax->image_dimension_unit;
+}
+const char* libisyntax_get_derivation_description(const isyntax_t* isyntax) {
+    return isyntax->dicom_derivation_description;
+}
+
+const char* libisyntax_get_device_serial_number(const isyntax_t* isyntax) {
+    return isyntax->dicom_device_serial_number;
+}
+
+int32_t libisyntax_get_software_versions_count(const isyntax_t* isyntax) {
+    return isyntax->dicom_software_versions_count;
+}
+
+const char* libisyntax_get_software_versions(const isyntax_t* isyntax, int32_t index) {
+    if (index < 0 || index >= isyntax->dicom_software_versions_count) {
+        return NULL;
+    }
+    return isyntax->dicom_software_versions[index];
+}
+
+int32_t libisyntax_get_date_of_last_calibration_count(const isyntax_t* isyntax) {
+    return isyntax->dicom_date_of_last_calibration_count;
+}
+
+const char* libisyntax_get_date_of_last_calibration(const isyntax_t* isyntax, int32_t index) {
+    if (index < 0 || index >= isyntax->dicom_date_of_last_calibration_count) {
+        return NULL;
+    }
+    return isyntax->dicom_date_of_last_calibration[index];
+}
+
+int32_t libisyntax_get_time_of_last_calibration_count(const isyntax_t* isyntax) {
+    return isyntax->dicom_time_of_last_calibration_count;
+}
+
+const char* libisyntax_get_time_of_last_calibration(const isyntax_t* isyntax, int32_t index) {
+    if (index < 0 || index >= isyntax->dicom_time_of_last_calibration_count) {
+        return NULL;
+    }
+    return isyntax->dicom_time_of_last_calibration[index];
+}
+
+bool libisyntax_is_lossy_image_compression(const isyntax_t* isyntax) {
+    return isyntax->dicom_lossy_image_compression;
+}
+
+double libisyntax_get_lossy_image_compression_ratio(const isyntax_t* isyntax) {
+    return isyntax->dicom_lossy_image_compression_ratio;
+}
+
+const char* libisyntax_get_lossy_image_compression_method(const isyntax_t* isyntax) {
+    return isyntax->dicom_lossy_image_compression_method;
+}
+
 int32_t libisyntax_image_get_level_count(const isyntax_image_t* image) {
     return image->level_count;
+}
+
+int32_t libisyntax_image_get_offset_x(const isyntax_image_t* image) {
+    return image->offset_x;
+}
+
+int32_t libisyntax_image_get_offset_y(const isyntax_image_t* image) {
+    return image->offset_y;
 }
 
 const isyntax_level_t* libisyntax_image_get_level(const isyntax_image_t* image, int32_t index) {
@@ -325,6 +413,14 @@ float libisyntax_level_get_mpp_y(const isyntax_level_t* level) {
 	return level->um_per_pixel_y;
 }
 
+double libisyntax_level_get_downsample_factor(const isyntax_level_t* level) {
+    return level->downsample_factor;
+}
+
+double libisyntax_level_get_origin_offset_in_pixels(const isyntax_level_t* level) {
+    return level->origin_offset_in_pixels;
+}
+
 isyntax_error_t libisyntax_cache_create(const char* debug_name_or_null, int32_t cache_size,
                                         isyntax_cache_t** out_isyntax_cache)
 {
@@ -346,24 +442,18 @@ isyntax_error_t libisyntax_cache_inject(isyntax_cache_t* isyntax_cache, isyntax_
         return LIBISYNTAX_INVALID_ARGUMENT;
     }
 
-    if (!isyntax_cache->h_coeff_block_allocator->is_valid || !isyntax_cache->ll_coeff_block_allocator->is_valid) {
-        // Shouldn't ever partially initialize.
-        ASSERT(!isyntax_cache->h_coeff_block_allocator->is_valid);
-        ASSERT(!isyntax_cache->ll_coeff_block_allocator->is_valid);
-
-        isyntax_cache->allocator_block_width = isyntax->block_width;
-        isyntax_cache->allocator_block_height = isyntax->block_height;
-        size_t ll_coeff_block_size = isyntax->block_width * isyntax->block_height * sizeof(icoeff_t);
-        size_t block_allocator_maximum_capacity_in_blocks = GIGABYTES(32) / ll_coeff_block_size;
-        size_t ll_coeff_block_allocator_capacity_in_blocks = block_allocator_maximum_capacity_in_blocks / 4;
-        size_t h_coeff_block_size = ll_coeff_block_size * 3;
-        size_t h_coeff_block_allocator_capacity_in_blocks = ll_coeff_block_allocator_capacity_in_blocks * 3;
-        isyntax_cache->ll_coeff_block_allocator = malloc(sizeof(block_allocator_t));
-        isyntax_cache->h_coeff_block_allocator = malloc(sizeof(block_allocator_t));
-        *isyntax_cache->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
-        *isyntax_cache->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
-        isyntax_cache->is_block_allocator_owned = true;
-    }
+    isyntax_cache->allocator_block_width = isyntax->block_width;
+    isyntax_cache->allocator_block_height = isyntax->block_height;
+    size_t ll_coeff_block_size = isyntax->block_width * isyntax->block_height * sizeof(icoeff_t);
+    size_t block_allocator_maximum_capacity_in_blocks = GIGABYTES(32) / ll_coeff_block_size;
+    size_t ll_coeff_block_allocator_capacity_in_blocks = block_allocator_maximum_capacity_in_blocks / 4;
+    size_t h_coeff_block_size = ll_coeff_block_size * 3;
+    size_t h_coeff_block_allocator_capacity_in_blocks = ll_coeff_block_allocator_capacity_in_blocks * 3;
+    isyntax_cache->ll_coeff_block_allocator = malloc(sizeof(block_allocator_t));
+    isyntax_cache->h_coeff_block_allocator = malloc(sizeof(block_allocator_t));
+    *isyntax_cache->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+    *isyntax_cache->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+    isyntax_cache->is_block_allocator_owned = true;
 
     if (isyntax_cache->allocator_block_width != isyntax->block_width ||
             isyntax_cache->allocator_block_height != isyntax->block_height) {
@@ -374,6 +464,20 @@ isyntax_error_t libisyntax_cache_inject(isyntax_cache_t* isyntax_cache, isyntax_
     isyntax->h_coeff_block_allocator = isyntax_cache->h_coeff_block_allocator;
     isyntax->is_block_allocator_owned = false;
     return LIBISYNTAX_OK;
+}
+
+
+void libisyntax_cache_flush(isyntax_cache_t* isyntax_cache, isyntax_t* isyntax_or_null) {
+    // Flusing per-isyntax is not yet implemented.
+    (void)isyntax_or_null;
+
+    benaphore_lock(&isyntax_cache->mutex);
+
+    while (isyntax_cache->cache_list.tail) {
+        tile_list_remove(&isyntax_cache->cache_list, isyntax_cache->cache_list.tail);
+    }
+
+    benaphore_unlock(&isyntax_cache->mutex);
 }
 
 void libisyntax_cache_destroy(isyntax_cache_t* isyntax_cache) {
@@ -435,26 +539,34 @@ isyntax_error_t libisyntax_read_region(isyntax_t* isyntax, isyntax_cache_t* isyn
     int64_t x_remainder;
     int64_t x_remainder_last;
 
-	// Round down to the next lower multiple of tile_width, even when x < 0
-	start_tile_x = (x >= 0) ? x / tile_width : (x - tile_width + 1) / tile_width;
-	end_tile_x = ((x + width - 1) >= 0) ? (x + width - 1) / tile_width : ((x + width - 1) - tile_width + 1) / tile_width;
-
-	// Normalize the remainder into [0, tile_width - 1], even for negative x.
-	x_remainder = ((x % tile_width) + tile_width) % tile_width;
-	x_remainder_last = (((x + width - 1) % tile_width) + tile_width) % tile_width;
+    if (x > 0) {
+        start_tile_x = x / tile_width;
+        end_tile_x = (x + width - 1) / tile_width;
+        x_remainder = x % tile_width;
+        x_remainder_last = (x + width - 1) % tile_width;
+    } else {
+        start_tile_x = -(-x / tile_width);
+        end_tile_x = -(-(x + width - 1) / tile_width);
+        x_remainder = (x % tile_width + tile_width) % tile_width;
+        x_remainder_last = ((x + width - 1) % tile_width + tile_width) % tile_width;
+    }
 
     int64_t start_tile_y;
     int64_t end_tile_y;
     int64_t y_remainder;
     int64_t y_remainder_last;
 
-	// Round down to the next lower multiple of tile_height, even when y < 0
-	start_tile_y = (y >= 0) ? y / tile_height : (y - tile_height + 1) / tile_height;
-	end_tile_y = ((y + height - 1) >= 0) ? (y + height - 1) / tile_height : ((y + height - 1) - tile_height + 1) / tile_height;
-
-	// Normalize the remainder into [0, tile_height - 1], even for negative y.
-	y_remainder = ((y % tile_height) + tile_height) % tile_height;
-	y_remainder_last = (((y + height - 1) % tile_height) + tile_height) % tile_height;
+    if (y > 0) {
+        start_tile_y = y / tile_height;
+        end_tile_y = (y + height - 1) / tile_height;
+        y_remainder = y % tile_height;
+        y_remainder_last = (y + height - 1) % tile_height;
+    } else {
+        start_tile_y = -(-y / tile_height);
+        end_tile_y = -(-(y + height - 1) / tile_height);
+        y_remainder = (y % tile_height + tile_height) % tile_height;
+        y_remainder_last = ((y + height - 1) % tile_height + tile_height) % tile_height;
+    }
 
     // Allocate memory for tile pixels (will reuse for consecutive libisyntax_tile_read() calls)
     uint32_t* tile_pixels = (uint32_t*)malloc(tile_width * tile_height * sizeof(uint32_t));

@@ -356,9 +356,18 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 				default: {
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
-				case 0x002A: /*DICOM_ACQUISITION_DATETIME*/     {} break; // "20210101103030.000000"
-				case 0x0070: /*DICOM_MANUFACTURER*/             {} break; // "PHILIPS"
-				case 0x1090: /*DICOM_MANUFACTURERS_MODEL_NAME*/ {} break; // "UFS Scanner"
+				case 0x002A: /*DICOM_ACQUISITION_DATETIME*/     { // "20210101103030.000000"
+					strncpy(isyntax->dicom_acquisition_datetime, value, MIN(value_len, sizeof(isyntax->dicom_acquisition_datetime) - 1));
+					isyntax->dicom_acquisition_datetime[MIN(value_len, sizeof(isyntax->dicom_acquisition_datetime) - 1)] = '\0';
+				} break;
+				case 0x0070: /*DICOM_MANUFACTURER*/             { // "PHILIPS"
+					strncpy(isyntax->dicom_manufacturer, value, MIN(value_len, sizeof(isyntax->dicom_manufacturer) - 1));
+					isyntax->dicom_manufacturer[MIN(value_len, sizeof(isyntax->dicom_manufacturer) - 1)] = '\0';
+				} break;
+				case 0x1090: /*DICOM_MANUFACTURERS_MODEL_NAME*/ { // "UFS Scanner"
+					strncpy(isyntax->dicom_manufacturers_model_name, value, MIN(value_len, sizeof(isyntax->dicom_manufacturers_model_name) - 1));
+					isyntax->dicom_manufacturers_model_name[MIN(value_len, sizeof(isyntax->dicom_manufacturers_model_name) - 1)] = '\0';
+				} break;
 			}
 		}; break;
 		case 0x0018: {
@@ -366,10 +375,86 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 				default: {
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
-				case 0x1000: /*DICOM_DEVICE_SERIAL_NUMBER*/     {} break; // "FMT<4-digit number>"
-				case 0x1020: /*DICOM_SOFTWARE_VERSIONS*/        {} break; // "<versionnumber>" "<versionnumber>"
-				case 0x1200: /*DICOM_DATE_OF_LAST_CALIBRATION*/ {} break; // "20210101"
-				case 0x1201: /*DICOM_TIME_OF_LAST_CALIBRATION*/ {} break; // "100730"
+				case 0x1000: /*DICOM_DEVICE_SERIAL_NUMBER*/     { // "FMT<4-digit number>"
+					strncpy(isyntax->dicom_device_serial_number, value, MIN(value_len, sizeof(isyntax->dicom_device_serial_number) - 1));
+					isyntax->dicom_device_serial_number[MIN(value_len, sizeof(isyntax->dicom_device_serial_number) - 1)] = '\0';
+				} break;
+				case 0x1020: /*DICOM_SOFTWARE_VERSIONS*/        {  // "<versionnumber>" "<versionnumber>"
+					if (value_len < 2) {
+						// Each version is wrapped in quotes, so at least 2 characters are needed.
+						isyntax->dicom_software_versions = NULL;
+						isyntax->dicom_software_versions_count = 0;
+						break;
+					}
+					// Count number of versions by counting number of '" "'
+					i32 version_count = 1;
+					for (i32 i = 0; i + 2 < value_len; ++i) {
+						if (value[i] == '"' && value[i + 1] == ' ' && value[i + 2] == '"') {
+							version_count++;
+						}
+					}
+					isyntax->dicom_software_versions = malloc(version_count * sizeof(*isyntax->dicom_software_versions));
+					if (!isyntax->dicom_software_versions) {
+						isyntax->dicom_software_versions_count = 0;
+						break;
+					}
+					i32 version_index = 0;
+					const char* version_start = value + 1;
+					for (i32 i = 0; i < value_len; ++i) {
+						if (version_index >= version_count) {
+							break; // no more versions to parse
+						}
+						// Check if either '" "' or '"' at end of string
+						if (value[i] == '"' && ((i + 2 < value_len && value[i + 1] == ' ' && value[i + 2] == '"') || i + 1 == value_len)) {
+							size_t version_len = value + i - version_start;
+							strncpy(isyntax->dicom_software_versions[version_index], version_start, MIN(version_len, sizeof(isyntax->dicom_software_versions[version_index]) - 1));
+							isyntax->dicom_software_versions[version_index][MIN(version_len, sizeof(isyntax->dicom_software_versions[version_index]) - 1)] = '\0';
+							version_index++;
+							version_start = value + i + 3;
+						}
+					}
+					isyntax->dicom_software_versions_count = version_count;
+
+				} break;
+				case 0x1200: /*DICOM_DATE_OF_LAST_CALIBRATION*/ { // "20210101"
+					if (value_len < 10) {
+						isyntax->dicom_date_of_last_calibration = NULL;
+						isyntax->dicom_date_of_last_calibration_count = 0;
+						break;
+					}
+					i32 number_of_values = 1 + (value_len - 10) / 11;
+					isyntax->dicom_date_of_last_calibration = malloc(number_of_values * sizeof(*isyntax->dicom_date_of_last_calibration));
+					if (!isyntax->dicom_date_of_last_calibration) {
+						isyntax->dicom_date_of_last_calibration_count = 0;
+						break;
+					};
+					for (i32 i = 0; i < number_of_values; ++i) {
+						strncpy(isyntax->dicom_date_of_last_calibration[i], value + 1 + i * 11, MIN(8, sizeof(isyntax->dicom_date_of_last_calibration[i]) - 1));
+						isyntax->dicom_date_of_last_calibration[i][MIN(8, sizeof(isyntax->dicom_date_of_last_calibration[i]) - 1)] = '\0';
+					}
+					isyntax->dicom_date_of_last_calibration_count = number_of_values;
+
+
+				} break;
+				case 0x1201: /*DICOM_TIME_OF_LAST_CALIBRATION*/ { // "100730"
+					if (value_len < 8) {
+						isyntax->dicom_time_of_last_calibration = NULL;
+						isyntax->dicom_time_of_last_calibration_count = 0;
+						break;
+					}
+					i32 number_of_values = 1 + (value_len - 8) / 9;
+					isyntax->dicom_time_of_last_calibration = malloc(number_of_values * sizeof(*isyntax->dicom_time_of_last_calibration));
+					if (!isyntax->dicom_time_of_last_calibration) {
+						isyntax->dicom_time_of_last_calibration_count = 0;
+						break;
+					};
+					for (i32 i = 0; i < number_of_values; ++i) {
+						strncpy(isyntax->dicom_time_of_last_calibration[i], value + 1 + i * 9, MIN(6, sizeof(isyntax->dicom_time_of_last_calibration[i]) - 1));
+						isyntax->dicom_time_of_last_calibration[i][MIN(6, sizeof(isyntax->dicom_time_of_last_calibration[i]) - 1)] = '\0';
+					}
+					isyntax->dicom_time_of_last_calibration_count = number_of_values;
+
+				} break;
 			}
 		} break;
 		case 0x101D: {
@@ -434,7 +519,8 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
 				case 0x2111: /*DICOM_DERIVATION_DESCRIPTION*/   {         // "PHILIPS UFS V%s | Quality=%d | DWT=%d | Compressor=%d"
-
+					strncpy(isyntax->dicom_derivation_description, value, MIN(value_len, sizeof(isyntax->dicom_derivation_description) - 1));
+					isyntax->dicom_derivation_description[MIN(value_len, sizeof(isyntax->dicom_derivation_description) - 1)] = '\0';
 				} break;
 			}
 		}; break;
@@ -458,9 +544,27 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					image->base64_encoded_icc_profile_file_offset = isyntax->parser.content_file_offset;
 					image->base64_encoded_icc_profile_len = value_len;
 				} break;
-				case 0x2110: /*DICOM_LOSSY_IMAGE_COMPRESSION*/          {} break;
-				case 0x2112: /*DICOM_LOSSY_IMAGE_COMPRESSION_RATIO*/    {} break;
-				case 0x2114: /*DICOM_LOSSY_IMAGE_COMPRESSION_METHOD*/   {} break; // "PHILIPS_DP_1_0"
+				case 0x2110: /*DICOM_LOSSY_IMAGE_COMPRESSION*/          {
+					isyntax->dicom_lossy_image_compression = (strcmp(value, "01") == 0);
+				} break;
+				case 0x2112: /*DICOM_LOSSY_IMAGE_COMPRESSION_RATIO*/    {
+					// Assumes only one value is present.
+					isyntax->dicom_lossy_image_compression_ratio = atof(value);
+				} break;
+				case 0x2114: /*DICOM_LOSSY_IMAGE_COMPRESSION_METHOD*/   { // "PHILIPS_DP_1_0"
+					// Assumes only one value is present.
+					// Strip starting and ending " if present
+					size_t start = 0, end = value_len;
+					if (value_len > 0 && value[0] == '"') {
+						start = 1;
+					}
+					if (end > start && value[end - 1] == '"') {
+						end--;
+					}
+					size_t copy_len = MIN(end - start, sizeof(isyntax->dicom_lossy_image_compression_method) - 1);
+					strncpy(isyntax->dicom_lossy_image_compression_method, value + start, copy_len);
+					isyntax->dicom_lossy_image_compression_method[copy_len] = '\0';
+				} break;
 			}
 		} break;
 		case 0x301D: {
@@ -513,7 +617,9 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x2003: /*UFS_IMAGE_DIMENSIONS*/                       {} break;
 				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
 				case 0x2005: /*UFS_IMAGE_DIMENSION_TYPE*/                   {} break;
-				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {} break;
+				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {
+					strncpy(isyntax->image_dimension_unit, value, MIN(value_len, sizeof(isyntax->image_dimension_unit) - 1));
+					isyntax->image_dimension_unit[MIN(value_len, sizeof(isyntax->image_dimension_unit) - 1)] = '\0';				} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {
 					float mpp = atof(value);
 					if (isyntax->parser.dimension_index == 0 /*x*/) {
@@ -1525,20 +1631,20 @@ static u32 wavelet_coefficient_to_color_value(icoeff_t coefficient) {
 }
 #endif
 
-static rgba_t ycocg_to_rgb(i32 Y, i32 Co, i32 Cg) {
-	i32 tmp = Y - Cg/2;
-	i32 G = tmp + Cg;
-	i32 B = tmp - Co/2;
-	i32 R = B + Co;
-	return (rgba_t){{{ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255}}};
+static rgba_t ycocg_to_rgb(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
+    icoeff_t tmp = Y - Cg/2;
+    icoeff_t G = tmp + Cg;
+    icoeff_t B = tmp - Co/2;
+    icoeff_t R = B + Co;
+    return (rgba_t){{{ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255}}};
 }
 
-static rgba_t ycocg_to_bgr(i32 Y, i32 Co, i32 Cg) {
-	i32 tmp = Y - Cg/2;
-	i32 G = tmp + Cg;
-	i32 B = tmp - Co/2;
-	i32 R = B + Co;
-	return (rgba_t){{{ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255}}};
+static rgba_t ycocg_to_bgr(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
+    icoeff_t tmp = Y - Cg/2;
+    icoeff_t G = tmp + Cg;
+    icoeff_t B = tmp - Co/2;
+    icoeff_t R = B + Co;
+    return (rgba_t){{{ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255}}};
 }
 
 static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
@@ -3514,6 +3620,18 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	if (isyntax->white_dummy_coeff) {
 		free(isyntax->white_dummy_coeff);
 		isyntax->white_dummy_coeff = NULL;
+	}
+	if (isyntax->dicom_software_versions) {
+		free(isyntax->dicom_software_versions);
+		isyntax->dicom_software_versions = NULL;
+	}
+	if (isyntax->dicom_date_of_last_calibration) {
+		free(isyntax->dicom_date_of_last_calibration);
+		isyntax->dicom_date_of_last_calibration = NULL;
+	}
+	if (isyntax->dicom_time_of_last_calibration) {
+		free(isyntax->dicom_time_of_last_calibration);
+		isyntax->dicom_time_of_last_calibration = NULL;
 	}
 	for (i32 image_index = 0; image_index < isyntax->image_count; ++image_index) {
 		isyntax_image_t* image = isyntax->images + image_index;

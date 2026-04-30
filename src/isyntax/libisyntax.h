@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // API conventions:
 // - return type is one of:
@@ -16,6 +17,7 @@
 // - Enums are represented as int32_t and not the enum type. (enum type size forcing is C23 or C++11).
 // - Const applied to pointers is used as a signal that the object will not be modified.
 // - Prefer int even for unsigned types, see java rationale.
+// - Prefer double over float - we are dealing with small/large scales in WSI, and float may not be enough.
 
 
 typedef int32_t isyntax_error_t;
@@ -48,7 +50,7 @@ typedef struct isyntax_cache_t isyntax_cache_t;
 
 //== Common API ==
 // TODO(avirodov): are repeated calls of libisyntax_init() allowed? Currently I believe not.
-isyntax_error_t libisyntax_init();
+isyntax_error_t libisyntax_init(void);
 isyntax_error_t libisyntax_open(const char* filename, enum libisyntax_open_flags_t flags, isyntax_t** out_isyntax);
 void            libisyntax_close(isyntax_t* isyntax);
 
@@ -59,7 +61,28 @@ const isyntax_image_t* libisyntax_get_wsi_image(const isyntax_t* isyntax);
 const isyntax_image_t* libisyntax_get_label_image(const isyntax_t* isyntax);
 const isyntax_image_t* libisyntax_get_macro_image(const isyntax_t* isyntax);
 const char*            libisyntax_get_barcode(const isyntax_t* isyntax);
+int32_t                libisyntax_get_is_mpp_known(const isyntax_t* isyntax);
+double                 libisyntax_get_mpp_x(const isyntax_t* isyntax);
+double                 libisyntax_get_mpp_y(const isyntax_t* isyntax);
+const char*            libisyntax_get_acquisition_datetime(const isyntax_t* isyntax);
+const char*            libisyntax_get_manufacturer(const isyntax_t* isyntax);
+const char*            libisyntax_get_manufacturers_model_name(const isyntax_t* isyntax);
+const char*            libisyntax_get_derivation_description(const isyntax_t* isyntax);
+const char*            libisyntax_get_device_serial_number(const isyntax_t* isyntax);
+int32_t                libisyntax_get_software_versions_count(const isyntax_t* isyntax);
+const char*            libisyntax_get_software_versions(const isyntax_t* isyntax, int32_t index);
+int32_t                libisyntax_get_date_of_last_calibration_count(const isyntax_t* isyntax);
+const char*            libisyntax_get_date_of_last_calibration(const isyntax_t* isyntax, int32_t index);
+int32_t                libisyntax_get_time_of_last_calibration_count(const isyntax_t* isyntax);
+const char*            libisyntax_get_time_of_last_calibration(const isyntax_t* isyntax, int32_t index);
+bool                   libisyntax_is_lossy_image_compression(const isyntax_t* isyntax);
+double                 libisyntax_get_lossy_image_compression_ratio(const isyntax_t* isyntax);
+const char*            libisyntax_get_lossy_image_compression_method(const isyntax_t* isyntax);
+const char*            libisyntax_scale_unit(const isyntax_t* isyntax);
+
 int32_t                libisyntax_image_get_level_count(const isyntax_image_t* image);
+int32_t                libisyntax_image_get_offset_x(const isyntax_image_t* image);
+int32_t                libisyntax_image_get_offset_y(const isyntax_image_t* image);
 const isyntax_level_t* libisyntax_image_get_level(const isyntax_image_t* image, int32_t index);
 
 int32_t                libisyntax_level_get_scale(const isyntax_level_t* level);
@@ -69,6 +92,8 @@ int32_t                libisyntax_level_get_width(const isyntax_level_t* level);
 int32_t                libisyntax_level_get_height(const isyntax_level_t* level);
 float                  libisyntax_level_get_mpp_x(const isyntax_level_t* level);
 float                  libisyntax_level_get_mpp_y(const isyntax_level_t* level);
+double                 libisyntax_level_get_downsample_factor(const isyntax_level_t* level);
+double                 libisyntax_level_get_origin_offset_in_pixels(const isyntax_level_t* level);
 
 //== Cache API ==
 isyntax_error_t libisyntax_cache_create(const char* debug_name_or_null, int32_t cache_size,
@@ -78,6 +103,9 @@ isyntax_error_t libisyntax_cache_create(const char* debug_name_or_null, int32_t 
 //  Block size variation was not observed in practice, and a proper fix may include supporting multiple block sizes
 //  within isyntax_cache_t implementation.
 isyntax_error_t libisyntax_cache_inject(isyntax_cache_t* isyntax_cache, isyntax_t* isyntax);
+// Flushes the cache. If 'isyntax_or_null' is not NULL, will attempt to flush only the tiles of that isyntax.
+// TODO(avirodov): currently flushes all cache, isyntax_or_null is unused.
+void            libisyntax_cache_flush(isyntax_cache_t* isyntax_cache, isyntax_t* isyntax_or_null);
 void            libisyntax_cache_destroy(isyntax_cache_t* isyntax_cache);
 
 

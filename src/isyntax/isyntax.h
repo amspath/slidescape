@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2025, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -403,6 +403,21 @@ typedef struct isyntax_t {
 	isyntax_cache_t* cache;
 	work_queue_t* work_submission_queue;
 	volatile i32 refcount;
+	char dicom_acquisition_datetime[33]; // e.g. "20210609111602.000000"
+	char dicom_manufacturer[65]; // e.g. "PHILIPS"
+	char dicom_manufacturers_model_name[65]; // e.g. "UFS Scanner"
+	char dicom_device_serial_number[65]; // e.g. "FMT0586"
+	char (*dicom_software_versions)[65]; // e.g. ""1.8.6824" "20180906_R51""
+	i32 dicom_software_versions_count;
+	char dicom_derivation_description[1025]; // e.g. PHILIPS UFS V1.8.6824 | Quality=2 | DWT=1 | Compressor=16
+	char (*dicom_date_of_last_calibration)[9];
+	i32 dicom_date_of_last_calibration_count;
+	char (*dicom_time_of_last_calibration)[7];
+	i32 dicom_time_of_last_calibration_count;
+	bool dicom_lossy_image_compression;
+	double dicom_lossy_image_compression_ratio;
+	char dicom_lossy_image_compression_method[65]; // e.g. "PHILIPS_DP_1_0"
+	char image_dimension_unit[65];
 } isyntax_t;
 
 // function prototypes
