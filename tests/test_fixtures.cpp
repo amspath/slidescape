@@ -264,10 +264,66 @@ TEST_CASE("open iSyntax fixture and read WSI metadata through libisyntax" ) {
 	libisyntax_close(isyntax);
 }
 
-TEST_CASE("TODO: decode an iSyntax tile or region through libisyntax" * doctest::skip()) {
-	// libisyntax_cache_inject currently assumes allocator pointers are already allocated before
-	// checking validity. Once cache creation/injection is made test-safe, this should read a
-	// representative tile or small region and assert non-uniform pixels.
+TEST_CASE("decode an iSyntax tile through libisyntax") {
+	char path[1024];
+	REQUIRE(file_fixture_exists("test_MF_CD8.isyntax", path, COUNT(path)));
+
+	REQUIRE(libisyntax_init() == LIBISYNTAX_OK);
+
+	isyntax_t* isyntax = NULL;
+	REQUIRE(libisyntax_open(path, (libisyntax_open_flags_t)0, &isyntax) == LIBISYNTAX_OK);
+	REQUIRE(isyntax != NULL);
+
+	isyntax_cache_t* cache = NULL;
+	REQUIRE(libisyntax_cache_create("slidescape_tests iSyntax cache", 256, &cache) == LIBISYNTAX_OK);
+	REQUIRE(cache != NULL);
+	REQUIRE(libisyntax_cache_inject(cache, isyntax) == LIBISYNTAX_OK);
+
+	const isyntax_image_t* wsi = libisyntax_get_wsi_image(isyntax);
+	REQUIRE(wsi != NULL);
+	i32 level_count = libisyntax_image_get_level_count(wsi);
+	REQUIRE(level_count > 0);
+
+	const isyntax_level_t* selected_level = NULL;
+	const isyntax_tile_t* selected_tile = NULL;
+	i32 selected_level_index = -1;
+	for (i32 level_index = level_count - 1; level_index >= 0; --level_index) {
+		const isyntax_level_t* level = libisyntax_image_get_level(wsi, level_index);
+		if (!level || !level->tiles) continue;
+		for (u64 tile_index = 0; tile_index < level->tile_count; ++tile_index) {
+			const isyntax_tile_t* tile = level->tiles + tile_index;
+			if (tile->exists) {
+				selected_level = level;
+				selected_tile = tile;
+				selected_level_index = level_index;
+				break;
+			}
+		}
+		if (selected_tile) break;
+	}
+
+	REQUIRE(selected_level != NULL);
+	REQUIRE(selected_tile != NULL);
+	CAPTURE(selected_level_index);
+	CAPTURE(selected_tile->tile_x);
+	CAPTURE(selected_tile->tile_y);
+
+	i32 tile_width = libisyntax_get_tile_width(isyntax);
+	i32 tile_height = libisyntax_get_tile_height(isyntax);
+	REQUIRE(tile_width > 0);
+	REQUIRE(tile_height > 0);
+
+	size_t pixel_count = (size_t)tile_width * (size_t)tile_height;
+	u32* pixels = (u32*)calloc(pixel_count, sizeof(u32));
+	REQUIRE(static_cast<bool>(pixels != NULL));
+
+	REQUIRE(libisyntax_tile_read(isyntax, cache, selected_level_index, selected_tile->tile_x, selected_tile->tile_y,
+	                             pixels, LIBISYNTAX_PIXEL_FORMAT_RGBA) == LIBISYNTAX_OK);
+	CHECK(pixel_buffer_has_variation(pixels, pixel_count));
+
+	free(pixels);
+	libisyntax_cache_destroy(cache);
+	libisyntax_close(isyntax);
 }
 
 TEST_CASE("TODO: load ASAP XML fixture through annotation parser" * doctest::skip()) {

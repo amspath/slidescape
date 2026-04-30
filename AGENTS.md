@@ -61,6 +61,8 @@ The project uses CMake. Common targets include:
 
 - `slidescape`: main GUI application.
 - `slidescape_console`: Windows console build for command-line output.
+- `slidescape_nongui`: internal non-GUI library used by tests and shared format/core code.
+- `slidescape_tests`: doctest-based test executable registered with CTest.
 - `slideserver`: unmaintained WIP server executable, gated behind `BUILD_SLIDESERVER=ON`. Do not use this as a routine build-health check unless the task is specifically about server functionality.
 - `dicom_dict_gen`: DICOM dictionary generation tool.
 
@@ -69,6 +71,8 @@ Suggested local checks:
 ```sh
 cmake --build cmake-build-debug --target slidescape
 cmake --build cmake-build-debug --target slidescape_console
+cmake --build cmake-build-debug --target slidescape_tests
+ctest --test-dir cmake-build-debug --output-on-failure
 cmake --build cmake-build-debug --target dicom_dict_gen
 ```
 
@@ -87,7 +91,7 @@ cmake -S . -B build
 cmake --build build --target slidescape
 ```
 
-There is no dedicated test suite in the repository at the time of writing. For risky changes, add a focused test harness or provide a concrete manual verification path. For format readers/writers, prefer small representative sample files when available, and do not assume a change is safe based only on successful compilation.
+The test suite lives under `tests/` and uses doctest plus CTest. It currently covers low-level utilities, private fixture smoke checks, TIFF fixture opening/tile decoding, and iSyntax fixture metadata/tile decoding through `slidescape_nongui`. Private WSI fixtures live under `data_for_testing/` and are available locally but should not be assumed to be publishable. For new format-reader work, prefer adding focused fixture tests when possible and keep tests gracefully skippable or clearly marked if they depend on private data.
 
 Note: `CMAKE_RUNTIME_OUTPUT_DIRECTORY` is the repository root, so local builds may update generated executables such as `slidescape.exe`. Do not include generated binaries in source changes unless explicitly requested.
 
