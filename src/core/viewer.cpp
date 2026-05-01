@@ -293,8 +293,6 @@ image_t* get_image_from_resource_id(app_state_t* app_state, i32 resource_id) {
 	return NULL;
 }
 
-#define VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER 5000
-
 void viewer_process_completion_queue(app_state_t* app_state) {
 	float max_texture_load_time = 0.007f; // TODO: pin to frame time
 #if 1
@@ -486,6 +484,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			tile_streamer.tile_completion_task_identifier = VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER;
             tile_streamer.pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
+				// NOTE: this fails if isyntax_tile_read() is called once already
+				// TODO: harden isyntax_begin_first_load() to permit running in a non-clean state?
 				wsi->first_load_in_progress = true;
 				isyntax_begin_first_load(&tile_streamer);
 			} else if (wsi->first_load_complete) {

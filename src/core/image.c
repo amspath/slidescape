@@ -897,6 +897,28 @@ void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 comp
     }
 }
 
+// TODO: optimize?
+void image_convert_u8_bgra_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components) {
+	if (components == 3 || components == 4) {
+		i32 row_elements = w * components;
+		for (i32 y = 0; y < h; ++y) {
+			u8* src_pixel = src + y * row_elements;
+			float* dst_pixel = dest + y * w;
+			for (i32 x = 0; x < w; ++x) {
+				float b = (float)(src_pixel[0]) * (1.0f/255.0f);
+				float g = (float)(src_pixel[1]) * (1.0f/255.0f);
+				float r = (float)(src_pixel[2]) * (1.0f/255.0f);
+				float luminance = f32_rgb_to_f32_y(r, g, b);
+				*dst_pixel++ = luminance;
+				src_pixel += components;
+			}
+		}
+	} else {
+		printf("number of components (%d) not supported\n", components);
+		exit(1);
+	}
+}
+
 void do_invert_colors(u8* pixels, i32 w, i32 h, enum pixel_format_enum pixel_format) {
 	if (pixel_format == PIXEL_FORMAT_U8_BGRA || pixel_format == PIXEL_FORMAT_U8_RGBA) {
 		u32 pixel_count = w * h;
@@ -1132,7 +1154,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			if (desired_pixel_format == PIXEL_FORMAT_U8_BGRA) {
 				intermediate_pixel_format = PIXEL_FORMAT_U8_BGRA;
 				translated_pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
-			} else if (desired_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+			} else if (desired_pixel_format == PIXEL_FORMAT_U8_RGBA || desired_pixel_format == PIXEL_FORMAT_F32_Y) {
 				intermediate_pixel_format = PIXEL_FORMAT_U8_RGBA;
 				translated_pixel_format = LIBISYNTAX_PIXEL_FORMAT_RGBA;
 			} else {
@@ -1155,15 +1177,26 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				cache->is_block_allocator_owned = false;
 			}
 
+			if (desired_pixel_format == intermediate_pixel_format) {
+				intermediate_pixel_buffer = (uint32_t*) dest;
+			} else {
+				intermediate_pixel_buffer = malloc(w * h * sizeof(uint32_t));
+			}
+
 			// NOTE: libisyntax adjusts the x and y read position to account for the iSyntax padding area.
 			// However, Slidescape keeps the (0,0) origin at the edge of the padding area instead (not the actual image).
 			// So we need to pre-emptively 'undo' the offsetting that libisyntax does.
 			// TODO: change Slidescape origin to keep coordinate system the same as libisyntax?
-			int32_t offset = ((3 << isyntax->images[0].level_count) - 3) >> level;
+			isyntax_image_t* wsi = &isyntax->images[0];
+			int32_t offset = ((3 << wsi->level_count) - 3) >> level;
 			x -= offset;
 			y -= offset;
 
-			if (libisyntax_read_region(&image->isyntax, isyntax->cache, level, x, y, w, h, dest, translated_pixel_format) != LIBISYNTAX_OK) {
+			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
+				isyntax_do_first_load_immediately(isyntax, wsi, image->resource_id, 5000 /*VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER*/);
+			}
+
+			if (libisyntax_read_region(&image->isyntax, isyntax->cache, level, x, y, w, h, intermediate_pixel_buffer, translated_pixel_format) != LIBISYNTAX_OK) {
 				console_print_error("image_read_region(): unknown error in libisyntax_read_region()\n");
 				return false;
 			}
@@ -1182,7 +1215,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
         // need to convert between pixel formats
         if (intermediate_pixel_format == PIXEL_FORMAT_U8_BGRA) {
             if (desired_pixel_format == PIXEL_FORMAT_F32_Y) {
-                image_convert_u8_rgba_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
+                image_convert_u8_bgra_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
             } else if (desired_pixel_format == PIXEL_FORMAT_U8_RGBA) {
                 // swap RGBA to BGRA
                 i32 pixel_count = w * h;
@@ -1197,9 +1230,23 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                 console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented\n", intermediate_pixel_format, desired_pixel_format);
                 success = false;
             }
-        } else {
-            console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented\n", intermediate_pixel_format, desired_pixel_format);
-            success = false;
+        } else if (intermediate_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+        	if (desired_pixel_format == PIXEL_FORMAT_F32_Y) {
+        		image_convert_u8_rgba_to_f32_y(intermediate_pixel_buffer, dest, w, h, 4);
+        	} else if (desired_pixel_format == PIXEL_FORMAT_U8_RGBA) {
+        		// swap BGRA to RGBA
+        		i32 pixel_count = w * h;
+        		for (i32 i = 0; i < pixel_count; ++i) {
+        			// assume little-endian order: 0xAARRGGBB
+        			// TODO: big-endian compatibility
+        			u32 pixel = ((u32*)intermediate_pixel_buffer)[i];
+        			u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF)<<16) | ((pixel>>16) & 0xFF);
+        			((u32*)dest)[i] = new_pixel;
+        		}
+        	} else {
+        		console_print_error("image_read_region(): pixel conversion (%d to %d) not implemented\n", intermediate_pixel_format, desired_pixel_format);
+        		success = false;
+        	}
         }
         if (intermediate_pixel_buffer) free(intermediate_pixel_buffer);
     }

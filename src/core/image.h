@@ -222,6 +222,7 @@ static inline u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i3
 
 float f32_rgb_to_f32_y(float R, float G, float B);
 void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components);
+void image_convert_u8_bgra_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components);
 void tile_release_cache(tile_t* tile);
 const char* get_image_backend_name(image_t* image);
 const char* get_image_descriptive_type_name(image_t* image);

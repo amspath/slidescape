@@ -394,6 +394,18 @@ void isyntax_begin_first_load(isyntax_streamer_t* streamer) {
 	}
 }
 
+void isyntax_do_first_load_immediately(isyntax_t* isyntax, isyntax_image_t* wsi, i32 resource_id, u32 task_identifier) {
+	isyntax_streamer_t tile_streamer = {0};
+	tile_streamer.isyntax = isyntax;
+	tile_streamer.wsi = wsi;
+	tile_streamer.resource_id = resource_id;
+	tile_streamer.tile_completion_queue = &global_completion_queue;
+	tile_streamer.tile_completion_callback = NULL;
+	tile_streamer.tile_completion_task_identifier = task_identifier;
+	tile_streamer.pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
+	wsi->first_load_in_progress = true;
+	isyntax_do_first_load(&tile_streamer);
+}
 
 void isyntax_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_level_t* level = wsi->levels + scale;

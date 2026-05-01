@@ -39,6 +39,7 @@ extern "C" {
 #include "annotation.h"
 #include "shader.h"
 
+#define VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER 5000
 
 typedef enum viewer_file_type_enum {
 	VIEWER_FILE_TYPE_UNKNOWN = 0,

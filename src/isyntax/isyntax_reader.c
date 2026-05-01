@@ -422,5 +422,10 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
         tile->has_h = false;
     }
 
+    // Prevent iSyntax streamer from calling isyntax_begin_first_load()
+    if (!wsi->first_load_complete) {
+        wsi->first_load_complete = true;
+    }
+
     benaphore_unlock(&cache->mutex);
 }

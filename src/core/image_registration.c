@@ -25,6 +25,8 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#define REGISTRATION_THUMBNAIL_MAX_DIM 1024
+
 float* convert_image_float_rgb_to_y(float* data, i32 w, i32 h, i32 components) {
     float* result = NULL;
     if (components == 3 || components == 4) {
@@ -166,16 +168,136 @@ static void isolate_hematoxylin_signal(uint32_t* pixels, float* dest, i32 pixel_
     }
 }
 
+typedef struct registration_thumbnail_t {
+    float* pixels;
+    i32 width;
+    i32 height;
+    i32 source_level;
+    float thumbnail_mpp_x;
+    float thumbnail_mpp_y;
+} registration_thumbnail_t;
+
+static i32 image_find_smallest_existing_level(image_t* image) {
+    i32 result = -1;
+    for (i32 level = 0; level < image->level_count; ++level) {
+        level_image_t* level_image = image->level_images + level;
+        if (level_image->exists) {
+            if (result < 0) {
+                result = level;
+            } else {
+                level_image_t* result_level_image = image->level_images + result;
+                i64 level_max_dim = MAX(level_image->width_in_pixels, level_image->height_in_pixels);
+                i64 result_max_dim = MAX(result_level_image->width_in_pixels, result_level_image->height_in_pixels);
+                if (level_max_dim < result_max_dim) {
+                    result = level;
+                }
+            }
+        }
+    }
+    return result;
+}
+
+static i32 image_find_registration_source_level(image_t* image, i32 target_width, i32 target_height) {
+    i32 best_level = -1;
+    i64 best_excess_pixels = INT64_MAX;
+    for (i32 level = 0; level < image->level_count; ++level) {
+        level_image_t* level_image = image->level_images + level;
+        if (!level_image->exists) continue;
+        if (level_image->width_in_pixels >= target_width && level_image->height_in_pixels >= target_height) {
+            i64 excess_pixels = (level_image->width_in_pixels - target_width) + (level_image->height_in_pixels - target_height);
+            if (excess_pixels < best_excess_pixels) {
+                best_excess_pixels = excess_pixels;
+                best_level = level;
+            }
+        }
+    }
+    if (best_level < 0) {
+        best_level = image_find_smallest_existing_level(image);
+    }
+    return best_level;
+}
+
+static void resize_luminance_bilinear(float* src, i32 src_w, i32 src_h, float* dst, i32 dst_w, i32 dst_h) {
+    ASSERT(src_w > 0 && src_h > 0 && dst_w > 0 && dst_h > 0);
+    for (i32 y = 0; y < dst_h; ++y) {
+        float src_y = (((float)y + 0.5f) * (float)src_h / (float)dst_h) - 0.5f;
+        src_y = CLAMP(src_y, 0.0f, (float)(src_h - 1));
+        i32 y0 = (i32)floorf(src_y);
+        i32 y1 = MIN(y0 + 1, src_h - 1);
+        float fy = src_y - (float)y0;
+        float* dst_row = dst + y * dst_w;
+        float* src_row0 = src + y0 * src_w;
+        float* src_row1 = src + y1 * src_w;
+        for (i32 x = 0; x < dst_w; ++x) {
+            float src_x = (((float)x + 0.5f) * (float)src_w / (float)dst_w) - 0.5f;
+            src_x = CLAMP(src_x, 0.0f, (float)(src_w - 1));
+            i32 x0 = (i32)floorf(src_x);
+            i32 x1 = MIN(x0 + 1, src_w - 1);
+            float fx = src_x - (float)x0;
+
+            float top = src_row0[x0] * (1.0f - fx) + src_row0[x1] * fx;
+            float bottom = src_row1[x0] * (1.0f - fx) + src_row1[x1] * fx;
+            dst_row[x] = top * (1.0f - fy) + bottom * fy;
+        }
+    }
+}
+
+static bool registration_create_thumbnail(image_t* image, float target_mpp, registration_thumbnail_t* thumbnail) {
+    ASSERT(image);
+    ASSERT(thumbnail);
+    ASSERT(target_mpp > 0.0f);
+
+    i32 target_width = ATLEAST(1, (i32)roundf(image->width_in_um / target_mpp));
+    i32 target_height = ATLEAST(1, (i32)roundf(image->height_in_um / target_mpp));
+    i32 source_level = image_find_registration_source_level(image, target_width, target_height);
+    if (source_level < 0) {
+        console_print("Image registration not possible: no readable pyramid level found for '%s'\n", image->name);
+        return false;
+    }
+
+    level_image_t* level_image = image->level_images + source_level;
+    i32 source_width = (i32)level_image->width_in_pixels;
+    i32 source_height = (i32)level_image->height_in_pixels;
+    float* source_pixels = calloc(1, source_width * source_height * sizeof(float));
+    if (!source_pixels) {
+        return false;
+    }
+
+    bool ok = image_read_region(image, source_level, 0, 0, source_width, source_height, source_pixels, PIXEL_FORMAT_F32_Y);
+    if (!ok) {
+        free(source_pixels);
+        return false;
+    }
+
+    thumbnail->pixels = calloc(1, target_width * target_height * sizeof(float));
+    if (!thumbnail->pixels) {
+        free(source_pixels);
+        return false;
+    }
+
+    resize_luminance_bilinear(source_pixels, source_width, source_height, thumbnail->pixels, target_width, target_height);
+    thumbnail->width = target_width;
+    thumbnail->height = target_height;
+    thumbnail->source_level = source_level;
+    thumbnail->thumbnail_mpp_x = image->width_in_um / (float)target_width;
+    thumbnail->thumbnail_mpp_y = image->height_in_um / (float)target_height;
+
+    free(source_pixels);
+    return true;
+}
+
+static void registration_thumbnail_destroy(registration_thumbnail_t* thumbnail) {
+    if (thumbnail->pixels) {
+        free(thumbnail->pixels);
+    }
+    memset(thumbnail, 0, sizeof(*thumbnail));
+}
+
 
 
 image_transform_t do_local_image_registration(image_t* image1, image_t* image2, v2f center_point, i32 level, i32 patch_width,
                                               image_register_preprocess_method_enum preprocess_method) {
     image_transform_t result = {};
-
-    if (image1->backend == IMAGE_BACKEND_ISYNTAX || image2->backend == IMAGE_BACKEND_ISYNTAX) {
-        // TODO: implement read_region() for iSyntax backend
-        return result;
-    }
 
     i64 start = get_clock();
 
@@ -271,65 +393,53 @@ image_transform_t do_local_image_registration(image_t* image1, image_t* image2, 
 image_transform_t do_image_registration(image_t* image1, image_t* image2, i32 levels_from_top) {
     image_transform_t result = {};
 
-	if (image1->backend == IMAGE_BACKEND_ISYNTAX || image2->backend == IMAGE_BACKEND_ISYNTAX) {
-		// TODO: implement read_region() for iSyntax backend
-		return result;
-	}
-
     i64 start = get_clock();
 
-    i32 thumb_level1 = ATLEAST(0, image1->level_count - levels_from_top - 1);
-    i32 thumb_level2 = ATLEAST(0, image2->level_count - levels_from_top - 1);
-
-    if (thumb_level1 != thumb_level2) {
-        console_print("Image registration not possible: number of levels differs (%d vs %d)\n", image1->level_count, image2->level_count);
+    float target_mpp = MAX(image1->width_in_um, image1->height_in_um) / (float)REGISTRATION_THUMBNAIL_MAX_DIM;
+    target_mpp = MAX(target_mpp, MAX(image2->width_in_um, image2->height_in_um) / (float)REGISTRATION_THUMBNAIL_MAX_DIM);
+    if (target_mpp <= 0.0f) {
+        console_print("Image registration not possible: invalid image dimensions\n");
         return result;
     }
 
-    level_image_t* level_image1 = image1->level_images + thumb_level1;
-    level_image_t* level_image2 = image2->level_images + thumb_level2;
-
-    i32 w1 = (i32)level_image1->width_in_pixels;
-    i32 h1 = (i32)level_image1->height_in_pixels;
-    i32 w2 = (i32)level_image2->width_in_pixels;
-    i32 h2 = (i32)level_image2->height_in_pixels;
-
-    float* region1 = calloc(1, w1 * h1 * sizeof(float));
-    float* region2 = calloc(1, w2 * h2 * sizeof(float));
-
-    bool ok = image_read_region(image1, thumb_level1, 0, 0, w1, h1, region1, PIXEL_FORMAT_F32_Y);
-    ok = ok && image_read_region(image2, thumb_level2, 0, 0, w2, h2, region2, PIXEL_FORMAT_F32_Y);
+    registration_thumbnail_t thumb1 = {};
+    registration_thumbnail_t thumb2 = {};
+    bool ok = registration_create_thumbnail(image1, target_mpp, &thumb1);
+    ok = ok && registration_create_thumbnail(image2, target_mpp, &thumb2);
     if (!ok) {
-        console_print("Image registration not possible: image_read_region() failed\n");
+        console_print("Image registration not possible: could not create registration thumbnail\n");
+        registration_thumbnail_destroy(&thumb1);
+        registration_thumbnail_destroy(&thumb2);
         return result;
     }
 
     i64 clock_after_read = get_clock();
 
-    set_white_level(region1, w1 * h1, 230.0f / 255.0f);
-    set_white_level(region2, w2 * h2, 230.0f / 255.0f);
+    set_white_level(thumb1.pixels, thumb1.width * thumb1.height, 230.0f / 255.0f);
+    set_white_level(thumb2.pixels, thumb2.width * thumb2.height, 230.0f / 255.0f);
 
-    set_black_level(region2, w2 * h2, 150.0f / 255.0f);
+    set_black_level(thumb2.pixels, thumb2.width * thumb2.height, 150.0f / 255.0f);
 
 //    void debug_create_luminance_png(real_t* src, i32 w, i32 h, real_t scale, const char* filename);
-//    debug_create_luminance_png(region1, w1, h1, 1.0f, "thumb1.png");
-//    debug_create_luminance_png(region2, w2, h2, 1.0f, "thumb2.png");
+//    debug_create_luminance_png(thumb1.pixels, thumb1.width, thumb1.height, 1.0f, "thumb1.png");
+//    debug_create_luminance_png(thumb2.pixels, thumb2.width, thumb2.height, 1.0f, "thumb2.png");
 
-    buffer2d_t input1 = { .w = w1, .h = h1, .data = region1};
-    buffer2d_t input2 = { .w = w2, .h = h2, .data = region2};
+    buffer2d_t input1 = { .w = thumb1.width, .h = thumb1.height, .data = thumb1.pixels};
+    buffer2d_t input2 = { .w = thumb2.width, .h = thumb2.height, .data = thumb2.pixels};
 
     v2f pixel_shift = phase_correlate(&input1, &input2, NULL, 1.0f, &result.response, 0);
-    pixel_shift.x *= image2->mpp_x * level_image2->downsample_factor;
-    pixel_shift.y *= image2->mpp_y * level_image2->downsample_factor;
+    pixel_shift.x *= thumb2.thumbnail_mpp_x;
+    pixel_shift.y *= thumb2.thumbnail_mpp_y;
 
     result.translate = pixel_shift;
     result.is_valid = true;
 
-    console_print("Image registration (on level %d): level0 pixel offset = (%.0f, %.0f), io time = %g seconds, processing time = %g seconds\n",
-                  thumb_level1, pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
+    console_print("Image registration (thumbnail %dx%d from level %d, %dx%d from level %d): level0 pixel offset = (%.0f, %.0f), io time = %g seconds, processing time = %g seconds\n",
+                  thumb1.width, thumb1.height, thumb1.source_level, thumb2.width, thumb2.height, thumb2.source_level,
+                  pixel_shift.x / image2->mpp_x, pixel_shift.y / image2->mpp_y,
                   get_seconds_elapsed(start, clock_after_read), get_seconds_elapsed(clock_after_read, get_clock()));
 
-    free(region1);
-    free(region2);
+    registration_thumbnail_destroy(&thumb1);
+    registration_thumbnail_destroy(&thumb2);
     return result;
 }
