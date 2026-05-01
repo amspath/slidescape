@@ -21,6 +21,9 @@ Print the Slidescape version number and exit.
 --verbose
 Enable verbose mode.
 
+--headless
+Suppress opening the GUI and exit immediately.
+
 
 Cropping/converting WSIs from the command-line
 ----------------------------------------------

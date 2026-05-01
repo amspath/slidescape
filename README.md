@@ -68,16 +68,23 @@ Resizing the WSI to a different resolution is also possible.
 
 ### Command-line interface
 
+#### Starting the viewer
+The basic command to start the viewer from the command-line is:
+```
+slidescape <input files>
+```
+
 To start the viewer with one or more overlay layers from the command-line, pass the base WSI first and then one or more files after `--overlay`:
 ```
-slidescape base.mrxs --overlay second_wsi.tiff
+slidescape base.mrxs --overlay another_wsi.tiff
 ```
 
-The first file is loaded as the base image. Each file after `--overlay` is loaded with the same overlay path used by `F6`, including image registration against the base layer when available.
+The first file is loaded as the base image. Each file after `--overlay` is loaded as an overlay, including image registration against the base layer when available.
 
-Image export operations can also be performed using a command-line interface.
+To force the viewer to run in headless mode and always exit immediately without opening the GUI, add `--headless`.
 
-The basic command for export operations is:
+#### Exporting images (converting, cropping and resizing)
+Image export operations can be performed using a command-line interface. The basic command is:
 ```
 slidescape <input files> --export 
 ```

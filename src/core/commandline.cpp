@@ -100,6 +100,8 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 			}
 		} else  if (strcmp(arg, "--verbose") == 0) {
 			is_verbose_mode = true;
+		} else if (strcmp(arg, "--headless") == 0) {
+			app_command.headless = true;
 		} else if (strcmp(arg, "--overlay") == 0) {
 			bool found_overlay_input = false;
 			++arg_index;
@@ -198,7 +200,11 @@ void export_region_get_name_hint(app_state_t* app_state, char* output_buffer, si
 
 int app_command_execute(app_state_t* app_state) {
 	app_command_t* command = &app_state->command;
-	if (command->command == COMMAND_EXPORT) {
+	if (command->command == COMMAND_NONE) {
+		if (command->headless) {
+			return app_load_commandline_inputs(app_state) ? 0 : 1;
+		}
+	} else if (command->command == COMMAND_EXPORT) {
 		for (i32 i = 0; i < arrlen(command->inputs); ++i) {
 			console_print("input: %s\n", command->inputs[i]);
 		}
