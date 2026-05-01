@@ -68,6 +68,13 @@ Resizing the WSI to a different resolution is also possible.
 
 ### Command-line interface
 
+To start the viewer with one or more overlay layers from the command-line, pass the base WSI first and then one or more files after `--overlay`:
+```
+slidescape base.mrxs --overlay second_wsi.tiff
+```
+
+The first file is loaded as the base image. Each file after `--overlay` is loaded with the same overlay path used by `F6`, including image registration against the base layer when available.
+
 Image export operations can also be performed using a command-line interface.
 
 The basic command for export operations is:

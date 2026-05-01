@@ -315,6 +315,7 @@ struct app_command_t {
 		command_export_error_enum error;
 	} export_command;
 	const char** inputs; // array
+	const char** overlay_inputs; // array
 };
 
 typedef struct app_state_t {
@@ -420,6 +421,7 @@ void viewer_init_options(app_state_t* app_state);
 // viewer_commandline.cpp
 app_command_t app_parse_commandline(int argc, const char** argv);
 void app_command_execute_immediately(app_command_t* app_command);
+bool app_load_commandline_inputs(app_state_t* app_state);
 int app_command_execute(app_state_t* app_state);
 
 // isyntax_streamer.cpp

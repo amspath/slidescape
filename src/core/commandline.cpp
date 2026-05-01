@@ -100,6 +100,21 @@ app_command_t app_parse_commandline(int argc, const char** argv) {
 			}
 		} else  if (strcmp(arg, "--verbose") == 0) {
 			is_verbose_mode = true;
+		} else if (strcmp(arg, "--overlay") == 0) {
+			bool found_overlay_input = false;
+			++arg_index;
+			for (; arg_index < argc; ++arg_index) {
+				arg = args[arg_index];
+				if (strncmp(arg, "--", 2) == 0) {
+					--arg_index; // not an overlay filename; try again one level up
+					break;
+				}
+				arrput(app_command.overlay_inputs, arg);
+				found_overlay_input = true;
+			}
+			if (!found_overlay_input) {
+				console_print_error("--overlay expects at least one input file\n");
+			}
 		} else {
 			// Unknown command, assume that it's an input file
 			arrput(app_command.inputs, arg);
@@ -116,6 +131,27 @@ void app_command_execute_immediately(app_command_t* app_command) {
 	if (app_command->command == COMMAND_PRINT_VERSION) {
 		console_print(APP_TITLE " " APP_VERSION "\n");
 	}
+}
+
+bool app_load_commandline_inputs(app_state_t* app_state) {
+	app_command_t* command = &app_state->command;
+	bool success = true;
+	if (arrlen(command->inputs) > 0) {
+		const char* filename = command->inputs[0];
+		success = load_generic_file(app_state, filename, 0);
+		if (success) {
+			for (i32 overlay_index = 0; overlay_index < arrlen(command->overlay_inputs); ++overlay_index) {
+				const char* overlay_filename = command->overlay_inputs[overlay_index];
+				if (!load_generic_file(app_state, overlay_filename, FILETYPE_HINT_OVERLAY)) {
+					success = false;
+				}
+			}
+		}
+	} else if (arrlen(command->overlay_inputs) > 0) {
+		console_print_error("--overlay requires a base input file\n");
+		success = false;
+	}
+	return success;
 }
 
 void export_region_get_name_hint(app_state_t* app_state, char* output_buffer, size_t output_size) {

@@ -66,10 +66,13 @@ __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 #endif
 
 
+#define WIN32_COPYDATA_MAX_ARGS 32
+
 struct win32_copydata_message_t {
 	i32 argc;
 	bool need_open;
 	char filename[512];
+	char argv[WIN32_COPYDATA_MAX_ARGS][512];
 };
 
 #define SV_COPYDATA_TYPE 0x511d3
@@ -390,7 +393,7 @@ void win32_init_input() {
 win32_window_dimension_t win32_get_window_dimension(HWND window) {
 	RECT rect;
 	GetClientRect(window, &rect);
-	win32_window_dimension_t result = {rect.right - rect.left, rect.bottom - rect.top};
+	win32_window_dimension_t result = {(int)(rect.right - rect.left), (int)(rect.bottom - rect.top)};
 	return result;
 }
 
@@ -613,8 +616,14 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			if (cds->dwData == SV_COPYDATA_TYPE) {
 				win32_copydata_message_t* message_data = (win32_copydata_message_t*) cds->lpData;
 				if (message_data->argc > 1 && message_data->need_open) {
-					u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
-					load_generic_file(&global_app_state, message_data->filename, filetype_hint);
+					const char* argv[WIN32_COPYDATA_MAX_ARGS] = {};
+					i32 argc = MIN(message_data->argc, WIN32_COPYDATA_MAX_ARGS);
+					for (i32 arg_index = 0; arg_index < argc; ++arg_index) {
+						argv[arg_index] = message_data->argv[arg_index];
+					}
+					app_command_t command = app_parse_commandline(argc, argv);
+					global_app_state.command = command;
+					app_load_commandline_inputs(&global_app_state);
 				}
 			}
 		} break;
@@ -1856,6 +1865,10 @@ void win32_check_already_running() {
 				if (g_argc > 1) {
 					message_data.need_open = true;
 					strncpy(message_data.filename, g_argv[1], sizeof(message_data.filename)-1);
+					i32 argc_to_send = MIN(g_argc, WIN32_COPYDATA_MAX_ARGS);
+					for (i32 arg_index = 0; arg_index < argc_to_send; ++arg_index) {
+						strncpy(message_data.argv[arg_index], g_argv[arg_index], sizeof(message_data.argv[arg_index])-1);
+					}
 				}
 
 				COPYDATASTRUCT cds = {};
@@ -1971,7 +1984,7 @@ int main() {
 
 	// Don't open multiple instances of the program when opening a file -> switch to the existing instance
 	// (unless Shift is being held down)
-	if (g_argc > 1 && !(GetKeyState(VK_SHIFT) & 0x8000)) {
+	if (g_argc > 1 && !app_command.headless && !(GetKeyState(VK_SHIFT) & 0x8000)) {
 		win32_check_already_running();
 	}
 
@@ -2016,12 +2029,7 @@ int main() {
 	init_opengl_stuff(app_state);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
-	if (arrlen(app_command.inputs) > 0) {
-		// TODO: allow loading multiple files from the commandline?
-		const char* filename = app_command.inputs[0];
-//		console_print("filename = %s\n", filename);
-		load_generic_file(app_state, filename, 0);
-	}
+	app_load_commandline_inputs(app_state);
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
 
