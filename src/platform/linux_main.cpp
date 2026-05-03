@@ -671,9 +671,7 @@ int main(int argc, const char** argv)
 		global_fixed_width_font = font_default;
 	}
 
-	io.Fonts->FontBuilderFlags = ImGuiFreeTypeBuilderFlags_MonoHinting;
-	io.Fonts->Build();
-	global_main_font->Scale = app_state->display_points_per_pixel;
+	io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
 
     init_opengl_stuff(app_state);
 

@@ -71,7 +71,11 @@ else()
         set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} -s")
         set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -s")
 
-        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++ -no-pie")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++ -no-pie")
+    endif()
+    if (WIN32)
+        # Static linkage on Windows to prevent depending on libwinpthread-1.dll
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
     endif()
 endif()
 
@@ -142,6 +146,7 @@ if (WITH_SIMD EQUAL 1)
 else()
     set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} deps/jpeg/jsimd_none.c)
 endif()
+add_library(slidescape_jpeg STATIC ${JPEG_SOURCE_FILES})
 
 set(FREETYPE_SOURCE_FILES
         autofit/autofit.c   base/ftbbox.c       base/ftbase.c       base/ftbdf.c        base/ftbitmap.c
@@ -297,7 +302,6 @@ endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
 set(LIBRARY_SOURCE_FILES
-        ${JPEG_SOURCE_FILES}
         ${FREETYPE_SOURCE_FILES}
         ${MBEDTLS_SOURCE_FILES}
         ${KEYCODE_SOURCE_FILES})
@@ -311,8 +315,8 @@ if (WIN32)
     add_executable(slidescape         ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
     add_executable(slidescape_console ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} resources/icon/icon.rc)
 
-    target_link_libraries(slidescape         slidescape_nongui user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
-    target_link_libraries(slidescape_console slidescape_nongui user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
+    target_link_libraries(slidescape         slidescape_nongui slidescape_jpeg user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
+    target_link_libraries(slidescape_console slidescape_nongui slidescape_jpeg user32 gdi32 winmm imm32 dwmapi ws2_32 psapi shlwapi crypt32)
 
     # Hide the console window on (non-console) release builds
     target_link_options(slidescape PRIVATE "$<$<NOT:$<CONFIG:Debug>>:-mwindows>")
@@ -325,7 +329,7 @@ elseif(APPLE)
     set_source_files_properties(${MACOSX_BUNDLE_ICON_FILE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(slidescape MACOSX_BUNDLE ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES} ${MACOSX_BUNDLE_ICON_FILE})
     set_target_properties(slidescape PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/Info.plist")
-    target_link_libraries(slidescape "slidescape_nongui -framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices" "-framework Security")
+    target_link_libraries(slidescape slidescape_nongui slidescape_jpeg "-framework Cocoa" "-framework Quartz" "-framework OpenGL" "-framework ApplicationServices" "-framework Security")
     target_link_libraries(slidescape ${SDL2_LIBRARIES})
     set_target_properties(slidescape PROPERTIES OUTPUT_NAME Slidescape)
 
@@ -350,7 +354,7 @@ else()
     add_executable(slidescape ${VIEWER_SOURCE_FILES} ${LIBRARY_SOURCE_FILES})
     find_package(SDL2 REQUIRED)
     include_directories(${SDL2_INCLUDE_DIRS})
-    target_link_libraries(slidescape slidescape_nongui pthread dl m GL GLEW SDL2)
+    target_link_libraries(slidescape slidescape_nongui slidescape_jpeg pthread dl m GL GLEW SDL2)
 
     # Create slidescape.desktop and install/uninstall scripts, and copy them to the output directory
     configure_file(resources/slidescape.desktop.in slidescape.desktop)
