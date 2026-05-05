@@ -726,7 +726,6 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 			image->is_freshly_loaded = true;
 			image->is_valid = true;
 			init_image_from_stbi(image, &image->simple, is_overlay);
-			return image;
 
 			//stbi_image_free(image->stbi.pixels);
 		}
@@ -736,11 +735,9 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 		tiff_t tiff = {};
 		if (open_tiff_file(&tiff, filename)) {
 			init_image_from_tiff(image, tiff, is_overlay, parent_image);
-			return image;
 		} else {
 			tiff_destroy(&tiff);
 			image->is_valid = false;
-			return image;
 		}
 	} else if (file->type == VIEWER_FILE_TYPE_ISYNTAX) {
 		// Try to open as iSyntax
@@ -748,7 +745,6 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 		isyntax_set_work_queue(&isyntax, &global_work_queue);
 		if (isyntax_open(&isyntax, filename, LIBISYNTAX_OPEN_FLAG_INIT_ALLOCATORS)) {
 			init_image_from_isyntax(image, &isyntax, is_overlay);
-			return image;
 		}
 	} else if (file->type == VIEWER_FILE_TYPE_DICOM) {
 
@@ -762,7 +758,6 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
             dicom_series_t dicom = {};
             if (dicom_open_from_directory(&dicom, directory)) {
                 init_image_from_dicom(image, &dicom, is_overlay);
-                return image;
             } else {
                 dicom_destroy(&dicom);
             }
@@ -796,7 +791,6 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
         }
 		if (opened_successfully) {
 			init_image_from_mrxs(image, &mrxs, is_overlay);
-			return image;
 		} else {
 			mrxs_destroy(&mrxs);
 		}
@@ -825,9 +819,13 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
         load_openslide_wsi(&wsi, filename);
         if (wsi.osr) {
             init_image_from_openslide(image, &wsi, is_overlay);
-            return image;
         }
 	}
+
+	if (image->is_valid) {
+		image->lock = benaphore_create();
+	}
+
 	return image;
 
 }
