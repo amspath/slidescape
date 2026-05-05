@@ -91,7 +91,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			i32 excess_rows = (int)((tile_y_excess / level_image->y_tile_side_in_um) * level_image->tile_height);
 			ASSERT(excess_rows >= 0);
 			new_tile_height = level_image->tile_height - excess_rows;
-			memset(temp_memory + (new_tile_height * pitch), 0, excess_rows * pitch);
+			memset(temp_memory + (new_tile_height * pitch), image_background_byte, excess_rows * pitch);
 		}
 		if (tile_x_excess > 0) {
 			i32 excess_pixels = (int)((tile_x_excess / level_image->x_tile_side_in_um) * level_image->tile_width);
@@ -99,7 +99,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 			i32 new_tile_width = level_image->tile_width - excess_pixels;
 			for (i32 row = 0; row < new_tile_height; ++row) {
 				u8* write_pos = temp_memory + (row * pitch) + (new_tile_width * BYTES_PER_PIXEL);
-				memset(write_pos, 0, excess_pixels * BYTES_PER_PIXEL);
+				memset(write_pos, image_background_byte, excess_pixels * BYTES_PER_PIXEL);
 			}
 		}
 
