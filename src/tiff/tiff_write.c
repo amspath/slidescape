@@ -24,6 +24,7 @@
 #include "viewer.h"
 #include "image_resize.h"
 #include "jpeg_decoder.h"
+#include "benaphore.h"
 
 #include "tiff_write.h"
 
@@ -137,7 +138,18 @@ typedef struct image_draft_t {
     i32 supertile_height_read;
     u16 desired_photometric_interpretation;
     i32 quality;
+    benaphore_t write_lock;
 } image_draft_t;
+
+typedef struct construct_export_tile_task_t {
+    image_draft_t* draft;
+    image_draft_level_t* frontier;
+    file_stream_t fp;
+    volatile i32* next_tile_index;
+    volatile i32* started_count;
+    volatile i32* participants_goal;
+    volatile i32* finished_count;
+} construct_export_tile_task_t;
 
 static void shrink_tile_and_propagate_to_next_level(image_draft_t* draft, image_draft_tile_t* tile) {
     if (tile->level + 1 < draft->level_count) {
@@ -180,7 +192,9 @@ static void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t
     jpeg_encode_tile(tile->buffer.pixels, draft->tile_width, draft->tile_width, draft->quality, NULL, NULL,
                      &compressed_buffer, &compressed_size, use_rgb);
 
-    // TODO: make an asynchronous version for I/O
+    // JPEG encoding is the expensive part and happens before the lock. Only the shared append position,
+    // tile offset tables, and progress counters are serialized.
+    benaphore_lock(&draft->write_lock);
 
     fseeko64(fp, draft->current_image_data_write_offset, SEEK_SET); // this needed?
 
@@ -201,6 +215,8 @@ static void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t
 	for (i32 i = 0; i < dots_to_write; ++i) {
 		putc('.', stdout);
 	}
+
+    benaphore_unlock(&draft->write_lock);
 
     libc_free(compressed_buffer);
 
@@ -286,35 +302,135 @@ static void construct_base_tile_with_resampling(image_draft_t* draft, image_draf
     release_temp_memory(&temp);
 }
 
-static void construct_tiles_recursive(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp) {
+static void construct_tiles_recursive(image_draft_t* draft, image_draft_tile_t* tile, file_stream_t fp, bool propagate_to_parent) {
     ASSERT(tile->level >= 0);
     if (tile->level == 0) {
+        ASSERT(propagate_to_parent);
         construct_base_tile_with_resampling(draft, tile, fp);
     } else {
         // find child tiles
         image_draft_level_t* child_level = draft->levels + tile->level - 1;
         image_draft_tile_t* topleft = child_level->tiles + tile->tile_y * 2 * child_level->width_in_tiles + tile->tile_x * 2;
-        construct_tiles_recursive(draft, topleft, fp);
+        construct_tiles_recursive(draft, topleft, fp, true);
         i32 tile_x_right = tile->tile_x * 2 + 1;
         i32 tile_y_bottom = tile->tile_y * 2 + 1;
         if (tile_x_right < child_level->width_in_tiles) {
             image_draft_tile_t* topright = topleft + 1;
-            construct_tiles_recursive(draft, topright, fp);
+            construct_tiles_recursive(draft, topright, fp, true);
         }
         if (tile_y_bottom < child_level->height_in_tiles) {
             image_draft_tile_t* bottomleft = topleft + child_level->width_in_tiles;
-            construct_tiles_recursive(draft, bottomleft, fp);
+            construct_tiles_recursive(draft, bottomleft, fp, true);
         }
         if (tile_x_right < child_level->width_in_tiles && tile_y_bottom < child_level->height_in_tiles) {
             image_draft_tile_t* bottomright = topleft + child_level->width_in_tiles + 1;
-            construct_tiles_recursive(draft, bottomright, fp);
+            construct_tiles_recursive(draft, bottomright, fp, true);
         }
 
         // Now all quadrants of the tile are filled -> write out to file
 //        stbi_write_png("debug_resample_result.png", draft->tile_width, draft->tile_width, 4, tile->buffer.pixels, tile->buffer.width * tile->buffer.channels);
-        shrink_tile_and_propagate_to_next_level(draft, tile);
+        if (propagate_to_parent) {
+            shrink_tile_and_propagate_to_next_level(draft, tile);
+        }
         write_finished_bigtiff_tile(draft, tile, fp);
-        destroy_image_buffer(&tile->buffer);
+        if (propagate_to_parent) {
+            destroy_image_buffer(&tile->buffer);
+        }
+    }
+}
+
+static void construct_export_tile_task_func(i32 logical_thread_index, void* userdata) {
+    construct_export_tile_task_t* task = (construct_export_tile_task_t*)userdata;
+    atomic_increment(task->started_count);
+    while (*task->started_count < *task->participants_goal) {
+        platform_sleep(1);
+    }
+
+    for (;;) {
+        i32 tile_index = atomic_increment(task->next_tile_index) - 1;
+        if (tile_index >= task->frontier->tile_count) {
+            break;
+        }
+
+        image_draft_tile_t* tile = task->frontier->tiles + tile_index;
+        // The frontier root is retained after writing so the serial top pass can propagate it upward.
+        construct_tiles_recursive(task->draft, tile, task->fp, false);
+    }
+
+    atomic_increment(task->finished_count);
+}
+
+static i32 image_draft_choose_parallel_frontier_level(image_draft_t* draft) {
+    i32 top_level_index = draft->level_count - 1;
+    if (top_level_index < 1 || global_active_worker_thread_count <= 1) {
+        return -1;
+    }
+
+    i32 desired_task_count = ATLEAST(4, global_active_worker_thread_count * 4);
+    for (i32 level = top_level_index; level >= 1; --level) {
+        image_draft_level_t* draft_level = draft->levels + level;
+        if (draft_level->tile_count >= desired_task_count) {
+            return level;
+        }
+    }
+
+    // Level 1 is the lowest useful frontier: each worker owns small subtrees, while base tiles
+    // can still be destroyed immediately instead of being retained for the upper pass.
+    return 1;
+}
+
+static void image_draft_finish_upper_levels_from_frontier(image_draft_t* draft, i32 frontier_level, file_stream_t fp) {
+    i32 top_level_index = draft->level_count - 1;
+    for (i32 level = frontier_level; level < top_level_index; ++level) {
+        image_draft_level_t* draft_level = draft->levels + level;
+        image_draft_level_t* parent_level = draft->levels + level + 1;
+
+        for (i32 i = 0; i < draft_level->tile_count; ++i) {
+            image_draft_tile_t* tile = draft_level->tiles + i;
+            shrink_tile_and_propagate_to_next_level(draft, tile);
+            destroy_image_buffer(&tile->buffer);
+        }
+
+        for (i32 i = 0; i < parent_level->tile_count; ++i) {
+            image_draft_tile_t* tile = parent_level->tiles + i;
+            write_finished_bigtiff_tile(draft, tile, fp);
+            if (level + 1 == top_level_index) {
+                destroy_image_buffer(&tile->buffer);
+            }
+        }
+    }
+
+    if (frontier_level == top_level_index) {
+        image_draft_level_t* top_level = draft->levels + top_level_index;
+        for (i32 i = 0; i < top_level->tile_count; ++i) {
+            destroy_image_buffer(&top_level->tiles[i].buffer);
+        }
+    }
+}
+
+static void construct_tiles_parallel_from_frontier(image_draft_t* draft, i32 frontier_level, file_stream_t fp) {
+    image_draft_level_t* frontier = draft->levels + frontier_level;
+    volatile i32 next_tile_index = 0;
+    volatile i32 started_count = 0;
+    volatile i32 participants_goal = ATLEAST(1, ATMOST(frontier->tile_count, global_active_worker_thread_count));
+    volatile i32 finished_count = 0;
+
+    construct_export_tile_task_t task = {
+            draft, frontier, fp,
+            &next_tile_index, &started_count, &participants_goal, &finished_count,
+    };
+
+    i32 worker_task_count = participants_goal - 1;
+    for (i32 i = 0; i < worker_task_count; ++i) {
+        if (!work_queue_submit_task(&global_work_queue, construct_export_tile_task_func, &task, sizeof(task))) {
+            atomic_decrement(&participants_goal);
+        }
+    }
+
+    construct_export_tile_task_func(0, &task);
+
+    while (finished_count < participants_goal) {
+        work_queue_do_work(&global_work_queue, 0);
     }
 }
 
@@ -613,6 +729,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
     draft.supertile_height = (float)draft.tile_height / draft.base_downsample_factor_y;
     draft.supertile_width_read = ((i32)ceilf(draft.supertile_width) + 8);
     draft.supertile_height_read = ((i32)ceilf(draft.supertile_height) + 8);
+    draft.write_lock = benaphore_create();
 
     for (i32 i = 0; i < 9; ++i) {
         image_draft_level_t* draft_level = draft.levels + i;
@@ -685,12 +802,20 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
 
         console_print_verbose("Starting TIFF export, total tiles to export = %d\n", draft.total_tiles_to_export);
 
-        // Construct the images for each tile of the pyramid
-        image_draft_level_t* top_level = draft.levels + draft.level_count - 1;
-        for (i32 tile_y = 0; tile_y < top_level->height_in_tiles; ++tile_y) {
-            for (i32 tile_x = 0; tile_x < top_level->width_in_tiles; ++tile_x) {
-                image_draft_tile_t* tile = top_level->tiles + tile_y * top_level->width_in_tiles + tile_x;
-                construct_tiles_recursive(&draft, tile, fp);
+        // Construct the images for each tile of the pyramid. The recursive dependency tree is split
+        // at a frontier level: each worker owns one complete subtree below that level, and the small
+        // remaining top section is finished serially from the retained frontier tiles.
+        i32 parallel_frontier_level = image_draft_choose_parallel_frontier_level(&draft);
+        if (parallel_frontier_level >= 1) {
+            construct_tiles_parallel_from_frontier(&draft, parallel_frontier_level, fp);
+            image_draft_finish_upper_levels_from_frontier(&draft, parallel_frontier_level, fp);
+        } else {
+            image_draft_level_t* top_level = draft.levels + draft.level_count - 1;
+            for (i32 tile_y = 0; tile_y < top_level->height_in_tiles; ++tile_y) {
+                for (i32 tile_x = 0; tile_x < top_level->width_in_tiles; ++tile_x) {
+                    image_draft_tile_t* tile = top_level->tiles + tile_y * top_level->width_in_tiles + tile_x;
+                    construct_tiles_recursive(&draft, tile, fp, true);
+                }
             }
         }
 
@@ -712,6 +837,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
         console_print("Exported region to '%s'\n", filename);
     }
 
+    benaphore_destroy(&draft.write_lock);
     image_draft_destroy(&draft);
 
     if (export_flags & EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS) {

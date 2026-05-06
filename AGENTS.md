@@ -84,6 +84,8 @@ $env:PATH="$clion\bin\mingw\bin;" + $env:PATH
 & "$clion\bin\cmake\win\x64\bin\cmake.exe" --build cmake-build-debug --target slidescape
 ```
 
+Even when invoking the full `cmake.exe` path from `CMakeCache.txt`, prepend CLion's `bin\mingw\bin` directory to `PATH` first. The compiler may otherwise start but fail to launch helper programs such as `cc1.exe`, causing Ninja to report `FAILED: [code=1]` with no useful compiler diagnostic.
+
 If a build directory does not exist, configure one first:
 
 ```sh

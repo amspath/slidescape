@@ -1036,13 +1036,17 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							//TODO: retain
 							continue; // already cached
 						}
+						if (tile->is_submitted_for_loading) {
+							tile->need_keep_in_cache = true;
+							continue; // another read_region() or viewer request is already loading it
+						}
 						tile->need_keep_in_cache = true;
 						wishlist[tiles_to_load++] = (load_tile_task_t) {
 								.resource_id = image->resource_id,
 								.image = image, .tile = tile, .level = level,
 								.tile_x = tile->tile_x,
 								.tile_y = tile->tile_y,
-								.need_gpu_residency = tile->need_gpu_residency,
+								.need_gpu_residency = false,
 								.need_keep_in_cache = true,
 								.invert_colors = invert_colors,
 								.completion_queue = &read_completion_queue,
@@ -1055,8 +1059,10 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				request_tiles(image, wishlist, tiles_to_load);
 				benaphore_unlock(&image->lock);
 
-				// retrieve all requested tiles
-				while (read_completion_queue.completion_count < tiles_to_load) {
+				// Retrieve requested tiles. Multiple export workers can read adjacent regions whose source
+				// tile coverage overlaps, so some needed tiles may have been submitted by another caller.
+				// Wait until every required tile is cached/empty, not just until this call's submissions finish.
+				for (;;) {
 					if (work_queue_is_work_in_progress(&read_completion_queue)) {
 						work_queue_entry_t entry = work_queue_get_next_entry(&read_completion_queue);
 						if (entry.is_valid) {
@@ -1065,18 +1071,58 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 							if (task->pixel_memory) {
 								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-								ASSERT(tile->pixels == NULL);
-								if (task->pixel_memory) {
+								tile->is_submitted_for_loading = false;
+								if (tile->pixels == NULL) {
 									tile->pixels = task->pixel_memory; // TODO: retain
 									tile->is_cached = true;
+								} else {
+									free(task->pixel_memory);
 								}
+							} else if (task->failed || task->is_empty) {
+								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+								tile->is_submitted_for_loading = false;
+								tile->is_empty = true;
 							}
 							benaphore_unlock(&image->lock);
 						}
-					} else if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
-						work_queue_do_work(&global_work_queue, 0);
 					} else {
-						platform_sleep(1);
+						bool all_tiles_ready = true;
+						i32 retry_tiles_to_load = 0;
+						benaphore_lock(&image->lock);
+						for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
+							for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
+								tile_t *tile = get_tile(level_image, tile_x, tile_y);
+								if (!tile->is_empty && !(tile->is_cached && tile->pixels)) {
+									all_tiles_ready = false;
+									tile->need_keep_in_cache = true;
+									if (!tile->is_submitted_for_loading) {
+										wishlist[retry_tiles_to_load++] = (load_tile_task_t) {
+												.resource_id = image->resource_id,
+												.image = image, .tile = tile, .level = level,
+												.tile_x = tile->tile_x,
+												.tile_y = tile->tile_y,
+												.need_gpu_residency = false,
+												.need_keep_in_cache = true,
+												.invert_colors = invert_colors,
+												.completion_queue = &read_completion_queue,
+												.refcount_to_decrement = 1,
+										};
+									}
+								}
+							}
+						}
+						if (retry_tiles_to_load > 0) {
+							request_tiles(image, wishlist, retry_tiles_to_load);
+						}
+						benaphore_unlock(&image->lock);
+
+						if (all_tiles_ready) {
+							break;
+						} else if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
+							work_queue_do_work(&global_work_queue, 0);
+						} else {
+							platform_sleep(1);
+						}
 					}
 				}
 				work_queue_destroy(&read_completion_queue);
@@ -1100,6 +1146,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 //			uint32_t* tile_pixels = (uint32_t*)malloc(tile_width * tile_height * sizeof(uint32_t));
 
 			// Read tiles and copy the relevant portion of each tile to the region
+			benaphore_lock(&image->lock);
 			for (i32 tile_y = start_tile_y; tile_y <= end_tile_y; ++tile_y) {
 				for (i32 tile_x = start_tile_x; tile_x <= end_tile_x; ++tile_x) {
 					// Calculate the portion of the tile to be copied
@@ -1131,7 +1178,6 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 
 			// release tiles
 			// TODO: proper tile caching
-			benaphore_lock(&image->lock);
 			for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 				for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 					tile_t* tile = get_tile(level_image, tile_x, tile_y);
