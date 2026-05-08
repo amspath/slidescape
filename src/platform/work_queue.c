@@ -44,7 +44,11 @@ work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count) {
 	LONG maximum_count = 1e6; // realistically, we'd only get up to the number of worker threads, though
 	queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, maximum_count, semaphore_name, 0, SEMAPHORE_ALL_ACCESS);
 #else
-	queue.semaphore = sem_open(semaphore_name, O_CREAT, 0644, semaphore_initial_count);
+	// Prevent name collisions by appending a unique number
+	char semaphore_name_unique[64];
+	static volatile i32 sem_id = 0;
+	snprintf(semaphore_name_unique, sizeof(semaphore_name_unique), "%s%lld", semaphore_name, atomic_increment(&sem_id));
+	queue.semaphore = sem_open(semaphore_name_unique, O_CREAT, 0644, semaphore_initial_count);
 #endif
 	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
 	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));
