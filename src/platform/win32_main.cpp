@@ -2079,9 +2079,11 @@ int main() {
 			draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
 			draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
 			draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+			draw_data.OwnerViewport = ImGui::GetMainViewport();
 			draw_data.TotalIdxCount = 0;
 			draw_data.TotalVtxCount = 0;
 			draw_data.CmdListsCount = 0;
+			draw_data.Textures = &ImGui::GetPlatformIO().Textures;
 			ImVector<ImDrawList*> drawlists;
 			for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
 				ImDrawList* drawlist = global_extra_drawlists[i];
@@ -2121,6 +2123,7 @@ int main() {
 	}
 
 	autosave(app_state, true, false); // save any unsaved changes
+	gui_destroy_all_extra_drawlists();
 
 	return 0;
 }

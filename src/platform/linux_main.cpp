@@ -643,7 +643,7 @@ int main(int argc, const char** argv)
 		}
 	}
 #elif APPLE
-	float font_size = 16.0f * app_state->display_scale_factor;
+	float font_size = 16.0f;
 	const char* main_ui_font_filename = "/System/Library/Fonts/SFNSText.ttf";
 	if (file_exists(main_ui_font_filename)) {
 		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, font_size, NULL, ranges);
@@ -656,10 +656,7 @@ int main(int argc, const char** argv)
 
 	const char* fixed_width_font_filename = "/System/Library/Fonts/Menlo.ttc";
 	if (file_exists(fixed_width_font_filename)) {
-		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f * app_state->display_scale_factor, NULL, ranges);
-		if (global_fixed_width_font) {
-			global_fixed_width_font->Scale = app_state->display_points_per_pixel;
-		}
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f, NULL, ranges);
 	}
 #endif
 
@@ -771,10 +768,12 @@ int main(int argc, const char** argv)
 		    draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
 		    draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
 		    draw_data.FramebufferScale = io.DisplayFramebufferScale;
+			draw_data.OwnerViewport = ImGui::GetMainViewport();
 		    draw_data.TotalIdxCount = 0;
 		    draw_data.TotalVtxCount = 0;
 		    draw_data.CmdListsCount = 0;
-		    ImVector<ImDrawList*> drawlists;
+			draw_data.Textures = &ImGui::GetPlatformIO().Textures;
+			ImVector<ImDrawList*> drawlists;
 		    for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
 			    ImDrawList* drawlist = global_extra_drawlists[i];
 			    if (drawlist) {
@@ -814,6 +813,7 @@ int main(int argc, const char** argv)
     autosave(app_state, true, false); // save any unsaved changes
 
     // Cleanup
+	gui_destroy_all_extra_drawlists();
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();

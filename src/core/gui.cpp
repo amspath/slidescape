@@ -73,12 +73,30 @@ void gui_reset_all_extra_drawlists() {
 	}
 }
 
+void gui_destroy_all_extra_drawlists() {
+	for (i32 i = 0; i < MAX_EXTRA_DRAWLISTS; ++i) {
+		ImDrawListSharedData* shared_data = global_extra_drawlist_shared_datas + i;
+		if (global_extra_drawlists[i]) {
+			delete global_extra_drawlists[i];
+			global_extra_drawlists[i] = NULL;
+		}
+		if (shared_data->FontAtlas && shared_data->FontAtlas->DrawListSharedDatas.contains(shared_data)) {
+			ImFontAtlasRemoveDrawListSharedData(shared_data->FontAtlas, shared_data);
+		}
+		shared_data->DrawLists.resize(0);
+	}
+	global_active_extra_drawlists = 0;
+}
+
 // Retrieve one of the global extra drawlists by index, and initialize it if necessary.
 ImDrawList* gui_get_extra_drawlist(i32 drawlist_index) {
 	ASSERT(drawlist_index < MAX_EXTRA_DRAWLISTS);
 	ImDrawList* drawlist = global_extra_drawlists[drawlist_index];
 	if (!drawlist) {
-		global_extra_drawlist_shared_datas[drawlist_index] = *ImGui::GetDrawListSharedData();
+		ImDrawListSharedData* shared_data = global_extra_drawlist_shared_datas + drawlist_index;
+		*shared_data = *ImGui::GetDrawListSharedData();
+		shared_data->DrawLists.resize(0);
+		ImFontAtlasAddDrawListSharedData(shared_data->FontAtlas, shared_data);
 		global_extra_drawlists[drawlist_index] = drawlist = new ImDrawList(global_extra_drawlist_shared_datas + drawlist_index);
 		gui_drawlist_reset_for_new_frame(drawlist);
 //		console_print("draw_annotation_batch(): initialized ImDrawList #%d\n", drawlist_index);
@@ -1642,7 +1660,3 @@ static void a_very_long_task(i32 logical_thread_index, void* userdata) {
 void begin_a_very_long_task() {
 	work_queue_submit_task(&global_work_queue, a_very_long_task, NULL, 0);
 }
-
-
-
-
