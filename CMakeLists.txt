@@ -10,6 +10,7 @@ endif()
 message(STATUS "CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
 
 option(BUILD_SLIDESERVER "Build the experimental slideserver executable" OFF)
+option(USE_JPEG_SIMD "Use SIMD code for libjpeg-turbo" ON)
 option(USE_ADDRESS_SANITIZER "Use address sanitizer" OFF)
 
 # Detect CPU type and whether we're building 64-bit or 32-bit code
@@ -130,8 +131,15 @@ endfunction()
 prepend_path(JPEG_SOURCE_FILES deps/jpeg)
 
 #set(WITH_SIMD 1) # Set to 0 to disable the SIMD code for libjpeg-turbo
-if (NOT DEFINED WITH_SIMD)
-    set(WITH_SIMD 1)
+if (USE_JPEG_SIMD)
+    # NOTE: there is a bug with libjpeg-turbo SIMD on macOS/aarch64,
+    # causing written JPEG tiles to be corrupted and/or have wrong colors.
+    # To be sure, disable on arm64 platforms until this is fixed.
+    if (NOT CPU_TYPE STREQUAL "arm64")
+        set(WITH_SIMD 1)
+    else()
+        message("Disabling JPEG SIMD on arm64 to prevent a bug causing corrupted image writes")
+    endif()
 endif()
 if (WITH_SIMD EQUAL 1)
     # requirements for deps/jpeg/simd/CMakeLists.txt
@@ -151,6 +159,10 @@ else()
     set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES} deps/jpeg/jsimd_none.c)
 endif()
 add_library(slidescape_jpeg STATIC ${JPEG_SOURCE_FILES})
+if (WITH_SIMD EQUAL 1)
+    target_compile_definitions(slidescape_jpeg PRIVATE SLIDESCAPE_JPEG_WITH_SIMD=1)
+    target_compile_definitions(simd PRIVATE SLIDESCAPE_JPEG_WITH_SIMD=1)
+endif()
 
 set(FREETYPE_SOURCE_FILES
         autofit/autofit.c   base/ftbbox.c       base/ftbase.c       base/ftbdf.c        base/ftbitmap.c

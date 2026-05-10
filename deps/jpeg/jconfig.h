@@ -19,7 +19,11 @@
 #define MEM_SRCDST_SUPPORTED 1
 
 /* Use accelerated SIMD routines. */
+#ifdef SLIDESCAPE_JPEG_WITH_SIMD
+#define WITH_SIMD 1
+#else
 #undef WITH_SIMD
+#endif
 
 /*
  * Define BITS_IN_JSAMPLE as either
