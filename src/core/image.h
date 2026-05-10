@@ -107,7 +107,7 @@ typedef struct tile_t {
     i32 tile_y;
     u8* pixels;
     u32 texture;
-    bool8 is_submitted_for_loading;
+    i32 is_submitted_for_loading;
     bool8 is_empty;
     bool8 is_cached;
     bool8 need_keep_in_cache;

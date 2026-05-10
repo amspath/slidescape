@@ -61,6 +61,7 @@ typedef struct work_queue_t {
 	i32 volatile start_goal;
 	i32 entry_count;
 	work_queue_entry_t* entries;
+	i32 logical_thread_index; // index of the thread that created/owns this work queue
 } work_queue_t;
 
 work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count);

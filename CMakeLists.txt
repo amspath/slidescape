@@ -10,6 +10,7 @@ endif()
 message(STATUS "CMAKE_BUILD_TYPE = ${CMAKE_BUILD_TYPE}")
 
 option(BUILD_SLIDESERVER "Build the experimental slideserver executable" OFF)
+option(USE_ADDRESS_SANITIZER "Use address sanitizer" OFF)
 
 # Detect CPU type and whether we're building 64-bit or 32-bit code
 math(EXPR BITS "${CMAKE_SIZEOF_VOID_P} * 8")
@@ -62,7 +63,10 @@ else()
             set(GCC_CPU_OPTIONS "-march=native -mcpu=native")
         endif()
     endif()
-    set(COMMON_COMPILER_FLAGS "${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -fvisibility=hidden")
+    set(COMMON_COMPILER_FLAGS "${GCC_CPU_OPTIONS} ${GCC_WARN_OPTIONS} -fvisibility=hidden -fsanitize=address")
+    if (USE_ADDRESS_SANITIZER)
+        set(COMMON_COMPILER_FLAGS "${COMMON_COMPILER_FLAGS} -fsanitize=address")
+    endif()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_COMPILER_FLAGS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_COMPILER_FLAGS} -Wno-class-memaccess -Wno-conversion-null -Wno-deprecated-enum-enum-conversion")
 

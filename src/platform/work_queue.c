@@ -39,16 +39,26 @@
 work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count) {
 	work_queue_t queue = {0};
 
+	queue.logical_thread_index = local_logical_thread_index;
+
 	i32 semaphore_initial_count = 0;
 #if WINDOWS
 	LONG maximum_count = 1e6; // realistically, we'd only get up to the number of worker threads, though
 	queue.semaphore = CreateSemaphoreExA(0, semaphore_initial_count, maximum_count, semaphore_name, 0, SEMAPHORE_ALL_ACCESS);
-#else
+#elif APPLE
 	// Prevent name collisions by appending a unique number
 	char semaphore_name_unique[64];
 	static volatile i32 sem_id = 0;
 	snprintf(semaphore_name_unique, sizeof(semaphore_name_unique), "%s%lld", semaphore_name, atomic_increment(&sem_id));
 	queue.semaphore = sem_open(semaphore_name_unique, O_CREAT, 0644, semaphore_initial_count);
+	sem_unlink(semaphore_name_unique);
+#else
+	queue.semaphore = calloc(1, sizeof(sem_t));
+	i32 rc = sem_init(queue.semaphore, 0, 0);
+	if (rc != 0) {
+		perror("sem_init");
+		fatal_error("failed to initialize semaphore");
+	}
 #endif
 	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
 	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));
@@ -75,10 +85,14 @@ void work_queue_destroy(work_queue_t* queue) {
 	}
 #if WINDOWS
 	CloseHandle(queue->semaphore);
-#else
+#elif APPLE
 	sem_close(queue->semaphore);
+#else
+	sem_destroy(queue->semaphore);
+	free(queue->semaphore);
 #endif
 	queue->semaphore = NULL;
+	memset(queue, 0, sizeof(work_queue_t));
 }
 
 i32 work_queue_get_entry_count(work_queue_t* queue) {

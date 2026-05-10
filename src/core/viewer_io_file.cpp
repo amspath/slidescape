@@ -194,7 +194,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.scale = level;
 	completion_task.tile_index = tile_index;
 	completion_task.want_gpu_residency = true;
-	completion_task.failed = true;
+	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);

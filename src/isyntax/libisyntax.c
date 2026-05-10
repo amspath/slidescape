@@ -78,6 +78,8 @@ _Noreturn DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
+    local_logical_thread_index = thread_info->logical_thread_index;
+
 	atomic_increment(&global_worker_thread_idle_count);
 
 	init_thread_memory(thread_info->logical_thread_index, &global_system_info);

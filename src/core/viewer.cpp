@@ -211,7 +211,7 @@ void autosave(app_state_t* app_state, bool force_ignore_delay, bool async) {
 
 }
 
-void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
+i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
 	i32 tasks_waiting = work_queue_get_entry_count(&global_work_queue);
 	i32 max_acceptable_tasks = global_work_queue.entry_count-1;
 	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
@@ -219,6 +219,8 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 		console_print_error("request_tiles(): requested %d tiles, but only %d tasks fit into the work queue", tiles_to_load, usable_slots);
 		tiles_to_load = usable_slots;
 	}
+
+	i32 tile_loads_submitted = 0;
 
 	if (tiles_to_load > 0){
 		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) {
@@ -241,6 +243,7 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 						tile->need_gpu_residency = task->need_gpu_residency;
 						tile->need_keep_in_cache = task->need_keep_in_cache;
                         atomic_add(&image->refcount, task->refcount_to_decrement);
+						++tile_loads_submitted;
 					}
 				}
 			}
@@ -249,28 +252,39 @@ void request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load
 			for (i32 i = 0; i < tiles_to_load; ++i) {
 				load_tile_task_t task = wishlist[i];
 				tile_t* tile = task.tile;
-				if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
-					// only GPU upload needed
-					if (work_queue_submit_task(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu,
-					                           &task,
-					                           sizeof(task))) {
+
+				// Try to get an exclusive lock to submit this tile load request
+				// (if we fail here, some other thread is also attempting to do the same)
+				if (atomic_compare_exchange(&tile->is_submitted_for_loading, 1, 0)) {
+					if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
+						// only GPU upload needed
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task.need_gpu_residency;
 						tile->need_keep_in_cache = task.need_keep_in_cache;
+						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
+						if (!work_queue_submit_task(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, &task, sizeof(task))) {
+							tile->is_submitted_for_loading = false;
+						}
+					} else {
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task.need_gpu_residency;
+						tile->need_keep_in_cache = task.need_keep_in_cache;
+						if (work_queue_submit_task(&global_work_queue, load_tile_func, &task, sizeof(task))) {
+							// success
+							atomic_add(&image->refcount, task.refcount_to_decrement);
+							++tile_loads_submitted;
+						} else {
+							// TODO: should we even allow this to fail?
+							tile->is_submitted_for_loading = false;
+						}
 					}
 				} else {
-					if (work_queue_submit_task(&global_work_queue, load_tile_func, &task, sizeof(task))) {
-						// TODO: should we even allow this to fail?
-						// success
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
-                        atomic_add(&image->refcount, task.refcount_to_decrement);
-					}
+					console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", tile->tile_x, tile->tile_y);
 				}
 			}
 		}
 	}
+	return tile_loads_submitted;
 }
 
 bool is_resource_valid(app_state_t* app_state, i32 resource_id) {

@@ -173,6 +173,7 @@ void init_thread_memory(system_info_t* system_info);
 #endif
 
 extern THREAD_LOCAL thread_memory_t* local_thread_memory;
+extern THREAD_LOCAL i32 local_logical_thread_index;
 static inline temp_memory_t begin_temp_memory_on_local_thread() { return begin_temp_memory(&local_thread_memory->temp_arena); }
 
 extern int g_argc;

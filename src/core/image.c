@@ -1023,8 +1023,9 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				load_tile_task_t *wishlist = calloc(width_in_tiles_to_read * height_in_tiles_to_read, sizeof(load_tile_task_t));
 				i32 tiles_to_load = 0;
 
-				work_queue_t read_completion_queue = work_queue_create("/imagereadregionsem",
-				                                                       width_in_tiles_to_read * height_in_tiles_to_read);
+				// NOTE: we need to allocate the completion queue on the heap, because other worker threads accessing it as a stack object could cause issues.
+				work_queue_t* read_completion_queue = malloc(sizeof(work_queue_t));
+				*read_completion_queue = work_queue_create("/imagereadregionsem", width_in_tiles_to_read * height_in_tiles_to_read);
 
 				// request tiles
 				benaphore_lock(&image->lock);
@@ -1049,25 +1050,28 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								.need_gpu_residency = false,
 								.need_keep_in_cache = true,
 								.invert_colors = invert_colors,
-								.completion_queue = &read_completion_queue,
+								.completion_queue = read_completion_queue,
 								.refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
 						};
 
 					}
 				}
 
-				request_tiles(image, wishlist, tiles_to_load);
+				i32 tile_loads_submitted = request_tiles(image, wishlist, tiles_to_load);
+				i32 tile_loads_completed = 0;
+
 				benaphore_unlock(&image->lock);
 
 				// Retrieve requested tiles. Multiple export workers can read adjacent regions whose source
 				// tile coverage overlaps, so some needed tiles may have been submitted by another caller.
 				// Wait until every required tile is cached/empty, not just until this call's submissions finish.
 				for (;;) {
-					if (work_queue_is_work_in_progress(&read_completion_queue)) {
-						work_queue_entry_t entry = work_queue_get_next_entry(&read_completion_queue);
+					if (work_queue_is_work_in_progress(read_completion_queue)) {
+						work_queue_entry_t entry = work_queue_get_next_entry(read_completion_queue);
 						if (entry.is_valid) {
 							benaphore_lock(&image->lock);
-							work_queue_mark_entry_completed(&read_completion_queue);
+							work_queue_mark_entry_completed(read_completion_queue);
+							++tile_loads_completed;
 							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
 							if (task->pixel_memory) {
 								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
@@ -1104,7 +1108,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 												.need_gpu_residency = false,
 												.need_keep_in_cache = true,
 												.invert_colors = invert_colors,
-												.completion_queue = &read_completion_queue,
+												.completion_queue = read_completion_queue,
 												.refcount_to_decrement = 1,
 										};
 									}
@@ -1112,20 +1116,34 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							}
 						}
 						if (retry_tiles_to_load > 0) {
-							request_tiles(image, wishlist, retry_tiles_to_load);
+							tile_loads_submitted += request_tiles(image, wishlist, retry_tiles_to_load);
 						}
 						benaphore_unlock(&image->lock);
 
 						if (all_tiles_ready) {
-							break;
+							if (tile_loads_submitted == tile_loads_completed) {
+								break;
+							} else {
+								// It seems we're done, BUT: we still need to process tasks that not yet completed
+								console_print("image_read_region(): all tiles are ready, but not all submitted jobs have returned yet (%d/%d)\n", tile_loads_submitted, tile_loads_completed);
+								platform_sleep(1);
+								continue;
+							}
 						} else if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
-							work_queue_do_work(&global_work_queue, 0);
+							work_queue_do_work(&global_work_queue, local_logical_thread_index);
 						} else {
 							platform_sleep(1);
 						}
 					}
 				}
-				work_queue_destroy(&read_completion_queue);
+
+				// NOTE: careful: we need to make sure that all submitted tasks are processed (completion work queue might otherwise be accessed after destruction)
+				if (tile_loads_submitted != tile_loads_completed) {
+					fatal_error();
+				}
+
+				work_queue_destroy(read_completion_queue);
+				free(read_completion_queue);
 				free(wishlist);
 
 
@@ -1176,6 +1194,8 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				}
 			}
 
+			// TODO: restore caching behavior (currently disabled because of a tile pixel ownership race, causing a crash)
+#if WINDOWS
 			// release tiles
 			// TODO: proper tile caching
 			for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
@@ -1190,6 +1210,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					tile->need_keep_in_cache = false;
 				}
 			}
+#endif
 			benaphore_unlock(&image->lock);
 
 
@@ -1340,7 +1361,7 @@ void image_destroy(image_t* image) {
     while (image->refcount > 0) {
 //		console_print_error("refcount = %d\n", image->refcount);
 	    if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
-		    work_queue_do_work(&global_work_queue, 0);
+		    work_queue_do_work(&global_work_queue, local_logical_thread_index);
 	    } else {
 		    platform_sleep(1);
 	    }
