@@ -93,7 +93,7 @@ cmake -S . -B build
 cmake --build build --target slidescape
 ```
 
-The test suite lives under `tests/` and uses doctest plus CTest. It currently covers low-level utilities, private fixture smoke checks, TIFF fixture opening/tile decoding, and iSyntax fixture metadata/tile decoding through `slidescape_nongui`. Private WSI fixtures live under `data_for_testing/` and are available locally but should not be assumed to be publishable. For new format-reader work, prefer adding focused fixture tests when possible and keep tests gracefully skippable or clearly marked if they depend on private data.
+The test suite lives under `tests/` and uses doctest plus CTest. It currently covers low-level utilities, manifest-driven fixture smoke checks, TIFF fixture opening/tile decoding, and iSyntax fixture metadata/tile decoding through `slidescape_nongui`. Fixture metadata lives under `tests/fixtures/`: keep public downloadable fixture entries in `manifest.txt`, and put machine-local private entries in ignored `local_manifest.txt` files using `local_manifest.example.txt` as a template. Private WSI fixture files may exist under `data_for_testing/`, but they are not publishable and must not be required for a clean public test run. Fixture-dependent tests should skip/return cleanly when their manifest entries are absent or the referenced files have not been downloaded.
 
 Note: `CMAKE_RUNTIME_OUTPUT_DIRECTORY` is the repository root, so local builds may update generated executables such as `slidescape.exe`. Do not include generated binaries in source changes unless explicitly requested.
 

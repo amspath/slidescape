@@ -1,0 +1,11 @@
+# Copy this file to local_manifest.txt and adjust paths for private fixtures.
+# local_manifest.txt is intentionally ignored by git.
+#
+# Format:
+# id | type | visibility | tags | path | source_url
+
+private-cd3-warped-tiff | tiff | private | tiff-metadata | ../../data_for_testing/test_BID_p480_CD3_warped.tiff |
+private-he-tiff | tiff | private | tiff-metadata | ../../data_for_testing/test_BID_p480_HE.tiff |
+private-cd8-cropped-tiff | tiff | private | tiff-metadata,tiff-tile | ../../data_for_testing/test_MF_CD8.cropped.tiff |
+private-cd8-isyntax | isyntax | private | isyntax-metadata,isyntax-tile | ../../data_for_testing/test_MF_CD8.isyntax |
+private-cd8-asap-xml | asap_xml | private | annotation-basic | ../../data_for_testing/test_MF_CD8.xml |

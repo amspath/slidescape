@@ -7,12 +7,170 @@
 
 #include <stdint.h>
 
-#ifndef SLIDESCAPE_TEST_DATA_DIR
-#define SLIDESCAPE_TEST_DATA_DIR "data_for_testing"
+#ifndef SLIDESCAPE_TEST_FIXTURE_MANIFEST
+#define SLIDESCAPE_TEST_FIXTURE_MANIFEST "tests/fixtures/manifest.txt"
 #endif
 
-static void join_test_data_path(char* dest, size_t dest_size, const char* filename) {
-	snprintf(dest, dest_size, "%s/%s", SLIDESCAPE_TEST_DATA_DIR, filename);
+#ifndef SLIDESCAPE_TEST_LOCAL_FIXTURE_MANIFEST
+#define SLIDESCAPE_TEST_LOCAL_FIXTURE_MANIFEST "tests/fixtures/local_manifest.txt"
+#endif
+
+#define MAX_TEST_FIXTURES 128
+
+struct fixture_t {
+	char id[128];
+	char type[32];
+	char visibility[32];
+	char tags[256];
+	char path[1024];
+	char source_url[1024];
+};
+
+struct fixture_manifest_t {
+	fixture_t fixtures[MAX_TEST_FIXTURES];
+	size_t fixture_count;
+	bool loaded;
+};
+
+static void copy_string(char* dest, size_t dest_size, const char* src) {
+	if (dest_size == 0) return;
+	snprintf(dest, dest_size, "%s", src ? src : "");
+}
+
+static bool test_path_is_absolute(const char* path) {
+	if (!path || !path[0]) return false;
+	if (path[0] == '/' || path[0] == '\\') return true;
+	if (strlen(path) >= 3 && ((path[0] >= 'A' && path[0] <= 'Z') || (path[0] >= 'a' && path[0] <= 'z')) &&
+	    path[1] == ':' && (path[2] == '/' || path[2] == '\\')) {
+		return true;
+	}
+	return false;
+}
+
+static void test_path_dirname(char* dest, size_t dest_size, const char* path) {
+	if (dest_size == 0) return;
+	const char* last_slash = NULL;
+	for (const char* pos = path; pos && *pos; ++pos) {
+		if (*pos == '/' || *pos == '\\') last_slash = pos;
+	}
+	if (!last_slash) {
+		copy_string(dest, dest_size, ".");
+		return;
+	}
+	size_t len = (size_t)(last_slash - path);
+	if (len >= dest_size) len = dest_size - 1;
+	memcpy(dest, path, len);
+	dest[len] = '\0';
+}
+
+static void join_test_path(char* dest, size_t dest_size, const char* lhs, const char* rhs) {
+	if (dest_size == 0) return;
+	if (!rhs || !rhs[0] || test_path_is_absolute(rhs)) {
+		copy_string(dest, dest_size, rhs);
+		return;
+	}
+	if (!lhs || !lhs[0] || strcmp(lhs, ".") == 0) {
+		copy_string(dest, dest_size, rhs);
+		return;
+	}
+	size_t lhs_len = strlen(lhs);
+	char separator = (lhs[lhs_len - 1] == '/' || lhs[lhs_len - 1] == '\\') ? '\0' : '/';
+	if (separator) {
+		snprintf(dest, dest_size, "%s/%s", lhs, rhs);
+	} else {
+		snprintf(dest, dest_size, "%s%s", lhs, rhs);
+	}
+}
+
+static bool test_fixture_file_exists(const char* path) {
+	FILE* fp = fopen(path, "rb");
+	if (!fp) return false;
+	fclose(fp);
+	return true;
+}
+
+static size_t split_manifest_line(char* line, char** fields, size_t field_capacity) {
+	size_t field_count = 0;
+	char* field_start = line;
+	for (char* pos = line; ; ++pos) {
+		if (*pos == '|' || *pos == '\0') {
+			char previous = *pos;
+			*pos = '\0';
+			if (field_count < field_capacity) fields[field_count++] = trim_whitespace(field_start);
+			if (previous == '\0') break;
+			field_start = pos + 1;
+		}
+	}
+	return field_count;
+}
+
+static void load_fixture_manifest(fixture_manifest_t& manifest, const char* manifest_path) {
+	FILE* fp = fopen(manifest_path, "rb");
+	if (!fp) return;
+
+	char manifest_dir[1024];
+	test_path_dirname(manifest_dir, COUNT(manifest_dir), manifest_path);
+
+	char line[4096];
+	while (fgets(line, COUNT(line), fp)) {
+		char* text = trim_whitespace(line);
+		if (!text[0] || text[0] == '#') continue;
+
+		char* fields[6] = {};
+		size_t field_count = split_manifest_line(text, fields, COUNT(fields));
+		if (field_count < 5 || manifest.fixture_count >= COUNT(manifest.fixtures)) continue;
+
+		fixture_t& fixture = manifest.fixtures[manifest.fixture_count++];
+		copy_string(fixture.id, COUNT(fixture.id), fields[0]);
+		copy_string(fixture.type, COUNT(fixture.type), fields[1]);
+		copy_string(fixture.visibility, COUNT(fixture.visibility), fields[2]);
+		copy_string(fixture.tags, COUNT(fixture.tags), fields[3]);
+		join_test_path(fixture.path, COUNT(fixture.path), manifest_dir, fields[4]);
+		if (field_count >= 6) copy_string(fixture.source_url, COUNT(fixture.source_url), fields[5]);
+	}
+
+	fclose(fp);
+}
+
+static fixture_manifest_t& fixture_manifest() {
+	static fixture_manifest_t manifest = {};
+	if (!manifest.loaded) {
+		load_fixture_manifest(manifest, SLIDESCAPE_TEST_FIXTURE_MANIFEST);
+		load_fixture_manifest(manifest, SLIDESCAPE_TEST_LOCAL_FIXTURE_MANIFEST);
+		manifest.loaded = true;
+	}
+	return manifest;
+}
+
+static bool fixture_has_tag(const fixture_t& fixture, const char* tag) {
+	size_t tag_len = strlen(tag);
+	size_t offset = 0;
+	size_t tags_len = strlen(fixture.tags);
+	while (offset <= tags_len) {
+		char candidate[128];
+		size_t comma = offset;
+		while (comma < tags_len && fixture.tags[comma] != ',') ++comma;
+		size_t len = comma - offset;
+		if (len >= COUNT(candidate)) len = COUNT(candidate) - 1;
+		memcpy(candidate, fixture.tags + offset, len);
+		candidate[len] = '\0';
+		char* trimmed = trim_whitespace(candidate);
+		if (strlen(trimmed) == tag_len && memcmp(trimmed, tag, tag_len) == 0) return true;
+		if (comma == tags_len) break;
+		offset = comma + 1;
+	}
+	return false;
+}
+
+static const fixture_t* first_available_fixture(const char* type, const char* tag = NULL) {
+	fixture_manifest_t& manifest = fixture_manifest();
+	for (size_t i = 0; i < manifest.fixture_count; ++i) {
+		fixture_t& fixture = manifest.fixtures[i];
+		if (strcmp(fixture.type, type) != 0) continue;
+		if (tag && !fixture_has_tag(fixture, tag)) continue;
+		if (test_fixture_file_exists(fixture.path)) return &fixture;
+	}
+	return NULL;
 }
 
 static bool read_file_prefix(const char* filename, u8* dest, size_t bytes_to_read) {
@@ -21,14 +179,6 @@ static bool read_file_prefix(const char* filename, u8* dest, size_t bytes_to_rea
 	size_t bytes_read = fread(dest, 1, bytes_to_read, fp);
 	fclose(fp);
 	return bytes_read == bytes_to_read;
-}
-
-static bool file_fixture_exists(const char* fixture_name, char* out_path, size_t out_path_size) {
-	join_test_data_path(out_path, out_path_size, fixture_name);
-	FILE* fp = fopen(out_path, "rb");
-	if (!fp) return false;
-	fclose(fp);
-	return true;
 }
 
 static bool pixel_buffer_has_variation(const u32* pixels, size_t pixel_count) {
@@ -40,71 +190,91 @@ static bool pixel_buffer_has_variation(const u32* pixels, size_t pixel_count) {
 	return false;
 }
 
-TEST_CASE("private WSI fixtures are present with expected extensions") {
-	const char* fixture_names[] = {
-			"test_BID_p480_CD3_warped.tiff",
-			"test_BID_p480_HE.tiff",
-			"test_MF_CD8.cropped.tiff",
-			"test_MF_CD8.isyntax",
-			"test_MF_CD8.xml",
-	};
+TEST_CASE("fixture manifest is readable") {
+	fixture_manifest_t& manifest = fixture_manifest();
+	REQUIRE(manifest.fixture_count > 0);
 
-	for (int i = 0; i < COUNT(fixture_names); ++i) {
-		char path[1024];
-		join_test_data_path(path, COUNT(path), fixture_names[i]);
+	bool has_public_fixture = false;
+	for (size_t i = 0; i < manifest.fixture_count; ++i) {
+		fixture_t& fixture = manifest.fixtures[i];
+		CAPTURE(fixture.id);
+		CHECK(fixture.type[0] != '\0');
+		CHECK(fixture.path[0] != '\0');
+		if (strcmp(fixture.visibility, "public") == 0) has_public_fixture = true;
+	}
+	CHECK(has_public_fixture);
+}
 
-		FILE* fp = fopen(path, "rb");
-		CAPTURE(path);
-		REQUIRE(fp != NULL);
-		fseek(fp, 0, SEEK_END);
-		CHECK(ftell(fp) > 0);
-		fclose(fp);
+TEST_CASE("available WSI fixtures have expected extensions") {
+	fixture_manifest_t& manifest = fixture_manifest();
+	bool checked_any = false;
+	for (size_t i = 0; i < manifest.fixture_count; ++i) {
+		fixture_t& fixture = manifest.fixtures[i];
+		if (!test_fixture_file_exists(fixture.path)) continue;
+
+		const char* extension = get_file_extension(fixture.path);
+		CAPTURE(fixture.path);
+		if (strcmp(fixture.type, "tiff") == 0) {
+			CHECK((strcmp(extension, "tif") == 0 || strcmp(extension, "tiff") == 0));
+		} else if (strcmp(fixture.type, "isyntax") == 0) {
+			CHECK(strcmp(extension, "isyntax") == 0);
+		} else if (strcmp(fixture.type, "asap_xml") == 0) {
+			CHECK(strcmp(extension, "xml") == 0);
+		}
+		checked_any = true;
 	}
 
-	CHECK(strcmp(get_file_extension(fixture_names[0]), "tiff") == 0);
-	CHECK(strcmp(get_file_extension(fixture_names[3]), "isyntax") == 0);
-	CHECK(strcmp(get_file_extension(fixture_names[4]), "xml") == 0);
+	if (!checked_any) {
+		MESSAGE("Skipping fixture extension checks: no manifest fixtures are present locally.");
+	}
 }
 
 TEST_CASE("TIFF fixtures have valid TIFF or BigTIFF headers") {
-	const char* fixture_names[] = {
-			"test_BID_p480_CD3_warped.tiff",
-			"test_BID_p480_HE.tiff",
-			"test_MF_CD8.cropped.tiff",
-	};
+	fixture_manifest_t& manifest = fixture_manifest();
+	bool checked_any = false;
+	for (size_t i = 0; i < manifest.fixture_count; ++i) {
+		fixture_t& fixture = manifest.fixtures[i];
+		if (strcmp(fixture.type, "tiff") != 0 || !test_fixture_file_exists(fixture.path)) continue;
 
-	for (int i = 0; i < COUNT(fixture_names); ++i) {
-		char path[1024];
 		u8 header[4] = {};
-		join_test_data_path(path, COUNT(path), fixture_names[i]);
-
-		CAPTURE(path);
-		REQUIRE(read_file_prefix(path, header, sizeof(header)));
+		CAPTURE(fixture.path);
+		REQUIRE(read_file_prefix(fixture.path, header, sizeof(header)));
 
 		bool little_endian_tiff = header[0] == 'I' && header[1] == 'I' && header[2] == 42 && header[3] == 0;
 		bool little_endian_bigtiff = header[0] == 'I' && header[1] == 'I' && header[2] == 43 && header[3] == 0;
 		bool big_endian_tiff = header[0] == 'M' && header[1] == 'M' && header[2] == 0 && header[3] == 42;
 		bool big_endian_bigtiff = header[0] == 'M' && header[1] == 'M' && header[2] == 0 && header[3] == 43;
 		CHECK((little_endian_tiff || little_endian_bigtiff || big_endian_tiff || big_endian_bigtiff));
+		checked_any = true;
+	}
+
+	if (!checked_any) {
+		MESSAGE("Skipping TIFF header checks: no TIFF fixtures are present locally.");
 	}
 }
 
 TEST_CASE("iSyntax fixture starts with XML metadata") {
-	char path[1024];
-	u8 header[256] = {};
-	join_test_data_path(path, COUNT(path), "test_MF_CD8.isyntax");
+	const fixture_t* fixture = first_available_fixture("isyntax");
+	if (!fixture) {
+		MESSAGE("Skipping iSyntax header check: no iSyntax fixture is present locally.");
+		return;
+	}
 
-	REQUIRE(read_file_prefix(path, header, sizeof(header)));
+	u8 header[256] = {};
+	REQUIRE(read_file_prefix(fixture->path, header, sizeof(header)));
 	CHECK(memcmp(header, "<?xml", 5) == 0);
 	CHECK(static_cast<bool>(strstr((char*)header, "DPUfsImport") != NULL));
 	CHECK(static_cast<bool>(strstr((char*)header, "DICOM_MANUFACTURER") != NULL));
 }
 
 TEST_CASE("ASAP XML fixture exposes at least one annotation node") {
-	char path[1024];
-	join_test_data_path(path, COUNT(path), "test_MF_CD8.xml");
+	const fixture_t* fixture = first_available_fixture("asap_xml");
+	if (!fixture) {
+		MESSAGE("Skipping ASAP XML fixture check: no ASAP XML fixture is present locally.");
+		return;
+	}
 
-	FILE* fp = fopen(path, "rb");
+	FILE* fp = fopen(fixture->path, "rb");
 	REQUIRE(fp != NULL);
 	fseek(fp, 0, SEEK_END);
 	long file_size = ftell(fp);
@@ -123,19 +293,15 @@ TEST_CASE("ASAP XML fixture exposes at least one annotation node") {
 }
 
 TEST_CASE("open TIFF fixtures through Slidescape TIFF reader") {
-	const char* fixture_names[] = {
-			"test_BID_p480_CD3_warped.tiff",
-			"test_BID_p480_HE.tiff",
-			"test_MF_CD8.cropped.tiff",
-	};
-
-	for (int i = 0; i < COUNT(fixture_names); ++i) {
-		char path[1024];
-		REQUIRE(file_fixture_exists(fixture_names[i], path, COUNT(path)));
+	fixture_manifest_t& manifest = fixture_manifest();
+	bool checked_any = false;
+	for (size_t i = 0; i < manifest.fixture_count; ++i) {
+		fixture_t& fixture = manifest.fixtures[i];
+		if (strcmp(fixture.type, "tiff") != 0 || !test_fixture_file_exists(fixture.path)) continue;
 
 		tiff_t tiff = {};
-		CAPTURE(path);
-		REQUIRE(open_tiff_file(&tiff, path));
+		CAPTURE(fixture.path);
+		REQUIRE(open_tiff_file(&tiff, fixture.path));
 
 		CHECK(tiff.filesize > 0);
 		CHECK(tiff.ifd_count > 0);
@@ -159,6 +325,11 @@ TEST_CASE("open TIFF fixtures through Slidescape TIFF reader") {
 		}
 
 		tiff_destroy(&tiff);
+		checked_any = true;
+	}
+
+	if (!checked_any) {
+		MESSAGE("Skipping TIFF reader fixture checks: no TIFF fixtures are present locally.");
 	}
 }
 
@@ -167,43 +338,18 @@ TEST_CASE("TODO: TIFF fixture metadata serializes and deserializes" * doctest::s
 	// deserialized.level_image_ifd_count differs from the original and cleanup trips ltalloc
 	// guard checks. Keep this as a regression target once tiff_serialize/tiff_deserialize
 	// semantics are clarified or fixed.
-
-#if 0
-	char path[1024];
-	REQUIRE(file_fixture_exists("test_MF_CD8.cropped.tiff", path, COUNT(path)));
-
-	tiff_t tiff = {};
-	REQUIRE(open_tiff_file(&tiff, path));
-
-	memrw_t serialized = memrw_create(MEGABYTES(1));
-	REQUIRE(tiff_serialize(&tiff, &serialized) == &serialized);
-	CHECK(serialized.used_size > 0);
-
-	tiff_t deserialized = {};
-	REQUIRE(tiff_deserialize(&deserialized, serialized.data, serialized.used_size));
-
-	CHECK(deserialized.filesize == tiff.filesize);
-	CHECK(deserialized.ifd_count == tiff.ifd_count);
-	CHECK(deserialized.level_image_ifd_count == tiff.level_image_ifd_count);
-	REQUIRE(deserialized.main_image_ifd != NULL);
-	REQUIRE(tiff.main_image_ifd != NULL);
-	CHECK(deserialized.main_image_ifd->image_width == tiff.main_image_ifd->image_width);
-	CHECK(deserialized.main_image_ifd->image_height == tiff.main_image_ifd->image_height);
-	CHECK(deserialized.main_image_ifd->tile_width == tiff.main_image_ifd->tile_width);
-	CHECK(deserialized.main_image_ifd->tile_height == tiff.main_image_ifd->tile_height);
-
-	tiff_destroy(&deserialized);
-	memrw_destroy(&serialized);
-	tiff_destroy(&tiff);
-#endif
 }
 
 TEST_CASE("decode a representative TIFF tile") {
-	char path[1024];
-	REQUIRE(file_fixture_exists("test_MF_CD8.cropped.tiff", path, COUNT(path)));
+	const fixture_t* fixture = first_available_fixture("tiff", "tiff-tile");
+	if (!fixture) fixture = first_available_fixture("tiff");
+	if (!fixture) {
+		MESSAGE("Skipping TIFF tile decode check: no TIFF fixture is present locally.");
+		return;
+	}
 
 	tiff_t tiff = {};
-	REQUIRE(open_tiff_file(&tiff, path));
+	REQUIRE(open_tiff_file(&tiff, fixture->path));
 	REQUIRE(tiff.main_image_ifd != NULL);
 	tiff_ifd_t* ifd = tiff.main_image_ifd;
 	REQUIRE(ifd->tile_count > 0);
@@ -229,13 +375,17 @@ TEST_CASE("decode a representative TIFF tile") {
 }
 
 TEST_CASE("open iSyntax fixture and read WSI metadata through libisyntax" ) {
-	char path[1024];
-	REQUIRE(file_fixture_exists("test_MF_CD8.isyntax", path, COUNT(path)));
+	const fixture_t* fixture = first_available_fixture("isyntax", "isyntax-metadata");
+	if (!fixture) fixture = first_available_fixture("isyntax");
+	if (!fixture) {
+		MESSAGE("Skipping iSyntax metadata check: no iSyntax fixture is present locally.");
+		return;
+	}
 
 	REQUIRE(libisyntax_init() == LIBISYNTAX_OK);
 
 	isyntax_t* isyntax = NULL;
-	REQUIRE(libisyntax_open(path, (libisyntax_open_flags_t)0, &isyntax) == LIBISYNTAX_OK);
+	REQUIRE(libisyntax_open(fixture->path, (libisyntax_open_flags_t)0, &isyntax) == LIBISYNTAX_OK);
 	REQUIRE(isyntax != NULL);
 
 	CHECK(libisyntax_get_tile_width(isyntax) > 0);
@@ -265,13 +415,17 @@ TEST_CASE("open iSyntax fixture and read WSI metadata through libisyntax" ) {
 }
 
 TEST_CASE("decode an iSyntax tile through libisyntax") {
-	char path[1024];
-	REQUIRE(file_fixture_exists("test_MF_CD8.isyntax", path, COUNT(path)));
+	const fixture_t* fixture = first_available_fixture("isyntax", "isyntax-tile");
+	if (!fixture) fixture = first_available_fixture("isyntax");
+	if (!fixture) {
+		MESSAGE("Skipping iSyntax tile decode check: no iSyntax fixture is present locally.");
+		return;
+	}
 
 	REQUIRE(libisyntax_init() == LIBISYNTAX_OK);
 
 	isyntax_t* isyntax = NULL;
-	REQUIRE(libisyntax_open(path, (libisyntax_open_flags_t)0, &isyntax) == LIBISYNTAX_OK);
+	REQUIRE(libisyntax_open(fixture->path, (libisyntax_open_flags_t)0, &isyntax) == LIBISYNTAX_OK);
 	REQUIRE(isyntax != NULL);
 
 	isyntax_cache_t* cache = NULL;

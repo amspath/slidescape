@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 void strip_character(char* s, char character_to_strip);
+char* trim_whitespace(char* s);
 char* find_next_token(const char* s, char separator);
 void dots_to_underscores(char* s, i32 max);
 const char* one_past_last_slash(const char* s, i32 max);

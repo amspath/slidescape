@@ -1,0 +1,10 @@
+# Slidescape fixture manifest.
+#
+# Format:
+# id | type | visibility | tags | path | source_url
+#
+# Paths are relative to this manifest unless absolute. Fixture files are not
+# downloaded automatically; place downloaded public fixtures next to this file,
+# or add machine-local private entries to local_manifest.txt.
+
+zenodo-testslide-isyntax | isyntax | public | isyntax-metadata,isyntax-tile | testslide.isyntax | https://zenodo.org/record/5037046/files/testslide.isyntax

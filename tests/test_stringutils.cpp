@@ -24,6 +24,18 @@ TEST_CASE("replace_file_extension replaces, appends, and strips extensions") {
 	CHECK(strcmp(strip_extension, "slide") == 0);
 }
 
+TEST_CASE("trim_whitespace trims in place and returns the first non-space character") {
+	char padded[] = " \t slide.isyntax \r\n";
+	char* trimmed = trim_whitespace(padded);
+	CHECK(strcmp(trimmed, "slide.isyntax") == 0);
+
+	char only_whitespace[] = " \t\r\n";
+	trimmed = trim_whitespace(only_whitespace);
+	CHECK(strcmp(trimmed, "") == 0);
+
+	CHECK(static_cast<bool>(trim_whitespace(NULL) == NULL));
+}
+
 TEST_CASE("split_into_lines handles mixed newline conventions") {
 	char buffer[] = "alpha\r\nbeta\ngamma\rdelta";
 	size_t line_count = 0;

@@ -9,6 +9,7 @@ build/
 *.ini
 
 data/
+tests/fixtures/local_manifest.txt
 openslide/
 *.tiff
 *.isyntax

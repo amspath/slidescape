@@ -28,6 +28,8 @@
 #include "common.h"
 #include "stringutils.h"
 
+#include <ctype.h>
+
 void strip_character(char* s, char character_to_strip) {
 	if (!s) return;
 	char c;
@@ -35,6 +37,15 @@ void strip_character(char* s, char character_to_strip) {
 		if (c == character_to_strip) *s = '\0';
 		++s;
 	}
+}
+
+char* trim_whitespace(char* s) {
+	if (!s) return NULL;
+	while (*s && isspace((unsigned char)*s)) ++s;
+	char* end = s + strlen(s);
+	while (end > s && isspace((unsigned char)end[-1])) --end;
+	*end = '\0';
+	return s;
 }
 
 char* find_next_token(const char* s, char separator) {
