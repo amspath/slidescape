@@ -2,7 +2,7 @@
 
 #include "isyntax.h"
 #include "libisyntax.h"
-#include "benaphore.h"
+#include "platform_mutex.h"
 
 typedef struct isyntax_tile_list_t {
     isyntax_tile_t* head;
@@ -13,7 +13,7 @@ typedef struct isyntax_tile_list_t {
 
 typedef struct isyntax_cache_t {
     isyntax_tile_list_t cache_list;
-    benaphore_t mutex;
+    platform_mutex_t mutex;
     // TODO(avirodov): int refcount;
     int target_cache_size;
     block_allocator_t* ll_coeff_block_allocator;

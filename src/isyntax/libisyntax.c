@@ -71,11 +71,11 @@
 #define DBGCTR_COUNT(_counter) atomic_increment(&_counter)
 i32 volatile dbgctr_init_thread_pool_counter = 0;
 
-static benaphore_t libisyntax_global_mutex = BENAPHORE_INITIALIZER;
+static platform_mutex_t libisyntax_global_mutex = PLATFORM_MUTEX_INITIALIZER;
 
 isyntax_error_t libisyntax_init() {
     // Lock-unlock to ensure that all parallel calls to libisyntax_init() wait for the actual initialization to complete.
-    benaphore_lock(&libisyntax_global_mutex);
+    platform_mutex_lock(&libisyntax_global_mutex);
     static bool libisyntax_global_init_complete = false;
 
     if (libisyntax_global_init_complete == false) {
@@ -95,7 +95,7 @@ isyntax_error_t libisyntax_init() {
 #endif
         libisyntax_global_init_complete = true;
     }
-    benaphore_unlock(&libisyntax_global_mutex);
+    platform_mutex_unlock(&libisyntax_global_mutex);
     return LIBISYNTAX_OK;
 }
 
@@ -283,7 +283,7 @@ isyntax_error_t libisyntax_cache_create(const char* debug_name_or_null, int32_t 
     memset(cache_ptr, 0, sizeof(*cache_ptr));
     tile_list_init(&cache_ptr->cache_list, debug_name_or_null);
     cache_ptr->target_cache_size = cache_size;
-    benaphore_init(&cache_ptr->mutex);
+    platform_mutex_init(&cache_ptr->mutex);
 
     // Note: rest of initialization is deferred to the first injection, as that is where we will know the block size.
 
@@ -326,13 +326,13 @@ void libisyntax_cache_flush(isyntax_cache_t* isyntax_cache, isyntax_t* isyntax_o
     // Flusing per-isyntax is not yet implemented.
     (void)isyntax_or_null;
 
-    benaphore_lock(&isyntax_cache->mutex);
+    platform_mutex_lock(&isyntax_cache->mutex);
 
     while (isyntax_cache->cache_list.tail) {
         tile_list_remove(&isyntax_cache->cache_list, isyntax_cache->cache_list.tail);
     }
 
-    benaphore_unlock(&isyntax_cache->mutex);
+    platform_mutex_unlock(&isyntax_cache->mutex);
 }
 
 void libisyntax_cache_destroy(isyntax_cache_t* isyntax_cache) {
@@ -345,7 +345,7 @@ void libisyntax_cache_destroy(isyntax_cache_t* isyntax_cache) {
         }
     }
 
-    benaphore_destroy(&isyntax_cache->mutex);
+    platform_mutex_destroy(&isyntax_cache->mutex);
     free(isyntax_cache);
 }
 

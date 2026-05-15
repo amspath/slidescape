@@ -36,11 +36,11 @@ static memrw_t console_string_pool;
 
 
 void console_clear_log() {
-	benaphore_lock(&console_printer_benaphore);
+	platform_mutex_lock(&console_printer_mutex);
 	memrw_rewind(&console_string_pool);
 	arrfree(console_log_items);
 	console_log_items = NULL;
-	benaphore_unlock(&console_printer_benaphore);
+	platform_mutex_unlock(&console_printer_mutex);
 }
 
 bool console_fill_screen = false;
@@ -410,7 +410,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 			if (ImGui::MenuItem("Hide console")) { show_console_window = false; }
 			ImGui::EndPopup();
 		}
-		benaphore_lock(&console_printer_benaphore);
+		platform_mutex_lock(&console_printer_mutex);
 		i32 item_count = arrlen(console_log_items);
 		if (item_count > 0) {
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
@@ -442,7 +442,7 @@ void draw_console_window(app_state_t* app_state, const char* window_title, bool*
 			ImGui::PopFont();
 			ImGui::PopStyleVar();
 		}
-		benaphore_unlock(&console_printer_benaphore);
+		platform_mutex_unlock(&console_printer_mutex);
 		if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
 			ImGui::SetScrollHereY(0.0f);
 
@@ -521,12 +521,12 @@ void console_split_lines_and_add_log_item(char* raw, bool has_color, u32 item_ty
 			size_t line_len = strlen(line);
 			if (line && line_len > 0) {
 				console_log_item_t new_item = {};
-				benaphore_lock(&console_printer_benaphore);
+				platform_mutex_lock(&console_printer_mutex);
 				new_item.text_offset_in_string_pool = memrw_string_pool_push(&console_string_pool, line);
 				new_item.has_color = has_color;
 				new_item.item_type = item_type;
 				arrput(console_log_items, new_item);
-				benaphore_unlock(&console_printer_benaphore);
+				platform_mutex_unlock(&console_printer_mutex);
 			}
 		}
 		free(lines);

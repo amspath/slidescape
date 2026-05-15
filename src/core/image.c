@@ -1028,7 +1028,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				*read_completion_queue = work_queue_create("/imagereadregionsem", width_in_tiles_to_read * height_in_tiles_to_read);
 
 				// request tiles
-				benaphore_lock(&image->lock);
+                platform_mutex_lock(&image->lock);
 				for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 						tile_t *tile = get_tile(level_image, tile_x, tile_y);
@@ -1060,7 +1060,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				i32 tile_loads_submitted = request_tiles(image, wishlist, tiles_to_load);
 				i32 tile_loads_completed = 0;
 
-				benaphore_unlock(&image->lock);
+                platform_mutex_unlock(&image->lock);
 
 				// Retrieve requested tiles. Multiple export workers can read adjacent regions whose source
 				// tile coverage overlaps, so some needed tiles may have been submitted by another caller.
@@ -1069,7 +1069,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					if (work_queue_is_work_in_progress(read_completion_queue)) {
 						work_queue_entry_t entry = work_queue_get_next_entry(read_completion_queue);
 						if (entry.is_valid) {
-							benaphore_lock(&image->lock);
+                            platform_mutex_lock(&image->lock);
 							work_queue_mark_entry_completed(read_completion_queue);
 							++tile_loads_completed;
 							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
@@ -1087,12 +1087,12 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								tile->is_submitted_for_loading = false;
 								tile->is_empty = true;
 							}
-							benaphore_unlock(&image->lock);
+                            platform_mutex_unlock(&image->lock);
 						}
 					} else {
 						bool all_tiles_ready = true;
 						i32 retry_tiles_to_load = 0;
-						benaphore_lock(&image->lock);
+                        platform_mutex_lock(&image->lock);
 						for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 							for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 								tile_t *tile = get_tile(level_image, tile_x, tile_y);
@@ -1118,7 +1118,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						if (retry_tiles_to_load > 0) {
 							tile_loads_submitted += request_tiles(image, wishlist, retry_tiles_to_load);
 						}
-						benaphore_unlock(&image->lock);
+                        platform_mutex_unlock(&image->lock);
 
 						if (all_tiles_ready) {
 							if (tile_loads_submitted == tile_loads_completed) {
@@ -1164,7 +1164,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 //			uint32_t* tile_pixels = (uint32_t*)malloc(tile_width * tile_height * sizeof(uint32_t));
 
 			// Read tiles and copy the relevant portion of each tile to the region
-			benaphore_lock(&image->lock);
+            platform_mutex_lock(&image->lock);
 			for (i32 tile_y = start_tile_y; tile_y <= end_tile_y; ++tile_y) {
 				for (i32 tile_x = start_tile_x; tile_x <= end_tile_x; ++tile_x) {
 					// Calculate the portion of the tile to be copied
@@ -1211,7 +1211,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				}
 			}
 #endif
-			benaphore_unlock(&image->lock);
+            platform_mutex_unlock(&image->lock);
 
 
 
@@ -1421,7 +1421,7 @@ void image_destroy(image_t* image) {
 		}
 
 		if (image->lock_initialized) {
-			benaphore_destroy(&image->lock);
+            platform_mutex_destroy(&image->lock);
 			image->lock_initialized = false;
 		}
 

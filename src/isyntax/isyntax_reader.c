@@ -328,7 +328,7 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
     // TODO(avirodov): more granular locking (some notes below). This will require handling overlapping work, that is
     //  thread A needing tile 123 and started to load it, and thread B needing same tile 123 and needs to wait for A.
     // TODO(pvalkema): Can we safely lock the mutex later, after checking if the tile exists?
-    benaphore_lock(&cache->mutex);
+    platform_mutex_lock(&cache->mutex);
 
     isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
     isyntax_level_t* level = &wsi->levels[scale];
@@ -336,7 +336,7 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
 	if (!(tile_x >= 0 && tile_x < level->width_in_tiles && tile_y >= 0 && tile_y < level->height_in_tiles)) {
 		// Read out of bounds -> set to all white
 		memset(pixels_buffer, 0xff, isyntax->tile_width * isyntax->tile_height * 4);
-		benaphore_unlock(&cache->mutex);
+        platform_mutex_unlock(&cache->mutex);
 		return;
 	}
 
@@ -344,7 +344,7 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
     // printf("=== isyntax_openslide_load_tile scale=%d tile_x=%d tile_y=%d\n", scale, tile_x, tile_y);
     if (!tile->exists) {
         memset(pixels_buffer, 0xff, isyntax->tile_width * isyntax->tile_height * 4);
-        benaphore_unlock(&cache->mutex);
+        platform_mutex_unlock(&cache->mutex);
         return;
     }
 
@@ -427,5 +427,5 @@ void isyntax_tile_read(isyntax_t* isyntax, isyntax_cache_t* cache, int scale, in
         wsi->first_load_complete = true;
     }
 
-    benaphore_unlock(&cache->mutex);
+    platform_mutex_unlock(&cache->mutex);
 }

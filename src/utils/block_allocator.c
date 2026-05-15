@@ -60,7 +60,7 @@ void block_allocator_init(block_allocator_t* allocator, size_t block_size, size_
 	allocator->chunks = calloc(1, chunk_count * sizeof(block_allocator_chunk_t));
 	allocator->chunks[0].memory = (u8*)malloc(chunk_size);
 	allocator->free_list_storage = calloc(1, max_capacity_in_blocks * sizeof(block_allocator_item_t));
-	benaphore_init(&allocator->lock);
+    platform_mutex_init(&allocator->lock);
 	allocator->is_valid = true;
 }
 
@@ -71,13 +71,13 @@ void block_allocator_destroy(block_allocator_t* allocator) {
 	}
 	if (allocator->chunks) free(allocator->chunks);
 	if (allocator->free_list_storage) free(allocator->free_list_storage);
-	benaphore_destroy(&allocator->lock);
+    platform_mutex_destroy(&allocator->lock);
 	free(allocator);
 }
 
 void* block_alloc(block_allocator_t* allocator) {
 	void* result = NULL;
-	benaphore_lock(&allocator->lock);
+    platform_mutex_lock(&allocator->lock);
 	if (allocator->free_list != NULL) {
 		// Grab a block from the free list
 		block_allocator_item_t* free_item = allocator->free_list;
@@ -107,12 +107,12 @@ void* block_alloc(block_allocator_t* allocator) {
 			}
 		}
 	}
-	benaphore_unlock(&allocator->lock);
+    platform_mutex_unlock(&allocator->lock);
 	return result;
 }
 
 void block_free(block_allocator_t* allocator, void* ptr_to_free) {
-	benaphore_lock(&allocator->lock);
+    platform_mutex_lock(&allocator->lock);
 	block_allocator_item_t free_item = {0};
 	// Find the right chunk
 	i32 chunk_index = -1;
@@ -132,7 +132,7 @@ void block_free(block_allocator_t* allocator, void* ptr_to_free) {
 		i32 free_index = allocator->free_list_length++;
 		allocator->free_list_storage[free_index] = free_item;
 		allocator->free_list = allocator->free_list_storage + free_index;
-		benaphore_unlock(&allocator->lock);
+        platform_mutex_unlock(&allocator->lock);
 	} else {
 		console_print_error("block_free(): invalid pointer!\n");
 		fatal_error();

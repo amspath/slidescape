@@ -440,7 +440,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		// IO
 
-		benaphore_lock(&image->lock);
+		platform_mutex_lock(&image->lock);
 
 		// Upload macro and label images (just-in-time)
 		simple_image_t* macro_image = &image->macro_image;
@@ -614,7 +614,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			}
 		}
 
-		benaphore_unlock(&image->lock);
+		platform_mutex_unlock(&image->lock);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 

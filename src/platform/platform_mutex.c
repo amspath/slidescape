@@ -16,39 +16,39 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "benaphore.h"
+#include "platform_mutex.h"
 
 
-void benaphore_init(benaphore_t* benaphore) {
+void platform_mutex_init(platform_mutex_t* mutex) {
 #ifdef _WIN32
-	InitializeSRWLock(&benaphore->lock);
+	InitializeSRWLock(&mutex->lock);
 #else
-	if (pthread_mutex_init(&benaphore->lock, NULL) != 0) {
-		fatal_error("benaphore_init(): failed to initialize pthread mutex");
+	if (pthread_mutex_init(&mutex->lock, NULL) != 0) {
+		fatal_error("platform_mutex_init(): failed to initialize pthread mutex");
 	}
 #endif
 }
 
-void benaphore_destroy(benaphore_t* benaphore) {
+void platform_mutex_destroy(platform_mutex_t* mutex) {
 #ifdef _WIN32
-	(void)benaphore;
+	(void)mutex;
 #else
-	pthread_mutex_destroy(&benaphore->lock);
+	pthread_mutex_destroy(&mutex->lock);
 #endif
 }
 
-void benaphore_lock(benaphore_t* benaphore) {
+void platform_mutex_lock(platform_mutex_t* mutex) {
 #ifdef _WIN32
-	AcquireSRWLockExclusive(&benaphore->lock);
+	AcquireSRWLockExclusive(&mutex->lock);
 #else
-	pthread_mutex_lock(&benaphore->lock);
+	pthread_mutex_lock(&mutex->lock);
 #endif
 }
 
-void benaphore_unlock(benaphore_t* benaphore) {
+void platform_mutex_unlock(platform_mutex_t* mutex) {
 #ifdef _WIN32
-	ReleaseSRWLockExclusive(&benaphore->lock);
+	ReleaseSRWLockExclusive(&mutex->lock);
 #else
-	pthread_mutex_unlock(&benaphore->lock);
+	pthread_mutex_unlock(&mutex->lock);
 #endif
 }

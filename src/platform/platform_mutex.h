@@ -32,24 +32,24 @@ extern "C" {
 #endif
 
 
-typedef struct benaphore_t {
+typedef struct platform_mutex_t {
 #ifdef _WIN32
 	SRWLOCK lock;
 #else
 	pthread_mutex_t lock;
 #endif
-} benaphore_t;
+} platform_mutex_t;
 
 #ifdef _WIN32
-#define BENAPHORE_INITIALIZER { SRWLOCK_INIT }
+#define PLATFORM_MUTEX_INITIALIZER { SRWLOCK_INIT }
 #else
-#define BENAPHORE_INITIALIZER { PTHREAD_MUTEX_INITIALIZER }
+#define PLATFORM_MUTEX_INITIALIZER { PTHREAD_MUTEX_INITIALIZER }
 #endif
 
-void benaphore_init(benaphore_t* benaphore);
-void benaphore_destroy(benaphore_t* benaphore);
-void benaphore_lock(benaphore_t* benaphore);
-void benaphore_unlock(benaphore_t* benaphore);
+void platform_mutex_init(platform_mutex_t* mutex);
+void platform_mutex_destroy(platform_mutex_t* mutex);
+void platform_mutex_lock(platform_mutex_t* mutex);
+void platform_mutex_unlock(platform_mutex_t* mutex);
 
 #ifdef __cplusplus
 }

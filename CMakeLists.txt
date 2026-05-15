@@ -232,7 +232,7 @@ set(SLIDESCAPE_NONGUI_BASE_FILES
         src/utils/crc32.c
         src/utils/block_allocator.c
         src/utils/timerutils.c
-        src/utils/benaphore.c
+        src/platform/platform_mutex.c
         src/utils/phasecorrelate.c
         src/third_party/lz4.c
         src/third_party/yxml.c

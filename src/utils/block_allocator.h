@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 #include "common.h"
-#include "platform.h" // for benaphore
+#include "platform_mutex.h"
 
 // See:
 // https://github.com/SasLuca/rayfork/blob/rayfork-0.9/source/core/rayfork-core.c
@@ -65,7 +65,7 @@ typedef struct block_allocator_t {
 	block_allocator_item_t* free_list_storage;
 	block_allocator_item_t* free_list;
 	i32 free_list_length;
-	benaphore_t lock;
+	platform_mutex_t lock;
 	bool is_valid;
 } block_allocator_t;
 

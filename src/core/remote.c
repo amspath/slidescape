@@ -546,7 +546,7 @@ bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno,
 			image_t* image = (image_t*)calloc(1, sizeof(image_t));
 			bool is_valid = init_image_from_tiff(image, tiff, false, NULL);
 			if (image->is_valid) {
-				benaphore_init(&image->lock);
+                platform_mutex_init(&image->lock);
 				image->lock_initialized = true;
 			}
 			add_image(app_state, image, true, false);

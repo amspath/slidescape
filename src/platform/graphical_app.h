@@ -193,7 +193,7 @@ extern bool is_nvidia_gpu;
 extern input_t inputs[2];
 extern input_t *old_input;
 extern input_t *curr_input;
-extern benaphore_t console_printer_benaphore INIT(=BENAPHORE_INITIALIZER);
+extern platform_mutex_t console_printer_mutex INIT(=PLATFORM_MUTEX_INITIALIZER);
 extern bool cursor_hidden;
 extern const char* global_settings_dir;
 extern char global_export_save_as_filename[512];

@@ -35,6 +35,8 @@ extern "C" {
 #include "libisyntax.h"
 #include "block_allocator.h"
 #include "work_queue.h"
+#include "mathutils.h"
+#include "platform.h"
 
 #include "yxml.h"
 

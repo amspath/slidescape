@@ -24,7 +24,7 @@
 #include "viewer.h"
 #include "image_resize.h"
 #include "jpeg_decoder.h"
-#include "benaphore.h"
+#include "platform_mutex.h"
 
 #include "tiff_write.h"
 
@@ -138,7 +138,7 @@ typedef struct image_draft_t {
     i32 supertile_height_read;
     u16 desired_photometric_interpretation;
     i32 quality;
-    benaphore_t write_lock;
+    platform_mutex_t write_lock;
 } image_draft_t;
 
 typedef struct construct_export_tile_task_t {
@@ -194,7 +194,7 @@ static void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t
 
     // JPEG encoding is the expensive part and happens before the lock. Only the shared append position,
     // tile offset tables, and progress counters are serialized.
-    benaphore_lock(&draft->write_lock);
+    platform_mutex_lock(&draft->write_lock);
 
     fseeko64(fp, draft->current_image_data_write_offset, SEEK_SET); // this needed?
 
@@ -216,7 +216,7 @@ static void write_finished_bigtiff_tile(image_draft_t* draft, image_draft_tile_t
 		putc('.', stdout);
 	}
 
-    benaphore_unlock(&draft->write_lock);
+    platform_mutex_unlock(&draft->write_lock);
 
     libc_free(compressed_buffer);
 
@@ -729,7 +729,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
     draft.supertile_height = (float)draft.tile_height / draft.base_downsample_factor_y;
     draft.supertile_width_read = ((i32)ceilf(draft.supertile_width) + 8);
     draft.supertile_height_read = ((i32)ceilf(draft.supertile_height) + 8);
-    benaphore_init(&draft.write_lock);
+    platform_mutex_init(&draft.write_lock);
 
     for (i32 i = 0; i < 9; ++i) {
         image_draft_level_t* draft_level = draft.levels + i;
@@ -837,7 +837,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
         console_print("Exported region to '%s'\n", filename);
     }
 
-    benaphore_destroy(&draft.write_lock);
+    platform_mutex_destroy(&draft.write_lock);
     image_draft_destroy(&draft);
 
     if (export_flags & EXPORT_FLAGS_ALSO_EXPORT_ANNOTATIONS) {

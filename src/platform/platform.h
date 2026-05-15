@@ -33,7 +33,7 @@
 #include "memrw.h"
 #include "timerutils.h"
 #include "work_queue.h"
-#include "benaphore.h"
+#include "platform_mutex.h"
 
 
 #if WINDOWS
