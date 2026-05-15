@@ -1,0 +1,88 @@
+#include "doctest.h"
+
+#include "platform.h"
+#include "work_queue.h"
+#include "intrinsics.h"
+
+typedef struct test_counter_task_t {
+	i32 volatile* counter;
+} test_counter_task_t;
+
+static void increment_counter_task(int logical_thread_index, void* userdata) {
+	(void)logical_thread_index;
+	test_counter_task_t* task = (test_counter_task_t*)userdata;
+	atomic_increment(task->counter);
+}
+
+static void ensure_test_thread_memory(void) {
+	if (!threadlocal_thread_memory) {
+		global_system_info = get_system_info(false);
+		init_thread_memory(&global_system_info);
+	}
+}
+
+TEST_CASE("work queue executes submitted tasks on caller thread") {
+	ensure_test_thread_memory();
+
+	work_queue_t queue = work_queue_create("/slidescape_test_work_queue", 8);
+	i32 volatile counter = 0;
+	test_counter_task_t task = {&counter};
+
+	CHECK(work_queue_submit_task(&queue, increment_counter_task, &task, sizeof(task)));
+	CHECK(work_queue_submit_task(&queue, increment_counter_task, &task, sizeof(task)));
+	CHECK(work_queue_submit_task(&queue, increment_counter_task, &task, sizeof(task)));
+
+	while (work_queue_is_work_in_progress(&queue)) {
+		CHECK(work_queue_do_work(&queue, 0));
+	}
+
+	CHECK(counter == 3);
+	CHECK(queue.start_count == 3);
+	CHECK(queue.completion_count == 3);
+
+	work_queue_destroy(&queue);
+}
+
+TEST_CASE("work queue helpers tolerate absent optional queue") {
+	CHECK_FALSE(work_queue_do_work(NULL, 0));
+	CHECK_FALSE(work_queue_is_work_in_progress(NULL));
+	CHECK_FALSE(work_queue_is_work_waiting_to_start(NULL));
+}
+
+TEST_CASE("thread pool runs work and can be destroyed") {
+	ensure_test_thread_memory();
+
+	work_queue_t* old_global_work_queue = global_work_queue;
+	work_queue_t* old_global_high_priority_work_queue = global_high_priority_work_queue;
+	i32 old_global_worker_thread_count = global_worker_thread_count;
+	i32 old_global_active_worker_thread_count = global_active_worker_thread_count;
+
+	system_info_t old_system_info = global_system_info;
+	global_system_info = get_system_info(false);
+	global_system_info.suggested_total_thread_count = 3;
+
+	thread_pool_t pool = {};
+	i32 active_worker_count = 2;
+	init_thread_pool(&pool, &active_worker_count, 32, true, false, NULL);
+
+	i32 volatile counter = 0;
+	test_counter_task_t task = {&counter};
+	for (i32 i = 0; i < 16; ++i) {
+		REQUIRE(work_queue_submit_task(pool.queue, increment_counter_task, &task, sizeof(task)));
+	}
+
+	thread_pool_wait_for_completion(&pool);
+	CHECK(counter == 16);
+	CHECK(pool.queue->completion_count == 16);
+
+	thread_pool_destroy(&pool);
+	CHECK(pool.initialized == 0);
+	CHECK(pool.queue == NULL);
+	CHECK(pool.high_priority_queue == NULL);
+
+	global_work_queue = old_global_work_queue;
+	global_high_priority_work_queue = old_global_high_priority_work_queue;
+	global_worker_thread_count = old_global_worker_thread_count;
+	global_active_worker_thread_count = old_global_active_worker_thread_count;
+	global_system_info = old_system_info;
+}

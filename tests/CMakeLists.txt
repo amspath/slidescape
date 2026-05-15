@@ -7,6 +7,7 @@ add_executable(slidescape_tests
         test_stb_sprintf.cpp
         test_support.cpp
         test_stringutils.cpp
+        test_work_queue.cpp
         ../src/utils/mathutils.c
         ../src/utils/memrw.c
         ../src/utils/stringutils.c

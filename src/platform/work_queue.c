@@ -61,6 +61,7 @@ work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count) {
 		fatal_error("failed to initialize semaphore");
 	}
 #endif
+	queue.owns_semaphore = true;
 	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
 	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));
 	return queue;
@@ -68,21 +69,28 @@ work_queue_t work_queue_create(const char* semaphore_name, i32 entry_count) {
 
 work_queue_t work_queue_create_with_existing_semaphore(void* semaphore_handle, i32 entry_count) {
 	work_queue_t queue = {0};
-
 #if WINDOWS
 	queue.semaphore = (HANDLE)semaphore_handle;
 #else
 	queue.semaphore = (sem_t*)semaphore_handle;
 #endif
+	queue.owns_semaphore = false;
 	queue.entry_count = entry_count + 1; // add safety margin to detect when queue is about to overflow
 	queue.entries = calloc(1, (entry_count + 1) * sizeof(work_queue_entry_t));
 	return queue;
 }
 
 void work_queue_destroy(work_queue_t* queue) {
+	if (!queue) {
+		return;
+	}
 	if (queue->entries) {
 		free(queue->entries);
 		queue->entries = NULL;
+	}
+	if (!queue->owns_semaphore || !queue->semaphore) {
+		memset(queue, 0, sizeof(work_queue_t));
+		return;
 	}
 #if WINDOWS
 	CloseHandle(queue->semaphore);
@@ -301,7 +309,6 @@ static void* worker_thread(void* parameter) {
 		// TODO: what might we need to pass as userdata here? maybe not even needed?
 		pool->thread_init_callback(logical_thread_index, NULL);
 	}
-
 #if WINDOWS
 	// TODO: revise this
 	if (pool->need_init_async_io_events) {
@@ -313,7 +320,6 @@ static void* worker_thread(void* parameter) {
 			}
 		}
 	}
-
 #endif
 
 	for (;;) {
@@ -333,7 +339,7 @@ static void* worker_thread(void* parameter) {
 		if (!work_queue_do_work(pool->high_priority_queue, logical_thread_index)) {
 			if (!work_queue_do_work(pool->queue, logical_thread_index)) {
 				if (!(work_queue_is_work_waiting_to_start(pool->queue) || work_queue_is_work_waiting_to_start(pool->high_priority_queue))) {
-					sem_wait(pool->queue->semaphore);
+					platform_semaphore_wait(pool->queue->semaphore);
 				}
 			}
 		}
@@ -348,67 +354,128 @@ static void* worker_thread(void* parameter) {
 static platform_mutex_t work_pool_global_mutex = PLATFORM_MUTEX_INITIALIZER;
 
 void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback) {
-    // Lock-unlock to ensure that all parallel calls to work_pool_init() wait for the actual initialization to complete.
+	// Lock-unlock to ensure that all parallel calls to work_pool_init() wait for the actual initialization to complete.
 	platform_mutex_lock(&work_pool_global_mutex);
 
-    if (!pool->initialized) {
-        // Actual initialization.
-        //DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
-        if (threadlocal_logical_thread_index != 0) {
-            console_print_error("init_thread_pool(): nested work pool creation not supported; tried to create from logical thread %d\n", threadlocal_logical_thread_index);
-            fatal_error();
-        }
+	if (!pool->initialized) {
+		// Actual initialization.
+		//DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
+		if (threadlocal_logical_thread_index != 0) {
+			console_print_error("init_thread_pool(): nested work pool creation not supported; tried to create from logical thread %d\n", threadlocal_logical_thread_index);
+			fatal_error();
+		}
 
-        init_thread_memory(&global_system_info); // init thread memory for thread 0 (= main thread)
+		if (!threadlocal_thread_memory) {
+			init_thread_memory(&global_system_info); // init thread memory for thread 0 (= main thread)
+		}
 
-        global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
-        global_active_worker_thread_count = global_worker_thread_count;
+		global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
+		global_active_worker_thread_count = global_worker_thread_count;
 
-        pool->queue = malloc(sizeof(work_queue_t));
-        *pool->queue = work_queue_create("/worksem", work_queue_max_entry_count);
-        if (need_high_priority_queue) {
-            pool->high_priority_queue = malloc(sizeof(work_queue_t));
-            *pool->high_priority_queue = work_queue_create_with_existing_semaphore(pool->queue->semaphore, work_queue_max_entry_count);
-        }
-        pool->total_worker_thread_count = global_system_info.suggested_total_thread_count;
-        pool->active_worker_thread_count = active_worker_count;
-        pool->need_init_async_io_events = need_init_async_io_events;
+		pool->queue = malloc(sizeof(work_queue_t));
+		*pool->queue = work_queue_create("/worksem", work_queue_max_entry_count);
+		if (need_high_priority_queue) {
+			pool->high_priority_queue = malloc(sizeof(work_queue_t));
+			*pool->high_priority_queue = work_queue_create_with_existing_semaphore(pool->queue->semaphore, work_queue_max_entry_count);
+		}
+		pool->total_worker_thread_count = global_system_info.suggested_total_thread_count;
+		pool->active_worker_thread_count = active_worker_count;
+		pool->need_init_async_io_events = need_init_async_io_events;
 		pool->thread_init_callback = thread_init_callback;
-        pool->active = 1;
+		pool->active = 1;
+		pool->thread_handles = calloc(global_system_info.suggested_total_thread_count, sizeof(*pool->thread_handles));
 
-        // NOTE: the main thread is considered thread 0.
-        for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
-            // NOTE: we pass thread info to the worker thread via the heap; the worker thread will free it after use
-            work_pool_thread_create_info_t* thread_info = malloc(sizeof(work_pool_thread_create_info_t));
-            *thread_info = (work_pool_thread_create_info_t) {.pool = pool, .logical_thread_index = i};
+		// NOTE: the main thread is considered thread 0.
+		for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
+			// NOTE: we pass thread info to the worker thread via the heap; the worker thread will free it after use
+			work_pool_thread_create_info_t* thread_info = malloc(sizeof(work_pool_thread_create_info_t));
+			*thread_info = (work_pool_thread_create_info_t) {.pool = pool, .logical_thread_index = i};
 
 
 #if WINDOWS
-            DWORD thread_id;
-		    HANDLE thread_handle = CreateThread(NULL, 0, worker_thread, thread_info, 0, &thread_id);
-		    CloseHandle(thread_handle);
+			DWORD thread_id;
+			HANDLE thread_handle = CreateThread(NULL, 0, worker_thread, thread_info, 0, &thread_id);
+			pool->thread_handles[i] = thread_handle;
 #else
-            pthread_t thread;
-            if (pthread_create(&thread, NULL, &worker_thread, (void*)thread_info) != 0) {
-                fprintf(stderr, "Error creating thread\n");
-                fatal_error();
-            }
+			pthread_t thread;
+			if (pthread_create(&thread, NULL, &worker_thread, (void*)thread_info) != 0) {
+				fprintf(stderr, "Error creating thread\n");
+				fatal_error();
+			}
+			pool->thread_handles[i] = thread;
 
 #endif
-            ++pool->refcount;
-        }
+			++pool->refcount;
+		}
 		pool->initialized = true;
-    }
+	}
 
-    // TODO: can we remove/refactor these globals?
-    global_work_queue = pool->queue;
-    global_high_priority_work_queue = pool->high_priority_queue;
+	// TODO: can we remove/refactor these globals?
+	global_work_queue = pool->queue;
+	global_high_priority_work_queue = pool->high_priority_queue;
 
 	platform_mutex_unlock(&work_pool_global_mutex);
 
 	// TODO: add multithreading test to test suite
-    test_multithreading_work_queue();
+	test_multithreading_work_queue();
 
+}
+
+void thread_pool_wait_for_completion(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return;
+	}
+	while (work_queue_is_work_in_progress(pool->queue) || work_queue_is_work_in_progress(pool->high_priority_queue)) {
+		if (!work_queue_do_work(pool->high_priority_queue, threadlocal_logical_thread_index)) {
+			if (!work_queue_do_work(pool->queue, threadlocal_logical_thread_index)) {
+				platform_sleep(1);
+			}
+		}
+	}
+}
+
+void thread_pool_destroy(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return;
+	}
+
+	thread_pool_wait_for_completion(pool);
+	pool->active = 0;
+	write_barrier;
+
+	for (i32 i = 1; i < pool->total_worker_thread_count; ++i) {
+		platform_semaphore_post(pool->queue->semaphore);
+	}
+
+	if (pool->thread_handles) {
+		for (i32 i = 1; i < pool->total_worker_thread_count; ++i) {
+#if WINDOWS
+			if (pool->thread_handles[i]) {
+				WaitForSingleObject(pool->thread_handles[i], INFINITE);
+				CloseHandle(pool->thread_handles[i]);
+			}
+#else
+			if (pool->thread_handles[i]) {
+				pthread_join(pool->thread_handles[i], NULL);
+			}
+#endif
+		}
+		free(pool->thread_handles);
+		pool->thread_handles = NULL;
+	}
+
+	if (global_work_queue == pool->queue) {
+		global_work_queue = NULL;
+	}
+	if (global_high_priority_work_queue == pool->high_priority_queue) {
+		global_high_priority_work_queue = NULL;
+	}
+
+	work_queue_destroy(pool->high_priority_queue);
+	free(pool->high_priority_queue);
+	work_queue_destroy(pool->queue);
+	free(pool->queue);
+	memset(pool, 0, sizeof(*pool));
 }
 
 void init_multithreading_for_slidescape(void) {
