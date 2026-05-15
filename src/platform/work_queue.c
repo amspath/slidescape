@@ -292,7 +292,11 @@ typedef struct work_pool_thread_create_info_t {
 	thread_pool_t* pool;
 } work_pool_thread_create_info_t;
 
+#if WINDOWS
+static DWORD WINAPI worker_thread(void* parameter) {
+#else
 static void* worker_thread(void* parameter) {
+#endif
 	work_pool_thread_create_info_t* thread_info = (work_pool_thread_create_info_t*) parameter;
 	i32 logical_thread_index = thread_info->logical_thread_index;
 	threadlocal_logical_thread_index = logical_thread_index;
@@ -395,6 +399,10 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
 #if WINDOWS
 			DWORD thread_id;
 			HANDLE thread_handle = CreateThread(NULL, 0, worker_thread, thread_info, 0, &thread_id);
+			if (!thread_handle) {
+				free(thread_info);
+				fatal_error("CreateThread failed");
+			}
 			pool->thread_handles[i] = thread_handle;
 #else
 			pthread_t thread;
@@ -438,6 +446,9 @@ void thread_pool_destroy(thread_pool_t* pool) {
 	if (!pool || !pool->initialized) {
 		return;
 	}
+	if (threadlocal_logical_thread_index != 0) {
+		fatal_error("thread_pool_destroy(): destroying a thread pool from a worker thread is not supported");
+	}
 
 	thread_pool_wait_for_completion(pool);
 	pool->active = 0;
@@ -455,9 +466,7 @@ void thread_pool_destroy(thread_pool_t* pool) {
 				CloseHandle(pool->thread_handles[i]);
 			}
 #else
-			if (pool->thread_handles[i]) {
-				pthread_join(pool->thread_handles[i], NULL);
-			}
+			pthread_join(pool->thread_handles[i], NULL);
 #endif
 		}
 		free(pool->thread_handles);

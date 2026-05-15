@@ -86,3 +86,40 @@ TEST_CASE("thread pool runs work and can be destroyed") {
 	global_active_worker_thread_count = old_global_active_worker_thread_count;
 	global_system_info = old_system_info;
 }
+
+TEST_CASE("thread pool without high priority queue can be reused after destroy") {
+	ensure_test_thread_memory();
+
+	work_queue_t* old_global_work_queue = global_work_queue;
+	work_queue_t* old_global_high_priority_work_queue = global_high_priority_work_queue;
+	i32 old_global_worker_thread_count = global_worker_thread_count;
+	i32 old_global_active_worker_thread_count = global_active_worker_thread_count;
+
+	system_info_t old_system_info = global_system_info;
+	global_system_info = get_system_info(false);
+	global_system_info.suggested_total_thread_count = 2;
+
+	for (i32 iteration = 0; iteration < 2; ++iteration) {
+		thread_pool_t pool = {};
+		i32 active_worker_count = 1;
+		init_thread_pool(&pool, &active_worker_count, 8, false, false, NULL);
+		REQUIRE(pool.initialized);
+		CHECK(pool.high_priority_queue == NULL);
+
+		i32 volatile counter = 0;
+		test_counter_task_t task = {&counter};
+		REQUIRE(work_queue_submit_task(pool.queue, increment_counter_task, &task, sizeof(task)));
+		thread_pool_wait_for_completion(&pool);
+		CHECK(counter == 1);
+
+		thread_pool_destroy(&pool);
+		thread_pool_destroy(&pool);
+		CHECK(pool.initialized == 0);
+	}
+
+	global_work_queue = old_global_work_queue;
+	global_high_priority_work_queue = old_global_high_priority_work_queue;
+	global_worker_thread_count = old_global_worker_thread_count;
+	global_active_worker_thread_count = old_global_active_worker_thread_count;
+	global_system_info = old_system_info;
+}
