@@ -1658,5 +1658,5 @@ static void a_very_long_task(i32 logical_thread_index, void* userdata) {
 
 // for testing the progress bar popup
 void begin_a_very_long_task() {
-	work_queue_submit_task(global_work_queue, a_very_long_task, NULL, 0);
+	thread_pool_submit_task(&global_thread_pool, a_very_long_task, NULL, 0);
 }

@@ -422,7 +422,7 @@ static void construct_tiles_parallel_from_frontier(image_draft_t* draft, i32 fro
 
     i32 worker_task_count = participants_goal - 1;
     for (i32 i = 0; i < worker_task_count; ++i) {
-        if (!work_queue_submit_task(global_work_queue, construct_export_tile_task_func, &task, sizeof(task))) {
+        if (!thread_pool_submit_task(&global_thread_pool, construct_export_tile_task_func, &task, sizeof(task))) {
             atomic_decrement(&participants_goal);
         }
     }
@@ -430,7 +430,7 @@ static void construct_tiles_parallel_from_frontier(image_draft_t* draft, i32 fro
     construct_export_tile_task_func(0, &task);
 
     while (finished_count < participants_goal) {
-        work_queue_do_work(global_work_queue, 0);
+        thread_pool_do_work(&global_thread_pool, 0);
     }
 }
 
@@ -890,7 +890,7 @@ void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t*
     app_state->is_export_in_progress = true;
 
     //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
-    if (!work_queue_submit_task(global_work_queue, export_cropped_bigtiff_with_resample_func, &task, sizeof(task))) {
+    if (!thread_pool_submit_task(&global_thread_pool, export_cropped_bigtiff_with_resample_func, &task, sizeof(task))) {
 //		tile->is_submitted_for_loading = false; // chicken out
 //		atomic_decrement(&isyntax->refcount);
         app_state->is_export_in_progress = false;

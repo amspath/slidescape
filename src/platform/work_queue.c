@@ -429,15 +429,52 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
 
 }
 
+bool thread_pool_submit_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	return work_queue_submit_task(pool->queue, callback, userdata, userdata_size);
+}
+
+bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	work_queue_t* queue = pool->high_priority_queue ? pool->high_priority_queue : pool->queue;
+	return work_queue_submit_task(queue, callback, userdata, userdata_size);
+}
+
+bool thread_pool_do_work(thread_pool_t* pool, int logical_thread_index) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	if (work_queue_do_work(pool->high_priority_queue, logical_thread_index)) {
+		return true;
+	}
+	return work_queue_do_work(pool->queue, logical_thread_index);
+}
+
+bool thread_pool_is_work_in_progress(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	return work_queue_is_work_in_progress(pool->queue) || work_queue_is_work_in_progress(pool->high_priority_queue);
+}
+
+bool thread_pool_is_work_waiting_to_start(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	return work_queue_is_work_waiting_to_start(pool->queue) || work_queue_is_work_waiting_to_start(pool->high_priority_queue);
+}
+
 void thread_pool_wait_for_completion(thread_pool_t* pool) {
 	if (!pool || !pool->initialized) {
 		return;
 	}
-	while (work_queue_is_work_in_progress(pool->queue) || work_queue_is_work_in_progress(pool->high_priority_queue)) {
-		if (!work_queue_do_work(pool->high_priority_queue, threadlocal_logical_thread_index)) {
-			if (!work_queue_do_work(pool->queue, threadlocal_logical_thread_index)) {
-				platform_sleep(1);
-			}
+	while (thread_pool_is_work_in_progress(pool)) {
+		if (!thread_pool_do_work(pool, threadlocal_logical_thread_index)) {
+			platform_sleep(1);
 		}
 	}
 }

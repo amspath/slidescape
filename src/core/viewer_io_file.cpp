@@ -222,9 +222,7 @@ void load_openslide_wsi(wsi_t* wsi, const char* filename) {
 #if DO_DEBUG
 		console_print("Waiting for OpenSlide to finish loading...\n");
 #endif
-		while (work_queue_is_work_in_progress(global_work_queue)) {
-            work_queue_do_work(global_work_queue, 0);
-		}
+		thread_pool_wait_for_completion(&global_thread_pool);
 	}
 
 	// TODO: check if necessary anymore?
@@ -801,9 +799,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 #if DO_DEBUG
 				console_print("Waiting for OpenSlide to finish loading...\n");
 #endif
-				while (work_queue_is_work_in_progress(global_work_queue)) {
-                    work_queue_do_work(global_work_queue, 0);
-				}
+				thread_pool_wait_for_completion(&global_thread_pool);
 			}
 			if (!is_openslide_available) {
 				console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
