@@ -113,7 +113,8 @@ isyntax_error_t libisyntax_init() {
                          &global_active_worker_thread_count,
                          1024,
                          false,
-                         false);
+                         false,
+                         NULL);
 
 #else
         init_multithreading_for_slidescape();

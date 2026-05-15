@@ -223,6 +223,9 @@ bool work_queue_do_work(work_queue_t* queue, int logical_thread_index) {
 
 
 bool work_queue_is_work_in_progress(work_queue_t* queue) {
+	if (!queue) {
+		return false;
+	}
 	// If we are checking the global work queue while running a task from that same queue, then we only want to know
 	// whether any OTHER tasks are running. So in that case we need to subtract the call depth.
 	// TODO: can we rely on thread-local variables for call stack depth instead of this jank?
@@ -232,6 +235,9 @@ bool work_queue_is_work_in_progress(work_queue_t* queue) {
 }
 
 bool work_queue_is_work_waiting_to_start(work_queue_t* queue) {
+	if (!queue) {
+		return false;
+	}
 	bool result = (queue->start_goal > queue->start_count);
 	return result;
 }
@@ -369,9 +375,8 @@ static benaphore_t* work_pool_get_global_mutex() {
 void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback) {
     // Lock-unlock to ensure that all parallel calls to work_pool_init() wait for the actual initialization to complete.
     benaphore_lock(work_pool_get_global_mutex());
-    static bool work_pool_global_init_complete = false;
 
-    if (work_pool_global_init_complete == false) {
+    if (!pool->initialized) {
         // Actual initialization.
         //DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
         if (threadlocal_logical_thread_index != 0) {
@@ -417,11 +422,12 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
 #endif
             ++pool->refcount;
         }
+		pool->initialized = true;
     }
 
     // TODO: can we remove/refactor these globals?
-    global_work_queue = global_thread_pool.queue;
-    global_high_priority_work_queue = global_thread_pool.high_priority_queue;
+    global_work_queue = pool->queue;
+    global_high_priority_work_queue = pool->high_priority_queue;
 
     benaphore_unlock(work_pool_get_global_mutex());
 
@@ -447,5 +453,4 @@ void init_multithreading_for_slidescape(void) {
 
     init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, thread_init_callback);
 }
-
 
