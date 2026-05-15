@@ -32,6 +32,7 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include "win32_utils.h" // for win32_diagnostic()
 #else
 #include <semaphore.h>
 #include <pthread.h>
@@ -524,7 +525,8 @@ void thread_pool_destroy(thread_pool_t* pool) {
 	memset(pool, 0, sizeof(*pool));
 }
 
-void init_multithreading_for_slidescape(void) {
+#ifdef LIBISYNTAX_THREAD_POOL_SHARED_WITH_SLIDESCAPE
+void libisyntax_init_thread_pool_for_slidescape(void) {
 	// TODO: make this safer and refactor
 
 	global_system_info = get_system_info(false);
@@ -534,10 +536,11 @@ void init_multithreading_for_slidescape(void) {
 	}
 
 #if WINDOWS
-	thread_pool_thread_init_callback_t* thread_init_callback = &win32_thread_init_callback; //TODO
+	thread_pool_thread_init_callback_t* thread_init_callback = NULL; //&win32_thread_init_callback; //TODO?
 #else
 	thread_pool_thread_init_callback_t* thread_init_callback = NULL;
 #endif
 
     init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, thread_init_callback);
 }
+#endif

@@ -107,7 +107,9 @@ bool thread_pool_is_work_in_progress(thread_pool_t* pool);
 bool thread_pool_is_work_waiting_to_start(thread_pool_t* pool);
 void thread_pool_wait_for_completion(thread_pool_t* pool);
 void thread_pool_destroy(thread_pool_t* pool);
-void init_multithreading_for_slidescape(void);
+#ifdef LIBISYNTAX_THREAD_POOL_SHARED_WITH_SLIDESCAPE
+void libisyntax_init_thread_pool_for_slidescape(void);
+#endif
 
 
 // globals

@@ -91,7 +91,7 @@ isyntax_error_t libisyntax_init() {
                          NULL);
 
 #else
-        init_multithreading_for_slidescape();
+        libisyntax_init_thread_pool_for_slidescape();
 #endif
         libisyntax_global_init_complete = true;
     }

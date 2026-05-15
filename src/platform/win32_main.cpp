@@ -87,7 +87,6 @@ WINDOWPLACEMENT window_position = { sizeof(window_position) };
 
 WNDCLASSA main_window_class;
 
-platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
 HGLRC glrcs[MAX_THREAD_COUNT];
 
 static char g_exe_name[512];
@@ -1609,7 +1608,10 @@ bool win32_process_input(app_state_t* app_state) {
 	return did_idle;
 }
 
-
+// NOTE (2026-05-15): The Win32 thread_proc has been replaced by a generic one in work_queue.c,
+// however, the multiple OpenGL context support is not supported by that path.
+// We don't use/need that functionality right now, but just in case, I'm not yet deleting the stale code below.
+#if 0
 static DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
@@ -1689,31 +1691,11 @@ static DWORD WINAPI thread_proc(void* parameter) {
 		}
 	}
 }
+#endif
 
 void win32_init_multithreading() {
-	init_thread_memory(&global_system_info);
-
-	global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
-	global_active_worker_thread_count = global_worker_thread_count;
-
-	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
-	// Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
-	global_high_priority_work_queue = work_queue_create_with_existing_semaphore(global_work_queue.semaphore, 1024);
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-
-	// NOTE: the main thread is considered thread 0.
-	for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
-		platform_thread_info_t thread_info = { .logical_thread_index = i, .queue = &global_work_queue, .high_priority_queue = &global_high_priority_work_queue};
-		thread_infos[i] = thread_info;
-
-		DWORD thread_id;
-		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
-		CloseHandle(thread_handle);
-
-	}
-
-	test_multithreading_work_queue();
-
+	init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, NULL);
 }
 
 void win32_init_main_window(app_state_t* app_state) {
