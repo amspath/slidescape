@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2025  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1658,5 +1658,5 @@ static void a_very_long_task(i32 logical_thread_index, void* userdata) {
 
 // for testing the progress bar popup
 void begin_a_very_long_task() {
-	work_queue_submit_task(&global_work_queue, a_very_long_task, NULL, 0);
+	work_queue_submit_task(global_work_queue, a_very_long_task, NULL, 0);
 }

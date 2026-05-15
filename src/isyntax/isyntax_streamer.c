@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2025, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -641,7 +641,7 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 	if (!wsi->first_load_complete) {
 		isyntax_begin_first_load(streamer);
 	} else for (i32 iteration = 0; iteration < 3; ++iteration) {
-		arena_t* arena = &local_thread_memory->temp_arena;
+		arena_t* arena = &threadlocal_thread_memory->temp_arena;
 		temp_memory_t temp_memory = begin_temp_memory(arena);
 
 		ASSERT(wsi->level_count >= 0);

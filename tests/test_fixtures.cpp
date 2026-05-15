@@ -104,7 +104,7 @@ static size_t split_manifest_line(char* line, char** fields, size_t field_capaci
 	return field_count;
 }
 
-static void load_fixture_manifest(fixture_manifest_t& manifest, const char* manifest_path) {
+static void load_fixture_manifest(fixture_manifest_t* manifest, const char* manifest_path) {
 	FILE* fp = fopen(manifest_path, "rb");
 	if (!fp) return;
 
@@ -118,9 +118,9 @@ static void load_fixture_manifest(fixture_manifest_t& manifest, const char* mani
 
 		char* fields[6] = {};
 		size_t field_count = split_manifest_line(text, fields, COUNT(fields));
-		if (field_count < 5 || manifest.fixture_count >= COUNT(manifest.fixtures)) continue;
+		if (field_count < 5 || manifest->fixture_count >= COUNT(manifest->fixtures)) continue;
 
-		fixture_t& fixture = manifest.fixtures[manifest.fixture_count++];
+		fixture_t& fixture = manifest->fixtures[manifest->fixture_count++];
 		copy_string(fixture.id, COUNT(fixture.id), fields[0]);
 		copy_string(fixture.type, COUNT(fixture.type), fields[1]);
 		copy_string(fixture.visibility, COUNT(fixture.visibility), fields[2]);
@@ -132,14 +132,14 @@ static void load_fixture_manifest(fixture_manifest_t& manifest, const char* mani
 	fclose(fp);
 }
 
-static fixture_manifest_t& fixture_manifest() {
+static fixture_manifest_t* fixture_manifest() {
 	static fixture_manifest_t manifest = {};
 	if (!manifest.loaded) {
-		load_fixture_manifest(manifest, SLIDESCAPE_TEST_FIXTURE_MANIFEST);
-		load_fixture_manifest(manifest, SLIDESCAPE_TEST_LOCAL_FIXTURE_MANIFEST);
+		load_fixture_manifest(&manifest, SLIDESCAPE_TEST_FIXTURE_MANIFEST);
+		load_fixture_manifest(&manifest, SLIDESCAPE_TEST_LOCAL_FIXTURE_MANIFEST);
 		manifest.loaded = true;
 	}
-	return manifest;
+	return &manifest;
 }
 
 static bool fixture_has_tag(const fixture_t& fixture, const char* tag) {
@@ -163,9 +163,9 @@ static bool fixture_has_tag(const fixture_t& fixture, const char* tag) {
 }
 
 static const fixture_t* first_available_fixture(const char* type, const char* tag = NULL) {
-	fixture_manifest_t& manifest = fixture_manifest();
-	for (size_t i = 0; i < manifest.fixture_count; ++i) {
-		fixture_t& fixture = manifest.fixtures[i];
+	fixture_manifest_t* manifest = fixture_manifest();
+	for (size_t i = 0; i < manifest->fixture_count; ++i) {
+		fixture_t& fixture = manifest->fixtures[i];
 		if (strcmp(fixture.type, type) != 0) continue;
 		if (tag && !fixture_has_tag(fixture, tag)) continue;
 		if (test_fixture_file_exists(fixture.path)) return &fixture;
@@ -191,12 +191,12 @@ static bool pixel_buffer_has_variation(const u32* pixels, size_t pixel_count) {
 }
 
 TEST_CASE("fixture manifest is readable") {
-	fixture_manifest_t& manifest = fixture_manifest();
-	REQUIRE(manifest.fixture_count > 0);
+	fixture_manifest_t* manifest = fixture_manifest();
+	REQUIRE(manifest->fixture_count > 0);
 
 	bool has_public_fixture = false;
-	for (size_t i = 0; i < manifest.fixture_count; ++i) {
-		fixture_t& fixture = manifest.fixtures[i];
+	for (size_t i = 0; i < manifest->fixture_count; ++i) {
+		fixture_t& fixture = manifest->fixtures[i];
 		CAPTURE(fixture.id);
 		CHECK(fixture.type[0] != '\0');
 		CHECK(fixture.path[0] != '\0');
@@ -206,10 +206,10 @@ TEST_CASE("fixture manifest is readable") {
 }
 
 TEST_CASE("available WSI fixtures have expected extensions") {
-	fixture_manifest_t& manifest = fixture_manifest();
+	fixture_manifest_t* manifest = fixture_manifest();
 	bool checked_any = false;
-	for (size_t i = 0; i < manifest.fixture_count; ++i) {
-		fixture_t& fixture = manifest.fixtures[i];
+	for (size_t i = 0; i < manifest->fixture_count; ++i) {
+		fixture_t& fixture = manifest->fixtures[i];
 		if (!test_fixture_file_exists(fixture.path)) continue;
 
 		const char* extension = get_file_extension(fixture.path);
@@ -230,10 +230,10 @@ TEST_CASE("available WSI fixtures have expected extensions") {
 }
 
 TEST_CASE("TIFF fixtures have valid TIFF or BigTIFF headers") {
-	fixture_manifest_t& manifest = fixture_manifest();
+	fixture_manifest_t* manifest = fixture_manifest();
 	bool checked_any = false;
-	for (size_t i = 0; i < manifest.fixture_count; ++i) {
-		fixture_t& fixture = manifest.fixtures[i];
+	for (size_t i = 0; i < manifest->fixture_count; ++i) {
+		fixture_t& fixture = manifest->fixtures[i];
 		if (strcmp(fixture.type, "tiff") != 0 || !test_fixture_file_exists(fixture.path)) continue;
 
 		u8 header[4] = {};
@@ -293,10 +293,10 @@ TEST_CASE("ASAP XML fixture exposes at least one annotation node") {
 }
 
 TEST_CASE("open TIFF fixtures through Slidescape TIFF reader") {
-	fixture_manifest_t& manifest = fixture_manifest();
+	fixture_manifest_t* manifest = fixture_manifest();
 	bool checked_any = false;
-	for (size_t i = 0; i < manifest.fixture_count; ++i) {
-		fixture_t& fixture = manifest.fixtures[i];
+	for (size_t i = 0; i < manifest->fixture_count; ++i) {
+		fixture_t& fixture = manifest->fixtures[i];
 		if (strcmp(fixture.type, "tiff") != 0 || !test_fixture_file_exists(fixture.path)) continue;
 
 		tiff_t tiff = {};

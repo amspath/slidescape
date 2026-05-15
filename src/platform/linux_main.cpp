@@ -104,61 +104,6 @@ void stringify_icon_image() {
 }
 #endif
 
-static void* worker_thread(void* parameter) {
-    platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
-	local_logical_thread_index = thread_info->logical_thread_index;
-
-//	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
-
-    init_thread_memory(&global_system_info);
-	atomic_increment(&global_worker_thread_idle_count);
-
-	for (;;) {
-		if (thread_info->logical_thread_index > global_active_worker_thread_count) {
-			// Worker is disabled, do nothing
-			platform_sleep(100);
-			continue;
-		}
-		if (!work_queue_do_work(thread_info->queue, thread_info->logical_thread_index)) {
-			if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
-				sem_wait(thread_info->queue->semaphore);
-			}
-		}
-    }
-
-    return 0;
-}
-
-platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
-
-void linux_init_multithreading() {
-	init_thread_memory(&global_system_info);
-    global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
-	global_active_worker_thread_count = global_worker_thread_count;
-
-	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
-	// Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
-	global_high_priority_work_queue = work_queue_create_with_existing_semaphore(global_work_queue.semaphore, 1024);
-	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
-
-    pthread_t threads[MAX_THREAD_COUNT] = {};
-
-    // NOTE: the main thread is considered thread 0.
-    for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
-        thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue, .high_priority_queue = &global_high_priority_work_queue};
-
-        if (pthread_create(threads + i, NULL, &worker_thread, (void*)(&thread_infos[i])) != 0) {
-            fprintf(stderr, "Error creating thread\n");
-        }
-
-    }
-
-    test_multithreading_work_queue();
-
-
-}
-
 void linux_init_input() {
     old_input = &inputs[0];
     curr_input = &inputs[1];
@@ -412,7 +357,9 @@ int main(int argc, const char** argv)
 	init_app_state(app_state, app_command);
 	viewer_init_options(app_state);
 
-    linux_init_multithreading();
+	// Initialize multithreading stuff
+	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
+	init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, NULL);
 
     if (app_command.headless) {
         is_openslide_available = init_openslide();
@@ -420,8 +367,8 @@ int main(int argc, const char** argv)
         return app_command_execute(app_state);
     }
 
-	work_queue_submit_task(&global_work_queue, (work_queue_callback_t *) load_openslide_task, NULL, 0);
-	work_queue_submit_task(&global_work_queue, (work_queue_callback_t *) load_dicom_task, NULL, 0);
+	work_queue_submit_task(global_work_queue, (work_queue_callback_t *) load_openslide_task, NULL, 0);
+	work_queue_submit_task(global_work_queue, (work_queue_callback_t *) load_dicom_task, NULL, 0);
     linux_init_input();
 
 	/*i32 num_video_drivers = SDL_GetNumVideoDrivers();

@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -75,11 +75,6 @@ typedef int file_handle_t;
 typedef FILE* file_stream_t;
 #endif
 
-typedef struct platform_thread_info_t {
-	i32 logical_thread_index;
-	work_queue_t* queue;
-	work_queue_t* high_priority_queue;
-} platform_thread_info_t;
 
 #define MAX_ASYNC_IO_EVENTS 32
 
@@ -162,6 +157,7 @@ bool is_directory(const char* path);
 system_info_t get_system_info(bool verbose);
 
 void init_thread_memory(system_info_t* system_info);
+void destroy_thread_memory(void);
 
 // globals
 #if defined(PLATFORM_IMPL)
@@ -172,16 +168,13 @@ void init_thread_memory(system_info_t* system_info);
 #undef extern
 #endif
 
-extern THREAD_LOCAL thread_memory_t* local_thread_memory;
-extern THREAD_LOCAL i32 local_logical_thread_index;
-static inline temp_memory_t begin_temp_memory_on_local_thread() { return begin_temp_memory(&local_thread_memory->temp_arena); }
+extern THREAD_LOCAL thread_memory_t* threadlocal_thread_memory;
+extern THREAD_LOCAL i32 threadlocal_logical_thread_index;
+static inline temp_memory_t begin_temp_memory_on_local_thread() { return begin_temp_memory(&threadlocal_thread_memory->temp_arena); }
 
 extern int g_argc;
 extern const char** g_argv;
 extern system_info_t global_system_info;
-extern i32 global_worker_thread_count;
-extern i32 global_active_worker_thread_count;
-extern work_queue_t global_completion_queue;
 
 extern bool is_verbose_mode INIT(= false);
 

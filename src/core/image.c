@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2025  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1129,8 +1129,8 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								platform_sleep(1);
 								continue;
 							}
-						} else if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
-							work_queue_do_work(&global_work_queue, local_logical_thread_index);
+						} else if (work_queue_is_work_waiting_to_start(global_work_queue)) {
+							work_queue_do_work(global_work_queue, threadlocal_logical_thread_index);
 						} else {
 							platform_sleep(1);
 						}
@@ -1350,7 +1350,7 @@ void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 
 
 	level_image->indexing_job_submitted = true;
 	atomic_increment(&image->refcount); // retain
-	if (!work_queue_submit_task(&global_work_queue, level_image_indexing_task_func, &task, sizeof(task))) {
+	if (!work_queue_submit_task(global_work_queue, level_image_indexing_task_func, &task, sizeof(task))) {
 		atomic_decrement(&image->refcount); // chicken out
 		level_image->indexing_job_submitted = false;
 	};
@@ -1360,8 +1360,8 @@ void image_destroy(image_t* image) {
     image->is_deleted = true;
     while (image->refcount > 0) {
 //		console_print_error("refcount = %d\n", image->refcount);
-	    if (work_queue_is_work_waiting_to_start(&global_work_queue)) {
-		    work_queue_do_work(&global_work_queue, local_logical_thread_index);
+	    if (work_queue_is_work_waiting_to_start(global_work_queue)) {
+		    work_queue_do_work(global_work_queue, threadlocal_logical_thread_index);
 	    } else {
 		    platform_sleep(1);
 	    }

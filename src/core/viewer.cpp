@@ -212,8 +212,8 @@ void autosave(app_state_t* app_state, bool force_ignore_delay, bool async) {
 }
 
 i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
-	i32 tasks_waiting = work_queue_get_entry_count(&global_work_queue);
-	i32 max_acceptable_tasks = global_work_queue.entry_count-1;
+	i32 tasks_waiting = work_queue_get_entry_count(global_work_queue);
+	i32 max_acceptable_tasks = global_work_queue->entry_count-1;
 	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
 	if (tiles_to_load > usable_slots) {
 		console_print_error("request_tiles(): requested %d tiles, but only %d tasks fit into the work queue", tiles_to_load, usable_slots);
@@ -234,7 +234,7 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 				load_tile_task_batch_t batch = {};
 				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
 				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
-				if (work_queue_submit_task(&global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
+				if (work_queue_submit_task(global_work_queue, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
 					// success
 					for (i32 i = 0; i < batch.task_count; ++i) {
 						load_tile_task_t* task = batch.tile_tasks + i;
@@ -269,7 +269,7 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 						tile->is_submitted_for_loading = true;
 						tile->need_gpu_residency = task.need_gpu_residency;
 						tile->need_keep_in_cache = task.need_keep_in_cache;
-						if (work_queue_submit_task(&global_work_queue, load_tile_func, &task, sizeof(task))) {
+						if (work_queue_submit_task(global_work_queue, load_tile_func, &task, sizeof(task))) {
 							// success
 							atomic_add(&image->refcount, task.refcount_to_decrement);
 							++tile_loads_submitted;

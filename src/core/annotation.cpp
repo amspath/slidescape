@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1535,13 +1535,13 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 				.draw_list_index = batch,
 				.completion_counter = &completion_counter,
 			};
-			if (!work_queue_submit_task(&global_high_priority_work_queue, draw_annotation_batch_func, &batch_data, sizeof(batch_data))) {
+			if (!work_queue_submit_task(global_high_priority_work_queue, draw_annotation_batch_func, &batch_data, sizeof(batch_data))) {
 				draw_annotation_batch(app_state, scene, annotation_set, camera_min, start_index, batch_size, &completion_counter, 0, batch);
 			}
 		}
 		while (completion_counter < annotation_batch_count) {
-			if (work_queue_is_work_waiting_to_start(&global_high_priority_work_queue)) {
-				if (!work_queue_do_work(&global_high_priority_work_queue, 0)) {
+			if (work_queue_is_work_waiting_to_start(global_high_priority_work_queue)) {
+				if (!work_queue_do_work(global_high_priority_work_queue, 0)) {
 					platform_sleep(1);
 				}
 			} else {
@@ -2950,7 +2950,7 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 					.filename_out = annotation_set->asap_xml_filename,
 					.in_progress_state = &annotation_set->is_saving_in_progress,
 				};
-				if (work_queue_submit_task(&global_work_queue, save_asap_xml_async_func, &task, sizeof(save_asap_xml_async_task_t))) {
+				if (work_queue_submit_task(global_work_queue, save_asap_xml_async_func, &task, sizeof(save_asap_xml_async_task_t))) {
 					// annotations will be saved on a worker thread
 					// The copy will be destroyed after saving is done
 				} else {

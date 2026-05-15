@@ -201,11 +201,11 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 
 	glEnable(GL_TEXTURE_2D);
-	if (!local_thread_memory->pbo) {
-		glGenBuffers(1, &local_thread_memory->pbo);
+	if (!threadlocal_thread_memory->pbo) {
+		glGenBuffers(1, &threadlocal_thread_memory->pbo);
 	}
 	size_t pixel_memory_size = tile_width * tile_height * BYTES_PER_PIXEL;
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, local_thread_memory->pbo);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, threadlocal_thread_memory->pbo);
 	glBufferData(GL_PIXEL_UNPACK_BUFFER, pixel_memory_size, NULL, GL_STREAM_DRAW);
 
 	void* mapped_buffer = glMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
@@ -215,7 +215,7 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 	free(tile_pixels);
 
 // after reading is complete back on the main thread
-	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, local_thread_memory->pbo);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, threadlocal_thread_memory->pbo);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 
 	//Sleep(5);

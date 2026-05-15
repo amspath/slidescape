@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2024, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -155,14 +155,14 @@ system_info_t get_system_info(bool verbose) {
 
 
 void init_thread_memory(system_info_t* system_info) {
-	if (local_thread_memory != NULL) {
+	if (threadlocal_thread_memory != NULL) {
 		ASSERT(!"init_thread_memory() called twice on the same thread");
 		return;
 	}
 	// Allocate a private memory buffer
 	u64 thread_memory_size = MEGABYTES(16);
-	local_thread_memory = (thread_memory_t*) malloc(thread_memory_size); // how much actually needed?
-	thread_memory_t* thread_memory = local_thread_memory;
+    threadlocal_thread_memory = (thread_memory_t*) malloc(thread_memory_size); // how much actually needed?
+	thread_memory_t* thread_memory = threadlocal_thread_memory;
 	memset(thread_memory, 0, sizeof(thread_memory_t));
 #if !WINDOWS
 	// TODO(pvalkema): think about whether implement creation of async I/O events is needed here
@@ -184,4 +184,10 @@ void init_thread_memory(system_info_t* system_info) {
 
 }
 
+void destroy_thread_memory(void) {
+	if (threadlocal_thread_memory != NULL) {
+		free(threadlocal_thread_memory);
+        threadlocal_thread_memory = NULL;
+	}
+}
 

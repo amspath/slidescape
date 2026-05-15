@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2025, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -62,136 +62,7 @@
     ASSERT(result == LIBISYNTAX_OK);               \
 } while(0);
 
-
-#ifndef LIBISYNTAX_NO_THREAD_POOL_IMPLEMENTATION
-
-static platform_thread_info_t thread_infos[MAX_THREAD_COUNT];
-
-
-
 // Routines for initializing the global thread pool
-
-#if WINDOWS
-#include "win32_utils.h"
-
-_Noreturn DWORD WINAPI thread_proc(void* parameter) {
-	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
-	i64 init_start_time = get_clock();
-
-    local_logical_thread_index = thread_info->logical_thread_index;
-
-	atomic_increment(&global_worker_thread_idle_count);
-
-	init_thread_memory(thread_info->logical_thread_index, &global_system_info);
-	thread_memory_t* thread_memory = local_thread_memory;
-
-	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
-		thread_memory->async_io_events[i] = CreateEventA(NULL, TRUE, FALSE, NULL);
-		if (!thread_memory->async_io_events[i]) {
-			win32_diagnostic("CreateEvent");
-		}
-	}
-//	console_print("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
-
-	for (;;) {
-		if (thread_info->logical_thread_index > global_active_worker_thread_count) {
-			// Worker is disabled, do nothing
-			Sleep(100);
-			continue;
-		}
-		if (!work_queue_is_work_in_progress(thread_info->queue)) {
-			Sleep(1);
-			WaitForSingleObjectEx(thread_info->queue->semaphore, 1, FALSE);
-		}
-        work_queue_do_work(thread_info->queue, thread_info->logical_thread_index);
-	}
-}
-
-static void init_thread_pool() {
-	init_thread_memory(0, &global_system_info);
-
-    int total_thread_count = global_system_info.suggested_total_thread_count;
-	global_worker_thread_count = total_thread_count - 1;
-	global_active_worker_thread_count = global_worker_thread_count;
-
-	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
-	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-
-	// NOTE: the main thread is considered thread 0.
-	for (i32 i = 1; i < total_thread_count; ++i) {
-		platform_thread_info_t thread_info = { .logical_thread_index = i, .queue = &global_work_queue};
-		thread_infos[i] = thread_info;
-
-		DWORD thread_id;
-		HANDLE thread_handle = CreateThread(NULL, 0, thread_proc, thread_infos + i, 0, &thread_id);
-		CloseHandle(thread_handle);
-
-	}
-
-
-}
-
-#else
-
-#include <pthread.h>
-
-static void* worker_thread(void* parameter) {
-    platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
-
-//	fprintf(stderr, "Hello from thread %d\n", thread_info->logical_thread_index);
-
-    init_thread_memory(thread_info->logical_thread_index, &global_system_info);
-	atomic_increment(&global_worker_thread_idle_count);
-
-	for (;;) {
-		if (thread_info->logical_thread_index > global_active_worker_thread_count) {
-			// Worker is disabled, do nothing
-			platform_sleep(100);
-			continue;
-		}
-        if (!work_queue_is_work_waiting_to_start(thread_info->queue)) {
-            //platform_sleep(1);
-            sem_wait(thread_info->queue->semaphore);
-            if (thread_info->logical_thread_index > global_active_worker_thread_count) {
-                // Worker is disabled, do nothing
-                platform_sleep(100);
-                continue;
-            }
-        }
-        work_queue_do_work(thread_info->queue, thread_info->logical_thread_index);
-    }
-
-    return 0;
-}
-
-static void init_thread_pool() {
-	init_thread_memory(0, &global_system_info);
-    global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
-    global_active_worker_thread_count = global_worker_thread_count;
-
-	global_work_queue = work_queue_create("/worksem", 1024); // Queue for newly submitted tasks
-	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-
-    pthread_t threads[MAX_THREAD_COUNT] = {};
-
-    // NOTE: the main thread is considered thread 0.
-    for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
-        thread_infos[i] = (platform_thread_info_t){ .logical_thread_index = i, .queue = &global_work_queue};
-
-        if (pthread_create(threads + i, NULL, &worker_thread, (void*)(&thread_infos[i])) != 0) {
-            fprintf(stderr, "Error creating thread\n");
-        }
-
-    }
-
-    test_multithreading_work_queue();
-
-
-}
-
-#endif
-
-#endif //LIBISYNTAX_NO_THREAD_POOL_IMPLEMENTATION
 
 // TODO(avirodov): int may be too small for some counters later on.
 // TODO(avirodov): should make a flag to turn counters off, they may have overhead.
@@ -234,11 +105,18 @@ isyntax_error_t libisyntax_init() {
     static bool libisyntax_global_init_complete = false;
 
     if (libisyntax_global_init_complete == false) {
-#ifndef LIBISYNTAX_NO_THREAD_POOL_IMPLEMENTATION
         // Actual initialization.
-        get_system_info(false);
+#ifndef LIBISYNTAX_THREAD_POOL_SHARED_WITH_SLIDESCAPE
+        global_system_info = get_system_info(false);
         DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
-        init_thread_pool();
+        init_thread_pool(&global_thread_pool,
+                         &global_active_worker_thread_count,
+                         1024,
+                         false,
+                         false);
+
+#else
+        init_multithreading_for_slidescape();
 #endif
         libisyntax_global_init_complete = true;
     }

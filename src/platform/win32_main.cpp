@@ -1614,12 +1614,12 @@ static DWORD WINAPI thread_proc(void* parameter) {
 	platform_thread_info_t* thread_info = (platform_thread_info_t*) parameter;
 	i64 init_start_time = get_clock();
 
-	local_logical_thread_index = thread_info->logical_thread_index;
+	threadlocal_logical_thread_index = thread_info->logical_thread_index;
 
 	atomic_increment(&global_worker_thread_idle_count);
 
 	init_thread_memory(&global_system_info);
-	thread_memory_t* thread_memory = local_thread_memory;
+	thread_memory_t* thread_memory = threadlocal_thread_memory;
 
 	for (i32 i = 0; i < MAX_ASYNC_IO_EVENTS; ++i) {
 		thread_memory->async_io_events[i] = CreateEventA(NULL, TRUE, FALSE, NULL);
@@ -1700,7 +1700,6 @@ void win32_init_multithreading() {
 	// Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
 	global_high_priority_work_queue = work_queue_create_with_existing_semaphore(global_work_queue.semaphore, 1024);
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-	global_export_completion_queue = work_queue_create("/exportcompletionsem", 1024); // Message queue for export task
 
 	// NOTE: the main thread is considered thread 0.
 	for (i32 i = 1; i < global_system_info.suggested_total_thread_count; ++i) {
@@ -2017,10 +2016,10 @@ int main() {
 	win32_init_main_window(app_state);
 
 	// Load OpenSlide in the background, we might not need it immediately.
-	work_queue_submit_task(&global_work_queue, load_openslide_task, NULL, 0);
+	work_queue_submit_task(global_work_queue, load_openslide_task, NULL, 0);
 
 	// Load DICOM support in the background
-	work_queue_submit_task(&global_work_queue, load_dicom_task, NULL, 0);
+	work_queue_submit_task(global_work_queue, load_dicom_task, NULL, 0);
 
 	win32_init_input();
 
