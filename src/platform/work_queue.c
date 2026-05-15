@@ -238,7 +238,7 @@ bool work_queue_is_work_in_progress(work_queue_t* queue) {
 	// If we are checking the global work queue while running a task from that same queue, then we only want to know
 	// whether any OTHER tasks are running. So in that case we need to subtract the call depth.
 	// TODO: can we rely on thread-local variables for call stack depth instead of this jank?
-	i32 call_depth = ((queue == global_work_queue) || (queue == global_high_priority_work_queue)) ? work_queue_call_depth : 0;
+	i32 call_depth = ((queue == global_thread_pool.queue) || (queue == global_thread_pool.high_priority_queue)) ? work_queue_call_depth : 0;
 	bool result = (queue->completion_goal - call_depth > queue->completion_count);
 	return result;
 }
@@ -268,21 +268,21 @@ void echo_task(int logical_thread_index, void* userdata) {
 
 void test_multithreading_work_queue() {
 #ifdef TEST_THREAD_QUEUE
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"NULL entry", 11);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 0", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 1", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 2", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 3", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 4", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 5", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 6", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 7", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 8", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 9", 9);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 10", 10);
-	work_queue_submit_task(global_work_queue, echo_task, (void*)"string 11", 10);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"NULL entry", 11);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 0", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 1", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 2", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 3", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 4", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 5", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 6", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 7", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 8", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 9", 9);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 10", 10);
+	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 11", 10);
 
-	while (work_queue_is_work_in_progress(global_work_queue) || work_queue_is_work_in_progress((&global_completion_queue))) {
+	while (thread_pool_is_work_in_progress(&global_thread_pool) || work_queue_is_work_in_progress((&global_completion_queue))) {
 		work_queue_do_work(&global_completion_queue, 0);
 	}
 #endif
@@ -333,12 +333,10 @@ static void* worker_thread(void* parameter) {
 			break;
 		}
 
-		if (pool->active_worker_thread_count != NULL) {
-			if (logical_thread_index > *pool->active_worker_thread_count) {
-				// Worker is disabled, do nothing
-				platform_sleep(100);
-				continue;
-			}
+		if (logical_thread_index > pool->active_worker_thread_count) {
+			// Worker is disabled, do nothing
+			platform_sleep(100);
+			continue;
 		}
 
 		if (!work_queue_do_work(pool->high_priority_queue, logical_thread_index)) {
@@ -358,7 +356,7 @@ static void* worker_thread(void* parameter) {
 
 static platform_mutex_t work_pool_global_mutex = PLATFORM_MUTEX_INITIALIZER;
 
-void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback) {
+void init_thread_pool(thread_pool_t* pool, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback) {
 	// Lock-unlock to ensure that all parallel calls to work_pool_init() wait for the actual initialization to complete.
 	platform_mutex_lock(&work_pool_global_mutex);
 
@@ -374,9 +372,6 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
 			init_thread_memory(&global_system_info); // init thread memory for thread 0 (= main thread)
 		}
 
-		global_worker_thread_count = global_system_info.suggested_total_thread_count - 1;
-		global_active_worker_thread_count = global_worker_thread_count;
-
 		pool->queue = malloc(sizeof(work_queue_t));
 		*pool->queue = work_queue_create("/worksem", work_queue_max_entry_count);
 		if (need_high_priority_queue) {
@@ -384,7 +379,7 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
 			*pool->high_priority_queue = work_queue_create_with_existing_semaphore(pool->queue->semaphore, work_queue_max_entry_count);
 		}
 		pool->total_worker_thread_count = global_system_info.suggested_total_thread_count;
-		pool->active_worker_thread_count = active_worker_count;
+		pool->active_worker_thread_count = pool->total_worker_thread_count - 1;
 		pool->need_init_async_io_events = need_init_async_io_events;
 		pool->thread_init_callback = thread_init_callback;
 		pool->active = 1;
@@ -419,13 +414,8 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
 		pool->initialized = true;
 	}
 
-	// TODO: can we remove/refactor these globals?
-	global_work_queue = pool->queue;
-	global_high_priority_work_queue = pool->high_priority_queue;
-
 	platform_mutex_unlock(&work_pool_global_mutex);
 
-	// TODO: add multithreading test to test suite
 	test_multithreading_work_queue();
 
 }
@@ -435,6 +425,55 @@ bool thread_pool_submit_task(thread_pool_t* pool, work_queue_callback_t callback
 		return false;
 	}
 	return work_queue_submit_task(pool->queue, callback, userdata, userdata_size);
+}
+
+work_queue_t* thread_pool_get_queue(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return NULL;
+	}
+	return pool->queue;
+}
+
+work_queue_t* thread_pool_get_high_priority_queue(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return NULL;
+	}
+	return pool->high_priority_queue;
+}
+
+i32 thread_pool_get_task_count(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return 0;
+	}
+	return work_queue_get_entry_count(pool->queue);
+}
+
+i32 thread_pool_get_task_capacity(thread_pool_t* pool) {
+	if (!pool || !pool->initialized || !pool->queue) {
+		return 0;
+	}
+	return pool->queue->entry_count - 1;
+}
+
+i32 thread_pool_get_worker_thread_count(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return 0;
+	}
+	return pool->total_worker_thread_count - 1;
+}
+
+i32 thread_pool_get_active_worker_thread_count(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return 0;
+	}
+	return pool->active_worker_thread_count;
+}
+
+i32* thread_pool_get_active_worker_thread_count_ptr(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return NULL;
+	}
+	return &pool->active_worker_thread_count;
 }
 
 bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
@@ -511,13 +550,6 @@ void thread_pool_destroy(thread_pool_t* pool) {
 		pool->thread_handles = NULL;
 	}
 
-	if (global_work_queue == pool->queue) {
-		global_work_queue = NULL;
-	}
-	if (global_high_priority_work_queue == pool->high_priority_queue) {
-		global_high_priority_work_queue = NULL;
-	}
-
 	work_queue_destroy(pool->high_priority_queue);
 	free(pool->high_priority_queue);
 	work_queue_destroy(pool->queue);
@@ -541,6 +573,6 @@ void libisyntax_init_thread_pool_for_slidescape(void) {
 	thread_pool_thread_init_callback_t* thread_init_callback = NULL;
 #endif
 
-    init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, thread_init_callback);
+    init_thread_pool(&global_thread_pool, 1024, true, true, thread_init_callback);
 }
 #endif

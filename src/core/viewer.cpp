@@ -212,8 +212,8 @@ void autosave(app_state_t* app_state, bool force_ignore_delay, bool async) {
 }
 
 i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
-	i32 tasks_waiting = work_queue_get_entry_count(global_work_queue);
-	i32 max_acceptable_tasks = global_work_queue->entry_count-1;
+	i32 tasks_waiting = thread_pool_get_task_count(&global_thread_pool);
+	i32 max_acceptable_tasks = thread_pool_get_task_capacity(&global_thread_pool);
 	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
 	if (tiles_to_load > usable_slots) {
 		console_print_error("request_tiles(): requested %d tiles, but only %d tasks fit into the work queue", tiles_to_load, usable_slots);

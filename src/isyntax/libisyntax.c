@@ -84,7 +84,6 @@ isyntax_error_t libisyntax_init() {
         global_system_info = get_system_info(false);
         DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
         init_thread_pool(&global_thread_pool,
-                         &global_active_worker_thread_count,
                          1024,
                          false,
                          false,

@@ -740,7 +740,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 	} else if (file->type == VIEWER_FILE_TYPE_ISYNTAX) {
 		// Try to open as iSyntax
 		isyntax_t isyntax = {};
-		isyntax_set_work_queue(&isyntax, global_work_queue);
+		isyntax_set_work_queue(&isyntax, thread_pool_get_queue(&global_thread_pool));
 		if (isyntax_open(&isyntax, filename, LIBISYNTAX_OPEN_FLAG_INIT_ALLOCATORS)) {
 			init_image_from_isyntax(image, &isyntax, is_overlay);
 		}
@@ -762,7 +762,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
         }
     } else if (debug_use_native_mrxs_backend && file->type == VIEWER_FILE_TYPE_MRXS) {
 		mrxs_t mrxs = {0};
-		mrxs_set_work_queue(&mrxs, global_work_queue);
+		mrxs_set_work_queue(&mrxs, thread_pool_get_queue(&global_thread_pool));
 		bool opened_successfully = false;
         if (file->is_regular_file) {
 			// Strip .mrxs extension to get the name of the corresponding slide folder

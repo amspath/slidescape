@@ -358,7 +358,7 @@ int main(int argc, const char** argv)
 
 	// Initialize multithreading stuff
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-	init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, NULL);
+	init_thread_pool(&global_thread_pool, 1024, true, true, NULL);
 
     if (app_command.headless) {
         is_openslide_available = init_openslide();

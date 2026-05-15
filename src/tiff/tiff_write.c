@@ -362,11 +362,12 @@ static void construct_export_tile_task_func(i32 logical_thread_index, void* user
 
 static i32 image_draft_choose_parallel_frontier_level(image_draft_t* draft) {
     i32 top_level_index = draft->level_count - 1;
-    if (top_level_index < 1 || global_active_worker_thread_count <= 1) {
+    i32 active_worker_thread_count = thread_pool_get_active_worker_thread_count(&global_thread_pool);
+    if (top_level_index < 1 || active_worker_thread_count <= 1) {
         return -1;
     }
 
-    i32 desired_task_count = ATLEAST(4, global_active_worker_thread_count * 4);
+    i32 desired_task_count = ATLEAST(4, active_worker_thread_count * 4);
     for (i32 level = top_level_index; level >= 1; --level) {
         image_draft_level_t* draft_level = draft->levels + level;
         if (draft_level->tile_count >= desired_task_count) {
@@ -412,7 +413,7 @@ static void construct_tiles_parallel_from_frontier(image_draft_t* draft, i32 fro
     image_draft_level_t* frontier = draft->levels + frontier_level;
     volatile i32 next_tile_index = 0;
     volatile i32 started_count = 0;
-    volatile i32 participants_goal = ATLEAST(1, ATMOST(frontier->tile_count, global_active_worker_thread_count));
+    volatile i32 participants_goal = ATLEAST(1, ATMOST(frontier->tile_count, thread_pool_get_active_worker_thread_count(&global_thread_pool)));
     volatile i32 finished_count = 0;
 
     construct_export_tile_task_t task = {

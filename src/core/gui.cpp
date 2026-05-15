@@ -1194,7 +1194,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 		if (ImGui::Begin("Debugging", &show_debugging_window)) {
 //			ImGui::TextUnformatted("Worker threads");
-			ImGui::SliderInt("Worker threads", &global_active_worker_thread_count, 1, global_worker_thread_count);
+			ImGui::SliderInt("Worker threads", thread_pool_get_active_worker_thread_count_ptr(&global_thread_pool), 1, thread_pool_get_worker_thread_count(&global_thread_pool));
 			ImGui::SliderInt("Min level display", &global_lowest_scale_to_render, 0, 16);
 			ImGui::SliderInt("Max level display", &global_highest_scale_to_render, 0, 16);
 			ImGui::SliderFloat("Rotation", &app_state->scene.rotation, -1.0f * IM_PI, 1.0f * IM_PI);

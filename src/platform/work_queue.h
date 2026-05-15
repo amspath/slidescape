@@ -75,7 +75,7 @@ typedef struct thread_pool_t {
 	i32 volatile active; // setting to 0 flags the thread pool for destruction
 	i32 volatile refcount;
 	i32 total_worker_thread_count;
-	i32* active_worker_thread_count; // TODO: fix reliance on global variable
+	i32 active_worker_thread_count;
 	bool need_init_async_io_events;
 	thread_pool_thread_init_callback_t* thread_init_callback;
 #if WINDOWS
@@ -99,7 +99,14 @@ bool work_queue_is_work_in_progress(work_queue_t* queue);
 bool work_queue_is_work_waiting_to_start(work_queue_t* queue);
 void dummy_work_queue_callback(int logical_thread_index, void* userdata);
 void test_multithreading_work_queue();
-void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback);
+void init_thread_pool(thread_pool_t* pool, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback);
+work_queue_t* thread_pool_get_queue(thread_pool_t* pool);
+work_queue_t* thread_pool_get_high_priority_queue(thread_pool_t* pool);
+i32 thread_pool_get_task_count(thread_pool_t* pool);
+i32 thread_pool_get_task_capacity(thread_pool_t* pool);
+i32 thread_pool_get_worker_thread_count(thread_pool_t* pool);
+i32 thread_pool_get_active_worker_thread_count(thread_pool_t* pool);
+i32* thread_pool_get_active_worker_thread_count_ptr(thread_pool_t* pool);
 bool thread_pool_submit_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool thread_pool_do_work(thread_pool_t* pool, int logical_thread_index);
@@ -122,12 +129,8 @@ void libisyntax_init_thread_pool_for_slidescape(void);
 #endif
 
 extern THREAD_LOCAL i32 work_queue_call_depth;
-extern work_queue_t* global_work_queue;               // Queue to submit most tasks to
-extern work_queue_t* global_high_priority_work_queue; // Queue for tasks that take priority over normal tasks (e.g. because they are short tasks submitted on the main thread)
 extern i32 global_worker_thread_idle_count; // TODO: move into thread_pool_t?
 extern thread_pool_t global_thread_pool;
-extern i32 global_worker_thread_count;
-extern i32 global_active_worker_thread_count; // TODO: move into thread_pool_t?
 extern work_queue_t global_completion_queue;
 
 

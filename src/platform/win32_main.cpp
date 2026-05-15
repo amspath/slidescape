@@ -1677,7 +1677,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 //	console_print("Thread %d reporting for duty (init took %.3f seconds)\n", thread_info->logical_thread_index, get_seconds_elapsed(init_start_time, get_clock()));
 
 	for (;;) {
-		if (thread_info->logical_thread_index > global_active_worker_thread_count) {
+		if (thread_info->logical_thread_index > thread_pool_get_active_worker_thread_count(&global_thread_pool)) {
 			// Worker is disabled, do nothing
 			Sleep(100);
 			continue;
@@ -1695,7 +1695,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 
 void win32_init_multithreading() {
 	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
-	init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, NULL);
+	init_thread_pool(&global_thread_pool, 1024, true, true, NULL);
 }
 
 void win32_init_main_window(app_state_t* app_state) {
@@ -1997,10 +1997,10 @@ int main() {
 	win32_init_main_window(app_state);
 
 	// Load OpenSlide in the background, we might not need it immediately.
-	work_queue_submit_task(global_work_queue, load_openslide_task, NULL, 0);
+	thread_pool_submit_task(&global_thread_pool, load_openslide_task, NULL, 0);
 
 	// Load DICOM support in the background
-	work_queue_submit_task(global_work_queue, load_dicom_task, NULL, 0);
+	thread_pool_submit_task(&global_thread_pool, load_dicom_task, NULL, 0);
 
 	win32_init_input();
 

@@ -52,18 +52,12 @@ TEST_CASE("work queue helpers tolerate absent optional queue") {
 TEST_CASE("thread pool runs work and can be destroyed") {
 	ensure_test_thread_memory();
 
-	work_queue_t* old_global_work_queue = global_work_queue;
-	work_queue_t* old_global_high_priority_work_queue = global_high_priority_work_queue;
-	i32 old_global_worker_thread_count = global_worker_thread_count;
-	i32 old_global_active_worker_thread_count = global_active_worker_thread_count;
-
 	system_info_t old_system_info = global_system_info;
 	global_system_info = get_system_info(false);
 	global_system_info.suggested_total_thread_count = 3;
 
 	thread_pool_t pool = {};
-	i32 active_worker_count = 2;
-	init_thread_pool(&pool, &active_worker_count, 32, true, false, NULL);
+	init_thread_pool(&pool, 32, true, false, NULL);
 
 	i32 volatile counter = 0;
 	test_counter_task_t task = {&counter};
@@ -80,20 +74,11 @@ TEST_CASE("thread pool runs work and can be destroyed") {
 	CHECK(pool.queue == NULL);
 	CHECK(pool.high_priority_queue == NULL);
 
-	global_work_queue = old_global_work_queue;
-	global_high_priority_work_queue = old_global_high_priority_work_queue;
-	global_worker_thread_count = old_global_worker_thread_count;
-	global_active_worker_thread_count = old_global_active_worker_thread_count;
 	global_system_info = old_system_info;
 }
 
 TEST_CASE("thread pool without high priority queue can be reused after destroy") {
 	ensure_test_thread_memory();
-
-	work_queue_t* old_global_work_queue = global_work_queue;
-	work_queue_t* old_global_high_priority_work_queue = global_high_priority_work_queue;
-	i32 old_global_worker_thread_count = global_worker_thread_count;
-	i32 old_global_active_worker_thread_count = global_active_worker_thread_count;
 
 	system_info_t old_system_info = global_system_info;
 	global_system_info = get_system_info(false);
@@ -101,8 +86,7 @@ TEST_CASE("thread pool without high priority queue can be reused after destroy")
 
 	for (i32 iteration = 0; iteration < 2; ++iteration) {
 		thread_pool_t pool = {};
-		i32 active_worker_count = 1;
-		init_thread_pool(&pool, &active_worker_count, 8, false, false, NULL);
+		init_thread_pool(&pool, 8, false, false, NULL);
 		REQUIRE(pool.initialized);
 		CHECK(pool.high_priority_queue == NULL);
 
@@ -117,28 +101,18 @@ TEST_CASE("thread pool without high priority queue can be reused after destroy")
 		CHECK(pool.initialized == 0);
 	}
 
-	global_work_queue = old_global_work_queue;
-	global_high_priority_work_queue = old_global_high_priority_work_queue;
-	global_worker_thread_count = old_global_worker_thread_count;
-	global_active_worker_thread_count = old_global_active_worker_thread_count;
 	global_system_info = old_system_info;
 }
 
 TEST_CASE("thread pool helpers submit normal and high priority work") {
 	ensure_test_thread_memory();
 
-	work_queue_t* old_global_work_queue = global_work_queue;
-	work_queue_t* old_global_high_priority_work_queue = global_high_priority_work_queue;
-	i32 old_global_worker_thread_count = global_worker_thread_count;
-	i32 old_global_active_worker_thread_count = global_active_worker_thread_count;
-
 	system_info_t old_system_info = global_system_info;
 	global_system_info = get_system_info(false);
 	global_system_info.suggested_total_thread_count = 2;
 
 	thread_pool_t pool = {};
-	i32 active_worker_count = 1;
-	init_thread_pool(&pool, &active_worker_count, 8, true, false, NULL);
+	init_thread_pool(&pool, 8, true, false, NULL);
 
 	i32 volatile counter = 0;
 	test_counter_task_t task = {&counter};
@@ -147,7 +121,9 @@ TEST_CASE("thread pool helpers submit normal and high priority work") {
 	CHECK(thread_pool_is_work_waiting_to_start(&pool));
 
 	while (thread_pool_is_work_in_progress(&pool)) {
-		CHECK(thread_pool_do_work(&pool, 0));
+		if (!thread_pool_do_work(&pool, 0)) {
+			platform_sleep(1);
+		}
 	}
 	CHECK(counter == 2);
 	CHECK(pool.queue->completion_count == 1);
@@ -155,9 +131,5 @@ TEST_CASE("thread pool helpers submit normal and high priority work") {
 
 	thread_pool_destroy(&pool);
 
-	global_work_queue = old_global_work_queue;
-	global_high_priority_work_queue = old_global_high_priority_work_queue;
-	global_worker_thread_count = old_global_worker_thread_count;
-	global_active_worker_thread_count = old_global_active_worker_thread_count;
 	global_system_info = old_system_info;
 }
