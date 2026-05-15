@@ -345,31 +345,16 @@ static void* worker_thread(void* parameter) {
 }
 
 
-static benaphore_t* work_pool_get_global_mutex() {
-    static benaphore_t work_pool_global_mutex;
-    static i32 volatile init_status = 0; // 0 - not initialized, 1 - being initialized, 2 - done initializing.
+static benaphore_t work_pool_global_mutex;
+static platform_once_t work_pool_global_mutex_once = PLATFORM_ONCE_INIT;
 
-    // Quick path for already initialized scenario.
-    read_barrier;
-    if (init_status == 2) {
-        return &work_pool_global_mutex;
-    }
+static void work_pool_init_global_mutex(void) {
+	work_pool_global_mutex = benaphore_create();
+}
 
-    // We need to establish a global mutex, and this is nontrivial as mutex primitives available don't allow static
-    // initialization (more discussion in https://github.com/amspath/libisyntax/issues/16).
-    if (atomic_compare_exchange(&init_status, 1, 0)) {
-        // We get to do the initialization
-        work_pool_global_mutex = benaphore_create();
-        //BGCTR_COUNT(dbgctr_init_global_mutexes_created);
-        init_status = 2;
-        write_barrier;
-    } else {
-        // Wait until the other thread finishes initialization. Since we don't have a mutex, spinlock is
-        // the best we can do here. It should be a very short critical section.
-        do { read_barrier; } while(init_status < 2);
-    }
-
-    return &work_pool_global_mutex;
+static benaphore_t* work_pool_get_global_mutex(void) {
+	platform_call_once(&work_pool_global_mutex_once, work_pool_init_global_mutex);
+	return &work_pool_global_mutex;
 }
 
 void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback) {
@@ -453,4 +438,3 @@ void init_multithreading_for_slidescape(void) {
 
     init_thread_pool(&global_thread_pool, &global_active_worker_thread_count, 1024, true, true, thread_init_callback);
 }
-

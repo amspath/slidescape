@@ -72,30 +72,16 @@
 i32 volatile dbgctr_init_thread_pool_counter = 0;
 i32 volatile dbgctr_init_global_mutexes_created = 0;
 
-static benaphore_t* libisyntax_get_global_mutex() {
-    static benaphore_t libisyntax_global_mutex;
-    static i32 volatile init_status = 0; // 0 - not initialized, 1 - being initialized, 2 - done initializing.
+static benaphore_t libisyntax_global_mutex;
+static platform_once_t libisyntax_global_mutex_once = PLATFORM_ONCE_INIT;
 
-    // Quick path for already initialized scenario.
-    read_barrier;
-    if (init_status == 2) {
-        return &libisyntax_global_mutex;
-    }
+static void libisyntax_init_global_mutex(void) {
+    libisyntax_global_mutex = benaphore_create();
+    DBGCTR_COUNT(dbgctr_init_global_mutexes_created);
+}
 
-    // We need to establish a global mutex, and this is nontrivial as mutex primitives available don't allow static
-    // initialization (more discussion in https://github.com/amspath/libisyntax/issues/16).
-    if (atomic_compare_exchange(&init_status, 1, 0)) {
-        // We get to do the initialization
-        libisyntax_global_mutex = benaphore_create();
-        DBGCTR_COUNT(dbgctr_init_global_mutexes_created);
-        init_status = 2;
-        write_barrier;
-    } else {
-        // Wait until the other thread finishes initialization. Since we don't have a mutex, spinlock is
-        // the best we can do here. It should be a very short critical section.
-        do { read_barrier; } while(init_status < 2);
-    }
-
+static benaphore_t* libisyntax_get_global_mutex(void) {
+    platform_call_once(&libisyntax_global_mutex_once, libisyntax_init_global_mutex);
     return &libisyntax_global_mutex;
 }
 
