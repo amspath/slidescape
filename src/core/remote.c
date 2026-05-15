@@ -545,6 +545,10 @@ bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno,
 			unload_all_images(app_state);
 			image_t* image = (image_t*)calloc(1, sizeof(image_t));
 			bool is_valid = init_image_from_tiff(image, tiff, false, NULL);
+			if (image->is_valid) {
+				benaphore_init(&image->lock);
+				image->lock_initialized = true;
+			}
 			add_image(app_state, image, true, false);
 			success = is_valid;
 		} else {
@@ -709,6 +713,4 @@ void http_response_destroy(http_response_t* response) {
     memrw_destroy(&response->buffer);
     free(response);
 }
-
-
 

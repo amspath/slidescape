@@ -349,7 +349,6 @@ int main(int argc, const char** argv)
     }
     bool verbose_console = true;//!app_command.headless;
 
-	console_printer_benaphore = benaphore_create();
     if (verbose_console) console_print("Starting up...\n");
     global_system_info = get_system_info(verbose_console);
 

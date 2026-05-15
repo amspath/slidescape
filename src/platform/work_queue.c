@@ -345,21 +345,11 @@ static void* worker_thread(void* parameter) {
 }
 
 
-static benaphore_t work_pool_global_mutex;
-static platform_once_t work_pool_global_mutex_once = PLATFORM_ONCE_INIT;
-
-static void work_pool_init_global_mutex(void) {
-	work_pool_global_mutex = benaphore_create();
-}
-
-static benaphore_t* work_pool_get_global_mutex(void) {
-	platform_call_once(&work_pool_global_mutex_once, work_pool_init_global_mutex);
-	return &work_pool_global_mutex;
-}
+static benaphore_t work_pool_global_mutex = BENAPHORE_INITIALIZER;
 
 void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback) {
     // Lock-unlock to ensure that all parallel calls to work_pool_init() wait for the actual initialization to complete.
-    benaphore_lock(work_pool_get_global_mutex());
+    benaphore_lock(&work_pool_global_mutex);
 
     if (!pool->initialized) {
         // Actual initialization.
@@ -414,7 +404,7 @@ void init_thread_pool(thread_pool_t* pool, i32* active_worker_count, i32 work_qu
     global_work_queue = pool->queue;
     global_high_priority_work_queue = pool->high_priority_queue;
 
-    benaphore_unlock(work_pool_get_global_mutex());
+    benaphore_unlock(&work_pool_global_mutex);
 
 	// TODO: add multithreading test to test suite
     test_multithreading_work_queue();

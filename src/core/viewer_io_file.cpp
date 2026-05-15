@@ -823,7 +823,8 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 	}
 
 	if (image->is_valid) {
-		image->lock = benaphore_create();
+		benaphore_init(&image->lock);
+		image->lock_initialized = true;
 	}
 
 	return image;

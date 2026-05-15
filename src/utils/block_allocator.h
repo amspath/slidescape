@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -69,7 +69,7 @@ typedef struct block_allocator_t {
 	bool is_valid;
 } block_allocator_t;
 
-block_allocator_t block_allocator_create(size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size);
+void block_allocator_init(block_allocator_t* allocator, size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size);
 void block_allocator_destroy(block_allocator_t* allocator);
 void* block_alloc(block_allocator_t* allocator);
 void block_free(block_allocator_t* allocator, void* ptr_to_free);

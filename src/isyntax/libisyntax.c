@@ -70,24 +70,12 @@
 // TODO(avirodov): debug api?
 #define DBGCTR_COUNT(_counter) atomic_increment(&_counter)
 i32 volatile dbgctr_init_thread_pool_counter = 0;
-i32 volatile dbgctr_init_global_mutexes_created = 0;
 
-static benaphore_t libisyntax_global_mutex;
-static platform_once_t libisyntax_global_mutex_once = PLATFORM_ONCE_INIT;
-
-static void libisyntax_init_global_mutex(void) {
-    libisyntax_global_mutex = benaphore_create();
-    DBGCTR_COUNT(dbgctr_init_global_mutexes_created);
-}
-
-static benaphore_t* libisyntax_get_global_mutex(void) {
-    platform_call_once(&libisyntax_global_mutex_once, libisyntax_init_global_mutex);
-    return &libisyntax_global_mutex;
-}
+static benaphore_t libisyntax_global_mutex = BENAPHORE_INITIALIZER;
 
 isyntax_error_t libisyntax_init() {
     // Lock-unlock to ensure that all parallel calls to libisyntax_init() wait for the actual initialization to complete.
-    benaphore_lock(libisyntax_get_global_mutex());
+    benaphore_lock(&libisyntax_global_mutex);
     static bool libisyntax_global_init_complete = false;
 
     if (libisyntax_global_init_complete == false) {
@@ -107,7 +95,7 @@ isyntax_error_t libisyntax_init() {
 #endif
         libisyntax_global_init_complete = true;
     }
-    benaphore_unlock(libisyntax_get_global_mutex());
+    benaphore_unlock(&libisyntax_global_mutex);
     return LIBISYNTAX_OK;
 }
 
@@ -295,7 +283,7 @@ isyntax_error_t libisyntax_cache_create(const char* debug_name_or_null, int32_t 
     memset(cache_ptr, 0, sizeof(*cache_ptr));
     tile_list_init(&cache_ptr->cache_list, debug_name_or_null);
     cache_ptr->target_cache_size = cache_size;
-    cache_ptr->mutex = benaphore_create();
+    benaphore_init(&cache_ptr->mutex);
 
     // Note: rest of initialization is deferred to the first injection, as that is where we will know the block size.
 
@@ -318,8 +306,8 @@ isyntax_error_t libisyntax_cache_inject(isyntax_cache_t* isyntax_cache, isyntax_
     size_t h_coeff_block_allocator_capacity_in_blocks = ll_coeff_block_allocator_capacity_in_blocks * 3;
     isyntax_cache->ll_coeff_block_allocator = malloc(sizeof(block_allocator_t));
     isyntax_cache->h_coeff_block_allocator = malloc(sizeof(block_allocator_t));
-    *isyntax_cache->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
-    *isyntax_cache->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+    block_allocator_init(isyntax_cache->ll_coeff_block_allocator, ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+    block_allocator_init(isyntax_cache->h_coeff_block_allocator, h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
     isyntax_cache->is_block_allocator_owned = true;
 
     if (isyntax_cache->allocator_block_width != isyntax->block_width ||

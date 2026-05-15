@@ -1980,7 +1980,6 @@ int main() {
 	}
     bool verbose_console = !app_command.headless;
 
-    console_printer_benaphore = benaphore_create();
     if (verbose_console) console_print("Starting up...\n");
 
 	// Don't open multiple instances of the program when opening a file -> switch to the existing instance

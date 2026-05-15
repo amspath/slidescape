@@ -3539,8 +3539,8 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 			if (flags & LIBISYNTAX_OPEN_FLAG_INIT_ALLOCATORS) {
 				isyntax->ll_coeff_block_allocator = malloc(sizeof(block_allocator_t));
 				isyntax->h_coeff_block_allocator = malloc(sizeof(block_allocator_t));
-				*isyntax->ll_coeff_block_allocator = block_allocator_create(ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
-				*isyntax->h_coeff_block_allocator = block_allocator_create(h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+				block_allocator_init(isyntax->ll_coeff_block_allocator, ll_coeff_block_size, ll_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
+				block_allocator_init(isyntax->h_coeff_block_allocator, h_coeff_block_size, h_coeff_block_allocator_capacity_in_blocks, MEGABYTES(256));
 				isyntax->is_block_allocator_owned = true;
 			} else {
 				// The caller must inject the allocators after return of isyntax_open().
@@ -3674,5 +3674,4 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	}
 	file_handle_close(isyntax->file_handle);
 }
-
 

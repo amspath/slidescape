@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,50 +18,37 @@
 
 #include "benaphore.h"
 
-#include "intrinsics.h"
 
-// Based on:
-// https://preshing.com/20120226/roll-your-own-lightweight-mutex/
-
-
-benaphore_t benaphore_create(void) {
-	benaphore_t result = {0};
+void benaphore_init(benaphore_t* benaphore) {
 #ifdef _WIN32
-	result.semaphore = CreateSemaphore(NULL, 0, 1, NULL);
+	InitializeSRWLock(&benaphore->lock);
 #else
-	static i32 counter = 1;
-	char semaphore_name[64];
-	i32 c = atomic_increment(&counter);
-	snprintf(semaphore_name, sizeof(semaphore_name)-1, "/benaphore%d", c);
-	result.semaphore = sem_open(semaphore_name, O_CREAT, 0644, 0);
+	if (pthread_mutex_init(&benaphore->lock, NULL) != 0) {
+		fatal_error("benaphore_init(): failed to initialize pthread mutex");
+	}
 #endif
-	return result;
 }
 
 void benaphore_destroy(benaphore_t* benaphore) {
 #ifdef _WIN32
-	CloseHandle(benaphore->semaphore);
+	(void)benaphore;
 #else
-	sem_close(benaphore->semaphore);
+	pthread_mutex_destroy(&benaphore->lock);
 #endif
 }
 
 void benaphore_lock(benaphore_t* benaphore) {
-	if (atomic_increment(&benaphore->counter) > 1) {
 #ifdef _WIN32
-		WaitForSingleObject(benaphore->semaphore, INFINITE);
+	AcquireSRWLockExclusive(&benaphore->lock);
 #else
-		sem_wait(benaphore->semaphore);
+	pthread_mutex_lock(&benaphore->lock);
 #endif
-	}
 }
 
 void benaphore_unlock(benaphore_t* benaphore) {
-	if (atomic_decrement(&benaphore->counter) > 0) {
 #ifdef _WIN32
-		ReleaseSemaphore(benaphore->semaphore, 1, NULL);
+	ReleaseSRWLockExclusive(&benaphore->lock);
 #else
-		sem_post(benaphore->semaphore);
+	pthread_mutex_unlock(&benaphore->lock);
 #endif
-	}
 }

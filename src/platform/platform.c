@@ -38,30 +38,6 @@
 #endif
 
 
-#if WINDOWS
-static BOOL CALLBACK platform_call_once_windows_callback(PINIT_ONCE once, PVOID parameter, PVOID* context) {
-	(void)once;
-	(void)context;
-	platform_once_callback_t* callback = (platform_once_callback_t*)parameter;
-	callback();
-	return TRUE;
-}
-#endif
-
-void platform_call_once(platform_once_t* once, platform_once_callback_t* callback) {
-#if WINDOWS
-	if (!InitOnceExecuteOnce(once, platform_call_once_windows_callback, callback, NULL)) {
-		fatal_error("InitOnceExecuteOnce failed");
-	}
-#else
-	int rc = pthread_once(once, callback);
-	if (rc != 0) {
-		fatal_error("pthread_once failed");
-	}
-#endif
-}
-
-
 mem_t* platform_allocate_mem_buffer(size_t capacity) {
 	size_t allocation_size = sizeof(mem_t) + capacity + 1;
 	mem_t* result = (mem_t*) malloc(allocation_size);

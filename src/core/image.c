@@ -1420,10 +1420,10 @@ void image_destroy(image_t* image) {
 			memset(&image->label_image, 0, sizeof(image->label_image));
 		}
 
-		if (image->lock.semaphore) {
+		if (image->lock_initialized) {
 			benaphore_destroy(&image->lock);
+			image->lock_initialized = false;
 		}
 
 	}
 }
-

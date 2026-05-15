@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,20 +28,25 @@ extern "C" {
 #ifdef _WIN32
 #include "windows.h"
 #else
-#include <semaphore.h>
+#include <pthread.h>
 #endif
 
 
 typedef struct benaphore_t {
 #ifdef _WIN32
-	HANDLE semaphore;
+	SRWLOCK lock;
 #else
-	sem_t* semaphore;
+	pthread_mutex_t lock;
 #endif
-	volatile i32 counter;
 } benaphore_t;
 
-benaphore_t benaphore_create(void);
+#ifdef _WIN32
+#define BENAPHORE_INITIALIZER { SRWLOCK_INIT }
+#else
+#define BENAPHORE_INITIALIZER { PTHREAD_MUTEX_INITIALIZER }
+#endif
+
+void benaphore_init(benaphore_t* benaphore);
 void benaphore_destroy(benaphore_t* benaphore);
 void benaphore_lock(benaphore_t* benaphore);
 void benaphore_unlock(benaphore_t* benaphore);

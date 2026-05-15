@@ -1,7 +1,7 @@
 /*
   BSD 2-Clause License
 
-  Copyright (c) 2019-2025, Pieter Valkema
+  Copyright (c) 2019-2026, Pieter Valkema
 
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
@@ -46,23 +46,22 @@ void* block_allocator_proc(allocator_t* this_allocator, size_t size_to_allocate,
 }
 */
 
-block_allocator_t block_allocator_create(size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size) {
+void block_allocator_init(block_allocator_t* allocator, size_t block_size, size_t max_capacity_in_blocks, size_t chunk_size) {
 	u64 total_capacity = (u64)block_size * (u64)max_capacity_in_blocks;
 	u64 chunk_count = total_capacity / chunk_size;
 	u64 chunk_capacity_in_blocks = max_capacity_in_blocks / chunk_count;
-	block_allocator_t result = {0};
-	result.block_size = block_size;
-	result.chunk_capacity_in_blocks = chunk_capacity_in_blocks;
-	result.chunk_size = chunk_size;
+	memset(allocator, 0, sizeof(*allocator));
+	allocator->block_size = block_size;
+	allocator->chunk_capacity_in_blocks = chunk_capacity_in_blocks;
+	allocator->chunk_size = chunk_size;
 	ASSERT(chunk_count > 0);
-	result.chunk_count = chunk_count;
-	result.used_chunks = 1;
-	result.chunks = calloc(1, chunk_count * sizeof(block_allocator_chunk_t));
-	result.chunks[0].memory = (u8*)malloc(chunk_size);
-	result.free_list_storage = calloc(1, max_capacity_in_blocks * sizeof(block_allocator_item_t));
-	result.lock = benaphore_create();
-	result.is_valid = true;
-	return result;
+	allocator->chunk_count = chunk_count;
+	allocator->used_chunks = 1;
+	allocator->chunks = calloc(1, chunk_count * sizeof(block_allocator_chunk_t));
+	allocator->chunks[0].memory = (u8*)malloc(chunk_size);
+	allocator->free_list_storage = calloc(1, max_capacity_in_blocks * sizeof(block_allocator_item_t));
+	benaphore_init(&allocator->lock);
+	allocator->is_valid = true;
 }
 
 void block_allocator_destroy(block_allocator_t* allocator) {

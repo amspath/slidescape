@@ -729,7 +729,7 @@ bool export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image
     draft.supertile_height = (float)draft.tile_height / draft.base_downsample_factor_y;
     draft.supertile_width_read = ((i32)ceilf(draft.supertile_width) + 8);
     draft.supertile_height_read = ((i32)ceilf(draft.supertile_height) + 8);
-    draft.write_lock = benaphore_create();
+    benaphore_init(&draft.write_lock);
 
     for (i32 i = 0; i < 9; ++i) {
         image_draft_level_t* draft_level = draft.levels + i;

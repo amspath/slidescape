@@ -190,6 +190,7 @@ typedef struct image_t {
     i32 resource_id;
 	volatile i32 refcount;
 	benaphore_t lock;
+	bool lock_initialized;
 } image_t;
 
 

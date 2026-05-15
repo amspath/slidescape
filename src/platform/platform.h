@@ -39,7 +39,6 @@
 #if WINDOWS
 #include <windows.h>
 #else
-#include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>
 #endif
@@ -104,15 +103,6 @@ typedef struct system_info_t {
     bool running_from_app_bundle;
 } system_info_t;
 
-#if WINDOWS
-typedef INIT_ONCE platform_once_t;
-#define PLATFORM_ONCE_INIT INIT_ONCE_STATIC_INIT
-#else
-typedef pthread_once_t platform_once_t;
-#define PLATFORM_ONCE_INIT PTHREAD_ONCE_INIT
-#endif
-typedef void platform_once_callback_t(void);
-
 
 typedef struct directory_listing_t directory_listing_t;
 
@@ -166,7 +156,6 @@ bool is_directory(const char* path);
 
 system_info_t get_system_info(bool verbose);
 
-void platform_call_once(platform_once_t* once, platform_once_callback_t* callback);
 void init_thread_memory(system_info_t* system_info);
 void destroy_thread_memory(void);
 
