@@ -42,12 +42,32 @@ extern "C" {
 typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
 typedef struct thread_pool_t thread_pool_t;
 
+typedef struct task_group_t {
+	i32 volatile pending_count;
+	struct task_group_t* parent;
+} task_group_t;
+
 typedef struct work_queue_entry_t {
 	bool32 is_valid;
 	u32 task_identifier;
 	work_queue_callback_t* callback;
+	task_group_t* task_group;
 	u8 userdata[128];
 } work_queue_entry_t;
+
+typedef struct completion_event_t {
+	bool32 is_valid;
+	u32 task_identifier;
+	work_queue_callback_t* callback;
+	u8 userdata[128];
+} completion_event_t;
+
+typedef struct completion_queue_t {
+	i32 volatile next_entry_to_submit;
+	i32 volatile next_entry_to_read;
+	i32 entry_count;
+	completion_event_t* entries;
+} completion_queue_t;
 
 typedef struct work_queue_t {
 #if WINDOWS
@@ -93,13 +113,25 @@ work_queue_t work_queue_create_with_existing_semaphore(void* semaphore_handle, i
 void work_queue_destroy(work_queue_t* queue);
 i32 work_queue_get_entry_count(work_queue_t* queue);
 bool work_queue_submit_task(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
+bool work_queue_submit_task_to_group(work_queue_t* queue, task_group_t* task_group, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool work_queue_submit_notification(work_queue_t* queue, u32 task_identifier, void* userdata, size_t userdata_size);
 bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size);
+bool work_queue_submit_to_group(work_queue_t* queue, task_group_t* task_group, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size);
 work_queue_entry_t work_queue_get_next_entry(work_queue_t* queue);
 void work_queue_mark_entry_completed(work_queue_t* queue);
 bool work_queue_do_work(work_queue_t* queue);
 bool work_queue_is_work_in_progress(work_queue_t* queue);
 bool work_queue_is_work_waiting_to_start(work_queue_t* queue);
+completion_queue_t completion_queue_create(i32 entry_count);
+void completion_queue_destroy(completion_queue_t* queue);
+bool completion_queue_post(completion_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size);
+bool completion_queue_post_task(completion_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
+bool completion_queue_poll(completion_queue_t* queue, completion_event_t* out_event);
+bool completion_queue_has_events(completion_queue_t* queue);
+void task_group_begin(task_group_t* group);
+void task_group_end(task_group_t* group);
+bool task_group_is_complete(task_group_t* group);
+task_group_t task_group_create_child(task_group_t* parent);
 void dummy_work_queue_callback(int logical_thread_index, void* userdata);
 void test_multithreading_work_queue();
 void init_thread_pool(thread_pool_t* pool, i32 work_queue_max_entry_count, bool need_high_priority_queue, bool need_init_async_io_events, thread_pool_thread_init_callback_t thread_init_callback);
@@ -112,8 +144,11 @@ i32 thread_pool_get_active_worker_thread_count(thread_pool_t* pool);
 i32* thread_pool_get_active_worker_thread_count_ptr(thread_pool_t* pool);
 i32 thread_pool_get_idle_worker_thread_count(thread_pool_t* pool);
 bool thread_pool_submit_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size);
+bool thread_pool_submit_task_to_group(thread_pool_t* pool, task_group_t* task_group, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size);
+bool thread_pool_submit_high_priority_task_to_group(thread_pool_t* pool, task_group_t* task_group, work_queue_callback_t callback, void* userdata, size_t userdata_size);
 bool thread_pool_do_work(thread_pool_t* pool);
+void thread_pool_wait_for_group(thread_pool_t* pool, task_group_t* group);
 bool thread_pool_is_work_in_progress(thread_pool_t* pool);
 bool thread_pool_is_work_waiting_to_start(thread_pool_t* pool);
 void thread_pool_wait_for_completion(thread_pool_t* pool);
@@ -132,9 +167,8 @@ void libisyntax_init_thread_pool_for_slidescape(void);
 #undef extern
 #endif
 
-extern THREAD_LOCAL i32 work_queue_call_depth;
 extern thread_pool_t global_thread_pool;
-extern work_queue_t global_completion_queue;
+extern completion_queue_t global_completion_queue;
 
 
 #undef INIT

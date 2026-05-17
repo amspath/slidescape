@@ -113,7 +113,8 @@ typedef struct load_tile_task_t {
 	bool8 need_keep_in_cache;
 	bool8 invert_colors;
 	work_queue_callback_t* completion_callback;
-	work_queue_t* completion_queue;
+	completion_queue_t* completion_queue;
+	task_group_t* task_group;
     i32 refcount_to_decrement;
 } load_tile_task_t;
 

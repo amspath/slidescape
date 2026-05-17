@@ -1694,7 +1694,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 #endif
 
 void win32_init_multithreading() {
-	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
+	global_completion_queue = completion_queue_create(1024); // Message queue for completed tasks
 	init_thread_pool(&global_thread_pool, 1024, true, true, NULL);
 }
 

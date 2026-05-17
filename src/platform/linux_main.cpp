@@ -357,7 +357,7 @@ int main(int argc, const char** argv)
 	viewer_init_options(app_state);
 
 	// Initialize multithreading stuff
-	global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
+	global_completion_queue = completion_queue_create(1024); // Message queue for completed tasks
 	init_thread_pool(&global_thread_pool, 1024, true, true, NULL);
 
     if (app_command.headless) {

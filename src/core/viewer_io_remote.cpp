@@ -132,7 +132,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						if (task->completion_callback) {
 							task->completion_callback(logical_thread_index, &completion_task);
 						}
-						work_queue_submit_task(&global_completion_queue, task->completion_callback, &completion_task,
+						completion_queue_post_task(&global_completion_queue, task->completion_callback, &completion_task,
 						                       sizeof(completion_task));
 
 						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM, GL_BGRA);

@@ -113,8 +113,35 @@ i32 work_queue_get_entry_count(work_queue_t* queue) {
 	return count;
 }
 
+void task_group_begin(task_group_t* group) {
+	if (group) {
+		atomic_increment(&group->pending_count);
+		if (group->parent) {
+			task_group_begin(group->parent);
+		}
+	}
+}
+
+void task_group_end(task_group_t* group) {
+	if (group) {
+		atomic_decrement(&group->pending_count);
+		if (group->parent) {
+			task_group_end(group->parent);
+		}
+	}
+}
+
+bool task_group_is_complete(task_group_t* group) {
+	return !group || group->pending_count == 0;
+}
+
+task_group_t task_group_create_child(task_group_t* parent) {
+	task_group_t result = {.parent = parent};
+	return result;
+}
+
 // TODO: add optional refcount increment
-bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
+bool work_queue_submit_to_group(work_queue_t* queue, task_group_t* task_group, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
 	if (!queue) {
 		fatal_error("work_queue_add_entry(): queue is NULL");
 	}
@@ -134,9 +161,10 @@ bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 
 		bool succeeded = atomic_compare_exchange(&queue->next_entry_to_submit,
 		                                         new_next_entry_to_submit, entry_to_submit);
 		if (succeeded) {
+			task_group_begin(task_group);
 //		    console_print("exhange succeeded\n");
 			work_queue_entry_t* entry = queue->entries + entry_to_submit;
-			*entry = (work_queue_entry_t){ .callback = callback, .task_identifier = task_identifier };
+			*entry = (work_queue_entry_t){ .callback = callback, .task_identifier = task_identifier, .task_group = task_group };
 			if (userdata_size > 0) {
 				ASSERT(userdata);
 				memcpy(entry->userdata, userdata, userdata_size);
@@ -160,9 +188,18 @@ bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 
 	return false;
 }
 
+bool work_queue_submit(work_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
+	return work_queue_submit_to_group(queue, NULL, callback, task_identifier, userdata, userdata_size);
+}
+
 bool work_queue_submit_task(work_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
 	ASSERT(callback);
 	return work_queue_submit(queue, callback, 0, userdata, userdata_size);
+}
+
+bool work_queue_submit_task_to_group(work_queue_t* queue, task_group_t* task_group, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	ASSERT(callback);
+	return work_queue_submit_to_group(queue, task_group, callback, 0, userdata, userdata_size);
 }
 
 bool work_queue_submit_notification(work_queue_t* queue, u32 task_identifier, void* userdata, size_t userdata_size) {
@@ -210,9 +247,6 @@ bool work_queue_do_work(work_queue_t* queue) {
 		atomic_increment(&queue->start_count);
 		ASSERT(entry.callback);
 		if (entry.callback) {
-			// Simple way to keep track if we are executing a 'nested' task (i.e. executing a job while waiting to continue another job)
-			++work_queue_call_depth;
-
 			// Copy the user data (arguments for the call) onto the stack
 			u8* userdata = alloca(sizeof(entry.userdata));
 			memcpy(userdata, entry.userdata, sizeof(entry.userdata));
@@ -224,9 +258,9 @@ bool work_queue_do_work(work_queue_t* queue) {
 			entry.callback(threadlocal_logical_thread_index, userdata);
 
 			release_temp_memory(&temp);
-			--work_queue_call_depth;
 		}
         work_queue_mark_entry_completed(queue);
+		task_group_end(entry.task_group);
 		if (queue->owner_pool) {
 			atomic_increment(&queue->owner_pool->worker_thread_idle_count);
 		}
@@ -239,11 +273,7 @@ bool work_queue_is_work_in_progress(work_queue_t* queue) {
 	if (!queue) {
 		return false;
 	}
-	// If we are checking the global work queue while running a task from that same queue, then we only want to know
-	// whether any OTHER tasks are running. So in that case we need to subtract the call depth.
-	// TODO: can we rely on thread-local variables for call stack depth instead of this jank?
-	i32 call_depth = ((queue == global_thread_pool.queue) || (queue == global_thread_pool.high_priority_queue)) ? work_queue_call_depth : 0;
-	bool result = (queue->completion_goal - call_depth > queue->completion_count);
+	bool result = (queue->completion_goal > queue->completion_count);
 	return result;
 }
 
@@ -253,6 +283,87 @@ bool work_queue_is_work_waiting_to_start(work_queue_t* queue) {
 	}
 	bool result = (queue->start_goal > queue->start_count);
 	return result;
+}
+
+completion_queue_t completion_queue_create(i32 entry_count) {
+	completion_queue_t queue = {0};
+	queue.entry_count = entry_count + 1;
+	queue.entries = calloc(1, queue.entry_count * sizeof(completion_event_t));
+	return queue;
+}
+
+void completion_queue_destroy(completion_queue_t* queue) {
+	if (!queue) {
+		return;
+	}
+	if (queue->entries) {
+		free(queue->entries);
+	}
+	memset(queue, 0, sizeof(*queue));
+}
+
+bool completion_queue_post(completion_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
+	if (!queue) {
+		fatal_error("completion_queue_post(): queue is NULL");
+	}
+	if (userdata_size > sizeof(((completion_event_t*)0)->userdata)) {
+		fatal_error("completion_queue_post(): userdata_size overflows available space");
+	}
+	for (i32 tries = 0; tries < 1000; ++tries) {
+		i32 entry_to_submit = queue->next_entry_to_submit;
+		i32 new_next_entry_to_submit = (queue->next_entry_to_submit + 1) % queue->entry_count;
+		if (new_next_entry_to_submit == queue->next_entry_to_read) {
+			console_print_error("Warning: completion queue is overflowing - event is cancelled\n");
+			return false;
+		}
+
+		bool succeeded = atomic_compare_exchange(&queue->next_entry_to_submit,
+		                                         new_next_entry_to_submit, entry_to_submit);
+		if (succeeded) {
+			completion_event_t* entry = queue->entries + entry_to_submit;
+			*entry = (completion_event_t){ .callback = callback, .task_identifier = task_identifier };
+			if (userdata_size > 0) {
+				ASSERT(userdata);
+				memcpy(entry->userdata, userdata, userdata_size);
+			}
+			write_barrier;
+			entry->is_valid = true;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool completion_queue_post_task(completion_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	ASSERT(callback);
+	return completion_queue_post(queue, callback, 0, userdata, userdata_size);
+}
+
+bool completion_queue_poll(completion_queue_t* queue, completion_event_t* out_event) {
+	if (!queue) {
+		return false;
+	}
+	i32 entry_to_read = queue->next_entry_to_read;
+	i32 new_next_entry_to_read = (entry_to_read + 1) % queue->entry_count;
+	if ((entry_to_read != queue->next_entry_to_submit) && (queue->entries[entry_to_read].is_valid)) {
+		completion_event_t* entry = queue->entries + entry_to_read;
+		if (out_event) {
+			*out_event = *entry;
+		}
+		entry->is_valid = false;
+		write_barrier;
+		queue->next_entry_to_read = new_next_entry_to_read;
+		return true;
+	}
+	return false;
+}
+
+bool completion_queue_has_events(completion_queue_t* queue) {
+	if (!queue) {
+		return false;
+	}
+	i32 entry_to_read = queue->next_entry_to_read;
+	return (entry_to_read != queue->next_entry_to_submit) && queue->entries[entry_to_read].is_valid;
 }
 
 void dummy_work_queue_callback(int logical_thread_index, void* userdata) {}
@@ -266,7 +377,7 @@ void echo_task_completed(int logical_thread_index, void* userdata) {
 void echo_task(int logical_thread_index, void* userdata) {
 	console_print("thread %d: %s\n", logical_thread_index, (char*) userdata);
 
-	work_queue_submit_task(&global_completion_queue, echo_task_completed, userdata, strlen(userdata)+1);
+	completion_queue_post_task(&global_completion_queue, echo_task_completed, userdata, strlen(userdata)+1);
 }
 #endif
 
@@ -286,8 +397,9 @@ void test_multithreading_work_queue() {
 	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 10", 10);
 	thread_pool_submit_task(&global_thread_pool, echo_task, (void*)"string 11", 10);
 
-	while (thread_pool_is_work_in_progress(&global_thread_pool) || work_queue_is_work_in_progress((&global_completion_queue))) {
-		work_queue_do_work(&global_completion_queue, 0);
+	while (thread_pool_is_work_in_progress(&global_thread_pool) || completion_queue_has_events(&global_completion_queue)) {
+		completion_event_t event = {0};
+		completion_queue_poll(&global_completion_queue, &event);
 	}
 #endif
 }
@@ -434,6 +546,13 @@ bool thread_pool_submit_task(thread_pool_t* pool, work_queue_callback_t callback
 	return work_queue_submit_task(pool->queue, callback, userdata, userdata_size);
 }
 
+bool thread_pool_submit_task_to_group(thread_pool_t* pool, task_group_t* task_group, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	return work_queue_submit_task_to_group(pool->queue, task_group, callback, userdata, userdata_size);
+}
+
 work_queue_t* thread_pool_get_queue(thread_pool_t* pool) {
 	if (!pool || !pool->initialized) {
 		return NULL;
@@ -498,6 +617,14 @@ bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callb
 	return work_queue_submit_task(queue, callback, userdata, userdata_size);
 }
 
+bool thread_pool_submit_high_priority_task_to_group(thread_pool_t* pool, task_group_t* task_group, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
+	if (!pool || !pool->initialized) {
+		return false;
+	}
+	work_queue_t* queue = pool->high_priority_queue ? pool->high_priority_queue : pool->queue;
+	return work_queue_submit_task_to_group(queue, task_group, callback, userdata, userdata_size);
+}
+
 bool thread_pool_do_work(thread_pool_t* pool) {
 	if (!pool || !pool->initialized) {
 		return false;
@@ -506,6 +633,17 @@ bool thread_pool_do_work(thread_pool_t* pool) {
 		return true;
 	}
 	return work_queue_do_work(pool->queue);
+}
+
+void thread_pool_wait_for_group(thread_pool_t* pool, task_group_t* group) {
+	if (!pool || !pool->initialized) {
+		return;
+	}
+	while (!task_group_is_complete(group)) {
+		if (!thread_pool_do_work(pool)) {
+			platform_sleep(1);
+		}
+	}
 }
 
 bool thread_pool_is_work_in_progress(thread_pool_t* pool) {
@@ -578,7 +716,7 @@ void libisyntax_init_thread_pool_for_slidescape(void) {
 	init_global_system_info(false);
 
 	if (global_completion_queue.entries == NULL) {
-		global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks
+		global_completion_queue = completion_queue_create(1024); // Message queue for completed tasks
 	}
 
 #if WINDOWS

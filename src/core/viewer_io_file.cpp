@@ -33,7 +33,7 @@ void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* us
 
 void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
 	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*)userdata;
-	work_queue_submit_task(&global_completion_queue, viewer_notify_load_tile_completed, task, sizeof(*task));
+	completion_queue_post_task(&global_completion_queue, viewer_notify_load_tile_completed, task, sizeof(*task));
 }
 
 
@@ -202,7 +202,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		task->completion_callback(logical_thread_index, &completion_task);
 	}
 	if (task->completion_queue) {
-		work_queue_submit_task(task->completion_queue, dummy_work_queue_callback, &completion_task,
+		completion_queue_post_task(task->completion_queue, dummy_work_queue_callback, &completion_task,
 		                       sizeof(completion_task));
 	}
 

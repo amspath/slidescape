@@ -45,7 +45,7 @@ static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixel
 	completion_task.want_gpu_residency = true;
 	completion_task.resource_id = streamer->resource_id;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	if (!work_queue_submit(streamer->tile_completion_queue, streamer->tile_completion_callback,
+	if (!completion_queue_post(streamer->tile_completion_queue, streamer->tile_completion_callback,
                            streamer->tile_completion_task_identifier,
                            &completion_task, sizeof(completion_task))) {
 		ASSERT(!"tile cannot be submitted and will leak");
@@ -1147,4 +1147,3 @@ void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer) {
 		is_tile_streamer_frame_boundary_passed = true;
 	}
 }
-

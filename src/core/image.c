@@ -1016,12 +1016,15 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				load_tile_task_t *wishlist = calloc(width_in_tiles_to_read * height_in_tiles_to_read, sizeof(load_tile_task_t));
 				i32 tiles_to_load = 0;
 
-				// NOTE: we need to allocate the completion queue on the heap, because other worker threads accessing it as a stack object could cause issues.
-				work_queue_t* read_completion_queue = malloc(sizeof(work_queue_t));
-				*read_completion_queue = work_queue_create("/imagereadregionsem", width_in_tiles_to_read * height_in_tiles_to_read);
+				// NOTE: the completion queue and task group have to outlive all submitted tile jobs.
+				completion_queue_t read_completion_queue = completion_queue_create(width_in_tiles_to_read * height_in_tiles_to_read);
+				task_group_t read_task_group = {0};
+
+                // NOTE: we are getting an exclusive lock for the purpose of requesting image tiles
+                // TODO: check if we can do without locking here? Shouldn't this be on the tile level rather than globally for the whole image?
+                platform_mutex_lock(&image->lock);
 
 				// request tiles
-                platform_mutex_lock(&image->lock);
 				for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 						tile_t *tile = get_tile(level_image, tile_x, tile_y);
@@ -1043,7 +1046,8 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								.need_gpu_residency = false,
 								.need_keep_in_cache = true,
 								.invert_colors = invert_colors,
-								.completion_queue = read_completion_queue,
+								.completion_queue = &read_completion_queue,
+								.task_group = &read_task_group,
 								.refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
 						};
 
@@ -1059,29 +1063,26 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				// tile coverage overlaps, so some needed tiles may have been submitted by another caller.
 				// Wait until every required tile is cached/empty, not just until this call's submissions finish.
 				for (;;) {
-					if (work_queue_is_work_in_progress(read_completion_queue)) {
-						work_queue_entry_t entry = work_queue_get_next_entry(read_completion_queue);
-						if (entry.is_valid) {
-                            platform_mutex_lock(&image->lock);
-							work_queue_mark_entry_completed(read_completion_queue);
-							++tile_loads_completed;
-							viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
-							if (task->pixel_memory) {
-								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-								tile->is_submitted_for_loading = false;
-								if (tile->pixels == NULL) {
-									tile->pixels = task->pixel_memory; // TODO: retain
-									tile->is_cached = true;
-								} else {
-									free(task->pixel_memory);
-								}
-							} else if (task->failed || task->is_empty) {
-								tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-								tile->is_submitted_for_loading = false;
-								tile->is_empty = true;
+					completion_event_t entry = {0};
+					if (completion_queue_poll(&read_completion_queue, &entry)) {
+						platform_mutex_lock(&image->lock);
+						++tile_loads_completed;
+						viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
+						if (task->pixel_memory) {
+							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+							tile->is_submitted_for_loading = false;
+							if (tile->pixels == NULL) {
+								tile->pixels = task->pixel_memory; // TODO: retain
+								tile->is_cached = true;
+							} else {
+								free(task->pixel_memory);
 							}
-                            platform_mutex_unlock(&image->lock);
+						} else if (task->failed || task->is_empty) {
+							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+							tile->is_submitted_for_loading = false;
+							tile->is_empty = true;
 						}
+						platform_mutex_unlock(&image->lock);
 					} else {
 						bool all_tiles_ready = true;
 						i32 retry_tiles_to_load = 0;
@@ -1101,7 +1102,8 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 												.need_gpu_residency = false,
 												.need_keep_in_cache = true,
 												.invert_colors = invert_colors,
-												.completion_queue = read_completion_queue,
+												.completion_queue = &read_completion_queue,
+												.task_group = &read_task_group,
 												.refcount_to_decrement = 1,
 										};
 									}
@@ -1114,7 +1116,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                         platform_mutex_unlock(&image->lock);
 
 						if (all_tiles_ready) {
-							if (tile_loads_submitted == tile_loads_completed) {
+							if (task_group_is_complete(&read_task_group) && !completion_queue_has_events(&read_completion_queue)) {
 								break;
 							} else {
 								// It seems we're done, BUT: we still need to process tasks that not yet completed
@@ -1131,12 +1133,11 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				}
 
 				// NOTE: careful: we need to make sure that all submitted tasks are processed (completion work queue might otherwise be accessed after destruction)
-				if (tile_loads_submitted != tile_loads_completed) {
+				if (!task_group_is_complete(&read_task_group) || completion_queue_has_events(&read_completion_queue) || tile_loads_submitted != tile_loads_completed) {
 					fatal_error();
 				}
 
-				work_queue_destroy(read_completion_queue);
-				free(read_completion_queue);
+				completion_queue_destroy(&read_completion_queue);
 				free(wishlist);
 
 
