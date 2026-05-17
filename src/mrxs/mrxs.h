@@ -202,7 +202,7 @@ typedef struct mrxs_t {
 	float mpp_y;
 	bool is_mpp_known;
     bool has_overlapping_tiles;
-	work_queue_t* work_submission_queue;
+	thread_pool_t* work_submission_pool;
 	volatile i32 refcount;
     bool is_valid;
 } mrxs_t;
@@ -213,10 +213,9 @@ typedef struct directory_info_t directory_info_t;
 
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory);
 u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index);
-void mrxs_set_work_queue(mrxs_t* mrxs, work_queue_t* queue);
+void mrxs_set_thread_pool(mrxs_t* mrxs, thread_pool_t* thread_pool);
 void mrxs_destroy(mrxs_t* mrxs);
 
 #ifdef __cplusplus
 }
 #endif
-

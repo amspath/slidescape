@@ -198,13 +198,15 @@ void work_queue_mark_entry_completed(work_queue_t* queue) {
 	atomic_increment(&queue->completion_count);
 }
 
-bool work_queue_do_work(work_queue_t* queue, int logical_thread_index) {
+bool work_queue_do_work(work_queue_t* queue) {
     if (!queue) {
         return false;
     }
 	work_queue_entry_t entry = work_queue_get_next_entry(queue);
 	if (entry.is_valid) {
-		atomic_decrement(&global_worker_thread_idle_count);
+		if (queue->owner_pool) {
+			atomic_decrement(&queue->owner_pool->worker_thread_idle_count);
+		}
 		atomic_increment(&queue->start_count);
 		ASSERT(entry.callback);
 		if (entry.callback) {
@@ -219,13 +221,15 @@ bool work_queue_do_work(work_queue_t* queue, int logical_thread_index) {
 			temp_memory_t temp = begin_temp_memory_on_local_thread();
 
 			// Execute the task
-			entry.callback(logical_thread_index, userdata);
+			entry.callback(threadlocal_logical_thread_index, userdata);
 
 			release_temp_memory(&temp);
 			--work_queue_call_depth;
 		}
         work_queue_mark_entry_completed(queue);
-		atomic_increment(&global_worker_thread_idle_count);
+		if (queue->owner_pool) {
+			atomic_increment(&queue->owner_pool->worker_thread_idle_count);
+		}
 	}
 	return entry.is_valid;
 }
@@ -307,7 +311,7 @@ static void* worker_thread(void* parameter) {
 //	fprintf(stderr, "Hello from thread %d\n", threadlocal_logical_thread_index);
 
 	init_thread_memory(&global_system_info);
-	atomic_increment(&global_worker_thread_idle_count);
+	atomic_increment(&pool->worker_thread_idle_count);
 
 	if (pool->thread_init_callback) {
 		// NOTE: worker threads might want to do additional setup at this point, e.g. OpenGL initialization
@@ -339,8 +343,8 @@ static void* worker_thread(void* parameter) {
 			continue;
 		}
 
-		if (!work_queue_do_work(pool->high_priority_queue, logical_thread_index)) {
-			if (!work_queue_do_work(pool->queue, logical_thread_index)) {
+		if (!work_queue_do_work(pool->high_priority_queue)) {
+			if (!work_queue_do_work(pool->queue)) {
 				if (!(work_queue_is_work_waiting_to_start(pool->queue) || work_queue_is_work_waiting_to_start(pool->high_priority_queue))) {
 					platform_semaphore_wait(pool->queue->semaphore);
 				}
@@ -369,14 +373,17 @@ void init_thread_pool(thread_pool_t* pool, i32 work_queue_max_entry_count, bool 
 		}
 
 		if (!threadlocal_thread_memory) {
+			init_global_system_info(false);
 			init_thread_memory(&global_system_info); // init thread memory for thread 0 (= main thread)
 		}
 
 		pool->queue = malloc(sizeof(work_queue_t));
 		*pool->queue = work_queue_create("/worksem", work_queue_max_entry_count);
+		pool->queue->owner_pool = pool;
 		if (need_high_priority_queue) {
 			pool->high_priority_queue = malloc(sizeof(work_queue_t));
 			*pool->high_priority_queue = work_queue_create_with_existing_semaphore(pool->queue->semaphore, work_queue_max_entry_count);
+			pool->high_priority_queue->owner_pool = pool;
 		}
 		pool->total_worker_thread_count = global_system_info.suggested_total_thread_count;
 		pool->active_worker_thread_count = pool->total_worker_thread_count - 1;
@@ -476,6 +483,13 @@ i32* thread_pool_get_active_worker_thread_count_ptr(thread_pool_t* pool) {
 	return &pool->active_worker_thread_count;
 }
 
+i32 thread_pool_get_idle_worker_thread_count(thread_pool_t* pool) {
+	if (!pool || !pool->initialized) {
+		return 0;
+	}
+	return pool->worker_thread_idle_count;
+}
+
 bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
 	if (!pool || !pool->initialized) {
 		return false;
@@ -484,14 +498,14 @@ bool thread_pool_submit_high_priority_task(thread_pool_t* pool, work_queue_callb
 	return work_queue_submit_task(queue, callback, userdata, userdata_size);
 }
 
-bool thread_pool_do_work(thread_pool_t* pool, int logical_thread_index) {
+bool thread_pool_do_work(thread_pool_t* pool) {
 	if (!pool || !pool->initialized) {
 		return false;
 	}
-	if (work_queue_do_work(pool->high_priority_queue, logical_thread_index)) {
+	if (work_queue_do_work(pool->high_priority_queue)) {
 		return true;
 	}
-	return work_queue_do_work(pool->queue, logical_thread_index);
+	return work_queue_do_work(pool->queue);
 }
 
 bool thread_pool_is_work_in_progress(thread_pool_t* pool) {
@@ -513,7 +527,7 @@ void thread_pool_wait_for_completion(thread_pool_t* pool) {
 		return;
 	}
 	while (thread_pool_is_work_in_progress(pool)) {
-		if (!thread_pool_do_work(pool, threadlocal_logical_thread_index)) {
+		if (!thread_pool_do_work(pool)) {
 			platform_sleep(1);
 		}
 	}
@@ -561,7 +575,7 @@ void thread_pool_destroy(thread_pool_t* pool) {
 void libisyntax_init_thread_pool_for_slidescape(void) {
 	// TODO: make this safer and refactor
 
-	global_system_info = get_system_info(false);
+	init_global_system_info(false);
 
 	if (global_completion_queue.entries == NULL) {
 		global_completion_queue = work_queue_create("/completionsem", 1024); // Message queue for completed tasks

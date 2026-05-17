@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2025  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -795,21 +795,21 @@ u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
 	return result;
 }
 
-// Set the work queue to submit parallel jobs to
+// Set the thread pool to submit parallel jobs to
 // TODO(pvalkema): rethink this?
-void mrxs_set_work_queue(mrxs_t* mrxs, work_queue_t* queue) {
-	mrxs->work_submission_queue = queue;
+void mrxs_set_thread_pool(mrxs_t* mrxs, thread_pool_t* thread_pool) {
+	mrxs->work_submission_pool = thread_pool;
 }
 
 void mrxs_destroy(mrxs_t* mrxs) {
 	while (mrxs->refcount > 0) {
 		platform_sleep(1);
-		if (mrxs->work_submission_queue) {
-			work_queue_do_work(mrxs->work_submission_queue, 0);
+		if (mrxs->work_submission_pool) {
+			thread_pool_do_work(mrxs->work_submission_pool);
 		} else {
 			static bool already_printed = false;
 			if (!already_printed) {
-				console_print_error("mrxs_destroy(): work_submission_queue not set; refcount = %d, waiting to reach 0\n", mrxs->refcount);
+				console_print_error("mrxs_destroy(): work_submission_pool not set; refcount = %d, waiting to reach 0\n", mrxs->refcount);
 				already_printed = true;
 			}
 		}

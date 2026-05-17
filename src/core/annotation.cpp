@@ -1541,7 +1541,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		}
 		while (completion_counter < annotation_batch_count) {
 			if (thread_pool_is_work_waiting_to_start(&global_thread_pool)) {
-				if (!thread_pool_do_work(&global_thread_pool, 0)) {
+				if (!thread_pool_do_work(&global_thread_pool)) {
 					platform_sleep(1);
 				}
 			} else {

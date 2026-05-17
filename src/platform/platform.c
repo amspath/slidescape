@@ -37,6 +37,41 @@
 #include <sys/sysctl.h> // for sysctlbyname()
 #endif
 
+#if WINDOWS
+static BOOL CALLBACK platform_call_once_windows_callback(PINIT_ONCE once, PVOID parameter, PVOID* context) {
+	(void)once;
+	(void)context;
+	platform_once_callback_t* callback = (platform_once_callback_t*)parameter;
+	callback();
+	return TRUE;
+}
+#endif
+
+void platform_call_once(platform_once_t* once, platform_once_callback_t* callback) {
+#if WINDOWS
+	if (!InitOnceExecuteOnce(once, platform_call_once_windows_callback, callback, NULL)) {
+		fatal_error("InitOnceExecuteOnce failed");
+	}
+#else
+	int rc = pthread_once(once, callback);
+	if (rc != 0) {
+		fatal_error("pthread_once failed");
+	}
+#endif
+}
+
+static platform_once_t global_system_info_once = PLATFORM_ONCE_INIT;
+static bool is_get_system_info_verbose;
+
+static void init_global_system_info_once(void) {
+	global_system_info = get_system_info(is_get_system_info_verbose);
+}
+
+void init_global_system_info(bool verbose) {
+	is_get_system_info_verbose = verbose;
+	platform_call_once(&global_system_info_once, init_global_system_info_once);
+}
+
 
 mem_t* platform_allocate_mem_buffer(size_t capacity) {
 	size_t allocation_size = sizeof(mem_t) + capacity + 1;
@@ -170,9 +205,8 @@ void init_thread_memory(system_info_t* system_info) {
 
 	u32 os_page_size = 0;
 	if (!system_info || system_info->os_page_size == 0) {
-		// Might not have called get_system_info() before??
-		system_info_t si = get_system_info(false);
-		os_page_size = si.os_page_size;
+		init_global_system_info(false);
+		os_page_size = global_system_info.os_page_size;
 	} else {
 		os_page_size = system_info->os_page_size;
 	}

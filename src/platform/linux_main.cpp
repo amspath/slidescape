@@ -350,7 +350,7 @@ int main(int argc, const char** argv)
     bool verbose_console = true;//!app_command.headless;
 
     if (verbose_console) console_print("Starting up...\n");
-    global_system_info = get_system_info(verbose_console);
+    init_global_system_info(verbose_console);
 
 	app_state_t* app_state = &global_app_state;
 	init_app_state(app_state, app_command);

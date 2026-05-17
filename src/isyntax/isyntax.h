@@ -403,7 +403,7 @@ typedef struct isyntax_t {
 	char barcode[64];
 	bool is_barcode_read;
 	isyntax_cache_t* cache;
-	work_queue_t* work_submission_queue;
+	thread_pool_t* work_submission_pool;
 	volatile i32 refcount;
 	char dicom_acquisition_datetime[33]; // e.g. "20210609111602.000000"
 	char dicom_manufacturer[65]; // e.g. "PHILIPS"
@@ -424,7 +424,7 @@ typedef struct isyntax_t {
 
 // function prototypes
 bool isyntax_hulsken_decompress(u8 *compressed, size_t compressed_size, i32 block_width, i32 block_height, i32 coefficient, i32 compressor_version, i16* out_buffer);
-void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue);
+void isyntax_set_thread_pool(isyntax_t* isyntax, thread_pool_t* thread_pool);
 bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open_flags_t flags);
 void isyntax_destroy(isyntax_t* isyntax);
 void isyntax_idwt(icoeff_t* idwt, i32 quadrant_width, i32 quadrant_height, bool output_steps_as_png, const char* png_name);

@@ -1618,7 +1618,7 @@ static DWORD WINAPI thread_proc(void* parameter) {
 
 	threadlocal_logical_thread_index = thread_info->logical_thread_index;
 
-	atomic_increment(&global_worker_thread_idle_count);
+	atomic_increment(&global_thread_pool.worker_thread_idle_count);
 
 	init_thread_memory(&global_system_info);
 	thread_memory_t* thread_memory = threadlocal_thread_memory;
@@ -1972,7 +1972,7 @@ int main() {
 
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 
-	global_system_info = get_system_info(verbose_console);
+	init_global_system_info(verbose_console);
 
 	win32_setup_appdata();
 #ifndef DONT_REGISTER_FILETYPE_ASSOCIATIONS // suppress filetype associations on separate console build

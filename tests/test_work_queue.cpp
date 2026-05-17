@@ -16,7 +16,7 @@ static void increment_counter_task(int logical_thread_index, void* userdata) {
 
 static void ensure_test_thread_memory(void) {
 	if (!threadlocal_thread_memory) {
-		global_system_info = get_system_info(false);
+		init_global_system_info(false);
 		init_thread_memory(&global_system_info);
 	}
 }
@@ -33,7 +33,7 @@ TEST_CASE("work queue executes submitted tasks on caller thread") {
 	CHECK(work_queue_submit_task(&queue, increment_counter_task, &task, sizeof(task)));
 
 	while (work_queue_is_work_in_progress(&queue)) {
-		CHECK(work_queue_do_work(&queue, 0));
+		CHECK(work_queue_do_work(&queue));
 	}
 
 	CHECK(counter == 3);
@@ -44,7 +44,7 @@ TEST_CASE("work queue executes submitted tasks on caller thread") {
 }
 
 TEST_CASE("work queue helpers tolerate absent optional queue") {
-	CHECK_FALSE(work_queue_do_work(NULL, 0));
+	CHECK_FALSE(work_queue_do_work(NULL));
 	CHECK_FALSE(work_queue_is_work_in_progress(NULL));
 	CHECK_FALSE(work_queue_is_work_waiting_to_start(NULL));
 }
@@ -52,8 +52,8 @@ TEST_CASE("work queue helpers tolerate absent optional queue") {
 TEST_CASE("thread pool runs work and can be destroyed") {
 	ensure_test_thread_memory();
 
+	init_global_system_info(false);
 	system_info_t old_system_info = global_system_info;
-	global_system_info = get_system_info(false);
 	global_system_info.suggested_total_thread_count = 3;
 
 	thread_pool_t pool = {};
@@ -80,8 +80,8 @@ TEST_CASE("thread pool runs work and can be destroyed") {
 TEST_CASE("thread pool without high priority queue can be reused after destroy") {
 	ensure_test_thread_memory();
 
+	init_global_system_info(false);
 	system_info_t old_system_info = global_system_info;
-	global_system_info = get_system_info(false);
 	global_system_info.suggested_total_thread_count = 2;
 
 	for (i32 iteration = 0; iteration < 2; ++iteration) {
@@ -107,8 +107,8 @@ TEST_CASE("thread pool without high priority queue can be reused after destroy")
 TEST_CASE("thread pool helpers submit normal and high priority work") {
 	ensure_test_thread_memory();
 
+	init_global_system_info(false);
 	system_info_t old_system_info = global_system_info;
-	global_system_info = get_system_info(false);
 	global_system_info.suggested_total_thread_count = 2;
 
 	thread_pool_t pool = {};
@@ -121,7 +121,7 @@ TEST_CASE("thread pool helpers submit normal and high priority work") {
 	CHECK(thread_pool_is_work_waiting_to_start(&pool));
 
 	while (thread_pool_is_work_in_progress(&pool)) {
-		if (!thread_pool_do_work(&pool, 0)) {
+		if (!thread_pool_do_work(&pool)) {
 			platform_sleep(1);
 		}
 	}

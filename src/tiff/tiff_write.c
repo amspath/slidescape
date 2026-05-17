@@ -431,7 +431,7 @@ static void construct_tiles_parallel_from_frontier(image_draft_t* draft, i32 fro
     construct_export_tile_task_func(0, &task);
 
     while (finished_count < participants_goal) {
-        thread_pool_do_work(&global_thread_pool, 0);
+        thread_pool_do_work(&global_thread_pool);
     }
 }
 

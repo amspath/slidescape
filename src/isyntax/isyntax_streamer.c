@@ -63,8 +63,8 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_streamer_t* streamer, i32 sca
 		for (i32 tile_x = 0; tile_x < level->width_in_tiles; ++tile_x, ++tile_index) {
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
-			i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
-			if (allow_load_tile_on_worker_threads && global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
+			i32 tasks_waiting = thread_pool_get_task_count(isyntax->work_submission_pool);
+			if (allow_load_tile_on_worker_threads && thread_pool_get_idle_worker_thread_count(isyntax->work_submission_pool) > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 				isyntax_begin_load_tile(streamer, scale, tile_x, tile_y);
 			} else if (!is_tile_streamer_frame_boundary_passed) {
                 u32* tile_pixels = (u32*)malloc(isyntax->tile_width * isyntax->tile_height * sizeof(u32));
@@ -85,7 +85,7 @@ static i32 isyntax_load_all_tiles_in_level(isyntax_streamer_t* streamer, i32 sca
 			isyntax_tile_t* tile = level->tiles + tile_index;
 			if (!tile->exists) continue;
 			while (!tile->is_loaded) {
-				work_queue_do_work(isyntax->work_submission_queue, 0);
+				thread_pool_do_work(isyntax->work_submission_pool);
 			}
 		}
 	}
@@ -353,8 +353,8 @@ void isyntax_load_tile_task_func(i32 logical_thread_index, void* userdata) {
 
 void isyntax_begin_load_tile(isyntax_streamer_t* streamer, i32 scale, i32 tile_x, i32 tile_y) {
 	isyntax_t* isyntax = streamer->isyntax;
-	if (!isyntax->work_submission_queue) {
-		fatal_error("isyntax_begin_load_tile(): work_submission_queue not set");
+	if (!isyntax->work_submission_pool) {
+		fatal_error("isyntax_begin_load_tile(): work_submission_pool not set");
 	}
 	isyntax_level_t* level = streamer->wsi->levels + scale;
 	i32 tile_index = tile_y * level->width_in_tiles + tile_x;
@@ -369,7 +369,7 @@ void isyntax_begin_load_tile(isyntax_streamer_t* streamer, i32 scale, i32 tile_x
 
 		tile->is_submitted_for_loading = true;
 		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
-		if (!work_queue_submit_task(isyntax->work_submission_queue, isyntax_load_tile_task_func, &task, sizeof(task))) {
+		if (!thread_pool_submit_task(isyntax->work_submission_pool, isyntax_load_tile_task_func, &task, sizeof(task))) {
 			tile->is_submitted_for_loading = false; // chicken out
 			atomic_decrement(&isyntax->refcount);
 		};
@@ -384,12 +384,12 @@ void isyntax_first_load_task_func(i32 logical_thread_index, void* userdata) {
 }
 
 void isyntax_begin_first_load(isyntax_streamer_t* streamer) {
-	work_queue_t* submission_queue = streamer->isyntax->work_submission_queue;
-	if (!submission_queue) {
-		fatal_error("isyntax_begin_first_load(): work_submission_queue not set");
+	thread_pool_t* submission_pool = streamer->isyntax->work_submission_pool;
+	if (!submission_pool) {
+		fatal_error("isyntax_begin_first_load(): work_submission_pool not set");
 	}
 	atomic_increment(&streamer->isyntax->refcount); // retain; don't destroy isyntax while busy
-	if (!work_queue_submit_task(submission_queue, isyntax_first_load_task_func, streamer, sizeof(*streamer))) {
+	if (!thread_pool_submit_task(submission_pool, isyntax_first_load_task_func, streamer, sizeof(*streamer))) {
 		atomic_decrement(&streamer->isyntax->refcount); // chicken out
 	}
 }
@@ -463,8 +463,8 @@ void isyntax_decompress_h_coeff_for_tile_task_func(i32 logical_thread_index, voi
 }
 
 void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, isyntax_tile_t* tile, i32 tile_x, i32 tile_y) {
-	if (!isyntax->work_submission_queue) {
-		fatal_error("isyntax_begin_decompress_h_coeff_for_tile(): work_submission_queue not set");
+	if (!isyntax->work_submission_pool) {
+		fatal_error("isyntax_begin_decompress_h_coeff_for_tile(): work_submission_pool not set");
 	}
 	isyntax_decompress_h_coeff_for_tile_task_t task = {0};
 	task.isyntax = isyntax;
@@ -475,8 +475,8 @@ void isyntax_begin_decompress_h_coeff_for_tile(isyntax_t* isyntax, isyntax_image
 
 	atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 	tile->is_submitted_for_h_coeff_decompression = true;
-	ASSERT(isyntax->work_submission_queue);
-	if (!work_queue_submit_task(isyntax->work_submission_queue, isyntax_decompress_h_coeff_for_tile_task_func, &task,
+	ASSERT(isyntax->work_submission_pool);
+	if (!thread_pool_submit_task(isyntax->work_submission_pool, isyntax_decompress_h_coeff_for_tile_task_func, &task,
 	                            sizeof(task))) {
 		atomic_decrement(&isyntax->refcount); // chicken out
 		tile->is_submitted_for_h_coeff_decompression = false;
@@ -630,7 +630,7 @@ static inline bool is_tile_ready_for_idwt(isyntax_tile_t* tile, i32 tile_x, i32 
 bool isyntax_load_next_level_greedily = false;
 
 void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax) {
-	ASSERT(isyntax->work_submission_queue);
+	ASSERT(isyntax->work_submission_pool);
 	isyntax_image_t* wsi = isyntax->images + isyntax->wsi_image_index;
 	i32 resource_id = streamer->resource_id;
 
@@ -948,8 +948,8 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 							if (tile->exists && req->need_h_coeff && !tile->is_submitted_for_h_coeff_decompression) {
 								isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 								if (chunk->data) {
-									i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
-									if (allow_load_tile_on_worker_threads && global_worker_thread_idle_count > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
+									i32 tasks_waiting = thread_pool_get_task_count(isyntax->work_submission_pool);
+									if (allow_load_tile_on_worker_threads && thread_pool_get_idle_worker_thread_count(isyntax->work_submission_pool) > 0 && tasks_waiting < global_system_info.logical_cpu_count * 10) {
 										isyntax_begin_decompress_h_coeff_for_tile(isyntax, wsi, scale, tile, tile_x, tile_y);
 									} else if (!is_tile_streamer_frame_boundary_passed) {
 										tile->is_submitted_for_h_coeff_decompression = true;
@@ -1088,7 +1088,7 @@ void isyntax_stream_image_tiles(isyntax_streamer_t* streamer, isyntax_t* isyntax
 							if (is_tile_streamer_frame_boundary_passed) {
 								goto break_out_of_loop2; // camera bounds updated, recalculate
 							}
-							i32 tasks_waiting = work_queue_get_entry_count(isyntax->work_submission_queue);
+							i32 tasks_waiting = thread_pool_get_task_count(isyntax->work_submission_pool);
 							if (tasks_waiting > global_system_info.logical_cpu_count * 4) {
 								goto break_out_of_loop2;
 							}
@@ -1140,12 +1140,11 @@ void isyntax_begin_stream_image_tiles(isyntax_streamer_t* tile_streamer) {
 		isyntax_t* isyntax = tile_streamer->isyntax;
 		atomic_increment(&isyntax->refcount); // retain; don't destroy isyntax while busy
 		is_tile_stream_task_in_progress = true;
-		ASSERT(isyntax->work_submission_queue);
-		work_queue_submit_task(isyntax->work_submission_queue, isyntax_stream_image_tiles_func, tile_streamer,
+		ASSERT(isyntax->work_submission_pool);
+		thread_pool_submit_task(isyntax->work_submission_pool, isyntax_stream_image_tiles_func, tile_streamer,
 		                       sizeof(*tile_streamer));
 	} else {
 		is_tile_streamer_frame_boundary_passed = true;
 	}
 }
-
 

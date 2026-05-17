@@ -3063,10 +3063,10 @@ static void isyntax_dump_block_header(isyntax_image_t* wsi_image, const char* fi
 	}
 }
 
-// Set the work queue to submit parallel jobs to
+// Set the thread pool to submit parallel jobs to
 // TODO(pvalkema): remove this? needs rethinking
-void isyntax_set_work_queue(isyntax_t* isyntax, work_queue_t* work_queue) {
-	isyntax->work_submission_queue = work_queue;
+void isyntax_set_thread_pool(isyntax_t* isyntax, thread_pool_t* thread_pool) {
+	isyntax->work_submission_pool = thread_pool;
 }
 
 
@@ -3587,12 +3587,12 @@ void isyntax_destroy(isyntax_t* isyntax) {
     // NOTE: in isyntax_streamer.c, the refcount can be incremented in various places (while threaded jobs are running)
 	while (isyntax->refcount > 0) {
 		platform_sleep(1);
-		if (isyntax->work_submission_queue) {
-            work_queue_do_work(isyntax->work_submission_queue, 0);
+		if (isyntax->work_submission_pool) {
+            thread_pool_do_work(isyntax->work_submission_pool);
 		} else {
 			static bool already_printed = false;
 			if (!already_printed) {
-				console_print_error("isyntax_destroy(): work_submission_queue not set; refcount = %d, waiting to reach 0\n", isyntax->refcount);
+				console_print_error("isyntax_destroy(): work_submission_pool not set; refcount = %d, waiting to reach 0\n", isyntax->refcount);
 				already_printed = true;
 			}
 		}
@@ -3666,4 +3666,3 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	}
 	file_handle_close(isyntax->file_handle);
 }
-

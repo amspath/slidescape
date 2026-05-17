@@ -1123,7 +1123,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								continue;
 							}
 						} else if (thread_pool_is_work_waiting_to_start(&global_thread_pool)) {
-							thread_pool_do_work(&global_thread_pool, threadlocal_logical_thread_index);
+							thread_pool_do_work(&global_thread_pool);
 						} else {
 							platform_sleep(1);
 						}
@@ -1354,7 +1354,7 @@ void image_destroy(image_t* image) {
     while (image->refcount > 0) {
 //		console_print_error("refcount = %d\n", image->refcount);
 	    if (thread_pool_is_work_waiting_to_start(&global_thread_pool)) {
-		    thread_pool_do_work(&global_thread_pool, threadlocal_logical_thread_index);
+		    thread_pool_do_work(&global_thread_pool);
 	    } else {
 		    platform_sleep(1);
 	    }

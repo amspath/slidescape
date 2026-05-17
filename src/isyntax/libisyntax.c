@@ -81,7 +81,7 @@ isyntax_error_t libisyntax_init() {
     if (libisyntax_global_init_complete == false) {
         // Actual initialization.
 #ifndef LIBISYNTAX_THREAD_POOL_SHARED_WITH_SLIDESCAPE
-        global_system_info = get_system_info(false);
+        init_global_system_info(false);
         DBGCTR_COUNT(dbgctr_init_thread_pool_counter);
         init_thread_pool(&global_thread_pool,
                          1024,
