@@ -1,6 +1,13 @@
 /* libjpeg-turbo build number */
 #define BUILD  "@BUILD@"
 
+/* How to hide global symbols. */
+#ifdef _MSC_VER
+#define HIDDEN
+#else
+#define HIDDEN  __attribute__((visibility("hidden")))
+#endif
+
 /* Compiler's inline keyword */
 #undef inline
 
@@ -22,17 +29,17 @@
 #define PACKAGE_NAME  "@CMAKE_PROJECT_NAME@"
 
 /* Version number of package */
-#define VERSION  "2.0.90"
+#define VERSION  "3.1.4.1"
 
 /* The size of `size_t', as computed by sizeof. */
 #ifdef _MSC_VER
-#define SIZEOF_SIZE_T 8 // TODO: what is the equivalent for MSVC?
+#define SIZEOF_SIZE_T sizeof(void*)
 #else
 #define SIZEOF_SIZE_T __SIZEOF_POINTER__
 #endif
 
 /* Define if your compiler has __builtin_ctzl() and sizeof(unsigned long) == sizeof(size_t). */
-#ifndef _MSC_VER
+#ifndef _WIN32
 #define HAVE_BUILTIN_CTZL
 #endif
 
@@ -43,11 +50,11 @@
 #endif
 #endif
 
-#if defined(_MSC_VER) && defined(HAVE_INTRIN_H)
+#if defined(_WIN32) && defined(HAVE_INTRIN_H)
 #if (SIZEOF_SIZE_T == 8)
-//#define HAVE_BITSCANFORWARD64
+#define HAVE_BITSCANFORWARD64
 #elif (SIZEOF_SIZE_T == 4)
-//#define HAVE_BITSCANFORWARD
+#define HAVE_BITSCANFORWARD
 #endif
 #endif
 
@@ -59,4 +66,35 @@
 #endif
 #else
 #define FALLTHROUGH
+#endif
+
+/*
+ * Define BITS_IN_JSAMPLE as either
+ *   8   for 8-bit sample values (the usual setting)
+ *   12  for 12-bit sample values
+ * Only 8 and 12 are legal data precisions for lossy JPEG according to the
+ * JPEG standard, and the IJG code does not support anything else!
+ */
+
+#ifndef BITS_IN_JSAMPLE
+#define BITS_IN_JSAMPLE  8      /* use 8 or 12 */
+#endif
+
+#undef C_ARITH_CODING_SUPPORTED
+#undef D_ARITH_CODING_SUPPORTED
+#undef WITH_SIMD
+
+#if BITS_IN_JSAMPLE == 8
+
+/* Support arithmetic encoding */
+#define C_ARITH_CODING_SUPPORTED 1
+
+/* Support arithmetic decoding */
+#define D_ARITH_CODING_SUPPORTED 1
+
+/* Use accelerated SIMD routines. */
+#ifdef SLIDESCAPE_JPEG_WITH_SIMD
+#define WITH_SIMD 1
+#endif
+
 #endif

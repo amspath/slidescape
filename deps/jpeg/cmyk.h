@@ -1,7 +1,7 @@
 /*
  * cmyk.h
  *
- * Copyright (C) 2017-2018, D. R. Commander.
+ * Copyright (C) 2017-2018, 2022, 2024-2025, D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -14,22 +14,22 @@
 #ifndef CMYK_H
 #define CMYK_H
 
-#include <jinclude.h>
+#include "jinclude.h"
 #define JPEG_INTERNALS
-#include <jpeglib.h>
-#include "jconfigint.h"
+#include "jpeglib.h"
+#include "jsamplecomp.h"
 
 
 /* Fully reversible */
 
 INLINE
 LOCAL(void)
-rgb_to_cmyk(JSAMPLE r, JSAMPLE g, JSAMPLE b, JSAMPLE *c, JSAMPLE *m,
-            JSAMPLE *y, JSAMPLE *k)
+rgb_to_cmyk(int maxval, _JSAMPLE r, _JSAMPLE g, _JSAMPLE b,
+            _JSAMPLE *c, _JSAMPLE *m, _JSAMPLE *y, _JSAMPLE *k)
 {
-  double ctmp = 1.0 - ((double)r / 255.0);
-  double mtmp = 1.0 - ((double)g / 255.0);
-  double ytmp = 1.0 - ((double)b / 255.0);
+  double ctmp = 1.0 - ((double)r / (double)maxval);
+  double mtmp = 1.0 - ((double)g / (double)maxval);
+  double ytmp = 1.0 - ((double)b / (double)maxval);
   double ktmp = MIN(MIN(ctmp, mtmp), ytmp);
 
   if (ktmp == 1.0) ctmp = mtmp = ytmp = 0.0;
@@ -38,10 +38,10 @@ rgb_to_cmyk(JSAMPLE r, JSAMPLE g, JSAMPLE b, JSAMPLE *c, JSAMPLE *m,
     mtmp = (mtmp - ktmp) / (1.0 - ktmp);
     ytmp = (ytmp - ktmp) / (1.0 - ktmp);
   }
-  *c = (JSAMPLE)(255.0 - ctmp * 255.0 + 0.5);
-  *m = (JSAMPLE)(255.0 - mtmp * 255.0 + 0.5);
-  *y = (JSAMPLE)(255.0 - ytmp * 255.0 + 0.5);
-  *k = (JSAMPLE)(255.0 - ktmp * 255.0 + 0.5);
+  *c = (_JSAMPLE)((double)maxval - ctmp * (double)maxval + 0.5);
+  *m = (_JSAMPLE)((double)maxval - mtmp * (double)maxval + 0.5);
+  *y = (_JSAMPLE)((double)maxval - ytmp * (double)maxval + 0.5);
+  *k = (_JSAMPLE)((double)maxval - ktmp * (double)maxval + 0.5);
 }
 
 
@@ -49,12 +49,12 @@ rgb_to_cmyk(JSAMPLE r, JSAMPLE g, JSAMPLE b, JSAMPLE *c, JSAMPLE *m,
 
 INLINE
 LOCAL(void)
-cmyk_to_rgb(JSAMPLE c, JSAMPLE m, JSAMPLE y, JSAMPLE k, JSAMPLE *r, JSAMPLE *g,
-            JSAMPLE *b)
+cmyk_to_rgb(int maxval, _JSAMPLE c, _JSAMPLE m, _JSAMPLE y, _JSAMPLE k,
+            _JSAMPLE *r, _JSAMPLE *g, _JSAMPLE *b)
 {
-  *r = (JSAMPLE)((double)c * (double)k / 255.0 + 0.5);
-  *g = (JSAMPLE)((double)m * (double)k / 255.0 + 0.5);
-  *b = (JSAMPLE)((double)y * (double)k / 255.0 + 0.5);
+  *r = (_JSAMPLE)((double)c * (double)k / (double)maxval + 0.5);
+  *g = (_JSAMPLE)((double)m * (double)k / (double)maxval + 0.5);
+  *b = (_JSAMPLE)((double)y * (double)k / (double)maxval + 0.5);
 }
 
 

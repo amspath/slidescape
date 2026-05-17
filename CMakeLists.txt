@@ -16,6 +16,13 @@ option(USE_ADDRESS_SANITIZER "Use address sanitizer" OFF)
 # Detect CPU type and whether we're building 64-bit or 32-bit code
 math(EXPR BITS "${CMAKE_SIZEOF_VOID_P} * 8")
 string(TOLOWER ${CMAKE_SYSTEM_PROCESSOR} CMAKE_SYSTEM_PROCESSOR_LC)
+set(COUNT 1)
+foreach(ARCH ${CMAKE_OSX_ARCHITECTURES})
+    if(COUNT GREATER 1)
+        message(FATAL_ERROR "${CMAKE_PROJECT_NAME} contains assembly code, so it cannot be built with multiple values in CMAKE_OSX_ARCHITECTURES.")
+    endif()
+    math(EXPR COUNT "${COUNT}+1")
+endforeach()
 if(CMAKE_SYSTEM_PROCESSOR_LC MATCHES "x86_64" OR
         CMAKE_SYSTEM_PROCESSOR_LC MATCHES "amd64" OR
         CMAKE_SYSTEM_PROCESSOR_LC MATCHES "i[0-9]86" OR
@@ -30,17 +37,28 @@ if(CMAKE_SYSTEM_PROCESSOR_LC MATCHES "x86_64" OR
         set(CMAKE_SYSTEM_PROCESSOR ${CPU_TYPE})
     endif()
 elseif(CMAKE_SYSTEM_PROCESSOR_LC STREQUAL "aarch64" OR
-        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "arm*")
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "^arm")
     if(BITS EQUAL 64)
         set(CPU_TYPE arm64)
     else()
         set(CPU_TYPE arm)
     endif()
-elseif(CMAKE_SYSTEM_PROCESSOR_LC MATCHES "ppc*" OR
-        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "powerpc*")
+elseif(CMAKE_SYSTEM_PROCESSOR_LC MATCHES "^ppc" OR
+        CMAKE_SYSTEM_PROCESSOR_LC MATCHES "^powerpc")
     set(CPU_TYPE powerpc)
 else()
     set(CPU_TYPE ${CMAKE_SYSTEM_PROCESSOR_LC})
+endif()
+if(CMAKE_OSX_ARCHITECTURES MATCHES "x86_64" OR
+        CMAKE_OSX_ARCHITECTURES MATCHES "arm64" OR
+        CMAKE_OSX_ARCHITECTURES MATCHES "i386")
+    set(CPU_TYPE ${CMAKE_OSX_ARCHITECTURES})
+endif()
+if(CMAKE_OSX_ARCHITECTURES MATCHES "ppc")
+    set(CPU_TYPE powerpc)
+endif()
+if(MSVC_IDE AND CMAKE_GENERATOR_PLATFORM MATCHES "arm64")
+    set(CPU_TYPE arm64)
 endif()
 message(STATUS "${BITS}-bit build (${CPU_TYPE})")
 
@@ -103,23 +121,66 @@ if (WIN32)
     include_directories("${CMAKE_SOURCE_DIR}/deps/dirent")
 endif()
 
-# libjpeg-turbo requires these files for JPEG decoding support
-set(JPEG_SOURCE_FILES
-        jerror.c    jaricom.c   jcapimin.c  jcmarker.c  jcomapi.c
-        jdapimin.c  jdapistd.c  jdapistd.c  jdarith.c   jdcoefct.c
-        jdcolor.c   jddctmgr.c  jdhuff.c    jdinput.c   jdmainct.c
-        jdmarker.c  jdmaster.c  jdmerge.c   jdphuff.c   jdpostct.c
-        jdsample.c  jidctflt.c  jidctfst.c  jidctint.c  jidctred.c
-        jmemmgr.c   jmemnobs.c  jquant1.c   jquant2.c   jutils.c
+set(JPEG_SOURCE_FILES jcapimin.c
+        wrapper/jcapistd-8.c wrapper/jcapistd-12.c wrapper/jcapistd-16.c
+        wrapper/jccoefct-8.c wrapper/jccoefct-12.c
+        wrapper/jccolor-8.c wrapper/jccolor-12.c wrapper/jccolor-16.c
+        wrapper/jcdctmgr-8.c wrapper/jcdctmgr-12.c
+        wrapper/jcdiffct-8.c wrapper/jcdiffct-12.c wrapper/jcdiffct-16.c
+        jchuff.c jcicc.c jcinit.c jclhuff.c
+        wrapper/jclossls-8.c wrapper/jclossls-12.c wrapper/jclossls-16.c
+        wrapper/jcmainct-8.c wrapper/jcmainct-12.c wrapper/jcmainct-16.c
+        jcmarker.c jcmaster.c jcomapi.c jcparam.c jcphuff.c
+        wrapper/jcprepct-8.c wrapper/jcprepct-12.c wrapper/jcprepct-16.c
+        wrapper/jcsample-8.c wrapper/jcsample-12.c wrapper/jcsample-16.c
+        jctrans.c jdapimin.c
+        wrapper/jdapistd-8.c wrapper/jdapistd-12.c wrapper/jdapistd-16.c
+        jdatadst.c jdatasrc.c
+        wrapper/jdcoefct-8.c wrapper/jdcoefct-12.c
+        wrapper/jdcolor-8.c wrapper/jdcolor-12.c wrapper/jdcolor-16.c
+        wrapper/jddctmgr-8.c wrapper/jddctmgr-12.c
+        wrapper/jddiffct-8.c wrapper/jddiffct-12.c wrapper/jddiffct-16.c
+        jdhuff.c jdicc.c jdinput.c jdlhuff.c
+        wrapper/jdlossls-8.c wrapper/jdlossls-12.c wrapper/jdlossls-16.c
+        wrapper/jdmainct-8.c wrapper/jdmainct-12.c wrapper/jdmainct-16.c
+        jdmarker.c jdmaster.c
+        wrapper/jdmerge-8.c wrapper/jdmerge-12.c
+        jdphuff.c
+        wrapper/jdpostct-8.c wrapper/jdpostct-12.c wrapper/jdpostct-16.c
+        wrapper/jdsample-8.c wrapper/jdsample-12.c wrapper/jdsample-16.c
+        jdtrans.c jerror.c jfdctflt.c
+        wrapper/jfdctfst-8.c wrapper/jfdctfst-12.c
+        wrapper/jfdctint-8.c wrapper/jfdctint-12.c
+        wrapper/jidctflt-8.c wrapper/jidctflt-12.c
+        wrapper/jidctfst-8.c wrapper/jidctfst-12.c
+        wrapper/jidctint-8.c wrapper/jidctint-12.c
+        wrapper/jidctred-8.c wrapper/jidctred-12.c
+        jmemmgr.c jmemnobs.c jpeg_nbits.c
+        wrapper/jquant1-8.c wrapper/jquant1-12.c
+        wrapper/jquant2-8.c wrapper/jquant2-12.c
+        wrapper/jutils-8.c wrapper/jutils-12.c wrapper/jutils-16.c
+        jaricom.c
+        jcarith.c
+        jdarith.c
 )
 
-# extra files needed for JPEG compression support
-set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES}
-        jcapistd.c  jdatadst.c  jcparam.c   jcinit.c    jcmaster.c
-        jccolor.c   jcsample.c  jcprepct.c  jcdctmgr.c  jcarith.c
-        jctrans.c   jchuff.c    jccoefct.c  jcmainct.c  jcphuff.c
-        jfdctflt.c  jfdctfst.c  jfdctint.c
-)
+## libjpeg-turbo requires these files for JPEG decoding support
+#set(JPEG_SOURCE_FILES
+#        jerror.c    jaricom.c   jcapimin.c  jcmarker.c  jcomapi.c
+#        jdapimin.c  jdapistd.c  jdapistd.c  jdarith.c   jdcoefct.c
+#        jdcolor.c   jddctmgr.c  jdhuff.c    jdinput.c   jdmainct.c
+#        jdmarker.c  jdmaster.c  jdmerge.c   jdphuff.c   jdpostct.c
+#        jdsample.c  jidctflt.c  jidctfst.c  jidctint.c  jidctred.c
+#        jmemmgr.c   jmemnobs.c  jquant1.c   jquant2.c   jutils.c
+#)
+#
+## extra files needed for JPEG compression support
+#set(JPEG_SOURCE_FILES ${JPEG_SOURCE_FILES}
+#        jcapistd.c  jdatadst.c  jcparam.c   jcinit.c    jcmaster.c
+#        jccolor.c   jcsample.c  jcprepct.c  jcdctmgr.c  jcarith.c
+#        jctrans.c   jchuff.c    jccoefct.c  jcmainct.c  jcphuff.c
+#        jfdctflt.c  jfdctfst.c  jfdctint.c
+#)
 
 # https://stackoverflow.com/questions/13103018/how-to-prepend-cmake-current-source-dir-to-all-files-in-variable
 function(prepend_path SOURCE_FILES PREFIX)

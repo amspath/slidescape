@@ -4,7 +4,7 @@
  * This file was part of the Independent JPEG Group's software:
  * Copyright (C) 1995-2019, Thomas G. Lane, Guido Vollbeding.
  * libjpeg-turbo Modifications:
- * Copyright (C) 2010, 2014, 2017, 2019-2021, D. R. Commander.
+ * Copyright (C) 2010, 2014, 2017, 2019-2022, 2024, 2026, D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -14,20 +14,14 @@
  * provides some lossless and sort-of-lossless transformations of JPEG data.
  */
 
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_DEPRECATE
+#endif
+
 #include "cdjpeg.h"             /* Common decls for cjpeg/djpeg applications */
 #include "transupp.h"           /* Support routines for jpegtran */
 #include "jversion.h"           /* for version message */
 #include "jconfigint.h"
-
-#ifdef USE_CCOMMAND             /* command-line reader for Macintosh */
-#ifdef __MWERKS__
-#include <SIOUX.h>              /* Metrowerks needs this */
-#include <console.h>            /* ... and this */
-#endif
-#ifdef THINK_C
-#include <console.h>            /* Think declares it here */
-#endif
-#endif
 
 
 /*
@@ -41,11 +35,13 @@
 
 static const char *progname;    /* program name for error messages */
 static char *icc_filename;      /* for -icc switch */
-JDIMENSION max_scans;           /* for -maxscans switch */
+static JDIMENSION max_scans;    /* for -maxscans switch */
 static char *outfilename;       /* for -outfile switch */
+#if TRANSFORMS_SUPPORTED
 static char *dropfilename;      /* for -drop switch */
-boolean report;                 /* for -report switch */
-boolean strict;                 /* for -strict switch */
+#endif
+static boolean report;          /* for -report switch */
+static boolean strict;          /* for -strict switch */
 static JCOPY_OPTION copyoption; /* -copy switch */
 static jpeg_transform_info transformoption; /* image transformation options */
 
@@ -80,8 +76,6 @@ usage(void)
   fprintf(stderr, "  -grayscale     Reduce to grayscale (omit color data)\n");
   fprintf(stderr, "  -perfect       Fail if there is non-transformable edge blocks\n");
   fprintf(stderr, "  -rotate [90|180|270]         Rotate image (degrees clockwise)\n");
-#endif
-#if TRANSFORMS_SUPPORTED
   fprintf(stderr, "  -transpose     Transpose image\n");
   fprintf(stderr, "  -transverse    Transverse transpose image\n");
   fprintf(stderr, "  -trim          Drop non-transformable edge blocks\n");
@@ -146,11 +140,17 @@ parse_switches(j_compress_ptr cinfo, int argc, char **argv,
 {
   int argn;
   char *arg;
+#ifdef C_PROGRESSIVE_SUPPORTED
   boolean simple_progressive;
+#endif
+#ifdef C_MULTISCAN_FILES_SUPPORTED
   char *scansarg = NULL;        /* saves -scans parm if any */
+#endif
 
   /* Set up default JPEG parameters. */
+#ifdef C_PROGRESSIVE_SUPPORTED
   simple_progressive = FALSE;
+#endif
   icc_filename = NULL;
   max_scans = 0;
   outfilename = NULL;
@@ -189,7 +189,7 @@ parse_switches(j_compress_ptr cinfo, int argc, char **argv,
       exit(EXIT_FAILURE);
 #endif
 
-    } else if (keymatch(arg, "copy", 2)) {
+    } else if (keymatch(arg, "copy", 1)) {
       /* Select which extra markers to copy. */
       if (++argn >= argc)       /* advance to next argument */
         usage();
@@ -247,7 +247,8 @@ parse_switches(j_compress_ptr cinfo, int argc, char **argv,
       if (!printed_version) {
         fprintf(stderr, "%s version %s (build %s)\n",
                 PACKAGE_NAME, VERSION, BUILD);
-        fprintf(stderr, "%s\n\n", JCOPYRIGHT);
+        fprintf(stderr, JCOPYRIGHT1);
+        fprintf(stderr, JCOPYRIGHT2 "\n");
         fprintf(stderr, "Emulating The Independent JPEG Group's software, version %s\n\n",
                 JVERSION);
         printed_version = TRUE;
@@ -325,7 +326,7 @@ parse_switches(j_compress_ptr cinfo, int argc, char **argv,
        * handle. */
       transformoption.perfect = TRUE;
 
-    } else if (keymatch(arg, "progressive", 2)) {
+    } else if (keymatch(arg, "progressive", 1)) {
       /* Select simple progressive mode. */
 #ifdef C_PROGRESSIVE_SUPPORTED
       simple_progressive = TRUE;
@@ -478,11 +479,6 @@ main(int argc, char **argv)
   FILE *icc_file;
   JOCTET *icc_profile = NULL;
   long icc_len = 0;
-
-  /* On Mac, fetch a command line. */
-#ifdef USE_CCOMMAND
-  argc = ccommand(&argv);
-#endif
 
   progname = argv[0];
   if (progname == NULL || progname[0] == 0)

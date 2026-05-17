@@ -4,8 +4,11 @@
  * This file was part of the Independent JPEG Group's software:
  * Copyright (C) 1991-1997, Thomas G. Lane.
  * Modified 1997-2009 by Guido Vollbeding.
+ * Lossless JPEG Modifications:
+ * Copyright (C) 1999, Ken Murchison.
  * libjpeg-turbo Modifications:
- * Copyright (C) 2009, 2011, 2014-2015, 2018, 2020, D. R. Commander.
+ * Copyright (C) 2009, 2011, 2014-2015, 2018, 2020, 2022, 2026,
+ *           D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -41,31 +44,29 @@
  * arrays is very slow on your hardware, you might want to change these.
  */
 
-#if BITS_IN_JSAMPLE == 8
-/* JSAMPLE should be the smallest type that will hold the values 0..255.
- */
+/* JSAMPLE should be the smallest type that will hold the values 0..255. */
 
 typedef unsigned char JSAMPLE;
 #define GETJSAMPLE(value)  ((int)(value))
 
-#define MAXJSAMPLE      255
-#define CENTERJSAMPLE   128
-
-#endif /* BITS_IN_JSAMPLE == 8 */
+#define MAXJSAMPLE       255
+#define CENTERJSAMPLE    128
 
 
-#if BITS_IN_JSAMPLE == 12
-/* JSAMPLE should be the smallest type that will hold the values 0..4095.
- * On nearly all machines "short" will do nicely.
- */
+/* J12SAMPLE should be the smallest type that will hold the values 0..4095. */
 
-typedef short JSAMPLE;
-#define GETJSAMPLE(value)  ((int)(value))
+typedef short J12SAMPLE;
 
-#define MAXJSAMPLE      4095
-#define CENTERJSAMPLE   2048
+#define MAXJ12SAMPLE     4095
+#define CENTERJ12SAMPLE  2048
 
-#endif /* BITS_IN_JSAMPLE == 12 */
+
+/* J16SAMPLE should be the smallest type that will hold the values 0..65535. */
+
+typedef unsigned short J16SAMPLE;
+
+#define MAXJ16SAMPLE     65535
+#define CENTERJ16SAMPLE  32768
 
 
 /* Representation of a DCT frequency coefficient.
@@ -100,11 +101,7 @@ typedef unsigned char UINT8;
 
 /* UINT16 must hold at least the values 0..65535. */
 
-#ifdef HAVE_UNSIGNED_SHORT
 typedef unsigned short UINT16;
-#else /* not HAVE_UNSIGNED_SHORT */
-typedef unsigned int UINT16;
-#endif /* HAVE_UNSIGNED_SHORT */
 
 /* INT16 must hold at least the values -32768..32767. */
 
@@ -245,26 +242,32 @@ typedef int boolean;
 /* Encoder capability options: */
 
 #define C_MULTISCAN_FILES_SUPPORTED /* Multiple-scan JPEG files? */
-#define C_PROGRESSIVE_SUPPORTED     /* Progressive JPEG? (Requires MULTISCAN)*/
+#define C_PROGRESSIVE_SUPPORTED     /* Progressive JPEG?  (Requires
+                                       C_MULTISCAN_FILES_SUPPORTED and
+                                       ENTROPY_OPT_SUPPORTED) */
+#define C_LOSSLESS_SUPPORTED        /* Lossless JPEG? */
 #define ENTROPY_OPT_SUPPORTED       /* Optimization of entropy coding parms? */
 /* Note: if you selected 12-bit data precision, it is dangerous to turn off
  * ENTROPY_OPT_SUPPORTED.  The standard Huffman tables are only good for 8-bit
  * precision, so jchuff.c normally uses entropy optimization to compute
  * usable tables for higher precision.  If you don't want to do optimization,
  * you'll have to supply different default Huffman tables.
- * The exact same statements apply for progressive JPEG: the default tables
- * don't work for progressive mode.  (This may get fixed, however.)
+ * The exact same statements apply for lossless JPEG: the default tables don't
+ * work for lossless mode.  (This may get fixed, however.)
  */
 #define INPUT_SMOOTHING_SUPPORTED   /* Input image smoothing option? */
 
 /* Decoder capability options: */
 
 #define D_MULTISCAN_FILES_SUPPORTED /* Multiple-scan JPEG files? */
-#define D_PROGRESSIVE_SUPPORTED     /* Progressive JPEG? (Requires MULTISCAN)*/
+#define D_PROGRESSIVE_SUPPORTED     /* Progressive JPEG?  (Requires
+                                       D_MULTISCAN_FILES_SUPPORTED) */
+#define D_LOSSLESS_SUPPORTED        /* Lossless JPEG?  (Requires
+                                       D_MULTISCAN_FILES_SUPPORTED) */
 #define SAVE_MARKERS_SUPPORTED      /* jpeg_save_markers() needed? */
 #define BLOCK_SMOOTHING_SUPPORTED   /* Block smoothing? (Progressive only) */
-#define IDCT_SCALING_SUPPORTED      /* Output rescaling via IDCT? */
-#undef  UPSAMPLE_SCALING_SUPPORTED  /* Output rescaling at upsample stage? */
+#define IDCT_SCALING_SUPPORTED      /* Output rescaling via IDCT?  (Requires
+                                       DCT_ISLOW_SUPPORTED) */
 #define UPSAMPLE_MERGING_SUPPORTED  /* Fast path for sloppy upsampling? */
 #define QUANT_1PASS_SUPPORTED       /* 1-pass color quantization? */
 #define QUANT_2PASS_SUPPORTED       /* 2-pass color quantization? */

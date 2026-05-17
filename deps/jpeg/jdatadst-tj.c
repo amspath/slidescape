@@ -5,7 +5,7 @@
  * Copyright (C) 1994-1996, Thomas G. Lane.
  * Modified 2009-2012 by Guido Vollbeding.
  * libjpeg-turbo Modifications:
- * Copyright (C) 2011, 2014, 2016, 2019, D. R. Commander.
+ * Copyright (C) 2011, 2014, 2016, 2019, 2022-2023, 2025-2026, D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -19,16 +19,13 @@
  */
 
 /* this is not a core library module, so it doesn't define JPEG_INTERNALS */
+#define JPEG_INTERNALS
 #include "jinclude.h"
 #include "jpeglib.h"
 #include "jerror.h"
 
-#ifndef HAVE_STDLIB_H           /* <stdlib.h> should declare malloc(),free() */
-extern void *malloc(size_t size);
-extern void free(void *ptr);
-#endif
 void jpeg_mem_dest_tj(j_compress_ptr cinfo, unsigned char **outbuffer,
-                      unsigned long *outsize, boolean alloc);
+                      size_t *outsize, boolean alloc);
 
 
 #define OUTPUT_BUF_SIZE  4096   /* choose an efficiently fwrite'able size */
@@ -40,7 +37,7 @@ typedef struct {
   struct jpeg_destination_mgr pub; /* public fields */
 
   unsigned char **outbuffer;    /* target buffer */
-  unsigned long *outsize;
+  size_t *outsize;
   unsigned char *newbuffer;     /* newly allocated buffer */
   JOCTET *buffer;               /* start of buffer */
   size_t bufsize;
@@ -96,12 +93,12 @@ empty_mem_output_buffer(j_compress_ptr cinfo)
 
   /* Try to allocate new buffer with double size */
   nextsize = dest->bufsize * 2;
-  nextbuffer = (JOCTET *)malloc(nextsize);
+  nextbuffer = (JOCTET *)MALLOC(nextsize);
 
   if (nextbuffer == NULL)
     ERREXIT1(cinfo, JERR_OUT_OF_MEMORY, 10);
 
-  MEMCOPY(nextbuffer, dest->buffer, dest->bufsize);
+  memcpy(nextbuffer, dest->buffer, dest->bufsize);
 
   free(dest->newbuffer);
 
@@ -132,7 +129,7 @@ term_mem_destination(j_compress_ptr cinfo)
   my_mem_dest_ptr dest = (my_mem_dest_ptr)cinfo->dest;
 
   if (dest->alloc) *dest->outbuffer = dest->buffer;
-  *dest->outsize = (unsigned long)(dest->bufsize - dest->pub.free_in_buffer);
+  *dest->outsize = dest->bufsize - dest->pub.free_in_buffer;
 }
 
 
@@ -149,7 +146,7 @@ term_mem_destination(j_compress_ptr cinfo)
 
 GLOBAL(void)
 jpeg_mem_dest_tj(j_compress_ptr cinfo, unsigned char **outbuffer,
-                 unsigned long *outsize, boolean alloc)
+                 size_t *outsize, boolean alloc)
 {
   boolean reused = FALSE;
   my_mem_dest_ptr dest;
@@ -184,16 +181,17 @@ jpeg_mem_dest_tj(j_compress_ptr cinfo, unsigned char **outbuffer,
   dest->outsize = outsize;
   dest->alloc = alloc;
 
-  if (*outbuffer == NULL || *outsize == 0) {
+  if (*outbuffer == NULL || (*outsize == 0 && !reused)) {
     if (alloc) {
       /* Allocate initial buffer */
-      dest->newbuffer = *outbuffer = (unsigned char *)malloc(OUTPUT_BUF_SIZE);
+      dest->newbuffer = *outbuffer = (unsigned char *)MALLOC(OUTPUT_BUF_SIZE);
       if (dest->newbuffer == NULL)
         ERREXIT1(cinfo, JERR_OUT_OF_MEMORY, 10);
       *outsize = OUTPUT_BUF_SIZE;
     } else
       ERREXIT(cinfo, JERR_BUFFER_SIZE);
-  }
+  } else
+    dest->newbuffer = *outbuffer;
 
   dest->pub.next_output_byte = dest->buffer = *outbuffer;
   if (!reused)

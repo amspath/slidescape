@@ -304,13 +304,6 @@ u8* decode_associated_image_from_isyntax(isyntax_t* isyntax, isyntax_image_t* im
 	u32 jpeg_size = 0;
 	u8* jpeg_compressed = isyntax_get_associated_image_jpeg(isyntax, image, &jpeg_size);
 
-	// TODO: Why does this crash?
-	// Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
-	// jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
-	// This causes the program to crash eventually when trying to free memory in free_pool().
-	// When using a hardware watchpoint on the corrupted memory, the overwiting occurs in x86_64/jdsample-avx2.asm at line 358:
-	//     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymm6
-	// WORKAROUND: disabled SIMD in jsimd_can_h2v2_fancy_upsample().
 	i32 channels_in_file = 0;
 	u8* pixels = jpeg_decode_image(jpeg_compressed, jpeg_size, &image->width, &image->height, &channels_in_file);
 	return pixels;

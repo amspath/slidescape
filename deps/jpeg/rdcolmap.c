@@ -1,8 +1,10 @@
 /*
  * rdcolmap.c
  *
+ * This file was part of the Independent JPEG Group's software:
  * Copyright (C) 1994-1996, Thomas G. Lane.
- * This file is part of the Independent JPEG Group's software.
+ * libjpeg-turbo Modifications:
+ * Copyright (C) 2022, 2026, D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -18,13 +20,15 @@
  * of each desired color.  Such a file can be extracted from an
  * ordinary image PPM file with ppmtomap(1).
  *
- * Rescaling a PPM that has a maxval unequal to MAXJSAMPLE is not
+ * Rescaling a PPM that has a maxval unequal to _MAXJSAMPLE is not
  * currently implemented.
  */
 
 #include "cdjpeg.h"             /* Common decls for cjpeg/djpeg applications */
+#include "jsamplecomp.h"
 
 #ifdef QUANT_2PASS_SUPPORTED    /* otherwise can't quantize to supplied map */
+#if BITS_IN_JSAMPLE != 16 || defined(D_LOSSLESS_SUPPORTED)
 
 /* Portions of this code are based on the PBMPLUS library, which is:
 **
@@ -46,9 +50,9 @@
 LOCAL(void)
 add_map_entry(j_decompress_ptr cinfo, int R, int G, int B)
 {
-  JSAMPROW colormap0 = cinfo->colormap[0];
-  JSAMPROW colormap1 = cinfo->colormap[1];
-  JSAMPROW colormap2 = cinfo->colormap[2];
+  _JSAMPROW colormap0 = ((_JSAMPARRAY)cinfo->colormap)[0];
+  _JSAMPROW colormap1 = ((_JSAMPARRAY)cinfo->colormap)[1];
+  _JSAMPROW colormap2 = ((_JSAMPARRAY)cinfo->colormap)[2];
   int ncolors = cinfo->actual_number_of_colors;
   int index;
 
@@ -60,13 +64,13 @@ add_map_entry(j_decompress_ptr cinfo, int R, int G, int B)
   }
 
   /* Check for map overflow. */
-  if (ncolors >= (MAXJSAMPLE + 1))
-    ERREXIT1(cinfo, JERR_QUANT_MANY_COLORS, (MAXJSAMPLE + 1));
+  if (ncolors >= (_MAXJSAMPLE + 1))
+    ERREXIT1(cinfo, JERR_QUANT_MANY_COLORS, (_MAXJSAMPLE + 1));
 
   /* OK, add color to map. */
-  colormap0[ncolors] = (JSAMPLE)R;
-  colormap1[ncolors] = (JSAMPLE)G;
-  colormap2[ncolors] = (JSAMPLE)B;
+  colormap0[ncolors] = (_JSAMPLE)R;
+  colormap1[ncolors] = (_JSAMPLE)G;
+  colormap2[ncolors] = (_JSAMPLE)B;
   cinfo->actual_number_of_colors++;
 }
 
@@ -135,7 +139,7 @@ pbm_getc(FILE *infile)
 
 
 LOCAL(unsigned int)
-read_pbm_integer(j_decompress_ptr cinfo, FILE *infile)
+read_pbm_integer(j_decompress_ptr cinfo, FILE *infile, unsigned int maxval)
 /* Read an unsigned decimal integer from the PPM file */
 /* Swallows one trailing character after the integer */
 /* Note that on a 16-bit-int machine, only values up to 64k can be read. */
@@ -158,6 +162,8 @@ read_pbm_integer(j_decompress_ptr cinfo, FILE *infile)
   while ((ch = pbm_getc(infile)) >= '0' && ch <= '9') {
     val *= 10;
     val += ch - '0';
+    if (val > maxval)
+      ERREXIT(cinfo, JERR_PPM_OUTOFRANGE);
   }
   return val;
 }
@@ -178,24 +184,26 @@ read_ppm_map(j_decompress_ptr cinfo, FILE *infile)
   c = getc(infile);             /* save format discriminator for a sec */
 
   /* while we fetch the remaining header info */
-  w = read_pbm_integer(cinfo, infile);
-  h = read_pbm_integer(cinfo, infile);
-  maxval = read_pbm_integer(cinfo, infile);
+  w = read_pbm_integer(cinfo, infile, 65535);
+  h = read_pbm_integer(cinfo, infile, 65535);
+  maxval = read_pbm_integer(cinfo, infile, 65535);
 
   if (w <= 0 || h <= 0 || maxval <= 0) /* error check */
     ERREXIT(cinfo, JERR_BAD_CMAP_FILE);
+  if (w > JPEG_MAX_DIMENSION || h > JPEG_MAX_DIMENSION)
+    ERREXIT1(cinfo, JERR_IMAGE_TOO_BIG, JPEG_MAX_DIMENSION);
 
   /* For now, we don't support rescaling from an unusual maxval. */
-  if (maxval != (unsigned int)MAXJSAMPLE)
+  if (maxval != (unsigned int)_MAXJSAMPLE)
     ERREXIT(cinfo, JERR_BAD_CMAP_FILE);
 
   switch (c) {
   case '3':                     /* it's a text-format PPM file */
     for (row = 0; row < h; row++) {
       for (col = 0; col < w; col++) {
-        R = read_pbm_integer(cinfo, infile);
-        G = read_pbm_integer(cinfo, infile);
-        B = read_pbm_integer(cinfo, infile);
+        R = read_pbm_integer(cinfo, infile, maxval);
+        G = read_pbm_integer(cinfo, infile, maxval);
+        B = read_pbm_integer(cinfo, infile, maxval);
         add_map_entry(cinfo, R, G, B);
       }
     }
@@ -228,12 +236,15 @@ read_ppm_map(j_decompress_ptr cinfo, FILE *infile)
  */
 
 GLOBAL(void)
-read_color_map(j_decompress_ptr cinfo, FILE *infile)
+_read_color_map(j_decompress_ptr cinfo, FILE *infile)
 {
+  if (cinfo->data_precision != BITS_IN_JSAMPLE)
+    ERREXIT1(cinfo, JERR_BAD_PRECISION, cinfo->data_precision);
+
   /* Allocate space for a color map of maximum supported size. */
   cinfo->colormap = (*cinfo->mem->alloc_sarray)
     ((j_common_ptr)cinfo, JPOOL_IMAGE,
-     (JDIMENSION)(MAXJSAMPLE + 1), (JDIMENSION)3);
+     (JDIMENSION)(_MAXJSAMPLE + 1), (JDIMENSION)3);
   cinfo->actual_number_of_colors = 0; /* initialize map to empty */
 
   /* Read first byte to determine file format */
@@ -250,4 +261,5 @@ read_color_map(j_decompress_ptr cinfo, FILE *infile)
   }
 }
 
+#endif /* BITS_IN_JSAMPLE != 16 || defined(D_LOSSLESS_SUPPORTED) */
 #endif /* QUANT_2PASS_SUPPORTED */

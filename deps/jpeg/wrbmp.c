@@ -5,7 +5,7 @@
  * Copyright (C) 1994-1996, Thomas G. Lane.
  * libjpeg-turbo Modifications:
  * Copyright (C) 2013, Linaro Limited.
- * Copyright (C) 2014-2015, 2017, 2019, D. R. Commander.
+ * Copyright (C) 2014-2015, 2017, 2019, 2022, 2024, 2026, D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -121,7 +121,7 @@ put_pixel_rows(j_decompress_ptr cinfo, djpeg_dest_ptr dinfo,
   inptr = dest->pub.buffer[0];
 
   if (cinfo->out_color_space == JCS_EXT_BGR) {
-    MEMCOPY(outptr, inptr, dest->row_width);
+    memcpy(outptr, inptr, dest->row_width);
     outptr += cinfo->output_width * 3;
   } else if (cinfo->out_color_space == JCS_RGB565) {
     boolean big_endian = is_big_endian();
@@ -142,7 +142,7 @@ put_pixel_rows(j_decompress_ptr cinfo, djpeg_dest_ptr dinfo,
   } else if (cinfo->out_color_space == JCS_CMYK) {
     for (col = cinfo->output_width; col > 0; col--) {
       JSAMPLE c = *inptr++, m = *inptr++, y = *inptr++, k = *inptr++;
-      cmyk_to_rgb(c, m, y, k, outptr + 2, outptr + 1, outptr);
+      cmyk_to_rgb(255, c, m, y, k, outptr + 2, outptr + 1, outptr);
       outptr += 3;
     }
   } else {
@@ -165,7 +165,7 @@ put_pixel_rows(j_decompress_ptr cinfo, djpeg_dest_ptr dinfo,
     *outptr++ = 0;
 
   if (!dest->use_inversion_array)
-    (void)JFWRITE(dest->pub.output_file, dest->iobuffer, dest->row_width);
+    fwrite(dest->iobuffer, 1, dest->row_width, dest->pub.output_file);
 }
 
 METHODDEF(void)
@@ -191,7 +191,7 @@ put_gray_rows(j_decompress_ptr cinfo, djpeg_dest_ptr dinfo,
 
   /* Transfer data. */
   inptr = dest->pub.buffer[0];
-  MEMCOPY(outptr, inptr, cinfo->output_width);
+  memcpy(outptr, inptr, cinfo->output_width);
   outptr += cinfo->output_width;
 
   /* Zero out the pad bytes. */
@@ -200,7 +200,7 @@ put_gray_rows(j_decompress_ptr cinfo, djpeg_dest_ptr dinfo,
     *outptr++ = 0;
 
   if (!dest->use_inversion_array)
-    (void)JFWRITE(dest->pub.output_file, dest->iobuffer, dest->row_width);
+    fwrite(dest->iobuffer, 1, dest->row_width, dest->pub.output_file);
 }
 
 
@@ -228,7 +228,7 @@ write_bmp_header(j_decompress_ptr cinfo, bmp_dest_ptr dest)
    array[offset + 2] = (char)(((value) >> 16) & 0xFF), \
    array[offset + 3] = (char)(((value) >> 24) & 0xFF))
 
-  long headersize, bfSize;
+  size_t headersize, bfSize;
   int bits_per_pixel, cmap_entries;
 
   /* Compute colormap size and total file size */
@@ -253,11 +253,11 @@ write_bmp_header(j_decompress_ptr cinfo, bmp_dest_ptr dest)
   }
   /* File size */
   headersize = 14 + 40 + cmap_entries * 4; /* Header and colormap */
-  bfSize = headersize + (long)dest->row_width * (long)cinfo->output_height;
+  bfSize = headersize + (size_t)dest->row_width * (size_t)cinfo->output_height;
 
   /* Set unused fields of header to 0 */
-  MEMZERO(bmpfileheader, sizeof(bmpfileheader));
-  MEMZERO(bmpinfoheader, sizeof(bmpinfoheader));
+  memset(bmpfileheader, 0, sizeof(bmpfileheader));
+  memset(bmpinfoheader, 0, sizeof(bmpinfoheader));
 
   /* Fill the file header */
   bmpfileheader[0] = 0x42;      /* first 2 bytes are ASCII 'B', 'M' */
@@ -281,9 +281,9 @@ write_bmp_header(j_decompress_ptr cinfo, bmp_dest_ptr dest)
   PUT_2B(bmpinfoheader, 32, cmap_entries); /* biClrUsed */
   /* we leave biClrImportant = 0 */
 
-  if (JFWRITE(dest->pub.output_file, bmpfileheader, 14) != (size_t)14)
+  if (fwrite(bmpfileheader, 1, 14, dest->pub.output_file) != (size_t)14)
     ERREXIT(cinfo, JERR_FILE_WRITE);
-  if (JFWRITE(dest->pub.output_file, bmpinfoheader, 40) != (size_t)40)
+  if (fwrite(bmpinfoheader, 1, 40, dest->pub.output_file) != (size_t)40)
     ERREXIT(cinfo, JERR_FILE_WRITE);
 
   if (cmap_entries > 0)
@@ -325,8 +325,8 @@ write_os2_header(j_decompress_ptr cinfo, bmp_dest_ptr dest)
   bfSize = headersize + (long)dest->row_width * (long)cinfo->output_height;
 
   /* Set unused fields of header to 0 */
-  MEMZERO(bmpfileheader, sizeof(bmpfileheader));
-  MEMZERO(bmpcoreheader, sizeof(bmpcoreheader));
+  memset(bmpfileheader, 0, sizeof(bmpfileheader));
+  memset(bmpcoreheader, 0, sizeof(bmpcoreheader));
 
   /* Fill the file header */
   bmpfileheader[0] = 0x42;      /* first 2 bytes are ASCII 'B', 'M' */
@@ -342,9 +342,9 @@ write_os2_header(j_decompress_ptr cinfo, bmp_dest_ptr dest)
   PUT_2B(bmpcoreheader, 8, 1);  /* bcPlanes - must be 1 */
   PUT_2B(bmpcoreheader, 10, bits_per_pixel); /* bcBitCount */
 
-  if (JFWRITE(dest->pub.output_file, bmpfileheader, 14) != (size_t)14)
+  if (fwrite(bmpfileheader, 1, 14, dest->pub.output_file) != (size_t)14)
     ERREXIT(cinfo, JERR_FILE_WRITE);
-  if (JFWRITE(dest->pub.output_file, bmpcoreheader, 12) != (size_t)12)
+  if (fwrite(bmpcoreheader, 1, 12, dest->pub.output_file) != (size_t)12)
     ERREXIT(cinfo, JERR_FILE_WRITE);
 
   if (cmap_entries > 0)
@@ -368,11 +368,15 @@ write_colormap(j_decompress_ptr cinfo, bmp_dest_ptr dest, int map_colors,
 
   if (colormap != NULL) {
     if (cinfo->out_color_components == 3) {
+      register int rindex = rgb_red[cinfo->out_color_space];
+      register int gindex = rgb_green[cinfo->out_color_space];
+      register int bindex = rgb_blue[cinfo->out_color_space];
+
       /* Normal case with RGB colormap */
       for (i = 0; i < num_colors; i++) {
-        putc(colormap[2][i], outfile);
-        putc(colormap[1][i], outfile);
-        putc(colormap[0][i], outfile);
+        putc(colormap[bindex][i], outfile);
+        putc(colormap[gindex][i], outfile);
+        putc(colormap[rindex][i], outfile);
         if (map_entry_size == 4)
           putc(0, outfile);
       }
@@ -456,7 +460,7 @@ finish_output_bmp(j_decompress_ptr cinfo, djpeg_dest_ptr dinfo)
         ((j_common_ptr)cinfo, dest->whole_image, row - 1, (JDIMENSION)1,
          FALSE);
       data_ptr = image_ptr[0];
-      (void)JFWRITE(outfile, data_ptr, dest->row_width);
+      fwrite(data_ptr, 1, dest->row_width, outfile);
     }
     if (progress != NULL)
       progress->completed_extra_passes++;
@@ -479,6 +483,9 @@ jinit_write_bmp(j_decompress_ptr cinfo, boolean is_os2,
 {
   bmp_dest_ptr dest;
   JDIMENSION row_width;
+
+  if (cinfo->data_precision != 8)
+    ERREXIT1(cinfo, JERR_BAD_PRECISION, cinfo->data_precision);
 
   /* Create module interface object, fill in method pointers */
   dest = (bmp_dest_ptr)
@@ -505,6 +512,9 @@ jinit_write_bmp(j_decompress_ptr cinfo, boolean is_os2,
   }
 
   /* Calculate output image dimensions so we can allocate space */
+  if (cinfo->image_width > JPEG_MAX_DIMENSION ||
+      cinfo->image_height > JPEG_MAX_DIMENSION)
+    ERREXIT1(cinfo, JERR_IMAGE_TOO_BIG, JPEG_MAX_DIMENSION);
   jpeg_calc_output_dimensions(cinfo);
 
   /* Determine width of rows in the BMP file (padded to 4-byte boundary). */

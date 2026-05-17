@@ -255,14 +255,6 @@ static u8* isyntax_decode_jpeg_stream(u8* compressed, size_t compressed_len, i32
     i32 h = 0;
 
 #ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
-    // TODO: Why does this crash? Need to update libjpeg-turbo sources, reproduce and see if it can be fixed upstream (if the bug still exists).
-    // Apparently, there is a bug in the libjpeg-turbo implementation of jsimd_can_h2v2_fancy_upsample() when using SIMD.
-    // jsimd_h2v2_fancy_upsample_avx2 writes memory out of bounds.
-    // This causes the program to crash eventually when trying to free memory in free_pool().
-    // When using a hardware watchpoint on the corrupted memory, the overwiting occurs in x86_64/jdsample-avx2.asm at line 358:
-    //     vmovdqu     YMMWORD [rdi+3*SIZEOF_YMMWORD], ymm6
-    // WORKAROUND: disabled SIMD in jsimd_can_h2v2_fancy_upsample().
-
     pixels = jpeg_decode_image(compressed, compressed_len, &w, &h, channels_in_file);
     if (pixel_format == LIBISYNTAX_PIXEL_FORMAT_BGRA) {
         DUMMY_STATEMENT; // no action needed
