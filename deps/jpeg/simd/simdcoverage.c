@@ -20,11 +20,11 @@
 
 #include <stdio.h>
 #define JPEG_INTERNALS
-#include "../src/jinclude.h"
-#include "../src/jpeglib.h"
-#include "../src/jdct.h"
-#include "../src/jsimddct.h"
-#include "../src/jsimd.h"
+#include "../jinclude.h"
+#include "../jpeglib.h"
+#include "../jdct.h"
+#include "../jsimddct.h"
+#include "../jsimd.h"
 #include "../src/jpegapicomp.h"
 
 

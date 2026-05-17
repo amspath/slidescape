@@ -27,9 +27,9 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../src/jinclude.h"
-#include "../../src/jpeglib.h"
-#include "../../src/jdct.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
+#include "../../jdct.h"
 #include "../../src/jchuff.h"
 #include "../jsimd.h"
 #include "loongson-mmintrin.h"

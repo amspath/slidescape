@@ -18,11 +18,11 @@
 #endif
 
 #define JPEG_INTERNALS
-#include "../../src/jinclude.h"
-#include "../../src/jpeglib.h"
-#include "../../src/jsimd.h"
-#include "../../src/jdct.h"
-#include "../../src/jsimddct.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
+#include "../../jsimd.h"
+#include "../../jdct.h"
+#include "../../jsimddct.h"
 #include "../jsimd.h"
 
 #include <ctype.h>
