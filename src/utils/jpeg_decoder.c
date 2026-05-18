@@ -283,14 +283,19 @@ void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** table
 	}
 
 	if (tables_buffer) {
-		jpeg_mem_dest(&cinfo, tables_buffer, (unsigned long*) tables_size_ptr); // libjpeg-turbo will allocate the buffer
+		unsigned long tables_size = 0;
+		jpeg_mem_dest(&cinfo, tables_buffer, &tables_size); // libjpeg-turbo will allocate the buffer
 		jpeg_write_tables(&cinfo);
+		if (tables_size_ptr) {
+			*tables_size_ptr = tables_size;
+		}
 	} else {
 		jpeg_suppress_tables(&cinfo, TRUE);
 	}
 
 	if (jpeg_buffer) {
-		jpeg_mem_dest(&cinfo, jpeg_buffer, (unsigned long*) jpeg_size_ptr); // libjpeg-turbo will allocate the buffer
+		unsigned long jpeg_size = 0;
+		jpeg_mem_dest(&cinfo, jpeg_buffer, &jpeg_size); // libjpeg-turbo will allocate the buffer
 		jpeg_start_compress(&cinfo, FALSE);
 
 		i32 row_stride = width * cinfo.input_components;
@@ -301,6 +306,9 @@ void jpeg_encode_tile(u8* pixels, i32 width, i32 height, i32 quality, u8** table
 		}
 
 		jpeg_finish_compress(&cinfo);
+		if (jpeg_size_ptr) {
+			*jpeg_size_ptr = jpeg_size;
+		}
 	}
 
 	jpeg_destroy_compress(&cinfo);
@@ -335,7 +343,8 @@ void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg
 	jpeg_set_quality(&cinfo, quality, TRUE);
 
 	if (jpeg_buffer) {
-		jpeg_mem_dest(&cinfo, jpeg_buffer, (unsigned long*) jpeg_size_ptr); // libjpeg-turbo will allocate the buffer
+		unsigned long jpeg_size = 0;
+		jpeg_mem_dest(&cinfo, jpeg_buffer, &jpeg_size); // libjpeg-turbo will allocate the buffer
 		jpeg_start_compress(&cinfo, TRUE);
 
 		i32 row_stride = width * cinfo.input_components;
@@ -346,6 +355,9 @@ void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg
 		}
 
 		jpeg_finish_compress(&cinfo);
+		if (jpeg_size_ptr) {
+			*jpeg_size_ptr = jpeg_size;
+		}
 	}
 
 	jpeg_destroy_compress(&cinfo);
