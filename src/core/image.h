@@ -108,6 +108,7 @@ typedef struct tile_t {
     u8* pixels;
     u32 texture;
     i32 is_submitted_for_loading;
+    i32 read_region_refcount; // TODO: do we need only read_region_refcount, or something more general?
     bool8 is_empty;
     bool8 is_cached;
     bool8 need_keep_in_cache;

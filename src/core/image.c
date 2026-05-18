@@ -30,6 +30,10 @@
 // TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
 void tile_release_cache(tile_t* tile) {
 	ASSERT(tile);
+	if (tile->read_region_refcount > 0) {
+		tile->need_keep_in_cache = true;
+		return;
+	}
 	if (tile->pixels) free(tile->pixels);
 	tile->pixels = NULL;
 	tile->is_cached = false;
@@ -1024,6 +1028,19 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                 // TODO: check if we can do without locking here? Shouldn't this be on the tile level rather than globally for the whole image?
                 platform_mutex_lock(&image->lock);
 
+				// Retain every source tile used by this read. Parallel read_region() callers can overlap:
+				// one caller may have observed a shared tile as ready before another caller finishes and
+				// releases it. Keep tile pixels alive until all overlapping readers have copied from them.
+				for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
+					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
+						tile_t* tile = get_tile(level_image, tile_x, tile_y);
+						if (!tile->is_empty) {
+							++tile->read_region_refcount;
+							tile->need_keep_in_cache = true;
+						}
+					}
+				}
+
 				// request tiles
 				for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
@@ -1188,23 +1205,19 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				}
 			}
 
-			// TODO: restore caching behavior (currently disabled because of a tile pixel ownership race, causing a crash)
-#if WINDOWS
 			// release tiles
 			// TODO: proper tile caching
 			for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 				for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 					tile_t* tile = get_tile(level_image, tile_x, tile_y);
-					if (tile->is_empty) continue; // no need to load empty tiles
-					if (tile->is_cached && tile->pixels) {
-						free(tile->pixels);
-						tile->pixels = NULL;
-						tile->is_cached = false;
+					if (tile->read_region_refcount > 0) {
+						--tile->read_region_refcount;
+						if (tile->read_region_refcount == 0) {
+							tile_release_cache(tile);
+						}
 					}
-					tile->need_keep_in_cache = false;
 				}
 			}
-#endif
             platform_mutex_unlock(&image->lock);
 
 

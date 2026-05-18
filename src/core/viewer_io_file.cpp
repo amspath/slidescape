@@ -193,7 +193,7 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.tile_height = level_image->tile_height;
 	completion_task.scale = level;
 	completion_task.tile_index = tile_index;
-	completion_task.want_gpu_residency = true;
+	completion_task.want_gpu_residency = task->need_gpu_residency;
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 
