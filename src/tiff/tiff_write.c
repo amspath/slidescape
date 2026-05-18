@@ -360,7 +360,21 @@ static void construct_export_tile_task_func(i32 logical_thread_index, void* user
     atomic_increment(task->finished_count);
 }
 
+// NOTE (2026-05-18): parallel image export is currently in an ALMOST-functional state. The export appears to proceed
+// successfully on all platforms, but the resulting exported TIFF image shows issues:
+// - On Windows, some base tiles will have rectangular missing (white) sections - in those cases apparently the source
+//   tile load did not succeed or success was not adequately verified/waited for (?)
+// - On Linux, some tiles have corrupt/invalid JPEG headers and do not load correctly. It is unclear how this relates
+//   to the Windows issue.
+// - On macOS, it seems to work fine.
+// TODO: fix these image export limitations. Until then, disable parallel image export by default.
+bool disable_parallel_image_export = true;
+
 static i32 image_draft_choose_parallel_frontier_level(image_draft_t* draft) {
+    if (disable_parallel_image_export) {
+        return -1;
+    }
+
     i32 top_level_index = draft->level_count - 1;
     i32 active_worker_thread_count = thread_pool_get_active_worker_thread_count(&global_thread_pool);
     if (top_level_index < 1 || active_worker_thread_count <= 1) {
