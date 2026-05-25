@@ -45,8 +45,7 @@ static void submit_tile_completed(isyntax_streamer_t* streamer, void* tile_pixel
 	completion_task.want_gpu_residency = true;
 	completion_task.resource_id = streamer->resource_id;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	if (!completion_queue_post(streamer->tile_completion_queue, streamer->tile_completion_callback,
-                           streamer->tile_completion_task_identifier,
+	if (!completion_queue_post(streamer->tile_completion_queue, streamer->tile_completed_event_kind,
                            &completion_task, sizeof(completion_task))) {
 		ASSERT(!"tile cannot be submitted and will leak");
 	}
@@ -394,14 +393,13 @@ void isyntax_begin_first_load(isyntax_streamer_t* streamer) {
 	}
 }
 
-void isyntax_do_first_load_immediately(isyntax_t* isyntax, isyntax_image_t* wsi, i32 resource_id, u32 task_identifier) {
+void isyntax_do_first_load_immediately(isyntax_t* isyntax, isyntax_image_t* wsi, i32 resource_id, completion_event_kind_t tile_completed_event_kind) {
 	isyntax_streamer_t tile_streamer = {0};
 	tile_streamer.isyntax = isyntax;
 	tile_streamer.wsi = wsi;
 	tile_streamer.resource_id = resource_id;
 	tile_streamer.tile_completion_queue = &global_completion_queue;
-	tile_streamer.tile_completion_callback = NULL;
-	tile_streamer.tile_completion_task_identifier = task_identifier;
+	tile_streamer.tile_completed_event_kind = tile_completed_event_kind;
 	tile_streamer.pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
 	wsi->first_load_in_progress = true;
 	isyntax_do_first_load(&tile_streamer);

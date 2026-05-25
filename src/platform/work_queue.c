@@ -302,7 +302,7 @@ void completion_queue_destroy(completion_queue_t* queue) {
 	memset(queue, 0, sizeof(*queue));
 }
 
-bool completion_queue_post(completion_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size) {
+bool completion_queue_post(completion_queue_t* queue, completion_event_kind_t kind, void* userdata, size_t userdata_size) {
 	if (!queue) {
 		fatal_error("completion_queue_post(): queue is NULL");
 	}
@@ -321,7 +321,7 @@ bool completion_queue_post(completion_queue_t* queue, work_queue_callback_t call
 		                                         new_next_entry_to_submit, entry_to_submit);
 		if (succeeded) {
 			completion_event_t* entry = queue->entries + entry_to_submit;
-			*entry = (completion_event_t){ .callback = callback, .task_identifier = task_identifier };
+			*entry = (completion_event_t){ .kind = kind };
 			if (userdata_size > 0) {
 				ASSERT(userdata);
 				memcpy(entry->userdata, userdata, userdata_size);
@@ -332,11 +332,6 @@ bool completion_queue_post(completion_queue_t* queue, work_queue_callback_t call
 		}
 	}
 	return false;
-}
-
-bool completion_queue_post_task(completion_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size) {
-	ASSERT(callback);
-	return completion_queue_post(queue, callback, 0, userdata, userdata_size);
 }
 
 bool completion_queue_poll(completion_queue_t* queue, completion_event_t* out_event) {
@@ -377,7 +372,7 @@ void echo_task_completed(int logical_thread_index, void* userdata) {
 void echo_task(int logical_thread_index, void* userdata) {
 	console_print("thread %d: %s\n", logical_thread_index, (char*) userdata);
 
-	completion_queue_post_task(&global_completion_queue, echo_task_completed, userdata, strlen(userdata)+1);
+	completion_queue_post(&global_completion_queue, 1, userdata, strlen(userdata)+1);
 }
 #endif
 

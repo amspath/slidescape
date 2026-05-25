@@ -25,16 +25,6 @@
 
 #include "gui.h" // for global data, TODO: refactor
 
-// TODO: refactor
-void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata) {
-	DUMMY_STATEMENT;
-}
-
-
-void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata) {
-	viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*)userdata;
-	completion_queue_post_task(&global_completion_queue, viewer_notify_load_tile_completed, task, sizeof(*task));
-}
 
 
 void load_tile_func(i32 logical_thread_index, void* userdata) {
@@ -198,11 +188,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.is_empty = is_empty;
 
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	if (task->completion_callback) {
-		task->completion_callback(logical_thread_index, &completion_task);
-	}
 	if (task->completion_queue) {
-		completion_queue_post_task(task->completion_queue, dummy_work_queue_callback, &completion_task,
+		completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task,
 		                       sizeof(completion_task));
 	}
 

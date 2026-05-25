@@ -263,7 +263,7 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 						tile->need_keep_in_cache = task.need_keep_in_cache;
 						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
 						task_group_begin(task.task_group);
-						if (!completion_queue_post_task(&global_completion_queue, viewer_upload_already_cached_tile_to_gpu, &task, sizeof(task))) {
+						if (!completion_queue_post(&global_completion_queue, VIEWER_COMPLETION_EVENT_UPLOAD_CACHED_TILE, &task, sizeof(task))) {
 							tile->is_submitted_for_loading = false;
 						}
 						task_group_end(task.task_group);
@@ -341,8 +341,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 	i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
 	completion_event_t entry = {0};
 	while (completion_queue_poll(&global_completion_queue, &entry)) {
-        // TODO(pvalkema): fix assumption here that isyntax_streamer_tile_completed_task_t has the same layout as viewer_notify_tile_completed_task_t
-        if (entry.callback == viewer_notify_load_tile_completed || entry.task_identifier == VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER) {
+        if (entry.kind == VIEWER_COMPLETION_EVENT_TILE_LOADED) {
             viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
             image_t* image = get_image_from_resource_id(app_state, task->resource_id);
             if (!image) {
@@ -381,7 +380,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                 }
             }
 
-        } else if (entry.callback == viewer_upload_already_cached_tile_to_gpu) {
+        } else if (entry.kind == VIEWER_COMPLETION_EVENT_UPLOAD_CACHED_TILE) {
             load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
             if (!is_resource_valid(app_state, task->resource_id)) {
                 // Image no longer exists
@@ -490,8 +489,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			tile_streamer.wsi = wsi;
 			tile_streamer.resource_id = image->resource_id;
 			tile_streamer.tile_completion_queue = &global_completion_queue;
-			tile_streamer.tile_completion_callback = NULL;
-			tile_streamer.tile_completion_task_identifier = VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER;
+			tile_streamer.tile_completed_event_kind = VIEWER_COMPLETION_EVENT_TILE_LOADED;
             tile_streamer.pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				// NOTE: this fails if isyntax_tile_read() is called once already
@@ -585,8 +583,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.priority = tile_priority,
 								.need_gpu_residency = true,
 								.need_keep_in_cache = tile->need_keep_in_cache,
-								.completion_callback = viewer_notify_load_tile_completed,
-//								.completion_queue = &global_completion_queue,
+								.completion_event_kind = VIEWER_COMPLETION_EVENT_TILE_LOADED,
+								.completion_queue = &global_completion_queue,
                                 .refcount_to_decrement = 1, // will be decremented at and of thread proc load_tile_func()
 						};
 						tile_wishlist[num_tasks_on_wishlist++] = task;

@@ -69,12 +69,12 @@ TEST_CASE("completion queue posts and polls events") {
 	completion_queue_t queue = completion_queue_create(4);
 	i32 value = 42;
 
-	REQUIRE(completion_queue_post_task(&queue, increment_counter_task, &value, sizeof(value)));
+	REQUIRE(completion_queue_post(&queue, 1, &value, sizeof(value)));
 	CHECK(completion_queue_has_events(&queue));
 
 	completion_event_t event = {0};
 	REQUIRE(completion_queue_poll(&queue, &event));
-	CHECK(event.callback == increment_counter_task);
+	CHECK(event.kind == 1);
 	CHECK(*(i32*)event.userdata == 42);
 	CHECK_FALSE(completion_queue_has_events(&queue));
 

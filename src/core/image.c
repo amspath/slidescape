@@ -1267,7 +1267,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			y -= offset;
 
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
-				isyntax_do_first_load_immediately(isyntax, wsi, image->resource_id, 5000 /*VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER*/);
+				isyntax_do_first_load_immediately(isyntax, wsi, image->resource_id, VIEWER_COMPLETION_EVENT_TILE_LOADED); //TODO: should not need to include viewer.h because of this enum?
 			}
 
 			if (libisyntax_read_region(&image->isyntax, isyntax->cache, level, x, y, w, h, intermediate_pixel_buffer, translated_pixel_format) != LIBISYNTAX_OK) {

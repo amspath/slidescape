@@ -39,7 +39,11 @@ extern "C" {
 #include "annotation.h"
 #include "shader.h"
 
-#define VIEWER_ISYNTAX_TILE_COMPLETION_TASK_IDENTIFIER 5000
+typedef enum viewer_completion_event_kind_t {
+	VIEWER_COMPLETION_EVENT_NONE = 0,
+	VIEWER_COMPLETION_EVENT_TILE_LOADED,
+	VIEWER_COMPLETION_EVENT_UPLOAD_CACHED_TILE,
+} viewer_completion_event_kind_t;
 
 typedef enum viewer_file_type_enum {
 	VIEWER_FILE_TYPE_UNKNOWN = 0,
@@ -112,8 +116,8 @@ typedef struct load_tile_task_t {
 	bool8 need_gpu_residency;
 	bool8 need_keep_in_cache;
 	bool8 invert_colors;
-	work_queue_callback_t* completion_callback;
 	completion_queue_t* completion_queue;
+	completion_event_kind_t completion_event_kind;
 	task_group_t* task_group;
     i32 refcount_to_decrement;
 } load_tile_task_t;
@@ -409,8 +413,6 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 const char* get_active_directory(app_state_t* app_state);
 const char* get_annotation_directory(app_state_t* app_state);
 void set_annotation_directory(app_state_t* app_state, const char* path);
-void viewer_upload_already_cached_tile_to_gpu(int logical_thread_index, void* userdata);
-void viewer_notify_load_tile_completed(int logical_thread_index, void* userdata);
 file_info_t viewer_get_file_info(const char* filename);
 void viewer_directory_info_destroy(directory_info_t* info);
 

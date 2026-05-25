@@ -40,6 +40,7 @@ extern "C" {
 #endif
 
 typedef void (work_queue_callback_t)(int logical_thread_index, void* userdata);
+typedef u32 completion_event_kind_t;
 typedef struct thread_pool_t thread_pool_t;
 
 typedef struct task_group_t {
@@ -57,8 +58,7 @@ typedef struct work_queue_entry_t {
 
 typedef struct completion_event_t {
 	bool32 is_valid;
-	u32 task_identifier;
-	work_queue_callback_t* callback;
+	completion_event_kind_t kind;
 	u8 userdata[128];
 } completion_event_t;
 
@@ -124,8 +124,7 @@ bool work_queue_is_work_in_progress(work_queue_t* queue);
 bool work_queue_is_work_waiting_to_start(work_queue_t* queue);
 completion_queue_t completion_queue_create(i32 entry_count);
 void completion_queue_destroy(completion_queue_t* queue);
-bool completion_queue_post(completion_queue_t* queue, work_queue_callback_t callback, u32 task_identifier, void* userdata, size_t userdata_size);
-bool completion_queue_post_task(completion_queue_t* queue, work_queue_callback_t callback, void* userdata, size_t userdata_size);
+bool completion_queue_post(completion_queue_t* queue, completion_event_kind_t kind, void* userdata, size_t userdata_size);
 bool completion_queue_poll(completion_queue_t* queue, completion_event_t* out_event);
 bool completion_queue_has_events(completion_queue_t* queue);
 void task_group_begin(task_group_t* group);
