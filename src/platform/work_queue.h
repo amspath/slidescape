@@ -53,6 +53,8 @@ typedef struct work_queue_entry_t {
 	u32 task_identifier;
 	work_queue_callback_t* callback;
 	task_group_t* task_group;
+	void* heap_userdata;
+	size_t userdata_size;
 	u8 userdata[128]; // TODO: dynamic userdata size?
 } work_queue_entry_t;
 

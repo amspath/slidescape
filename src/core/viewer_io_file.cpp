@@ -48,6 +48,35 @@ static void slide_score_post_tile_result(load_tile_task_t* task, u8* pixel_memor
 	}
 }
 
+typedef struct slide_score_worker_connection_t {
+	tls_connection_t* connection;
+	char hostname[256];
+} slide_score_worker_connection_t;
+
+static thread_local slide_score_worker_connection_t slide_score_worker_connection = {};
+
+static tls_connection_t* slide_score_get_worker_connection(const char* hostname) {
+	if (slide_score_worker_connection.connection &&
+	    strcmp(slide_score_worker_connection.hostname, hostname) != 0) {
+		remote_connection_close_and_free(slide_score_worker_connection.connection);
+		slide_score_worker_connection = {};
+	}
+	if (!slide_score_worker_connection.connection) {
+		slide_score_worker_connection.connection = remote_connection_open(hostname, 443);
+		if (slide_score_worker_connection.connection) {
+			strncpy(slide_score_worker_connection.hostname, hostname, sizeof(slide_score_worker_connection.hostname) - 1);
+		}
+	}
+	return slide_score_worker_connection.connection;
+}
+
+static void slide_score_drop_worker_connection(void) {
+	if (slide_score_worker_connection.connection) {
+		remote_connection_close_and_free(slide_score_worker_connection.connection);
+		slide_score_worker_connection = {};
+	}
+}
+
 void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
 	load_tile_task_t* first_task = batch->tile_tasks;
@@ -64,7 +93,6 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 
 	ASSERT(image->backend == IMAGE_BACKEND_SLIDE_SCORE);
 	slide_score_remote_image_t* remote = &image->slide_score;
-	tls_connection_t* connection = remote_connection_open(remote->client.server_name, 443);
 
 	char cookie[512];
 	snprintf(cookie, sizeof(cookie), "t=%s", remote->tile_server.cookie_part);
@@ -77,14 +105,28 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 		memset(pixel_memory, image->is_background_black ? 0 : 0xFF, pixel_memory_size);
 
 		bool failed = false;
-		if (connection) {
-			char path[512];
-			snprintf(path, sizeof(path), "/i/%d/%s/i_files/%d/%d_%d.jpeg",
-			         remote->image_id, remote->tile_server.url_part, level_image->pyramid_image_index,
-			         task->tile_x, task->tile_y);
-			bool close_after_request = (i == batch->task_count - 1);
-			http_response_t* response = remote_connection_request(connection, remote->client.server_name, path,
-			                                                      remote->client.api_key, cookie, close_after_request);
+		char path[512];
+		snprintf(path, sizeof(path), "/i/%d/%s/i_files/%d/%d_%d.jpeg",
+		         remote->image_id, remote->tile_server.url_part, level_image->pyramid_image_index,
+		         task->tile_x, task->tile_y);
+
+		http_response_t* response = NULL;
+		for (i32 attempt = 0; attempt < 2; ++attempt) {
+			tls_connection_t* connection = slide_score_get_worker_connection(remote->client.server_name);
+			if (!connection) break;
+			response = remote_connection_request(connection, remote->client.server_name, path,
+			                                     remote->client.api_key, cookie, false);
+			if (response && response->status_code > 0) {
+				break;
+			}
+			if (response) {
+				http_response_destroy(response);
+				response = NULL;
+			}
+			slide_score_drop_worker_connection();
+		}
+
+		if (response) {
 			if (response && response->status_code == 200 && response->content_length > 0) {
 				i32 jpeg_width = 0;
 				i32 jpeg_height = 0;
@@ -121,9 +163,6 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 		slide_score_post_tile_result(task, pixel_memory, failed, false);
 	}
 
-	if (connection) {
-		remote_connection_close_and_free(connection);
-	}
 	atomic_subtract(&image->refcount, refcount_decrement_amount);
 }
 

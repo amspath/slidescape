@@ -86,6 +86,11 @@ void work_queue_destroy(work_queue_t* queue) {
 		return;
 	}
 	if (queue->entries) {
+		for (i32 i = 0; i < queue->entry_count; ++i) {
+			if (queue->entries[i].heap_userdata) {
+				free(queue->entries[i].heap_userdata);
+			}
+		}
 		free(queue->entries);
 		queue->entries = NULL;
 	}
@@ -145,8 +150,15 @@ bool work_queue_submit_to_group(work_queue_t* queue, task_group_t* task_group, w
 	if (!queue) {
 		fatal_error("work_queue_add_entry(): queue is NULL");
 	}
+	void* heap_userdata = NULL;
 	if (userdata_size > sizeof(((work_queue_entry_t*)0)->userdata)) {
-		fatal_error("work_queue_add_entry(): userdata_size overflows available space");
+		heap_userdata = malloc(userdata_size);
+		if (!heap_userdata) {
+			console_print_error("work_queue_add_entry(): failed to allocate %zu bytes for userdata\n", userdata_size);
+			return false;
+		}
+		ASSERT(userdata);
+		memcpy(heap_userdata, userdata, userdata_size);
 	}
 	for (i32 tries = 0; tries < 1000; ++tries) {
 		// Circular FIFO buffer
@@ -165,9 +177,13 @@ bool work_queue_submit_to_group(work_queue_t* queue, task_group_t* task_group, w
 //		    console_print("exhange succeeded\n");
 			work_queue_entry_t* entry = queue->entries + entry_to_submit;
 			*entry = (work_queue_entry_t){ .callback = callback, .task_identifier = task_identifier, .task_group = task_group };
+			entry->userdata_size = userdata_size;
+			entry->heap_userdata = heap_userdata;
 			if (userdata_size > 0) {
 				ASSERT(userdata);
-				memcpy(entry->userdata, userdata, userdata_size);
+				if (heap_userdata == NULL) {
+					memcpy(entry->userdata, userdata, userdata_size);
+				}
 			}
 			write_barrier;
 			entry->is_valid = true;
@@ -184,6 +200,9 @@ bool work_queue_submit_to_group(work_queue_t* queue, task_group_t* task_group, w
 			continue;
 		}
 
+	}
+	if (heap_userdata) {
+		free(heap_userdata);
 	}
 	return false;
 }
@@ -219,7 +238,7 @@ work_queue_entry_t work_queue_get_next_entry(work_queue_t* queue) {
 		if (succeeded) {
 			// We have dibs to execute this task!
 			result = queue->entries[entry_to_execute];
-			queue->entries[entry_to_execute].is_valid = false; // discourage competing threads (maybe not needed?)
+			queue->entries[entry_to_execute] = (work_queue_entry_t){0}; // discourage competing threads (maybe not needed?)
 			if (result.callback == NULL && result.task_identifier == 0) {
 				console_print_error("Warning: encountered a work entry with a missing callback routine and/or task identifier (is this intended)?\n");
 			}
@@ -248,8 +267,11 @@ bool work_queue_do_work(work_queue_t* queue) {
 		ASSERT(entry.callback);
 		if (entry.callback) {
 			// Copy the user data (arguments for the call) onto the stack
-			u8* userdata = alloca(sizeof(entry.userdata));
-			memcpy(userdata, entry.userdata, sizeof(entry.userdata));
+			void* userdata = entry.heap_userdata;
+			if (userdata == NULL) {
+				userdata = alloca(sizeof(entry.userdata));
+				memcpy(userdata, entry.userdata, sizeof(entry.userdata));
+			}
 
 			// Ensure all the memory allocated on the thread's temp_arena will be released when the task completes
 			temp_memory_t temp = begin_temp_memory_on_local_thread();
@@ -258,6 +280,9 @@ bool work_queue_do_work(work_queue_t* queue) {
 			entry.callback(threadlocal_logical_thread_index, userdata);
 
 			release_temp_memory(&temp);
+			if (entry.heap_userdata) {
+				free(entry.heap_userdata);
+			}
 		}
         work_queue_mark_entry_completed(queue);
 		task_group_end(entry.task_group);

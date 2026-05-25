@@ -14,6 +14,11 @@ typedef struct test_nested_task_t {
 	i32 volatile* counter;
 } test_nested_task_t;
 
+typedef struct test_large_userdata_task_t {
+	i32 volatile* counter;
+	u8 bytes[512];
+} test_large_userdata_task_t;
+
 static void increment_counter_task(int logical_thread_index, void* userdata) {
 	(void)logical_thread_index;
 	test_counter_task_t* task = (test_counter_task_t*)userdata;
@@ -27,6 +32,15 @@ static void nested_counter_task(int logical_thread_index, void* userdata) {
 	test_counter_task_t child_task = {task->counter};
 	REQUIRE(thread_pool_submit_task_to_group(task->pool, &child_group, increment_counter_task, &child_task, sizeof(child_task)));
 	thread_pool_wait_for_group(task->pool, &child_group);
+	atomic_increment(task->counter);
+}
+
+static void large_userdata_task(int logical_thread_index, void* userdata) {
+	(void)logical_thread_index;
+	test_large_userdata_task_t* task = (test_large_userdata_task_t*)userdata;
+	for (i32 i = 0; i < COUNT(task->bytes); ++i) {
+		REQUIRE(task->bytes[i] == (u8)(i & 0xFF));
+	}
 	atomic_increment(task->counter);
 }
 
@@ -63,6 +77,27 @@ TEST_CASE("work queue helpers tolerate absent optional queue") {
 	CHECK_FALSE(work_queue_do_work(NULL));
 	CHECK_FALSE(work_queue_is_work_in_progress(NULL));
 	CHECK_FALSE(work_queue_is_work_waiting_to_start(NULL));
+}
+
+TEST_CASE("work queue dynamically stores oversized userdata") {
+	ensure_test_thread_memory();
+
+	work_queue_t queue = work_queue_create("/slidescape_test_work_queue_large", 4);
+	i32 volatile counter = 0;
+	test_large_userdata_task_t task = {0};
+	task.counter = &counter;
+	for (i32 i = 0; i < COUNT(task.bytes); ++i) {
+		task.bytes[i] = (u8)(i & 0xFF);
+	}
+
+	REQUIRE(sizeof(task) > sizeof(((work_queue_entry_t*)0)->userdata));
+	REQUIRE(work_queue_submit_task(&queue, large_userdata_task, &task, sizeof(task)));
+	while (work_queue_is_work_in_progress(&queue)) {
+		CHECK(work_queue_do_work(&queue));
+	}
+
+	CHECK(counter == 1);
+	work_queue_destroy(&queue);
 }
 
 TEST_CASE("completion queue posts and polls events") {
