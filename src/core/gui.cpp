@@ -316,6 +316,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 		if (ImGui::BeginMenu("File")) {
 			if (ImGui::MenuItem("Open file...", "Ctrl+O", &menu_items_clicked.open_file)) {}
+			if (ImGui::MenuItem("Open URI...", "Ctrl+U", &menu_items_clicked.open_uri)) {}
 			if (ImGui::MenuItem("Close", "Ctrl+W", &menu_items_clicked.close)) {}
 			ImGui::Separator();
 			if (ImGui::MenuItem("Save", "Ctrl+S", &menu_items_clicked.save, can_save)) {}
@@ -378,8 +379,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Show debugging window", "Ctrl+F1", &show_debugging_window)) {}
 				ImGui::Separator();
-                if (ImGui::MenuItem("Open URI...", "Ctrl+U", &menu_items_clicked.open_uri)) {}
-				if (ImGui::MenuItem("Open remote WSI...", NULL, &menu_items_clicked.open_remote)) {}
+                if (ImGui::MenuItem("Open remote WSI...", NULL, &menu_items_clicked.open_remote)) {}
 				ImGui::Separator();
 				if (ImGui::MenuItem("Show menu bar", "Alt+F12", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
