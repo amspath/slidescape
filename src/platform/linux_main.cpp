@@ -335,6 +335,11 @@ extern SDL_Window* g_window;
 
 static i32 need_check_window_focus_gained_after_frames;
 
+#if APPLE
+extern "C" void macos_register_url_handler(void);
+extern "C" char* macos_copy_next_open_url(void);
+#endif
+
 // Main code
 int main(int argc, const char** argv)
 {
@@ -369,6 +374,9 @@ int main(int argc, const char** argv)
 	thread_pool_submit_task(&global_thread_pool, (work_queue_callback_t *) load_openslide_task, NULL, 0);
 	thread_pool_submit_task(&global_thread_pool, (work_queue_callback_t *) load_dicom_task, NULL, 0);
     linux_init_input();
+#if APPLE
+	macos_register_url_handler();
+#endif
 
 	/*i32 num_video_drivers = SDL_GetNumVideoDrivers();
 	const char* chosen_driver = NULL;
@@ -647,7 +655,7 @@ int main(int argc, const char** argv)
 	            need_quit = true;
             } else if (event.type == SDL_DROPFILE) {
 	            u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
-            	if (load_generic_file(app_state, event.drop.file, filetype_hint)) {
+            	if (app_load_input(app_state, event.drop.file, filetype_hint)) {
 		            // Bring the window to the foreground / set input-focus.
 		            // This makes it possible to immediately interact with the scene.
 		            SDL_RaiseWindow(window);
@@ -661,6 +669,17 @@ int main(int argc, const char** argv)
 	            SDL_free(event.drop.file);
             }
         }
+
+#if APPLE
+	    for (;;) {
+		    char* open_url = macos_copy_next_open_url();
+		    if (!open_url) break;
+		    if (app_load_input(app_state, open_url, 0)) {
+			    SDL_RaiseWindow(window);
+		    }
+		    free(open_url);
+	    }
+#endif
 
         linux_process_input();
 

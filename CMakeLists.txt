@@ -374,6 +374,11 @@ else()
             imgui/ImGuiFileDialog.cpp
             )
 endif()
+if (APPLE)
+    set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
+            platform/macos_url_handler.mm
+            )
+endif()
 prepend_path(VIEWER_SOURCE_FILES src)
 
 set(LIBRARY_SOURCE_FILES
@@ -436,7 +441,7 @@ else()
     add_custom_command(TARGET slidescape POST_BUILD
             COMMAND cp -f slidescape.desktop "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape.desktop"
             COMMAND cp -f "${CMAKE_SOURCE_DIR}/resources/install_desktop_file.sh.in" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/install_desktop_file.sh"
-            COMMAND cp -f "${CMAKE_SOURCE_DIR}/resources/install_desktop_file.sh.in" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/uninstall_desktop_file.sh"
+            COMMAND cp -f "${CMAKE_SOURCE_DIR}/resources/uninstall_desktop_file.sh.in" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/uninstall_desktop_file.sh"
             COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape.desktop"
             COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/install_desktop_file.sh"
             COMMAND chmod +x "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/uninstall_desktop_file.sh")

@@ -26,6 +26,60 @@
 #include "viewer.h"
 #include "gui.h" // for global data, TODO: refactor
 #include "tiff_write.h"
+#include "slide_score.h"
+
+static bool hex_digit_to_value(char c, u8* out_value) {
+	if (c >= '0' && c <= '9') {
+		*out_value = (u8)(c - '0');
+		return true;
+	} else if (c >= 'a' && c <= 'f') {
+		*out_value = (u8)(c - 'a' + 10);
+		return true;
+	} else if (c >= 'A' && c <= 'F') {
+		*out_value = (u8)(c - 'A' + 10);
+		return true;
+	}
+	return false;
+}
+
+static bool file_uri_to_local_path(const char* uri, char* out_path, size_t out_path_size) {
+	static const char file_scheme[] = "file://";
+	if (strncmp(uri, file_scheme, strlen(file_scheme)) != 0) return false;
+
+	const char* src = uri + strlen(file_scheme);
+	if (strncmp(src, "localhost/", 10) == 0) {
+		src += strlen("localhost");
+	}
+
+	size_t out_len = 0;
+	while (*src && out_len + 1 < out_path_size) {
+		if (*src == '%' && src[1] && src[2]) {
+			u8 high = 0, low = 0;
+			if (hex_digit_to_value(src[1], &high) && hex_digit_to_value(src[2], &low)) {
+				out_path[out_len++] = (char)((high << 4) | low);
+				src += 3;
+				continue;
+			}
+		}
+		out_path[out_len++] = *src++;
+	}
+	out_path[out_len] = 0;
+	return out_len > 0;
+}
+
+bool app_load_input(app_state_t* app_state, const char* input, u32 filetype_hint) {
+	if (filetype_hint == 0) {
+		if (slide_score_try_open_uri(app_state, input, NULL)) {
+			return true;
+		}
+	}
+
+	char local_path[4096];
+	if (file_uri_to_local_path(input, local_path, sizeof(local_path))) {
+		return load_generic_file(app_state, local_path, filetype_hint);
+	}
+	return load_generic_file(app_state, input, filetype_hint);
+}
 
 app_command_t app_parse_commandline(int argc, const char** argv) {
 	app_command_t app_command = {};
@@ -140,7 +194,7 @@ bool app_load_commandline_inputs(app_state_t* app_state) {
 	bool success = true;
 	if (arrlen(command->inputs) > 0) {
 		const char* filename = command->inputs[0];
-		success = load_generic_file(app_state, filename, 0);
+		success = app_load_input(app_state, filename, FILETYPE_HINT_NONE);
 		if (success) {
 			for (i32 overlay_index = 0; overlay_index < arrlen(command->overlay_inputs); ++overlay_index) {
 				const char* overlay_filename = command->overlay_inputs[overlay_index];

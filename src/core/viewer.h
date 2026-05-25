@@ -379,6 +379,7 @@ typedef struct app_state_t {
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration);
 void unload_all_images(app_state_t* app_state);
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
+bool app_load_input(app_state_t* app_state, const char* input, u32 filetype_hint);
 image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_openslide_wsi(wsi_t* wsi, const char* filename);

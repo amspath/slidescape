@@ -10,6 +10,10 @@ if test -f "$SCRIPT_DIR/slidescape.desktop"; then
     xdg-icon-resource install --context apps --size 32 --novendor "$SCRIPT_DIR/resources/icon/icon32.png" slidescape
     xdg-icon-resource install --context apps --size 64 --novendor "$SCRIPT_DIR/resources/icon/icon64.png" slidescape
     xdg-icon-resource install --context apps --size 128 --novendor "$SCRIPT_DIR/resources/icon/icon128.png" slidescape
+    xdg-mime default slidescape.desktop x-scheme-handler/slidescore
+    if command -v update-desktop-database >/dev/null 2>&1; then
+      update-desktop-database "$HOME/.local/share/applications"
+    fi
   else
     echo "Compiled executable 'slidescape' is missing - nothing to install."
   fi

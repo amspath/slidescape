@@ -231,6 +231,55 @@ void win32_set_file_type_associations() {
 			}
 		}
 
+		// Register slidescore:// links as a URL protocol handler
+		{
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\slidescore");
+			if (hkey) {
+				static const BYTE value[] = "URL:Slide Score Protocol";
+				static const BYTE url_protocol[] = "";
+				if (RegSetValueExA(hkey, NULL, 0, REG_SZ, value, COUNT(value)) != ERROR_SUCCESS) {
+					win32_diagnostic("RegSetValueExA");
+					RegCloseKey(hkey);
+					return;
+				}
+				if (RegSetValueExA(hkey, "URL Protocol", 0, REG_SZ, url_protocol, COUNT(url_protocol)) != ERROR_SUCCESS) {
+					win32_diagnostic("RegSetValueExA");
+					RegCloseKey(hkey);
+					return;
+				}
+				RegCloseKey(hkey);
+			} else {
+				return;
+			}
+		}
+		{
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\slidescore\\DefaultIcon");
+			if (hkey) {
+				char icon_command[512];
+				snprintf(icon_command, sizeof(icon_command) - 1, "\"%s\",0", g_exe_name);
+				icon_command[sizeof(icon_command) - 1] = '\0';
+				if (!win32_registry_set_value(hkey, NULL, REG_SZ, icon_command, (DWORD)strlen(icon_command) + 1)) {
+					RegCloseKey(hkey);
+					return;
+				}
+				RegCloseKey(hkey);
+			} else {
+				return;
+			}
+		}
+		{
+			HKEY hkey = win32_registry_create_empty_key("Software\\Classes\\slidescore\\shell\\open\\command");
+			if (hkey) {
+				if (!win32_registry_set_value(hkey, NULL, REG_SZ, (char*)open_command, open_command_length)) {
+					RegCloseKey(hkey);
+					return;
+				}
+				RegCloseKey(hkey);
+			} else {
+				return;
+			}
+		}
+
 
 		// Create the ProgID
 		{
@@ -459,7 +508,7 @@ void open_file_dialog(app_state_t* app_state, u32 action, u32 filetype_hint) {
 		if (GetOpenFileNameW(&ofn)==TRUE) {
 			char narrow_filename[4096];
 			win32_string_narrow(filename, narrow_filename, sizeof(narrow_filename));
-			load_generic_file(&global_app_state, narrow_filename, filetype_hint);
+			app_load_input(&global_app_state, narrow_filename, filetype_hint);
 		}
 	} else if (action == OPEN_FILE_DIALOG_CHOOSE_DIRECTORY) {
 		console_print("Attempting to choose a directory\n");
@@ -563,7 +612,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 				size_t len = wcslen(wide_buffer);
 				win32_string_narrow(wide_buffer, narrow_buffer, sizeof(narrow_buffer));
 				u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
-				load_generic_file(&global_app_state, narrow_buffer, filetype_hint);
+				app_load_input(&global_app_state, narrow_buffer, filetype_hint);
 			}
 			DragFinish(hdrop);
 			SetForegroundWindow(window); // set focus on the window (this does not happen automatically)

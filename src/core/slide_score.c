@@ -450,7 +450,26 @@ char* slide_score_build_qupath_tile_path(char* buffer, size_t buffer_size, slide
     return buffer;
 }
 
+static void read_slide_score_api_key(char* buffer, size_t buffer_size) {
+    buffer[0] = 0;
+    mem_t* key_file = platform_read_entire_file("api_key.txt");
+    if (key_file) {
+        size_t key_len = ATMOST(key_file->len, buffer_size - 1);
+        memcpy(buffer, key_file->data, key_len);
+        buffer[key_len] = 0;
+        free(key_file);
+    }
+}
+
 bool slide_score_open_remote_image(app_state_t* app_state, const char* server_url_or_hostname, const char* api_token, i32 image_id) {
+    // Read API lazily if not provided
+    if (api_token == NULL) {
+        char* api_key = (char*)alloca(4096);
+        api_key[0] = '\0';
+        read_slide_score_api_key(api_key, 4096);
+        api_token = api_key;
+    }
+
     slide_score_remote_image_t remote = {};
     slide_score_client_init(&remote.client, server_url_or_hostname, api_token);
     remote.image_id = image_id;

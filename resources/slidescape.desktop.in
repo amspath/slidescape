@@ -4,7 +4,7 @@
 Type=Application
 Name=Slidescape
 Icon=${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources/icon/icon.svg
-Exec="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape" %f
+Exec="${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/slidescape" %U
 Comment=Whole-slide image viewer
 Categories=Graphics;
-MimeType=image/tiff;image/isyntax
+MimeType=image/tiff;image/isyntax;x-scheme-handler/slidescore;
