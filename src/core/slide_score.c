@@ -37,21 +37,37 @@ web_api_result_descriptor_t slide_score_api_get_tile_server_result_descriptor = 
 
 web_api_binding_t slide_score_api_get_image_metadata_bindings_template[] = {
         {"level0TileWidth", offsetof(slide_score_get_image_metadata_result_t, tile_width),       FIELD_TYPE_I32},
+        {"Level0TileWidth", offsetof(slide_score_get_image_metadata_result_t, tile_width),       FIELD_TYPE_I32},
         {"level0TileHeight", offsetof(slide_score_get_image_metadata_result_t, tile_height),     FIELD_TYPE_I32},
+        {"Level0TileHeight", offsetof(slide_score_get_image_metadata_result_t, tile_height),     FIELD_TYPE_I32},
         {"osdTileSize", offsetof(slide_score_get_image_metadata_result_t, osd_tile_size),        FIELD_TYPE_I32},
+        {"OSDTileSize", offsetof(slide_score_get_image_metadata_result_t, osd_tile_size),        FIELD_TYPE_I32},
         {"mppX", offsetof(slide_score_get_image_metadata_result_t, mpp_x),                       FIELD_TYPE_FLOAT},
+        {"MppX", offsetof(slide_score_get_image_metadata_result_t, mpp_x),                       FIELD_TYPE_FLOAT},
         {"mppY", offsetof(slide_score_get_image_metadata_result_t, mpp_y),                       FIELD_TYPE_FLOAT},
+        {"MppY", offsetof(slide_score_get_image_metadata_result_t, mpp_y),                       FIELD_TYPE_FLOAT},
         {"objectivePower", offsetof(slide_score_get_image_metadata_result_t, objective_power),   FIELD_TYPE_FLOAT},
+        {"ObjectivePower", offsetof(slide_score_get_image_metadata_result_t, objective_power),   FIELD_TYPE_FLOAT},
         {"backgroundColor", offsetof(slide_score_get_image_metadata_result_t, background_color), FIELD_TYPE_STRING_256CHARS},
+        {"BackgroundColor", offsetof(slide_score_get_image_metadata_result_t, background_color), FIELD_TYPE_STRING_256CHARS},
         {"levelCount", offsetof(slide_score_get_image_metadata_result_t, level_count),           FIELD_TYPE_I32},
+        {"LevelCount", offsetof(slide_score_get_image_metadata_result_t, level_count),           FIELD_TYPE_I32},
         {"zLayerCount", offsetof(slide_score_get_image_metadata_result_t, z_layer_count),        FIELD_TYPE_I32},
+        {"ZLayerCount", offsetof(slide_score_get_image_metadata_result_t, z_layer_count),        FIELD_TYPE_I32},
         {"level0Width", offsetof(slide_score_get_image_metadata_result_t, level_0_width),        FIELD_TYPE_I64},
+        {"Level0Width", offsetof(slide_score_get_image_metadata_result_t, level_0_width),        FIELD_TYPE_I64},
         {"level0Height", offsetof(slide_score_get_image_metadata_result_t, level_0_height),      FIELD_TYPE_I64},
+        {"Level0Height", offsetof(slide_score_get_image_metadata_result_t, level_0_height),      FIELD_TYPE_I64},
         {"boundsX", offsetof(slide_score_get_image_metadata_result_t, bounds_x),                 FIELD_TYPE_I64},
+        {"BoundsX", offsetof(slide_score_get_image_metadata_result_t, bounds_x),                 FIELD_TYPE_I64},
         {"boundsY", offsetof(slide_score_get_image_metadata_result_t, bounds_y),                 FIELD_TYPE_I64},
+        {"BoundsY", offsetof(slide_score_get_image_metadata_result_t, bounds_y),                 FIELD_TYPE_I64},
         {"boundsWidth", offsetof(slide_score_get_image_metadata_result_t, bounds_width),         FIELD_TYPE_I64},
+        {"BoundsWidth", offsetof(slide_score_get_image_metadata_result_t, bounds_width),         FIELD_TYPE_I64},
         {"boundsHeight", offsetof(slide_score_get_image_metadata_result_t, bounds_height),       FIELD_TYPE_I64},
+        {"BoundsHeight", offsetof(slide_score_get_image_metadata_result_t, bounds_height),       FIELD_TYPE_I64},
         {"fileName", offsetof(slide_score_get_image_metadata_result_t, filename),                FIELD_TYPE_STRING_256CHARS},
+        {"FileName", offsetof(slide_score_get_image_metadata_result_t, filename),                FIELD_TYPE_STRING_256CHARS},
 };
 web_api_result_descriptor_t slide_score_api_get_image_metadata_descriptor = {
         slide_score_api_get_image_metadata_bindings_template, COUNT(slide_score_api_get_image_metadata_bindings_template)
@@ -124,6 +140,21 @@ static const char* slide_score_api_names[SLIDE_SCORE_API_LAST] = {
         [SLIDE_SCORE_API_I_ENDPOINT] = "",
         [SLIDE_SCORE_API_GET_RAW_TILE] = "GetRawTile",
 };
+
+static char slide_score_last_status[512];
+
+static void slide_score_set_last_status(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(slide_score_last_status, sizeof(slide_score_last_status), fmt, args);
+    va_end(args);
+
+    console_print(slide_score_last_status);
+}
+
+const char* slide_score_get_last_status(void) {
+    return slide_score_last_status;
+}
 
 
 
@@ -252,7 +283,7 @@ static bool slide_score_json_value_is_true(struct json_value_s* value) {
 }
 
 static void slide_score_parse_metadata_array(const char* field_name, struct json_value_s* value, slide_score_api_result_t* api_result) {
-    if (strcmp(field_name, "downsamples") != 0 || !value || value->type != json_type_array) return;
+    if ((strcmp(field_name, "downsamples") != 0 && strcmp(field_name, "Downsamples") != 0) || !value || value->type != json_type_array) return;
 
     slide_score_get_image_metadata_result_t* metadata = &api_result->get_image_metadata;
     struct json_array_s* array = (struct json_array_s*)value->payload;
@@ -325,7 +356,7 @@ slide_score_api_result_t debug_slide_score_api_handle_response(const char* json,
         }
 
 
-        success = api_reported_success;
+        success = api_reported_success || api == SLIDE_SCORE_API_GET_IMAGE_METADATA;
         free(root);
     }
     parsed_api_result.success = success;
@@ -380,6 +411,10 @@ static i32 ceil_log2_i64(i64 value) {
     return result;
 }
 
+static bool parse_i32_after_key(const char* text, const char* key, i32* out_value);
+static bool slide_score_host_is_supported(const char* host);
+static bool slide_score_extract_host_from_https_uri(const char* uri, char* out_host, size_t out_host_size, const char** out_path);
+
 char* slide_score_build_tile_url(char* buffer, size_t buffer_size, slide_score_remote_image_t* remote, i32 level, i32 tile_x, i32 tile_y) {
     double downsample = 1.0;
     if (level >= 0 && level < remote->metadata.downsample_count) {
@@ -395,6 +430,26 @@ char* slide_score_build_tile_url(char* buffer, size_t buffer_size, slide_score_r
     return buffer;
 }
 
+char* slide_score_build_qupath_tile_path(char* buffer, size_t buffer_size, slide_score_remote_image_t* remote, i32 level, i32 tile_x, i32 tile_y, i32 tile_width, i32 tile_height, i64 level_width, i64 level_height) {
+    double downsample = 1.0;
+    if (level >= 0 && level < remote->metadata.downsample_count) {
+        downsample = remote->metadata.downsamples[level];
+    } else if (level > 0) {
+        downsample = (double)(1 << level);
+    }
+    if (downsample < 1.0) downsample = 1.0;
+
+    i64 source_x = (i64)floor((double)tile_x * (double)tile_width * downsample + 0.5);
+    i64 source_y = (i64)floor((double)tile_y * (double)tile_height * downsample + 0.5);
+    i64 level_x = (i64)tile_x * tile_width;
+    i64 level_y = (i64)tile_y * tile_height;
+    i32 request_width = (i32)CLAMP(level_width - level_x, 0, tile_width);
+    i32 request_height = (i32)CLAMP(level_height - level_y, 0, tile_height);
+    snprintf(buffer, buffer_size, "%sraw/%d/%lld_%lld/%d_%d.jpeg",
+             remote->qupath_base_path, level, source_x, source_y, request_width, request_height);
+    return buffer;
+}
+
 bool slide_score_open_remote_image(app_state_t* app_state, const char* server_url_or_hostname, const char* api_token, i32 image_id) {
     slide_score_remote_image_t remote = {};
     slide_score_client_init(&remote.client, server_url_or_hostname, api_token);
@@ -407,14 +462,16 @@ bool slide_score_open_remote_image(app_state_t* app_state, const char* server_ur
 
     slide_score_api_result_t metadata_result = {};
     if (!slide_score_request_api(&remote.client, SLIDE_SCORE_API_GET_IMAGE_METADATA, names, values, 1, &metadata_result)) {
-        console_print_error("Slide Score: failed to retrieve metadata for image %d\n", image_id);
+        slide_score_set_last_status("Slide Score failed to retrieve metadata for image %d.", image_id);
+        console_print_error("%s\n", slide_score_last_status);
         return false;
     }
     remote.metadata = metadata_result.get_image_metadata;
     remote.max_deepzoom_level = ceil_log2_i64(MAX(remote.metadata.level_0_width, remote.metadata.level_0_height));
 
     if (!slide_score_refresh_tile_server(&remote)) {
-        console_print_error("Slide Score: failed to retrieve tile server token for image %d\n", image_id);
+        slide_score_set_last_status("Slide Score failed to retrieve tile server token for image %d.", image_id);
+        console_print_error("%s\n", slide_score_last_status);
         return false;
     }
 
@@ -428,11 +485,109 @@ bool slide_score_open_remote_image(app_state_t* app_state, const char* server_ur
     if (is_valid) {
         unload_all_images(app_state);
         add_image(app_state, image, true, false);
+        slide_score_set_last_status("Opened Slide Score image %d.", image_id);
     } else {
         image_destroy(image);
         free(image);
     }
     return is_valid;
+}
+
+static bool slide_score_extract_qupath_base_path(const char* path, char* out_base_path, size_t out_base_path_size) {
+    const char* suffix = strstr(path, "SlideScoreMetadata.json");
+    if (!suffix) return false;
+    size_t base_len = ATMOST((size_t)(suffix - path), out_base_path_size - 1);
+    memcpy(out_base_path, path, base_len);
+    out_base_path[base_len] = 0;
+    return base_len > 0;
+}
+
+static bool slide_score_validate_qupath_link(slide_score_remote_image_t* remote) {
+    char path[512];
+    slide_score_build_qupath_tile_path(path, sizeof(path), remote, 0, 0, 0,
+                                       remote->metadata.tile_width, remote->metadata.tile_height,
+                                       remote->metadata.level_0_width, remote->metadata.level_0_height);
+
+    char url[1024];
+    snprintf(url, sizeof(url), "https://%s%s", remote->client.server_name, path);
+    http_response_t* response = open_remote_uri_with_extra_headers(url, NULL, NULL);
+    if (!response) {
+        slide_score_set_last_status("QuPath link validation failed: no response from Slide Score.");
+        console_print_error("%s\n", slide_score_last_status);
+        return false;
+    }
+
+    bool success = response->status_code >= 200 && response->status_code < 300 && response->content_length > 0;
+    if (!success) {
+        slide_score_set_last_status("QuPath link appears expired or invalid (HTTP %d while requesting first tile).", response->status_code);
+        console_print_error("%s\n", slide_score_last_status);
+    }
+    http_response_destroy(response);
+    return success;
+}
+
+bool slide_score_open_qupath_metadata_url(app_state_t* app_state, const char* uri) {
+    char server[256] = "";
+    const char* path = NULL;
+    if (!slide_score_extract_host_from_https_uri(uri, server, sizeof(server), &path) || !slide_score_host_is_supported(server)) {
+        return false;
+    }
+
+    slide_score_remote_image_t remote = {};
+    slide_score_client_init(&remote.client, server, NULL);
+    remote.use_qupath_tile_endpoint = true;
+    if (!parse_i32_after_key(path, "/i/", &remote.image_id)) {
+        console_print_error("Slide Score QuPath link recognized, but no image id could be found: %s\n", uri);
+        return false;
+    }
+    if (!slide_score_extract_qupath_base_path(path, remote.qupath_base_path, sizeof(remote.qupath_base_path))) {
+        console_print_error("Slide Score QuPath link recognized, but no metadata base path could be found: %s\n", uri);
+        return false;
+    }
+
+    http_response_t* response = open_remote_uri_with_extra_headers(uri, NULL, NULL);
+    if (!response) {
+        slide_score_set_last_status("Slide Score failed to retrieve QuPath metadata URL.");
+        console_print_error("%s\n", slide_score_last_status);
+        return false;
+    }
+
+    bool success = false;
+    if (response->status_code >= 200 && response->status_code < 300) {
+        slide_score_api_result_t parsed = debug_slide_score_api_handle_response((const char*)response->buffer.data,
+                                                                                response->content_length,
+                                                                                SLIDE_SCORE_API_GET_IMAGE_METADATA);
+        remote.metadata = parsed.get_image_metadata;
+        remote.max_deepzoom_level = ceil_log2_i64(MAX(remote.metadata.level_0_width, remote.metadata.level_0_height));
+
+        if (!slide_score_validate_qupath_link(&remote)) {
+            http_response_destroy(response);
+            return false;
+        }
+
+        image_t* image = (image_t*)calloc(1, sizeof(image_t));
+        image->resource_id = global_next_resource_id++;
+        bool is_valid = init_image_from_slide_score(image, &remote, false);
+        if (image->is_valid) {
+            platform_mutex_init(&image->lock);
+            image->lock_initialized = true;
+        }
+        if (is_valid) {
+            unload_all_images(app_state);
+            add_image(app_state, image, true, false);
+            slide_score_set_last_status("Opened Slide Score QuPath link for image %d.", remote.image_id);
+            success = true;
+        } else {
+            image_destroy(image);
+            free(image);
+        }
+    } else {
+        slide_score_set_last_status("Slide Score QuPath metadata request failed: HTTP %d.", response->status_code);
+        console_print_error("%s URL: %s\n", slide_score_last_status, uri);
+    }
+
+    http_response_destroy(response);
+    return success;
 }
 
 static bool parse_i32_after_key(const char* text, const char* key, i32* out_value) {
@@ -442,6 +597,32 @@ static bool parse_i32_after_key(const char* text, const char* key, i32* out_valu
     if (*pos == '=' || *pos == '/') ++pos;
     if (!isdigit(*pos)) return false;
     *out_value = atoi(pos);
+    return true;
+}
+
+static bool slide_score_host_is_supported(const char* host) {
+    if (!host) return false;
+    size_t len = strlen(host);
+    static const char suffix[] = ".slidescore.com";
+    size_t suffix_len = strlen(suffix);
+    return strcmp(host, "slidescore.com") == 0 || (len > suffix_len && strcmp(host + len - suffix_len, suffix) == 0);
+}
+
+static bool slide_score_extract_host_from_https_uri(const char* uri, char* out_host, size_t out_host_size, const char** out_path) {
+    if (strncmp(uri, "https://", 8) != 0 && strncmp(uri, "http://", 7) != 0) {
+        return false;
+    }
+    const char* host_start = strstr(uri, "://") + 3;
+    const char* host_end = strchr(host_start, '/');
+    if (!host_end) {
+        host_end = uri + strlen(uri);
+    }
+    size_t host_len = ATMOST((size_t)(host_end - host_start), out_host_size - 1);
+    memcpy(out_host, host_start, host_len);
+    out_host[host_len] = 0;
+    if (out_path) {
+        *out_path = (*host_end == '/') ? host_end : "/";
+    }
     return true;
 }
 
@@ -459,17 +640,35 @@ bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const cha
         memcpy(server, host_start, host_len);
         server[host_len] = 0;
         if (!parse_i32_after_key(path_start, "/image/", &image_id)) return true;
-    } else if (strstr(uri, "/Image/Details") && parse_i32_after_key(uri, "imageId", &image_id)) {
-        recognized = true;
-        const char* host_start = strstr(uri, "://");
-        host_start = host_start ? host_start + 3 : uri;
-        const char* host_end = strchr(host_start, '/');
-        if (!host_end) return true;
-        size_t host_len = ATMOST((size_t)(host_end - host_start), sizeof(server) - 1);
-        memcpy(server, host_start, host_len);
-        server[host_len] = 0;
     } else {
-        return false;
+        const char* path = NULL;
+        if (!slide_score_extract_host_from_https_uri(uri, server, sizeof(server), &path) || !slide_score_host_is_supported(server)) {
+            return false;
+        }
+
+        recognized = true;
+        if (strstr(path, "SlideScoreMetadata.json")) {
+            slide_score_open_qupath_metadata_url(app_state, uri);
+            return true;
+        }
+        bool found_image_id = false;
+        if (strstr(path, "/Image/Details")) {
+            found_image_id = parse_i32_after_key(path, "imageId", &image_id);
+        }
+        if (!found_image_id) {
+            found_image_id = parse_i32_after_key(path, "/image/", &image_id);
+        }
+        if (!found_image_id) {
+            found_image_id = parse_i32_after_key(path, "/Image/", &image_id);
+        }
+        if (!found_image_id) {
+            found_image_id = parse_i32_after_key(path, "/i/", &image_id);
+        }
+        if (!found_image_id) {
+            slide_score_set_last_status("Slide Score URI recognized, but no image id could be found.");
+            console_print_error("%s URL: %s\n", slide_score_last_status, uri);
+            return true;
+        }
     }
 
     if (recognized) {

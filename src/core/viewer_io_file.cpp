@@ -106,9 +106,15 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 
 		bool failed = false;
 		char path[512];
-		snprintf(path, sizeof(path), "/i/%d/%s/i_files/%d/%d_%d.jpeg",
-		         remote->image_id, remote->tile_server.url_part, level_image->pyramid_image_index,
-		         task->tile_x, task->tile_y);
+		if (remote->use_qupath_tile_endpoint) {
+			slide_score_build_qupath_tile_path(path, sizeof(path), remote, task->level, task->tile_x, task->tile_y,
+			                                   level_image->tile_width, level_image->tile_height,
+			                                   level_image->width_in_pixels, level_image->height_in_pixels);
+		} else {
+			snprintf(path, sizeof(path), "/i/%d/%s/i_files/%d/%d_%d.jpeg",
+			         remote->image_id, remote->tile_server.url_part, level_image->pyramid_image_index,
+			         task->tile_x, task->tile_y);
+		}
 
 		http_response_t* response = NULL;
 		for (i32 attempt = 0; attempt < 2; ++attempt) {
@@ -149,6 +155,9 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 				i32 status_code = response ? response->status_code : 0;
 				console_print_error("[thread %d] Slide Score tile request failed: HTTP %d, level %d tile (%d, %d)\n",
 				                    logical_thread_index, status_code, task->level, task->tile_x, task->tile_y);
+				if (remote->use_qupath_tile_endpoint) {
+					console_print_error("Slide Score QuPath tile endpoint failed for '%s'. The link may be expired or this server may not support unauthenticated raw tile access.\n", path);
+				}
 				failed = true;
 			}
 			if (response) http_response_destroy(response);

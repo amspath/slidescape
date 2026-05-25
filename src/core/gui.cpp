@@ -1068,6 +1068,13 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
         ImGui::SetKeyboardFocusHere();
     }
     entered = entered || ImGui::InputTextEx("##URI", "Enter URI here", remote_uri, sizeof(remote_uri), ImVec2(-FLT_MIN, 0), input_flags);
+    if (ImGui::TreeNodeEx("Supported links: Slide Score API (either https:// or slidescore://)", ImGuiTreeNodeFlags_DefaultOpen)) {
+		ImGui::BulletText("*.slidescore.com/image/1");
+		ImGui::BulletText("*.slidescore.com/Image/Details?imageId=1");
+		ImGui::BulletText("*.slidescore.com/i/1/.../SlideScoreMetadata.json");
+        ImGui::TextWrapped("Slide Score links require an API token (except for QuPath metadata links).");
+        ImGui::TreePop();
+    }
 
     static char token_buf[4096];
     static bool first_time = true;
@@ -1083,6 +1090,7 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
     }
     static bool save_api_key = true;
     static bool is_api_key_dirty = false;
+    static char open_uri_status[512] = "";
     if (ImGui::TreeNodeEx("API token", ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_NoAutoOpenOnLog)) {
         if (ImGui::Checkbox("Save API key", &save_api_key)) {}
         ImGuiInputTextFlags api_key_input_flags = 0;
@@ -1110,9 +1118,15 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
                 http_response_destroy(response);
             }
         }
+        const char* slide_score_status = slide_score_get_last_status();
+        if (slide_score_status && slide_score_status[0]) {
+            snprintf(open_uri_status, sizeof(open_uri_status), "%s", slide_score_status);
+        } else {
+            snprintf(open_uri_status, sizeof(open_uri_status), "Use the console (F3) to view connection results.");
+        }
     }
     if (pressed_connect) {
-        ImGui::TextUnformatted("Use the console (F3) to view connection results.\n");
+        ImGui::TextWrapped("%s", open_uri_status);
     }
     ImGui::End();
 }

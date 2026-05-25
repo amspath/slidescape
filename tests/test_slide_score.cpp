@@ -105,3 +105,42 @@ TEST_CASE("Slide Score tile-server parser and tile URL mapping") {
 	slide_score_build_tile_url(url, sizeof(url), &remote, 4, 3, 5);
 	CHECK(strcmp(url, "https://clidipa.slidescore.com/i/23/url-token/i_files/12/3_5.jpeg") == 0);
 }
+
+TEST_CASE("Slide Score parser handles QuPath metadata JSON") {
+	const char* json =
+		"{"
+		"\"Level0TileWidth\":512,"
+		"\"Level0TileHeight\":512,"
+		"\"OSDTileSize\":512,"
+		"\"MppX\":0.25,"
+		"\"MppY\":0.25,"
+		"\"ObjectivePower\":0.0,"
+		"\"BackgroundColor\":null,"
+		"\"LevelCount\":7,"
+		"\"ZLayerCount\":0,"
+		"\"Level0Width\":61187,"
+		"\"Level0Height\":20227,"
+		"\"Downsamples\":[1.0,2.0,4.0,8.0,16.0,32.0,64.0],"
+		"\"FileName\":\"21_R81855.isyntax\""
+		"}";
+
+	slide_score_api_result_t result = debug_slide_score_api_handle_response(json, strlen(json), SLIDE_SCORE_API_GET_IMAGE_METADATA);
+
+	CHECK(result.success);
+	CHECK(result.get_image_metadata.tile_width == 512);
+	CHECK(result.get_image_metadata.mpp_x == doctest::Approx(0.25f));
+	CHECK(result.get_image_metadata.level_count == 7);
+	CHECK(result.get_image_metadata.level_0_width == 61187);
+	CHECK(result.get_image_metadata.downsample_count == 7);
+	CHECK(result.get_image_metadata.downsamples[6] == doctest::Approx(64.0));
+	CHECK(strcmp(result.get_image_metadata.filename, "21_R81855.isyntax") == 0);
+
+	slide_score_remote_image_t remote = {};
+	snprintf(remote.qupath_base_path, sizeof(remote.qupath_base_path), "/i/23/token/");
+	remote.metadata = result.get_image_metadata;
+	char path[512];
+	slide_score_build_qupath_tile_path(path, sizeof(path), &remote, 5, 1, 1, 512, 512, 700, 700);
+	CHECK(strcmp(path, "/i/23/token/raw/5/16384_16384/188_188.jpeg") == 0);
+	slide_score_build_qupath_tile_path(path, sizeof(path), &remote, 5, 1, 0, 512, 512, 1913, 633);
+	CHECK(strcmp(path, "/i/23/token/raw/5/16384_0/512_512.jpeg") == 0);
+}
