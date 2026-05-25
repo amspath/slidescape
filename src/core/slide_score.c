@@ -20,6 +20,8 @@
 #include "slide_score.h"
 #include "remote.h"
 #include "memrw.h"
+#include "viewer.h"
+#include "stringutils.h"
 
 #include "json.h"
 
@@ -38,13 +40,17 @@ web_api_binding_t slide_score_api_get_image_metadata_bindings_template[] = {
         {"level0TileHeight", offsetof(slide_score_get_image_metadata_result_t, tile_height),     FIELD_TYPE_I32},
         {"osdTileSize", offsetof(slide_score_get_image_metadata_result_t, osd_tile_size),        FIELD_TYPE_I32},
         {"mppX", offsetof(slide_score_get_image_metadata_result_t, mpp_x),                       FIELD_TYPE_FLOAT},
-        {"mppX", offsetof(slide_score_get_image_metadata_result_t, mpp_y),                       FIELD_TYPE_FLOAT},
+        {"mppY", offsetof(slide_score_get_image_metadata_result_t, mpp_y),                       FIELD_TYPE_FLOAT},
         {"objectivePower", offsetof(slide_score_get_image_metadata_result_t, objective_power),   FIELD_TYPE_FLOAT},
-        {"backgroundColor", offsetof(slide_score_get_image_metadata_result_t, background_color), FIELD_TYPE_I32},
+        {"backgroundColor", offsetof(slide_score_get_image_metadata_result_t, background_color), FIELD_TYPE_STRING_256CHARS},
         {"levelCount", offsetof(slide_score_get_image_metadata_result_t, level_count),           FIELD_TYPE_I32},
         {"zLayerCount", offsetof(slide_score_get_image_metadata_result_t, z_layer_count),        FIELD_TYPE_I32},
-        {"level0Width", offsetof(slide_score_get_image_metadata_result_t, level_0_width),        FIELD_TYPE_I32},
-        {"level0Height", offsetof(slide_score_get_image_metadata_result_t, level_0_height),      FIELD_TYPE_I32},
+        {"level0Width", offsetof(slide_score_get_image_metadata_result_t, level_0_width),        FIELD_TYPE_I64},
+        {"level0Height", offsetof(slide_score_get_image_metadata_result_t, level_0_height),      FIELD_TYPE_I64},
+        {"boundsX", offsetof(slide_score_get_image_metadata_result_t, bounds_x),                 FIELD_TYPE_I64},
+        {"boundsY", offsetof(slide_score_get_image_metadata_result_t, bounds_y),                 FIELD_TYPE_I64},
+        {"boundsWidth", offsetof(slide_score_get_image_metadata_result_t, bounds_width),         FIELD_TYPE_I64},
+        {"boundsHeight", offsetof(slide_score_get_image_metadata_result_t, bounds_height),       FIELD_TYPE_I64},
         {"fileName", offsetof(slide_score_get_image_metadata_result_t, filename),                FIELD_TYPE_STRING_256CHARS},
 };
 web_api_result_descriptor_t slide_score_api_get_image_metadata_descriptor = {
@@ -122,6 +128,31 @@ static const char* slide_score_api_names[SLIDE_SCORE_API_LAST] = {
 
 
 
+void slide_score_client_init(slide_score_client_t* ss, const char* server_url_or_hostname, const char* api_key) {
+    memset(ss, 0, sizeof(*ss));
+    if (!server_url_or_hostname) return;
+
+    const char* start = server_url_or_hostname;
+    if (strncmp(start, "https://", 8) == 0) {
+        start += 8;
+    } else if (strncmp(start, "http://", 7) == 0) {
+        start += 7;
+    }
+
+    size_t hostname_len = 0;
+    while (start[hostname_len] && start[hostname_len] != '/' && start[hostname_len] != ':') {
+        ++hostname_len;
+    }
+    hostname_len = ATMOST(hostname_len, sizeof(ss->server_name) - 1);
+    memcpy(ss->server_name, start, hostname_len);
+    ss->server_name[hostname_len] = 0;
+
+    if (api_key) {
+        strncpy(ss->api_key, api_key, sizeof(ss->api_key) - 1);
+        trim_whitespace(ss->api_key);
+    }
+}
+
 void web_api_call_destroy(web_api_call_t* call) {
     memrw_destroy(&call->url);
     memrw_destroy(&call->request);
@@ -162,7 +193,7 @@ web_api_call_t slide_score_build_api_call(slide_score_client_t* ss, slide_score_
 
     static const char requestfmt[] =
             "GET %s HTTP/1.1\r\n"
-            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n"
+            "Accept: application/json\r\n"
             //            "Accept-Encoding: gzip, deflate, br\r\n"
             "Accept-Language: en,nl;q=0.9,en-US;q=0.8,af;q=0.7\r\n%s"
             "Cache-Control: max-age=0\r\n"
@@ -186,11 +217,17 @@ void web_api_populate_struct_with_field(const char* field_name, const char* valu
                     case FIELD_TYPE_I32: {
                         *(i32*)((result_struct_generic)+binding->offset) = atoi(value);
                     } break;
+                    case FIELD_TYPE_I64: {
+                        *(i64*)((result_struct_generic)+binding->offset) = atoll(value);
+                    } break;
                     case FIELD_TYPE_FLOAT: {
                         *(float*)((result_struct_generic)+binding->offset) = atof(value);
                     } break;
                     case FIELD_TYPE_STRING_256CHARS: {
                         strncpy((((char*)result_struct_generic)+binding->offset), value, 255);
+                    } break;
+                    case FIELD_TYPE_STRING_512CHARS: {
+                        strncpy((((char*)result_struct_generic)+binding->offset), value, 511);
                     } break;
                     default: break;
                 }
@@ -202,11 +239,39 @@ void web_api_populate_struct_with_field(const char* field_name, const char* valu
 
 }
 
+static const char* json_scalar_as_string(struct json_value_s* value) {
+    if (!value) return NULL;
+    if (value->type == json_type_number || value->type == json_type_string) {
+        return ((struct json_string_s *)(value->payload))->string;
+    }
+    return NULL;
+}
+
+static bool slide_score_json_value_is_true(struct json_value_s* value) {
+    return value && value->type == json_type_true;
+}
+
+static void slide_score_parse_metadata_array(const char* field_name, struct json_value_s* value, slide_score_api_result_t* api_result) {
+    if (strcmp(field_name, "downsamples") != 0 || !value || value->type != json_type_array) return;
+
+    slide_score_get_image_metadata_result_t* metadata = &api_result->get_image_metadata;
+    struct json_array_s* array = (struct json_array_s*)value->payload;
+    struct json_array_element_s* element = array->start;
+    while (element && metadata->downsample_count < COUNT(metadata->downsamples)) {
+        const char* number = json_scalar_as_string(element->value);
+        if (number) {
+            metadata->downsamples[metadata->downsample_count++] = atof(number);
+        }
+        element = element->next;
+    }
+}
+
 slide_score_api_result_t debug_slide_score_api_handle_response(const char* json, size_t json_length, slide_score_api_enum api) {
     bool success = false;
     bool api_reported_success = false;
 
     const web_api_result_descriptor_t* result_descriptor = slide_score_api_result_descriptors[api];
+    if (!result_descriptor) return (slide_score_api_result_t){ .api = api };
 
     size_t bindings_template_size = result_descriptor->binding_count * sizeof(web_api_binding_t);
     web_api_binding_t* bindings = alloca(bindings_template_size);
@@ -223,11 +288,15 @@ slide_score_api_result_t debug_slide_score_api_handle_response(const char* json,
                 const char* element_name = element->name->string;
                 // TODO: refactor code duplication
                 enum json_type_e value_type = element->value->type;
+                if (strcmp(element_name, "success") == 0) {
+                    api_reported_success = slide_score_json_value_is_true(element->value);
+                }
                 if (value_type == json_type_number || value_type == json_type_string) {
-                    const char* value = ((struct json_string_s *)(element->value->payload))->string;
+                    const char* value = json_scalar_as_string(element->value);
                     web_api_populate_struct_with_field(element_name, value, bindings,
                                                        result_descriptor->binding_count, &parsed_api_result);
                 }
+                slide_score_parse_metadata_array(element_name, element->value, &parsed_api_result);
                 // TODO: handle nested objects, arrays
                 // Note: the metadata objects only exists for the GetTileMetadata call?
                 if (strcmp(element_name, "metadata") == 0 && element->value->type == json_type_object) {
@@ -238,10 +307,11 @@ slide_score_api_result_t debug_slide_score_api_handle_response(const char* json,
                         const char* metadata_element_name = metadata_element->name->string;
                         enum json_type_e metadata_value_type = metadata_element->value->type;
                         if (metadata_value_type == json_type_number || metadata_value_type == json_type_string) {
-                            const char* value = ((struct json_string_s *)(metadata_element->value->payload))->string;
+                            const char* value = json_scalar_as_string(metadata_element->value);
                             web_api_populate_struct_with_field(metadata_element_name, value, bindings,
                                                                result_descriptor->binding_count, &parsed_api_result);
                         }
+                        slide_score_parse_metadata_array(metadata_element_name, metadata_element->value, &parsed_api_result);
 
                         metadata_element = metadata_element->next;
                     }
@@ -256,16 +326,164 @@ slide_score_api_result_t debug_slide_score_api_handle_response(const char* json,
 
 
         success = api_reported_success;
+        free(root);
     }
     parsed_api_result.success = success;
     return parsed_api_result;
 }
 
+bool slide_score_request_api(slide_score_client_t* ss, slide_score_api_enum api, const char** par_names, const char** par_values, i32 par_count, slide_score_api_result_t* out_result) {
+    bool success = false;
+    web_api_call_t call = slide_score_build_api_call(ss, api, par_names, par_values, par_count);
+    if (!call.is_valid) return false;
+    if (ss->api_key[0] == '\0') {
+        console_print_error("Slide Score API request has no API token configured.\n");
+    }
+
+    char url[1024];
+    snprintf(url, sizeof(url), "https://%s%s", ss->server_name, (char*)call.url.data);
+    http_response_t* response = open_remote_uri_with_extra_headers(url, ss->api_key, NULL);
+    if (response) {
+        if (response->status_code >= 200 && response->status_code < 300) {
+            slide_score_api_result_t parsed = debug_slide_score_api_handle_response((const char*)response->buffer.data, response->content_length, api);
+            if (out_result) *out_result = parsed;
+            success = parsed.success || api == SLIDE_SCORE_API_GET_TILE_SERVER;
+        } else {
+            console_print_error("Slide Score API request failed: HTTP %d for %s\n", response->status_code, url);
+        }
+        http_response_destroy(response);
+    }
+    web_api_call_destroy(&call);
+    return success;
+}
+
+bool slide_score_refresh_tile_server(slide_score_remote_image_t* remote) {
+    char image_id_str[32];
+    snprintf(image_id_str, sizeof(image_id_str), "%d", remote->image_id);
+    const char* names[] = {"imageId"};
+    const char* values[] = {image_id_str};
+    slide_score_api_result_t result = {};
+    if (!slide_score_request_api(&remote->client, SLIDE_SCORE_API_GET_TILE_SERVER, names, values, 1, &result)) {
+        return false;
+    }
+    remote->tile_server = result.get_tile_server;
+    return remote->tile_server.cookie_part[0] && remote->tile_server.url_part[0];
+}
+
+static i32 ceil_log2_i64(i64 value) {
+    i32 result = 0;
+    i64 v = 1;
+    while (v < value && result < 62) {
+        v <<= 1;
+        ++result;
+    }
+    return result;
+}
+
+char* slide_score_build_tile_url(char* buffer, size_t buffer_size, slide_score_remote_image_t* remote, i32 level, i32 tile_x, i32 tile_y) {
+    double downsample = 1.0;
+    if (level >= 0 && level < remote->metadata.downsample_count) {
+        downsample = remote->metadata.downsamples[level];
+    } else if (level > 0) {
+        downsample = (double)(1 << level);
+    }
+    i32 downsample_log2 = (i32)floor(log2(downsample) + 0.5);
+    i32 deepzoom_level = remote->max_deepzoom_level - downsample_log2;
+    snprintf(buffer, buffer_size, "https://%s/i/%d/%s/i_files/%d/%d_%d.jpeg",
+             remote->client.server_name, remote->image_id, remote->tile_server.url_part,
+             deepzoom_level, tile_x, tile_y);
+    return buffer;
+}
+
+bool slide_score_open_remote_image(app_state_t* app_state, const char* server_url_or_hostname, const char* api_token, i32 image_id) {
+    slide_score_remote_image_t remote = {};
+    slide_score_client_init(&remote.client, server_url_or_hostname, api_token);
+    remote.image_id = image_id;
+
+    char image_id_str[32];
+    snprintf(image_id_str, sizeof(image_id_str), "%d", image_id);
+    const char* names[] = {"imageId"};
+    const char* values[] = {image_id_str};
+
+    slide_score_api_result_t metadata_result = {};
+    if (!slide_score_request_api(&remote.client, SLIDE_SCORE_API_GET_IMAGE_METADATA, names, values, 1, &metadata_result)) {
+        console_print_error("Slide Score: failed to retrieve metadata for image %d\n", image_id);
+        return false;
+    }
+    remote.metadata = metadata_result.get_image_metadata;
+    remote.max_deepzoom_level = ceil_log2_i64(MAX(remote.metadata.level_0_width, remote.metadata.level_0_height));
+
+    if (!slide_score_refresh_tile_server(&remote)) {
+        console_print_error("Slide Score: failed to retrieve tile server token for image %d\n", image_id);
+        return false;
+    }
+
+    image_t* image = (image_t*)calloc(1, sizeof(image_t));
+    image->resource_id = global_next_resource_id++;
+    bool is_valid = init_image_from_slide_score(image, &remote, false);
+    if (image->is_valid) {
+        platform_mutex_init(&image->lock);
+        image->lock_initialized = true;
+    }
+    if (is_valid) {
+        unload_all_images(app_state);
+        add_image(app_state, image, true, false);
+    } else {
+        image_destroy(image);
+        free(image);
+    }
+    return is_valid;
+}
+
+static bool parse_i32_after_key(const char* text, const char* key, i32* out_value) {
+    const char* pos = strstr(text, key);
+    if (!pos) return false;
+    pos += strlen(key);
+    if (*pos == '=' || *pos == '/') ++pos;
+    if (!isdigit(*pos)) return false;
+    *out_value = atoi(pos);
+    return true;
+}
+
+bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const char* api_token) {
+    bool recognized = false;
+    i32 image_id = 0;
+    char server[256] = "";
+
+    if (strncmp(uri, "slidescore://", 13) == 0) {
+        recognized = true;
+        const char* host_start = uri + 13;
+        const char* path_start = strchr(host_start, '/');
+        if (!path_start) return true;
+        size_t host_len = ATMOST((size_t)(path_start - host_start), sizeof(server) - 1);
+        memcpy(server, host_start, host_len);
+        server[host_len] = 0;
+        if (!parse_i32_after_key(path_start, "/image/", &image_id)) return true;
+    } else if (strstr(uri, "/Image/Details") && parse_i32_after_key(uri, "imageId", &image_id)) {
+        recognized = true;
+        const char* host_start = strstr(uri, "://");
+        host_start = host_start ? host_start + 3 : uri;
+        const char* host_end = strchr(host_start, '/');
+        if (!host_end) return true;
+        size_t host_len = ATMOST((size_t)(host_end - host_start), sizeof(server) - 1);
+        memcpy(server, host_start, host_len);
+        server[host_len] = 0;
+    } else {
+        return false;
+    }
+
+    if (recognized) {
+        slide_score_open_remote_image(app_state, server, api_token, image_id);
+    }
+    return recognized;
+}
 
 void slide_score_get_image_metadata(slide_score_client_t* ss, i32 image_id) {
     char image_id_str[16];
     snprintf(image_id_str, sizeof(image_id_str), "%d", image_id);
-    web_api_call_t call = slide_score_build_api_call(ss, SLIDE_SCORE_API_GET_IMAGE_METADATA, (const char **)"imageId", (const char **) image_id_str, 1);
+    const char* names[] = {"imageId"};
+    const char* values[] = {image_id_str};
+    web_api_call_t call = slide_score_build_api_call(ss, SLIDE_SCORE_API_GET_IMAGE_METADATA, names, values, 1);
     if (call.is_valid) {
 //        do_http_request()
     }
@@ -273,4 +491,3 @@ void slide_score_get_image_metadata(slide_score_client_t* ss, i32 image_id) {
     char url[512];
 //    snprintf("https://")
 }
-

@@ -28,6 +28,7 @@
 #include "isyntax.h"
 #include "libisyntax.h"
 #include "dicom.h"
+#include "slide_score.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -99,6 +100,7 @@ typedef enum {
     IMAGE_BACKEND_ISYNTAX,
     IMAGE_BACKEND_DICOM,
     IMAGE_BACKEND_MRXS,
+    IMAGE_BACKEND_SLIDE_SCORE,
 } image_backend_enum;
 
 typedef struct tile_t {
@@ -173,6 +175,7 @@ typedef struct image_t {
         wsi_t openslide_wsi;
         dicom_series_t dicom;
         mrxs_t mrxs;
+        slide_score_remote_image_t slide_score;
     };
     i32 level_count;
     u32 tile_width;

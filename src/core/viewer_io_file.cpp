@@ -22,6 +22,8 @@
 #include "stringutils.h"
 #include "listing.h"
 #include "stb_image.h"
+#include "remote.h"
+#include "jpeg_decoder.h"
 
 #include "gui.h" // for global data, TODO: refactor
 
@@ -135,6 +137,38 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	} else if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 //		console_print_error("thread %d: tile level %d, tile %d (%d, %d): TYRING\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 		ASSERT(!"invalid code path");
+
+	} else if (image->backend == IMAGE_BACKEND_SLIDE_SCORE) {
+		slide_score_remote_image_t* remote = &image->slide_score;
+		char url[1024];
+		slide_score_build_tile_url(url, sizeof(url), remote, level, tile_x, tile_y);
+
+		char cookie[512];
+		snprintf(cookie, sizeof(cookie), "t=%s", remote->tile_server.cookie_part);
+		http_response_t* response = open_remote_uri_with_extra_headers(url, remote->client.api_key, cookie);
+		if (response && response->status_code == 200 && response->content_length > 0) {
+			i32 jpeg_width = 0;
+			i32 jpeg_height = 0;
+			i32 channels_in_file = 0;
+			u8* decoded = jpeg_decode_image((u8*)response->buffer.data, (u32)response->content_length, &jpeg_width, &jpeg_height, &channels_in_file);
+			if (decoded) {
+				i32 copy_width = ATMOST(jpeg_width, (i32)level_image->tile_width);
+				i32 copy_height = ATMOST(jpeg_height, (i32)level_image->tile_height);
+				i32 dest_pitch = level_image->tile_width * BYTES_PER_PIXEL;
+				i32 src_pitch = jpeg_width * BYTES_PER_PIXEL;
+				for (i32 row = 0; row < copy_height; ++row) {
+					memcpy(temp_memory + row * dest_pitch, decoded + row * src_pitch, copy_width * BYTES_PER_PIXEL);
+				}
+				free(decoded);
+			} else {
+				failed = true;
+			}
+		} else {
+			i32 status_code = response ? response->status_code : 0;
+			console_print_error("thread %d: Slide Score tile request failed: HTTP %d (%s)\n", logical_thread_index, status_code, url);
+			failed = true;
+		}
+		if (response) http_response_destroy(response);
 
 	} else if (image->backend == IMAGE_BACKEND_STBI) {
 		ASSERT(!"invalid code path");

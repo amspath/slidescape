@@ -5,9 +5,11 @@ add_executable(slidescape_tests
         test_mathutils.cpp
         test_memrw.cpp
         test_stb_sprintf.cpp
+        test_slide_score.cpp
         test_support.cpp
         test_stringutils.cpp
         test_work_queue.cpp
+        ../src/core/slide_score.c
         ../src/utils/mathutils.c
         ../src/utils/memrw.c
         ../src/utils/stringutils.c

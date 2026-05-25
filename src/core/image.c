@@ -51,6 +51,10 @@ const char* get_image_backend_name(image_t* image) {
         result = "iSyntax";
     } else if (image->backend == IMAGE_BACKEND_DICOM) {
         result = "DICOM";
+    } else if (image->backend == IMAGE_BACKEND_MRXS) {
+        result = "MRXS";
+    } else if (image->backend == IMAGE_BACKEND_SLIDE_SCORE) {
+        result = "Slide Score";
     } else if (image->backend == IMAGE_BACKEND_STBI) {
         result = "stb_image";
     }
@@ -68,6 +72,10 @@ const char* get_image_descriptive_type_name(image_t* image) {
             result = "WSI (iSyntax)";
         } else if (image->backend == IMAGE_BACKEND_DICOM) {
             result = "WSI (DICOM)";
+        } else if (image->backend == IMAGE_BACKEND_MRXS) {
+            result = "WSI (MRXS)";
+        } else if (image->backend == IMAGE_BACKEND_SLIDE_SCORE) {
+            result = "WSI (Slide Score)";
         } else if (image->backend == IMAGE_BACKEND_STBI) {
             result = "Simple image";
         }
@@ -302,6 +310,80 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
     image->is_valid = true;
     image->is_freshly_loaded = true;
     return image->is_valid;
+}
+
+static inline i64 ceil_div_i64(i64 a, i64 b) {
+    return (a + b - 1) / b;
+}
+
+static inline i64 ceil_div_f64(i64 a, double b) {
+    return (i64)ceil((double)a / b);
+}
+
+bool init_image_from_slide_score(image_t* image, slide_score_remote_image_t* remote, bool is_overlay) {
+    (void)is_overlay;
+    slide_score_get_image_metadata_result_t* metadata = &remote->metadata;
+    if (metadata->level_0_width <= 0 || metadata->level_0_height <= 0 || metadata->tile_width <= 0 || metadata->tile_height <= 0) {
+        return false;
+    }
+
+    image->type = IMAGE_TYPE_WSI;
+    image->backend = IMAGE_BACKEND_SLIDE_SCORE;
+    image->slide_score = *remote;
+    image->is_local = false;
+    image->is_freshly_loaded = true;
+    image->mpp_x = metadata->mpp_x;
+    image->mpp_y = metadata->mpp_y;
+    image->is_mpp_known = metadata->mpp_x > 0.0f && metadata->mpp_y > 0.0f;
+    image->tile_width = metadata->tile_width;
+    image->tile_height = metadata->tile_height;
+    image->width_in_pixels = metadata->level_0_width;
+    image->height_in_pixels = metadata->level_0_height;
+    image->width_in_um = image->is_mpp_known ? image->width_in_pixels * image->mpp_x : (float)image->width_in_pixels;
+    image->height_in_um = image->is_mpp_known ? image->height_in_pixels * image->mpp_y : (float)image->height_in_pixels;
+    snprintf(image->name, sizeof(image->name), "%s", metadata->filename[0] ? metadata->filename : "Slide Score image");
+    snprintf(image->directory, sizeof(image->directory), "https://%s/i/%d", remote->client.server_name, remote->image_id);
+
+    memset(image->level_images, 0, sizeof(image->level_images));
+    image->level_count = metadata->downsample_count > 0 ? metadata->downsample_count : metadata->level_count;
+    if (image->level_count <= 0) image->level_count = 1;
+    image->level_count = ATMOST(image->level_count, IMAGE_PYRAMID_MAX_LEVELS);
+
+    for (i32 level_index = 0; level_index < image->level_count; ++level_index) {
+        double downsample = 1.0;
+        if (level_index < metadata->downsample_count) {
+            downsample = metadata->downsamples[level_index];
+        } else if (level_index > 0) {
+            downsample = (double)(1 << level_index);
+        }
+        if (downsample < 1.0) downsample = 1.0;
+
+        level_image_t* level_image = image->level_images + level_index;
+        level_image->exists = true;
+        level_image->pyramid_image_index = remote->max_deepzoom_level - (i32)floor(log2(downsample) + 0.5);
+        level_image->downsample_factor = (float)downsample;
+        level_image->width_in_pixels = ceil_div_f64(image->width_in_pixels, downsample);
+        level_image->height_in_pixels = ceil_div_f64(image->height_in_pixels, downsample);
+        level_image->tile_width = image->tile_width;
+        level_image->tile_height = image->tile_height;
+        level_image->width_in_tiles = (u32)ceil_div_i64(level_image->width_in_pixels, level_image->tile_width);
+        level_image->height_in_tiles = (u32)ceil_div_i64(level_image->height_in_pixels, level_image->tile_height);
+        level_image->tile_count = level_image->width_in_tiles * level_image->height_in_tiles;
+        level_image->um_per_pixel_x = image->is_mpp_known ? image->mpp_x * level_image->downsample_factor : level_image->downsample_factor;
+        level_image->um_per_pixel_y = image->is_mpp_known ? image->mpp_y * level_image->downsample_factor : level_image->downsample_factor;
+        level_image->x_tile_side_in_um = level_image->um_per_pixel_x * (float)level_image->tile_width;
+        level_image->y_tile_side_in_um = level_image->um_per_pixel_y * (float)level_image->tile_height;
+        level_image->tiles = (tile_t*)calloc(1, level_image->tile_count * sizeof(tile_t));
+        for (i32 tile_index = 0; tile_index < level_image->tile_count; ++tile_index) {
+            tile_t* tile = level_image->tiles + tile_index;
+            tile->tile_index = tile_index;
+            tile->tile_x = tile_index % level_image->width_in_tiles;
+            tile->tile_y = tile_index / level_image->width_in_tiles;
+        }
+    }
+
+    image->is_valid = true;
+    return true;
 }
 
 u8* decode_associated_image_from_isyntax(isyntax_t* isyntax, isyntax_image_t* image) {
@@ -1385,6 +1467,8 @@ void image_destroy(image_t* image) {
 				dicom_destroy(&image->dicom);
 			} else if (image->backend == IMAGE_BACKEND_MRXS) {
 				mrxs_destroy(&image->mrxs);
+			} else if (image->backend == IMAGE_BACKEND_SLIDE_SCORE) {
+				DUMMY_STATEMENT;
 			} else if (image->backend == IMAGE_BACKEND_STBI) {
 				if (image->simple.pixels) {
 					stbi_image_free(image->simple.pixels);

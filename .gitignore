@@ -12,8 +12,13 @@ data/
 tests/fixtures/local_manifest.txt
 openslide/
 *.tiff
+*.ptif
 *.isyntax
 *.png
+*.jpg
+*.jpeg
 *.json
 *.xml
 *.orig
+*.dat
+*.mrxs

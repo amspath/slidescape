@@ -638,7 +638,7 @@ static i32 body_callback(http_parser *parser, const char *p, size_t len) {
 }
 
 
-http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token) {
+http_response_t* open_remote_uri_with_extra_headers(const char *uri, const char* api_token, const char* cookie_header) {
 
     url_info_t url_info = {};
     if (!split_url(&url_info, uri)) {
@@ -653,23 +653,31 @@ http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const 
     } else {
         token_header_string[0] = '\0';
     }
+    char cookie_header_string[1024] = "";
+    if (cookie_header && cookie_header[0] != '\0') {
+        snprintf(cookie_header_string, sizeof(cookie_header_string), "Cookie: %s\r\n", cookie_header);
+    }
 
     static const char requestfmt[] =
             "GET %s HTTP/1.1\r\n"
             "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n"
 //            "Accept-Encoding: gzip, deflate, br\r\n"
-            "Accept-Language: en,nl;q=0.9,en-US;q=0.8,af;q=0.7\r\n%s"
+            "Accept-Language: en,nl;q=0.9,en-US;q=0.8,af;q=0.7\r\n%s%s"
             "Cache-Control: max-age=0\r\n"
             "Connection: close\r\n"
             "Host: %s\r\n"
             "Upgrade-Insecure-Requests: 1\r\n\r\n";
     char request[4096];
-    snprintf(request, sizeof(request), requestfmt, url_info.path, token_header_string, url_info.site);
+    snprintf(request, sizeof(request), requestfmt, url_info.path, token_header_string, cookie_header_string, url_info.site);
     i32 request_len = (i32)strlen(request);
 
     console_print_verbose("%s\n", request);
 
-    tls_connection_t* connection = open_remote_connection(url_info.site, 443, alloca(sizeof(tls_connection_t)));
+    i32 portno = atoi(url_info.port);
+    if (portno == 80 && strcmp(url_info.protocol, "https") == 0) {
+        portno = 443;
+    }
+    tls_connection_t* connection = open_remote_connection(url_info.site, portno, alloca(sizeof(tls_connection_t)));
     if (!connection) {
         return NULL;
     }
@@ -695,11 +703,15 @@ http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const 
         parser->data = (void*)response;
 
         i32 nparsed = http_parser_execute(parser, &settings, (char*)mem_buffer.data, mem_buffer.used_size);
+        response->status_code = parser->status_code;
         memrw_putc(0, &response->buffer); // zero-terminate the content string
 
-        console_print("Content length = %d\n", response->content_length);
-        console_print("%s\n", response->buffer.data);
+        console_print_verbose("Content length = %d\n", response->content_length);
+        if (response->content_length < KILOBYTES(64)) {
+            console_print_verbose("%s\n", response->buffer.data);
+        }
 
+        free(parser);
 
     }
 
@@ -708,9 +720,13 @@ http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const 
     return response;
 }
 
+http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token) {
+    (void)app_state;
+    return open_remote_uri_with_extra_headers(uri, api_token, NULL);
+}
+
 void http_response_destroy(http_response_t* response) {
     ASSERT(response);
     memrw_destroy(&response->buffer);
     free(response);
 }
-

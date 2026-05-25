@@ -23,6 +23,7 @@
 typedef struct http_response_t {
     memrw_t buffer;
     size_t content_length;
+    i32 status_code;
 } http_response_t;
 
 #ifdef __cplusplus
@@ -40,6 +41,7 @@ u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename
 u8* download_remote_caselist(const char* hostname, i32 portno, const char* filename, i32* bytes_read);
 bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename);
 http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token);
+http_response_t* open_remote_uri_with_extra_headers(const char *uri, const char* api_token, const char* cookie_header);
 void http_response_destroy(http_response_t* response);
 
 #if DO_DEBUG
@@ -64,4 +66,3 @@ void do_remote_connection_test();
 #ifdef __cplusplus
 }
 #endif
-

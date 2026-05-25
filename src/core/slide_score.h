@@ -28,8 +28,10 @@ extern "C" {
 typedef enum field_type_enum {
     FIELD_TYPE_UNKNOWN = 0,
     FIELD_TYPE_I32,
+    FIELD_TYPE_I64,
     FIELD_TYPE_FLOAT,
     FIELD_TYPE_STRING_256CHARS,
+    FIELD_TYPE_STRING_512CHARS,
 } field_type_enum;
 
 typedef enum slide_score_api_enum {
@@ -103,11 +105,17 @@ typedef struct slide_score_get_image_metadata_result_t {
     float mpp_x;
     float mpp_y;
     float objective_power;
-    i32 background_color;
+    char background_color[256];
     i32 level_count;
     i32 z_layer_count;
-    i32 level_0_width;
-    i32 level_0_height;
+    i64 level_0_width;
+    i64 level_0_height;
+    double downsamples[32];
+    i32 downsample_count;
+    i64 bounds_x;
+    i64 bounds_y;
+    i64 bounds_width;
+    i64 bounds_height;
     char filename[256];
 } slide_score_get_image_metadata_result_t;
 
@@ -132,6 +140,14 @@ typedef struct slide_score_client_t {
     char api_key[4096];
 } slide_score_client_t;
 
+typedef struct slide_score_remote_image_t {
+    slide_score_client_t client;
+    i32 image_id;
+    i32 max_deepzoom_level;
+    slide_score_get_image_metadata_result_t metadata;
+    slide_score_get_tile_server_result_t tile_server;
+} slide_score_remote_image_t;
+
 
 
 typedef struct web_api_binding_t {
@@ -153,7 +169,17 @@ typedef struct web_api_call_t {
     web_api_binding_t* bindings;
 } web_api_call_t;
 
+typedef struct app_state_t app_state_t;
+typedef struct image_t image_t;
+
+void slide_score_client_init(slide_score_client_t* ss, const char* server_url_or_hostname, const char* api_key);
 slide_score_api_result_t debug_slide_score_api_handle_response(const char* json, size_t json_length, slide_score_api_enum api);
+bool slide_score_request_api(slide_score_client_t* ss, slide_score_api_enum api, const char** par_names, const char** par_values, i32 par_count, slide_score_api_result_t* out_result);
+bool slide_score_refresh_tile_server(slide_score_remote_image_t* remote);
+bool slide_score_open_remote_image(app_state_t* app_state, const char* server_url_or_hostname, const char* api_token, i32 image_id);
+bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const char* api_token);
+bool init_image_from_slide_score(image_t* image, slide_score_remote_image_t* remote, bool is_overlay);
+char* slide_score_build_tile_url(char* buffer, size_t buffer_size, slide_score_remote_image_t* remote, i32 level, i32 tile_x, i32 tile_y);
 
 
 #ifdef __cplusplus
