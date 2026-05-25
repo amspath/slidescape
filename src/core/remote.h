@@ -26,6 +26,8 @@ typedef struct http_response_t {
     i32 status_code;
 } http_response_t;
 
+typedef struct tls_connection_t tls_connection_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -42,6 +44,9 @@ u8* download_remote_caselist(const char* hostname, i32 portno, const char* filen
 bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename);
 http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token);
 http_response_t* open_remote_uri_with_extra_headers(const char *uri, const char* api_token, const char* cookie_header);
+tls_connection_t* remote_connection_open(const char* hostname, i32 portno);
+void remote_connection_close_and_free(tls_connection_t* connection);
+http_response_t* remote_connection_request(tls_connection_t* connection, const char* host, const char* path, const char* api_token, const char* cookie_header, bool close_after_request);
 void http_response_destroy(http_response_t* response);
 
 #if DO_DEBUG

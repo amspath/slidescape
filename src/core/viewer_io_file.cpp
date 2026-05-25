@@ -27,6 +27,106 @@
 
 #include "gui.h" // for global data, TODO: refactor
 
+static void slide_score_post_tile_result(load_tile_task_t* task, u8* pixel_memory, bool failed, bool is_empty) {
+	image_t* image = task->image;
+	level_image_t* level_image = image->level_images + task->level;
+	i32 tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
+
+	viewer_notify_tile_completed_task_t completion_task = {};
+	completion_task.resource_id = task->resource_id;
+	completion_task.pixel_memory = pixel_memory;
+	completion_task.tile_width = level_image->tile_width;
+	completion_task.tile_height = level_image->tile_height;
+	completion_task.scale = task->level;
+	completion_task.tile_index = tile_index;
+	completion_task.want_gpu_residency = task->need_gpu_residency;
+	completion_task.failed = failed;
+	completion_task.is_empty = is_empty;
+
+	if (task->completion_queue) {
+		completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
+	}
+}
+
+void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
+	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
+	load_tile_task_t* first_task = batch->tile_tasks;
+	image_t* image = first_task->image;
+
+	i32 refcount_decrement_amount = 0;
+	for (i32 i = 0; i < batch->task_count; ++i) {
+		refcount_decrement_amount += batch->tile_tasks[i].refcount_to_decrement;
+	}
+	if (image->is_deleted) {
+		atomic_subtract(&image->refcount, refcount_decrement_amount);
+		return;
+	}
+
+	ASSERT(image->backend == IMAGE_BACKEND_SLIDE_SCORE);
+	slide_score_remote_image_t* remote = &image->slide_score;
+	tls_connection_t* connection = remote_connection_open(remote->client.server_name, 443);
+
+	char cookie[512];
+	snprintf(cookie, sizeof(cookie), "t=%s", remote->tile_server.cookie_part);
+
+	for (i32 i = 0; i < batch->task_count; ++i) {
+		load_tile_task_t* task = batch->tile_tasks + i;
+		level_image_t* level_image = image->level_images + task->level;
+		size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
+		u8* pixel_memory = (u8*)malloc(pixel_memory_size);
+		memset(pixel_memory, image->is_background_black ? 0 : 0xFF, pixel_memory_size);
+
+		bool failed = false;
+		if (connection) {
+			char path[512];
+			snprintf(path, sizeof(path), "/i/%d/%s/i_files/%d/%d_%d.jpeg",
+			         remote->image_id, remote->tile_server.url_part, level_image->pyramid_image_index,
+			         task->tile_x, task->tile_y);
+			bool close_after_request = (i == batch->task_count - 1);
+			http_response_t* response = remote_connection_request(connection, remote->client.server_name, path,
+			                                                      remote->client.api_key, cookie, close_after_request);
+			if (response && response->status_code == 200 && response->content_length > 0) {
+				i32 jpeg_width = 0;
+				i32 jpeg_height = 0;
+				i32 channels_in_file = 0;
+				u8* decoded = jpeg_decode_image((u8*)response->buffer.data, (u32)response->content_length,
+				                                &jpeg_width, &jpeg_height, &channels_in_file);
+				if (decoded) {
+					i32 copy_width = ATMOST(jpeg_width, (i32)level_image->tile_width);
+					i32 copy_height = ATMOST(jpeg_height, (i32)level_image->tile_height);
+					i32 dest_pitch = level_image->tile_width * BYTES_PER_PIXEL;
+					i32 src_pitch = jpeg_width * BYTES_PER_PIXEL;
+					for (i32 row = 0; row < copy_height; ++row) {
+						memcpy(pixel_memory + row * dest_pitch, decoded + row * src_pitch, copy_width * BYTES_PER_PIXEL);
+					}
+					free(decoded);
+				} else {
+					failed = true;
+				}
+			} else {
+				i32 status_code = response ? response->status_code : 0;
+				console_print_error("[thread %d] Slide Score tile request failed: HTTP %d, level %d tile (%d, %d)\n",
+				                    logical_thread_index, status_code, task->level, task->tile_x, task->tile_y);
+				failed = true;
+			}
+			if (response) http_response_destroy(response);
+		} else {
+			failed = true;
+		}
+
+		if (failed) {
+			free(pixel_memory);
+			pixel_memory = NULL;
+		}
+		slide_score_post_tile_result(task, pixel_memory, failed, false);
+	}
+
+	if (connection) {
+		remote_connection_close_and_free(connection);
+	}
+	atomic_subtract(&image->refcount, refcount_decrement_amount);
+}
+
 
 
 void load_tile_func(i32 logical_thread_index, void* userdata) {

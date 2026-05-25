@@ -415,6 +415,7 @@ const char* get_annotation_directory(app_state_t* app_state);
 void set_annotation_directory(app_state_t* app_state, const char* path);
 file_info_t viewer_get_file_info(const char* filename);
 void viewer_directory_info_destroy(directory_info_t* info);
+void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 
 // viewer_io_remote.cpp
 void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);

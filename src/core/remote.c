@@ -64,7 +64,7 @@
 
 #define DEBUG_LEVEL DO_DEBUG
 
-typedef struct {
+struct tls_connection_t {
 	i64 start_clock;
 	i64 sockfd;
 	mbedtls_net_context server_fd;
@@ -73,7 +73,7 @@ typedef struct {
 	mbedtls_ssl_context ssl;
 	mbedtls_ssl_config conf;
 	mbedtls_x509_crt cacert;
-} tls_connection_t;
+};
 
 static void my_debug( void *ctx, int level,
                       const char *file, int line,
@@ -630,11 +630,123 @@ static i32 header_field_callback(http_parser *parser, const char *p, size_t len)
     return 0;
 }
 
+typedef struct http_response_parse_context_t {
+    http_response_t* response;
+    bool message_complete;
+} http_response_parse_context_t;
+
 static i32 body_callback(http_parser *parser, const char *p, size_t len) {
-    http_response_t* response = (http_response_t*)parser->data;
+    http_response_parse_context_t* context = (http_response_parse_context_t*)parser->data;
+    http_response_t* response = context->response;
     memrw_push_back(&response->buffer, (void*)p, len);
     response->content_length += len;
     return 0;
+}
+
+static i32 message_complete_callback(http_parser *parser) {
+    http_response_parse_context_t* context = (http_response_parse_context_t*)parser->data;
+    context->message_complete = true;
+    return 0;
+}
+
+static i32 remote_build_get_request(char* request, size_t request_size, const char* host, const char* path, const char* api_token, const char* cookie_header, bool close_after_request) {
+    char token_header_string[4196] = "";
+    if (api_token && api_token[0] != '\0') {
+        snprintf(token_header_string, sizeof(token_header_string), "Authorization: Bearer %s\r\n", api_token);
+    }
+    char cookie_header_string[1024] = "";
+    if (cookie_header && cookie_header[0] != '\0') {
+        snprintf(cookie_header_string, sizeof(cookie_header_string), "Cookie: %s\r\n", cookie_header);
+    }
+
+    static const char requestfmt[] =
+            "GET %s HTTP/1.1\r\n"
+            "Accept: application/json,image/jpeg,*/*\r\n"
+            "Accept-Language: en,nl;q=0.9,en-US;q=0.8,af;q=0.7\r\n%s%s"
+            "Cache-Control: max-age=0\r\n"
+            "Connection: %s\r\n"
+            "Host: %s\r\n"
+            "Upgrade-Insecure-Requests: 1\r\n\r\n";
+    return snprintf(request, request_size, requestfmt, path, token_header_string, cookie_header_string,
+                    close_after_request ? "close" : "keep-alive", host);
+}
+
+tls_connection_t* remote_connection_open(const char* hostname, i32 portno) {
+    tls_connection_t* connection = (tls_connection_t*)calloc(1, sizeof(tls_connection_t));
+    if (!connection) return NULL;
+    if (!open_remote_connection(hostname, portno, connection)) {
+        free(connection);
+        return NULL;
+    }
+    return connection;
+}
+
+void remote_connection_close_and_free(tls_connection_t* connection) {
+    if (!connection) return;
+    close_remote_connection(connection);
+    free(connection);
+}
+
+http_response_t* remote_connection_request(tls_connection_t* connection, const char* host, const char* path, const char* api_token, const char* cookie_header, bool close_after_request) {
+    ASSERT(connection);
+
+    char request[4096];
+    i32 request_len = remote_build_get_request(request, sizeof(request), host, path, api_token, cookie_header, close_after_request);
+    if (request_len <= 0 || request_len >= sizeof(request)) {
+        return NULL;
+    }
+
+    i32 ret = 1;
+    while ((ret = mbedtls_ssl_write(&connection->ssl, (const u8*)request, request_len)) <= 0) {
+        if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            console_print_error("remote_connection_request(): mbedtls_ssl_write returned %d\n", ret);
+            return NULL;
+        }
+    }
+
+    http_response_t* response = (http_response_t*)calloc(1, sizeof(http_response_t));
+    response->buffer = memrw_create(MEGABYTES(1));
+
+    http_response_parse_context_t context = {};
+    context.response = response;
+
+    http_parser_settings settings = {};
+    settings.on_header_field = header_field_callback;
+    settings.on_body = body_callback;
+    settings.on_message_complete = message_complete_callback;
+
+    http_parser parser = {};
+    http_parser_init(&parser, HTTP_RESPONSE);
+    parser.data = (void*)&context;
+
+    u8 read_buffer[KILOBYTES(16)];
+    while (!context.message_complete) {
+        ret = mbedtls_ssl_read(&connection->ssl, read_buffer, sizeof(read_buffer));
+
+        if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+            continue;
+        }
+        if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY || ret == 0) {
+            break;
+        }
+        if (ret < 0) {
+            console_print_error("remote_connection_request(): mbedtls_ssl_read returned %d\n", ret);
+            http_response_destroy(response);
+            return NULL;
+        }
+
+        size_t nparsed = http_parser_execute(&parser, &settings, (char*)read_buffer, ret);
+        if (nparsed != (size_t)ret && !context.message_complete) {
+            console_print_error("remote_connection_request(): HTTP parser stopped after %zu of %d bytes\n", nparsed, ret);
+            http_response_destroy(response);
+            return NULL;
+        }
+    }
+
+    response->status_code = parser.status_code;
+    memrw_putc(0, &response->buffer);
+    console_print_verbose("Content length = %d\n", response->content_length);
+    return response;
 }
 
 
@@ -646,29 +758,8 @@ http_response_t* open_remote_uri_with_extra_headers(const char *uri, const char*
         return NULL;
     }
 
-    // If the API token is provided, add it to the HTTP headers
-    char token_header_string[4196] = "";
-    if (api_token && api_token[0] != '\0') {
-        snprintf(token_header_string, sizeof(token_header_string), "Authorization: Bearer %s\r\n", api_token);
-    } else {
-        token_header_string[0] = '\0';
-    }
-    char cookie_header_string[1024] = "";
-    if (cookie_header && cookie_header[0] != '\0') {
-        snprintf(cookie_header_string, sizeof(cookie_header_string), "Cookie: %s\r\n", cookie_header);
-    }
-
-    static const char requestfmt[] =
-            "GET %s HTTP/1.1\r\n"
-            "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7\r\n"
-//            "Accept-Encoding: gzip, deflate, br\r\n"
-            "Accept-Language: en,nl;q=0.9,en-US;q=0.8,af;q=0.7\r\n%s%s"
-            "Cache-Control: max-age=0\r\n"
-            "Connection: close\r\n"
-            "Host: %s\r\n"
-            "Upgrade-Insecure-Requests: 1\r\n\r\n";
     char request[4096];
-    snprintf(request, sizeof(request), requestfmt, url_info.path, token_header_string, cookie_header_string, url_info.site);
+    remote_build_get_request(request, sizeof(request), url_info.site, url_info.path, api_token, cookie_header, true);
     i32 request_len = (i32)strlen(request);
 
     console_print_verbose("%s\n", request);
@@ -697,10 +788,13 @@ http_response_t* open_remote_uri_with_extra_headers(const char *uri, const char*
         http_parser_settings settings = {};
         settings.on_header_field = header_field_callback;
         settings.on_body = body_callback;
+        settings.on_message_complete = message_complete_callback;
 
         http_parser* parser = malloc(sizeof(http_parser));
         http_parser_init(parser, HTTP_RESPONSE);
-        parser->data = (void*)response;
+        http_response_parse_context_t context = {};
+        context.response = response;
+        parser->data = (void*)&context;
 
         i32 nparsed = http_parser_execute(parser, &settings, (char*)mem_buffer.data, mem_buffer.used_size);
         response->status_code = parser->status_code;

@@ -223,18 +223,21 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 	i32 tile_loads_submitted = 0;
 
 	if (tiles_to_load > 0){
-		if (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) {
+		if ((image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) || image->backend == IMAGE_BACKEND_SLIDE_SCORE) {
 			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
 			// (to reduce load on the server)
 			static u32 intermittent = 0;
 			++intermittent;
 			u32 intermittent_interval = 1;
-			intermittent_interval = 5; // reduce load on remote server; can be tweaked
+			if (image->backend == IMAGE_BACKEND_TIFF) {
+				intermittent_interval = 5; // reduce load on remote server; can be tweaked
+			}
 			if (intermittent % intermittent_interval == 0) {
 				load_tile_task_batch_t batch = {};
 				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
 				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
-				if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, tiff_load_tile_batch_func, &batch, sizeof(batch))) {
+				work_queue_callback_t* load_func = (image->backend == IMAGE_BACKEND_SLIDE_SCORE) ? slide_score_load_tile_batch_func : tiff_load_tile_batch_func;
+				if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
 					// success
 					for (i32 i = 0; i < batch.task_count; ++i) {
 						load_tile_task_t* task = batch.tile_tasks + i;
@@ -600,6 +603,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 //		    last_section = profiler_end_section(last_section, "viewer_update_and_render: create tiles wishlist", 5.0f);
 
 			i32 max_tiles_to_load = (image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) ? 3 : 10;
+			if (image->backend == IMAGE_BACKEND_SLIDE_SCORE) max_tiles_to_load = TILE_LOAD_BATCH_MAX;
 			i32 tiles_to_load = ATMOST(num_tasks_on_wishlist, max_tiles_to_load);
 
 			if (tiles_to_load > 0) {

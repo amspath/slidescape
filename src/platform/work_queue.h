@@ -53,7 +53,7 @@ typedef struct work_queue_entry_t {
 	u32 task_identifier;
 	work_queue_callback_t* callback;
 	task_group_t* task_group;
-	u8 userdata[128];
+	u8 userdata[128]; // TODO: dynamic userdata size?
 } work_queue_entry_t;
 
 typedef struct completion_event_t {
