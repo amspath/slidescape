@@ -1068,7 +1068,7 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
         ImGui::SetKeyboardFocusHere();
     }
     entered = entered || ImGui::InputTextEx("##URI", "Enter URI here", remote_uri, sizeof(remote_uri), ImVec2(-FLT_MIN, 0), input_flags);
-    if (ImGui::TreeNodeEx("Supported links: Slide Score API (either https:// or slidescore://)", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::TreeNodeEx("Supported links: Slide Score API (optionally prepended by https:// or slidescore://)", ImGuiTreeNodeFlags_DefaultOpen)) {
 		ImGui::BulletText("*.slidescore.com/image/1");
 		ImGui::BulletText("*.slidescore.com/Image/Details?imageId=1");
 		ImGui::BulletText("*.slidescore.com/i/1/.../SlideScoreMetadata.json");

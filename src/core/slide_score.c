@@ -609,10 +609,12 @@ static bool slide_score_host_is_supported(const char* host) {
 }
 
 static bool slide_score_extract_host_from_https_uri(const char* uri, char* out_host, size_t out_host_size, const char** out_path) {
-    if (strncmp(uri, "https://", 8) != 0 && strncmp(uri, "http://", 7) != 0) {
-        return false;
+    const char* host_start = NULL;
+    if (strncmp(uri, "https://", 8) == 0 || strncmp(uri, "http://", 7) == 0) {
+        host_start = strstr(uri, "://") + 3;
+    } else {
+        host_start = uri;
     }
-    const char* host_start = strstr(uri, "://") + 3;
     const char* host_end = strchr(host_start, '/');
     if (!host_end) {
         host_end = uri + strlen(uri);
@@ -647,8 +649,14 @@ bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const cha
         }
 
         recognized = true;
+        char normalized_uri[1024];
+        const char* effective_uri = uri;
+        if (strncmp(uri, "https://", 8) != 0 && strncmp(uri, "http://", 7) != 0) {
+            snprintf(normalized_uri, sizeof(normalized_uri), "https://%s", uri);
+            effective_uri = normalized_uri;
+        }
         if (strstr(path, "SlideScoreMetadata.json")) {
-            slide_score_open_qupath_metadata_url(app_state, uri);
+            slide_score_open_qupath_metadata_url(app_state, effective_uri);
             return true;
         }
         bool found_image_id = false;
