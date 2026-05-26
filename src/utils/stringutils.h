@@ -33,8 +33,9 @@ const char* get_file_extension(const char* filename);
 void replace_file_extension(char* filename, i32 max_len, const char* new_ext);
 char** split_into_lines(char* buffer, size_t* num_lines);
 size_t count_lines(char* buffer);
+bool hex_digit_to_value(char c, u8* out_value);
+size_t uri_percent_decode(const char* src, char* dest, size_t dest_size);
 
 #ifdef __cplusplus
 };
 #endif
-

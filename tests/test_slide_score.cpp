@@ -144,3 +144,13 @@ TEST_CASE("Slide Score parser handles QuPath metadata JSON") {
 	slide_score_build_qupath_tile_path(path, sizeof(path), &remote, 5, 1, 0, 512, 512, 1913, 633);
 	CHECK(strcmp(path, "/i/23/token/raw/5/16384_0/512_512.jpeg") == 0);
 }
+
+TEST_CASE("Slide Score URI parser recognizes QuPath metadata with custom scheme") {
+	app_state_t app_state = {};
+	bool recognized = slide_score_try_open_uri(&app_state,
+	                                           "slidescore://clidipa.slidescore.com/i/18/token/SlideScoreMetadata.json",
+	                                           NULL);
+	bool got_expected_status = strstr(slide_score_get_last_status(), "QuPath metadata URL") != NULL;
+	CHECK(recognized);
+	CHECK(got_expected_status);
+}

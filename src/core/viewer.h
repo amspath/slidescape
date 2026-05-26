@@ -380,6 +380,9 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
 void unload_all_images(app_state_t* app_state);
 bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetype_hint);
 bool app_load_input(app_state_t* app_state, const char* input, u32 filetype_hint);
+bool app_get_slide_score_api_key_filename(char* buffer, size_t buffer_size);
+void app_read_slide_score_api_key(char* buffer, size_t buffer_size);
+bool app_write_slide_score_api_key(const char* api_key);
 image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
 void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_openslide_wsi(wsi_t* wsi, const char* filename);

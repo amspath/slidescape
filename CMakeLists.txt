@@ -333,6 +333,7 @@ set(VIEWER_SOURCE_FILES
         core/viewer_io_file.cpp
         core/viewer_io_remote.cpp
         core/viewer_options.cpp
+        core/app_input.cpp
         core/commandline.cpp
         core/scene.cpp
         core/gui.cpp

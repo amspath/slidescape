@@ -182,3 +182,35 @@ size_t count_lines(char* buffer) {
 	} while (c != '\0');
 	return lines_counted;
 }
+
+bool hex_digit_to_value(char c, u8* out_value) {
+	if (c >= '0' && c <= '9') {
+		*out_value = (u8)(c - '0');
+		return true;
+	} else if (c >= 'a' && c <= 'f') {
+		*out_value = (u8)(c - 'a' + 10);
+		return true;
+	} else if (c >= 'A' && c <= 'F') {
+		*out_value = (u8)(c - 'A' + 10);
+		return true;
+	}
+	return false;
+}
+
+size_t uri_percent_decode(const char* src, char* dest, size_t dest_size) {
+	size_t out_len = 0;
+	if (dest_size == 0) return 0;
+	while (*src && out_len + 1 < dest_size) {
+		if (*src == '%' && src[1] && src[2]) {
+			u8 high = 0, low = 0;
+			if (hex_digit_to_value(src[1], &high) && hex_digit_to_value(src[2], &low)) {
+				dest[out_len++] = (char)((high << 4) | low);
+				src += 3;
+				continue;
+			}
+		}
+		dest[out_len++] = *src++;
+	}
+	dest[out_len] = 0;
+	return out_len;
+}

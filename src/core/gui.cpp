@@ -1079,13 +1079,7 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
     static char token_buf[4096];
     static bool first_time = true;
     if (first_time) {
-        mem_t* key_file = platform_read_entire_file("api_key.txt");
-        if (key_file) {
-            if (key_file->len < sizeof(token_buf)) {
-                memcpy(token_buf, key_file->data, key_file->len);
-            }
-            free(key_file);
-        }
+        app_read_slide_score_api_key(token_buf, sizeof(token_buf));
         first_time = false;
     }
     static bool save_api_key = true;
@@ -1104,11 +1098,7 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
     if (entered || ImGui::Button("Connect")) {
         pressed_connect = true;
         if (save_api_key && is_api_key_dirty) {
-            file_stream_t fp = file_stream_open_for_writing("api_key.txt");
-            if (fp) {
-                file_stream_write(token_buf, strlen(token_buf), fp);
-                file_stream_close(fp);
-            }
+            app_write_slide_score_api_key(token_buf);
             is_api_key_dirty = false;
         }
         if (!slide_score_try_open_uri(app_state, remote_uri, token_buf)) {

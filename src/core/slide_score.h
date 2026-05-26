@@ -180,6 +180,7 @@ bool slide_score_request_api(slide_score_client_t* ss, slide_score_api_enum api,
 bool slide_score_refresh_tile_server(slide_score_remote_image_t* remote);
 bool slide_score_open_remote_image(app_state_t* app_state, const char* server_url_or_hostname, const char* api_token, i32 image_id);
 bool slide_score_open_qupath_metadata_url(app_state_t* app_state, const char* uri);
+bool slide_score_uri_is_supported(const char* uri);
 bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const char* api_token);
 bool init_image_from_slide_score(image_t* image, slide_score_remote_image_t* remote, bool is_overlay);
 char* slide_score_build_tile_url(char* buffer, size_t buffer_size, slide_score_remote_image_t* remote, i32 level, i32 tile_x, i32 tile_y);

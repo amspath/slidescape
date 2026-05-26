@@ -647,61 +647,72 @@ static bool slide_score_extract_host_from_https_uri(const char* uri, char* out_h
     return true;
 }
 
-bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const char* api_token) {
-    bool recognized = false;
-    i32 image_id = 0;
-    char server[256] = "";
+typedef struct slide_score_uri_parts_t {
+    char server[256];
+    const char* path;
+    char effective_uri[1024];
+} slide_score_uri_parts_t;
 
+static bool slide_score_parse_image_id_from_path(const char* path, i32* out_image_id) {
+    if (strstr(path, "/Image/Details") && parse_i32_after_key(path, "imageId", out_image_id)) {
+        return true;
+    }
+    return parse_i32_after_key(path, "/image/", out_image_id) ||
+           parse_i32_after_key(path, "/Image/", out_image_id) ||
+           parse_i32_after_key(path, "/i/", out_image_id);
+}
+
+static bool slide_score_get_uri_parts(const char* uri, slide_score_uri_parts_t* parts) {
+    memset(parts, 0, sizeof(*parts));
     if (strncmp(uri, "slidescore://", 13) == 0) {
-        recognized = true;
         const char* host_start = uri + 13;
         const char* path_start = strchr(host_start, '/');
-        if (!path_start) return true;
-        size_t host_len = ATMOST((size_t)(path_start - host_start), sizeof(server) - 1);
-        memcpy(server, host_start, host_len);
-        server[host_len] = 0;
-        if (!parse_i32_after_key(path_start, "/image/", &image_id)) return true;
+        const char* host_end = path_start ? path_start : uri + strlen(uri);
+        size_t host_len = ATMOST((size_t)(host_end - host_start), sizeof(parts->server) - 1);
+        memcpy(parts->server, host_start, host_len);
+        parts->server[host_len] = 0;
+        if (!slide_score_host_is_supported(parts->server)) return false;
+        parts->path = path_start ? path_start : "/";
+        snprintf(parts->effective_uri, sizeof(parts->effective_uri), "https://%s%s", parts->server, parts->path);
+        return true;
+    }
+
+    if (!slide_score_extract_host_from_https_uri(uri, parts->server, sizeof(parts->server), &parts->path) ||
+        !slide_score_host_is_supported(parts->server)) {
+        return false;
+    }
+
+    if (strncmp(uri, "https://", 8) == 0 || strncmp(uri, "http://", 7) == 0) {
+        snprintf(parts->effective_uri, sizeof(parts->effective_uri), "%s", uri);
     } else {
-        const char* path = NULL;
-        if (!slide_score_extract_host_from_https_uri(uri, server, sizeof(server), &path) || !slide_score_host_is_supported(server)) {
-            return false;
-        }
+        snprintf(parts->effective_uri, sizeof(parts->effective_uri), "https://%s", uri);
+    }
+    return true;
+}
 
-        recognized = true;
-        char normalized_uri[1024];
-        const char* effective_uri = uri;
-        if (strncmp(uri, "https://", 8) != 0 && strncmp(uri, "http://", 7) != 0) {
-            snprintf(normalized_uri, sizeof(normalized_uri), "https://%s", uri);
-            effective_uri = normalized_uri;
-        }
-        if (strstr(path, "SlideScoreMetadata.json")) {
-            slide_score_open_qupath_metadata_url(app_state, effective_uri);
-            return true;
-        }
-        bool found_image_id = false;
-        if (strstr(path, "/Image/Details")) {
-            found_image_id = parse_i32_after_key(path, "imageId", &image_id);
-        }
-        if (!found_image_id) {
-            found_image_id = parse_i32_after_key(path, "/image/", &image_id);
-        }
-        if (!found_image_id) {
-            found_image_id = parse_i32_after_key(path, "/Image/", &image_id);
-        }
-        if (!found_image_id) {
-            found_image_id = parse_i32_after_key(path, "/i/", &image_id);
-        }
-        if (!found_image_id) {
-            slide_score_set_last_status("Slide Score URI recognized, but no image id could be found.");
-            console_print_error("%s URL: %s\n", slide_score_last_status, uri);
-            return true;
-        }
+bool slide_score_uri_is_supported(const char* uri) {
+    slide_score_uri_parts_t parts = {};
+    return slide_score_get_uri_parts(uri, &parts);
+}
+
+bool slide_score_try_open_uri(app_state_t* app_state, const char* uri, const char* api_token) {
+    i32 image_id = 0;
+    slide_score_uri_parts_t parts = {};
+    if (!slide_score_get_uri_parts(uri, &parts)) return false;
+
+    if (strstr(parts.path, "SlideScoreMetadata.json")) {
+        slide_score_open_qupath_metadata_url(app_state, parts.effective_uri);
+        return true;
     }
 
-    if (recognized) {
-        slide_score_open_remote_image(app_state, server, api_token, image_id);
+    if (!slide_score_parse_image_id_from_path(parts.path, &image_id)) {
+        slide_score_set_last_status("Slide Score URI recognized, but no image id could be found.");
+        console_print_error("%s URL: %s\n", slide_score_last_status, uri);
+        return true;
     }
-    return recognized;
+
+    slide_score_open_remote_image(app_state, parts.server, api_token, image_id);
+    return true;
 }
 
 void slide_score_get_image_metadata(slide_score_client_t* ss, i32 image_id) {
