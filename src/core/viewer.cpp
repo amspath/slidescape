@@ -1260,7 +1260,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	}
 
 	if (base_image->type == IMAGE_TYPE_WSI) {
-		if (scene->need_zoom_reset) {
+		if (scene->need_zoom_reset && client_width > 0 && client_height > 0) {
 			float times_larger_x = (float)base_image->width_in_pixels / (float)client_width;
 			float times_larger_y = (float)base_image->height_in_pixels / (float)client_height;
 			float times_larger = MAX(times_larger_x, times_larger_y);
