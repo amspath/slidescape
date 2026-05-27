@@ -586,8 +586,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.priority = tile_priority,
 								.need_gpu_residency = true,
 								.need_keep_in_cache = tile->need_keep_in_cache,
-								.completion_event_kind = VIEWER_COMPLETION_EVENT_TILE_LOADED,
 								.completion_queue = &global_completion_queue,
+								.completion_event_kind = VIEWER_COMPLETION_EVENT_TILE_LOADED,
                                 .refcount_to_decrement = 1, // will be decremented at and of thread proc load_tile_func()
 						};
 						tile_wishlist[num_tasks_on_wishlist++] = task;
