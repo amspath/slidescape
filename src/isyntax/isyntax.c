@@ -986,6 +986,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							envelope->vertices[envelope->vertex_count++] = vertex;
 						} else {
 							success = false; // out of bounds
+							console_print("Warning: cannot read all UFS_IMAGE_OPP_EXTREME_VERTEX (out of bounds)\n");
 						}
 					}
 				} break; // data model >= 100
@@ -1623,23 +1624,72 @@ static u32 wavelet_coefficient_to_color_value(icoeff_t coefficient) {
 }
 #endif
 
-static rgba_t ycocg_to_rgb(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
+static rgba_t ycocg_to_rgb_v1(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
     icoeff_t tmp = Y - Cg/2;
     icoeff_t G = tmp + Cg;
     icoeff_t B = tmp - Co/2;
     icoeff_t R = B + Co;
+
+	B = (B < 0 ? 0 : B);
+	G = (G < 0 ? 0 : G);
+	R = (R < 0 ? 0 : R);
+
     return (rgba_t){{{ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255}}};
 }
 
-static rgba_t ycocg_to_bgr(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
+static rgba_t ycocg_to_bgr_v1(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
     icoeff_t tmp = Y - Cg/2;
     icoeff_t G = tmp + Cg;
     icoeff_t B = tmp - Co/2;
     icoeff_t R = B + Co;
+
+	B = (B < 0 ? 0 : B);
+	G = (G < 0 ? 0 : G);
+	R = (R < 0 ? 0 : R);
+
     return (rgba_t){{{ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255}}};
 }
 
-static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
+static rgba_t ycocg_to_rgb_v2(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
+    icoeff_t tmp = Y - Cg/2;
+    icoeff_t G = tmp + Cg;
+    icoeff_t B = tmp - Co/2;
+    icoeff_t R = B + Co;
+
+	G = G >> 1;
+	B = B >> 1;
+	R = R >> 1;
+
+	B = (B < 0 ? 0 : B);
+	G = (G < 0 ? 0 : G);
+	R = (R < 0 ? 0 : R);
+
+    return (rgba_t){{{ATMOST(255, R), ATMOST(255, G), ATMOST(255, B), 255}}};
+}
+
+static rgba_t ycocg_to_bgr_v2(icoeff_t Y, icoeff_t Co, icoeff_t Cg) {
+    icoeff_t tmp = Y - Cg/2;
+    icoeff_t G = tmp + Cg;
+    icoeff_t B = tmp - Co/2;
+    icoeff_t R = B + Co;
+	
+	// iSyntax v2 measures the YCoCg data in a 9 bit resolution, compared to iSyntax v1 8 bit resolution (both stored as 16 bit integers)
+	// so we need to halve the resolution by bitshifting
+	B = B >> 1;
+	G = G >> 1;
+	R = R >> 1;
+
+	// sometimes, especially in lower magnifications the YCoCg -> RGB conversion leads to invalid negative color values (I guess the wavelet transform is not 100% correct)
+	// these values are small but when casting to u8 become significant (-2 -> 255 + -2 = 253)
+	// the SIMD _mm_packus_epi16 uses a unsignedsaturate that doesnt have this behavior (<0 -> 0), copy this behavior:
+	B = (B < 0 ? 0 : B);
+	G = (G < 0 ? 0 : G);
+	R = (R < 0 ? 0 : R);
+	
+    return (rgba_t){{{ATMOST(255, B), ATMOST(255, G), ATMOST(255, R), 255}}};
+}
+
+static void convert_ycocg_to_bgra_block_v1(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
     i32 aligned_width = (width / 8) * 8;
 
 	for (i32 y = 0; y < height; ++y) {
@@ -1700,7 +1750,7 @@ static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 #endif
         // Slow version, for last unaligned elements or in case SIMD isn't available
 		for (; i < width; ++i) {
-			((rgba_t*)dest)[i] = ycocg_to_bgr(Y[i], Co[i], Cg[i]);
+			((rgba_t*)dest)[i] = ycocg_to_bgr_v1(Y[i], Co[i], Cg[i]);
 		}
 
 		Y += stride;
@@ -1709,7 +1759,7 @@ static void convert_ycocg_to_bgra_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 	}
 }
 
-static void convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_rgba) {
+static void convert_ycocg_to_rgba_block_v1(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_rgba) {
     i32 aligned_width = (width / 8) * 8;
 
     for (i32 y = 0; y < height; ++y) {
@@ -1770,7 +1820,156 @@ static void convert_ycocg_to_rgba_block(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg,
 #endif
         // Slow version, for last unaligned elements or in case SIMD isn't available
         for (; i < width; ++i) {
-            ((rgba_t*)dest)[i] = ycocg_to_rgb(Y[i], Co[i], Cg[i]);
+            ((rgba_t*)dest)[i] = ycocg_to_rgb_v1(Y[i], Co[i], Cg[i]);
+        }
+
+        Y += stride;
+        Co += stride;
+        Cg += stride;
+    }
+}
+
+static void convert_ycocg_to_bgra_block_v2(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_bgra) {
+    i32 aligned_width = (width / 8) * 8;
+
+	for (i32 y = 0; y < height; ++y) {
+		u32* dest = out_bgra + (y * width);
+        i32 i = 0;
+#if defined(__SSE2__) && defined(__SSSE3__)
+		//console_print_error("v2 - SIMD");
+		// Fast SIMD version (2x faster on my system)
+		for (; i < aligned_width; i += 8) {
+			// Do the color space conversion
+			__m128i Y_ = _mm_loadu_si128((__m128i*)(Y + i));
+			__m128i Co_ = _mm_loadu_si128((__m128i*)(Co + i));
+			__m128i Cg_ = _mm_loadu_si128((__m128i*)(Cg + i));
+			__m128i tmp = _mm_sub_epi16(Y_, _mm_srai_epi16(Cg_, 1)); // tmp = Y - Cg/2
+			__m128i G = _mm_add_epi16(tmp, Cg_);                     // G = tmp + Cg
+			__m128i B = _mm_sub_epi16(tmp, _mm_srai_epi16(Co_, 1));  // B = tmp - Co/2
+			__m128i R = _mm_add_epi16(B, Co_);                       // R = B + Co
+
+			// Bit shift from 9bit to 8bit
+			R = _mm_srai_epi16(R, 1);
+			G = _mm_srai_epi16(G, 1);
+			B = _mm_srai_epi16(B, 1);
+
+			// Shuffle and clamp
+			__m128i A = _mm_set1_epi16(0x7fff);
+			__m128i BG = _mm_packus_epi16(B, G); //BBBBBBBB + GGGGGGGG -> BBBBGGGG
+			__m128i RA = _mm_packus_epi16(R, A); //RRRRRRRR + AAAAAAAA -> RRRRAAAA
+
+			__m128i v_perm = _mm_setr_epi8(0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
+			BG = _mm_shuffle_epi8(BG, v_perm); // BGBGBGBG
+			RA = _mm_shuffle_epi8(RA, v_perm); // RARARARA
+			__m128i lo = _mm_unpacklo_epi16(BG, RA); // BGRA
+			__m128i hi = _mm_unpackhi_epi16(BG, RA);
+
+			_mm_storeu_si128((__m128i*)(dest + i), lo);
+			_mm_storeu_si128((__m128i*)(dest + i + 4), hi);
+		}
+#elif defined(__ARM_NEON__)
+        // Fast SIMD version for ARM NEON
+        for (; i < aligned_width; i += 8) {
+            int16x8_t Y_ = vld1q_s16(Y + i);
+            int16x8_t Co_ = vld1q_s16(Co + i);
+            int16x8_t Cg_ = vld1q_s16(Cg + i);
+            int16x8_t tmp = vsubq_s16(Y_, vshrq_n_s16(Cg_, 1));
+            int16x8_t G = vaddq_s16(tmp, Cg_);
+            int16x8_t B = vsubq_s16(tmp, vshrq_n_s16(Co_, 1));
+            int16x8_t R = vaddq_s16(B, Co_);
+
+			// Please check this, i am not in the capacity to debug arm neon.
+			G = vshrq_n_s16(G, 1);
+			B = vshrq_n_s16(B, 1);
+			R = vshrq_n_s16(R, 1);
+
+            uint8x8x4_t bgra_vec;
+            bgra_vec.val[2] = vqmovun_s16(R);
+            bgra_vec.val[1] = vqmovun_s16(G);
+            bgra_vec.val[0] = vqmovun_s16(B);
+            bgra_vec.val[3] = vdup_n_u8(0xFF);
+
+            vst4_u8((uint8_t*)(dest + i), bgra_vec);
+        }
+#endif
+        // Slow version, for last unaligned elements or in case SIMD isn't available
+		for (; i < width; ++i) {
+			((rgba_t*)dest)[i] = ycocg_to_bgr_v2(Y[i], Co[i], Cg[i]);
+		}
+
+		Y += stride;
+		Co += stride;
+		Cg += stride;
+	}
+
+	//console_print("%d %d %d %d", out_bgra[0], out_bgra[1], out_bgra[2], out_bgra[3]);
+}
+
+static void convert_ycocg_to_rgba_block_v2(icoeff_t* Y, icoeff_t* Co, icoeff_t* Cg, i32 width, i32 height, i32 stride, u32* out_rgba) {
+    i32 aligned_width = (width / 8) * 8;
+
+    for (i32 y = 0; y < height; ++y) {
+        u32* dest = out_rgba + (y * width);
+        i32 i = 0;
+#if defined(__SSE2__) && defined(__SSSE3__)
+        // Fast SIMD version (~2x faster on my system)
+		for (; i < aligned_width; i += 8) {
+			// Do the color space conversion
+			__m128i Y_ = _mm_loadu_si128((__m128i*)(Y + i));
+			__m128i Co_ = _mm_loadu_si128((__m128i*)(Co + i));
+			__m128i Cg_ = _mm_loadu_si128((__m128i*)(Cg + i));
+			__m128i tmp = _mm_sub_epi16(Y_, _mm_srai_epi16(Cg_, 1)); // tmp = Y - Cg/2
+			__m128i G = _mm_add_epi16(tmp, Cg_);                     // G = tmp + Cg
+			__m128i B = _mm_sub_epi16(tmp, _mm_srai_epi16(Co_, 1));  // B = tmp - Co/2
+			__m128i R = _mm_add_epi16(B, Co_);                       // R = B + Co
+
+			// Bit shift from 9bit to 8bit
+			R = _mm_srai_epi16(R, 1);
+			G = _mm_srai_epi16(G, 1);
+			B = _mm_srai_epi16(B, 1);
+
+			// Shuffle and clamp
+			__m128i A = _mm_set1_epi16(0x7fff);
+			__m128i RG = _mm_packus_epi16(R, G); //RRRRRRRR + GGGGGGGG -> RRRRGGGG
+			__m128i BA = _mm_packus_epi16(B, A); //BBBBBBBB + AAAAAAAA -> BBBBAAAA
+
+			__m128i v_perm = _mm_setr_epi8(0, 8, 1, 9, 2, 10, 3, 11, 4, 12, 5, 13, 6, 14, 7, 15);
+			RG = _mm_shuffle_epi8(RG, v_perm); // RGRGRGRG
+			BA = _mm_shuffle_epi8(BA, v_perm); // BABABABA
+			__m128i lo = _mm_unpacklo_epi16(RG, BA); // RGBA
+			__m128i hi = _mm_unpackhi_epi16(RG, BA);
+
+			_mm_storeu_si128((__m128i*)(dest + i), lo);
+			_mm_storeu_si128((__m128i*)(dest + i + 4), hi);
+		}
+#elif defined(__ARM_NEON__)
+        // Fast SIMD version for ARM NEON
+        for (; i < aligned_width; i += 8) {
+            int16x8_t Y_ = vld1q_s16(Y + i);
+            int16x8_t Co_ = vld1q_s16(Co + i);
+            int16x8_t Cg_ = vld1q_s16(Cg + i);
+            int16x8_t tmp = vsubq_s16(Y_, vshrq_n_s16(Cg_, 1));
+            int16x8_t G = vaddq_s16(tmp, Cg_);
+            int16x8_t B = vsubq_s16(tmp, vshrq_n_s16(Co_, 1));
+            int16x8_t R = vaddq_s16(B, Co_);
+
+			// Please check this, i am not in the capacity to debug arm neon.
+			R = vshrq_n_s16(R, 1);
+			G = vshrq_n_s16(G, 1);
+			B = vshrq_n_s16(B, 1);
+
+            uint8x8x4_t rgba_vec;
+            rgba_vec.val[0] = vqmovun_s16(R);
+            rgba_vec.val[1] = vqmovun_s16(G);
+            rgba_vec.val[2] = vqmovun_s16(B);
+            rgba_vec.val[3] = vdup_n_u8(0xFF);
+
+            vst4_u8((uint8_t*)(dest + i), rgba_vec);
+        }
+#endif
+        // Slow version, for last unaligned elements or in case SIMD isn't available
+        for (; i < width; ++i) {
+            ((rgba_t*)dest)[i] = ycocg_to_rgb_v2(Y[i], Co[i], Cg[i]);
         }
 
         Y += stride;
@@ -1859,8 +2058,6 @@ static inline void get_offsetted_coeff_blocks(icoeff_t** ll_hl_lh_hh, i32 offset
 	}
 
 }
-
-
 
 u32 isyntax_get_adjacent_tiles_mask(isyntax_level_t* level, i32 tile_x, i32 tile_y) {
 	ASSERT(tile_x >= 0 && tile_y >= 0);
@@ -2367,21 +2564,40 @@ void isyntax_load_tile(isyntax_t* isyntax, isyntax_image_t* wsi, i32 scale, i32 
 	i32 tile_height = block_height * 2;
 
 	i32 valid_offset = (first_valid_pixel * idwt_stride) + first_valid_pixel;
-    switch (pixel_format) {
-        case LIBISYNTAX_PIXEL_FORMAT_BGRA:
-            convert_ycocg_to_bgra_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
-                                        idwt_stride, out_buffer_or_null);
-            break;
 
-        case LIBISYNTAX_PIXEL_FORMAT_RGBA:
-            convert_ycocg_to_rgba_block(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
-                                        idwt_stride, out_buffer_or_null);
-            break;
+	if(isyntax->data_model_major_version < 100){ // iSyntax v1
+		switch (pixel_format) {
+			case LIBISYNTAX_PIXEL_FORMAT_BGRA:
+				convert_ycocg_to_bgra_block_v1(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
+											idwt_stride, out_buffer_or_null);
+				break;
 
-        default:
-            ASSERT(!"unknown pixel format!");
-            break;
-    }
+			case LIBISYNTAX_PIXEL_FORMAT_RGBA:
+				convert_ycocg_to_rgba_block_v1(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
+											idwt_stride, out_buffer_or_null);
+				break;
+
+			default:
+				ASSERT(!"unknown pixel format!");
+				break;
+		}
+	}else{ // iSyntax v2
+		switch (pixel_format) {
+			case LIBISYNTAX_PIXEL_FORMAT_BGRA:
+				convert_ycocg_to_bgra_block_v2(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
+											idwt_stride, out_buffer_or_null);
+				break;
+
+			case LIBISYNTAX_PIXEL_FORMAT_RGBA:
+				convert_ycocg_to_rgba_block_v2(Y + valid_offset, Co + valid_offset, Cg + valid_offset, tile_width, tile_height,
+											idwt_stride, out_buffer_or_null);
+				break;
+
+			default:
+				ASSERT(!"unknown pixel format!");
+				break;
+		}
+	}
 	isyntax->total_rgb_transform_time += get_seconds_elapsed(start, get_clock());
 
 	//		float elapsed_rgb = get_seconds_elapsed(start, get_clock());
@@ -3578,6 +3794,10 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 				success = false;
 			}
 		}
+
+		if (success) {
+			isyntax_parse_envelopes(isyntax);
+		}
 	}
 	return success;
 }
@@ -3665,4 +3885,252 @@ void isyntax_destroy(isyntax_t* isyntax) {
 		libisyntax_cache_destroy(isyntax->cache);
 	}
 	file_handle_close(isyntax->file_handle);
+}
+
+void isyntax_parse_envelopes(isyntax_t* isyntax) {
+	// this script purely uses the data available in the envelope vertices; 
+	// it does a good job, but openings within an envelope can in certain cases cause
+	// some intersecting edges
+	// alternatively you could check the image data at each vertex, but that comes with
+	// the downside that the image data must be available before being able to parse
+
+	// iSyntax v1 does not contain envelopes, early return
+	if(isyntax->valid_data_envelope_count == 0){return;}
+
+	i32 envelope_count = MIN(isyntax->valid_data_envelope_count, COUNT(isyntax->valid_data_envelopes));
+		
+	// a single envelope can contains multiple non-continuous polygons, split and give them their own entree
+	isyntax_valid_data_envelope_t temp_envelopes[COUNT(isyntax->valid_data_envelopes)];
+	i32 temp_envelopes_count = 0;
+
+	bool error = false;
+	for (i32 i=0; i < envelope_count; ++i){
+		// check for valid vertex
+		isyntax_valid_data_envelope_t* envelope = isyntax->valid_data_envelopes + i;
+		if(envelope->vertex_count <= 1){continue;};
+		
+		// check for space in the envelope array
+		if(temp_envelopes_count >= COUNT(temp_envelopes)){
+			console_print("iSyntax: too many envelopes.");
+			error=true;
+			break;
+		}
+
+		// get envelope
+		temp_envelopes_count += 1;
+		isyntax_valid_data_envelope_t* temp_envelope = temp_envelopes + temp_envelopes_count -1;
+		i32 temp_envelope_index = 0;
+
+		// maintain list of vertices already used
+		u8 parsed[COUNT(temp_envelopes[0].vertices)] = {0};
+		
+		i32 start_index = 0;
+		
+		// current vector
+		i32 current_index = start_index;
+		v2i current_vector = envelope->vertices[current_index];
+		
+		// push first vertex
+		temp_envelope->vertices[temp_envelope_index] = current_vector;
+		//console_print("%d:%d,%d S", start_index, current_vector.x, current_vector.y);
+
+		i32 previous_movement = 3; // to_right = 1, to_left = 2, to_top = 3, to_bottom = 4
+		while(true){
+			i32 i_right = -1;
+			i32 i_left = -1;
+			i32 i_top = -1;
+			i32 i_bottom = -1;
+			i32 i_index = -1;
+			i32 to_right = 0x7ffffff;
+			i32 to_left = 0x7ffffff;
+			i32 to_top = 0x7ffffff;
+			i32 to_bottom = 0x7fffffff;
+
+			// out of bounds checking for safety
+			if(temp_envelope_index >= COUNT(parsed)){
+				console_print("iSyntax: infinite loop in envelope parsing.");
+				error = true;
+				break;
+			}
+
+			//find nearest neighbours
+			for(i32 j=0; j < envelope->vertex_count; ++j){
+				if(parsed[j] == 0){
+					v2i test_vector = envelope->vertices[j];
+					//console_print("t: %d:%d , %d:%d", current_vector.x, current_vector.y, test_vector.x, test_vector.y);
+					
+					if(current_vector.x == test_vector.x){
+						i32 y_diff = current_vector.y - test_vector.y;
+						if(y_diff > 0 && abs(y_diff) < to_top){
+							i_top = j;
+							to_top = abs(y_diff);
+						}else if(y_diff < 0 && abs(y_diff) < to_bottom){
+							i_bottom = j;
+							to_bottom = abs(y_diff);
+						}
+					}else if(current_vector.y == test_vector.y){
+						i32 x_diff = current_vector.x - test_vector.x;
+						if(x_diff > 0 && abs(x_diff) < to_left){
+							i_left = j;
+							to_left = abs(x_diff);
+						}else if(x_diff < 0 && abs(x_diff) < to_right){
+							i_right = j;
+							to_right = abs(x_diff);
+						}
+					}
+				}
+			}
+			// select best fitting neighbour, in principal nearest orthogonal neighbour
+			// if not available pick best alternative option
+			if(previous_movement == 1){ // to_right
+				if(i_top > -1 && i_bottom > -1){
+					if(to_top < to_bottom){
+						previous_movement = 3;
+						i_index = i_top;
+					}else if (to_bottom < to_top){
+						previous_movement = 4;
+						i_index = i_bottom;
+					}else{
+						previous_movement = 3;
+						i_index = i_top;
+					}
+				}else if(i_top > -1){
+					previous_movement = 3;
+					i_index = i_top;
+				}else if(i_bottom > -1){
+					previous_movement = 4;
+					i_index = i_bottom;
+				}else if(i_right > -1){
+					previous_movement = 1;
+					i_index = i_right;
+				}
+			}else if(previous_movement == 2){ // to_left
+				if(i_top > -1 && i_bottom > -1){
+					if(to_top < to_bottom){
+						previous_movement = 3;
+						i_index = i_top;
+					}else if (to_bottom < to_top){
+						previous_movement = 4;
+						i_index = i_bottom;
+					}else{
+						previous_movement = 3;
+						i_index = i_top;
+					}
+				}else if(i_top > -1){
+					previous_movement = 3;
+					i_index = i_top;
+				}else if(i_bottom > -1){
+					previous_movement = 4;
+					i_index = i_bottom;
+				}else if(i_left > -1){
+					previous_movement = 2;
+					i_index = i_left;
+				}
+			}else if(previous_movement == 3){ // to_top
+				if(i_left > -1 && i_right > -1){
+					if(i_left < i_right){
+						previous_movement = 2;
+						i_index = i_left;
+					}else if (i_left > i_right){
+						previous_movement = 1;
+						i_index = i_right;
+					}else{
+						previous_movement = 2;
+						i_index = i_left;
+					}
+				}else if(i_left > -1){
+					previous_movement = 2;
+					i_index = i_left;
+				}else if(i_right > -1){
+					previous_movement = 1;
+					i_index = i_right;
+				}else if(i_top > -1){
+					previous_movement = 3;
+					i_index = i_top;
+				}
+			}else if(previous_movement == 4){ // to_bottom
+				if(i_left > -1 && i_right > -1){
+					if (i_left > i_right){
+						previous_movement = 1;
+						i_index = i_right;
+					}else if(i_left < i_right){
+						previous_movement = 2;
+						i_index = i_left;
+					}else{
+						previous_movement = 1;
+						i_index = i_right;
+					}
+				}else if(i_right > -1){
+					previous_movement = 1;
+					i_index = i_right;
+				}else if(i_left > -1){
+					previous_movement = 2;
+					i_index = i_left;
+				}else if(i_bottom > -1){
+					previous_movement = 4;
+					i_index = i_bottom;
+				}
+			}
+
+			if(i_index == -1){
+				// cannot find neigbour; force envelope to close.
+				console_print("iSyntax: unclosable envelope.");
+				i_index = start_index;
+				error=true;
+			}
+
+			current_vector = envelope->vertices[i_index];
+			temp_envelope->vertices[temp_envelope_index+1] = current_vector;
+			temp_envelope_index += 1;
+			parsed[i_index] = 1; //
+			//console_print("%d:%d,%d", i_index, current_vector.x, current_vector.y);
+			
+			// check if previously added was the start vertex -> envelope done
+			if((current_vector.x == temp_envelope->vertices[0].x) && (current_vector.y == temp_envelope->vertices[0].y)){
+				// envelope done
+				temp_envelope->vertex_count = temp_envelope_index;
+				
+				// finalize reading mask
+				parsed[start_index] = 1;
+				
+				i32 counter = 0;
+				for (i32 j=0; j < COUNT(parsed); ++j){
+					counter += parsed[j];
+				}
+				
+				//console_print("Parsing done: %d [%d], vectors %d/%d", temp_envelopes_count -1, temp_envelope_index, counter, envelope->vertex_count);
+
+				// Find next start vertex
+				start_index = -1;
+				for (i32 j=0; j < envelope->vertex_count; ++j){
+					if (parsed[j] == 0){
+						start_index = j;
+						break;
+					}
+				}
+				// no vectors left, done with parsing
+				if(start_index == -1){
+					break;
+				}
+
+				current_index = start_index;
+				current_vector = envelope->vertices[current_index];
+				
+				// reset index first vertex
+				temp_envelopes_count += 1;
+				temp_envelope = temp_envelopes + temp_envelopes_count - 1;
+				temp_envelope_index = 0;
+				temp_envelope->vertices[temp_envelope_index] = current_vector;
+				previous_movement = 3;
+
+				//console_print("%d:%d,%d S", start_index, current_vector.x, current_vector.y);
+			}
+		}
+	}
+	// copy the temporary over the old data
+	if(!error){
+		ASSERT(sizeof(temp_envelopes) == sizeof(isyntax->valid_data_envelopes));
+		memcpy(isyntax->valid_data_envelopes, temp_envelopes, sizeof(isyntax->valid_data_envelopes));
+		isyntax->valid_data_envelope_count = temp_envelopes_count;
+	}
 }

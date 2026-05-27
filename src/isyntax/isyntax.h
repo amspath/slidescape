@@ -211,7 +211,7 @@ typedef struct isyntax_cluster_header_template_t {
 } isyntax_cluster_header_template_t;
 
 typedef struct isyntax_valid_data_envelope_t {
-	v2i vertices[64];
+	v2i vertices[256];
 	i32 vertex_count;
 } isyntax_valid_data_envelope_t;
 
@@ -438,6 +438,7 @@ i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 u8* isyntax_get_associated_image_pixels(isyntax_t* isyntax, isyntax_image_t* image, enum isyntax_pixel_format_t pixel_format);
 u8* isyntax_get_associated_image_jpeg(isyntax_t* isyntax, isyntax_image_t* image, u32* jpeg_size);
 u8* isyntax_get_icc_profile(isyntax_t* isyntax, isyntax_image_t* image, u32* icc_profile_size);
+void isyntax_parse_envelopes(isyntax_t* isyntax);
 
 
 #ifdef __cplusplus

@@ -1204,6 +1204,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				app_state->scene.cos_rotation = 1.0f;
 			}
             ImGui::Checkbox("Draw tile outlines", &app_state->scene.draw_outlines);
+            ImGui::Checkbox("Draw envelopes (iSyntax v2)", &app_state->scene.draw_envelopes);
 
             // Options for adjusting level offsets
             if (arrlen(app_state->loaded_images) > 0) {

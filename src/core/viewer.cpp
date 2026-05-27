@@ -1755,9 +1755,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		}
 
-#if DO_DEBUG
 		// Visualize the 'valid data envelopes' encoded in iSyntax images (for debugging)
-		if (debug_draw_isyntax_valid_data_envelopes) {
+		if (scene->draw_envelopes) {
 			image_t* image = app_state->loaded_images[0];
 			if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 				isyntax_t* isyntax = &image->isyntax;
@@ -1771,13 +1770,12 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 							v2i v = envelope->vertices[j];
 							points[j] = V2F(v.x * isyntax->mpp_x, v.y * isyntax->mpp_y);
 						}
-						gui_draw_polygon_outline_in_scene(points, envelope->vertex_count, RGBA(255, 0, 0, 255), true, 5.0f, scene, NULL);
+						gui_draw_polygon_outline_in_scene(points, envelope->vertex_count, RGBA(255, 0, 0, 255), true, 3.0f, scene, NULL);
 						release_temp_memory(&temp_memory);
 					}
 				}
 			}
 		}
-#endif
 
 		draw_grid(scene);
 //		i64 start = get_clock();
