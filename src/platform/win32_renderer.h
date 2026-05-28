@@ -32,7 +32,7 @@ typedef enum win32_renderer_api_t {
 
 typedef struct app_state_t app_state_t;
 
-bool win32_renderer_init_window(HWND window, win32_renderer_api_t api);
+bool win32_renderer_init_window(HWND window, HINSTANCE instance, const char* window_class_name, win32_renderer_api_t api);
 void win32_renderer_init_viewer(app_state_t* app_state);
 void win32_renderer_init_imgui(app_state_t* app_state);
 void win32_renderer_imgui_new_frame();
