@@ -45,7 +45,7 @@ bool32 are_any_shader_sources_missing;
 char shader_filenames[MAX_SHADER_FILENAME][MAX_SHADERS];
 char* shader_sources[MAX_SHADERS];
 
-void write_stringified_shaders() {
+void opengl_write_stringified_shaders() {
 	if (are_any_shader_sources_missing) {
 		return;
 	}
@@ -131,7 +131,7 @@ void write_stringified_shaders() {
 
 #endif
 
-void load_shader(u32 shader, const char* source_filename) {
+static void opengl_load_shader(u32 shader, const char* source_filename) {
 	mem_t* shader_source_file = platform_read_entire_file(source_filename);
 #if APPLE && DO_DEBUG
     // On macOS, if inside app bundle, the shader source might not be found; try again
@@ -193,12 +193,12 @@ void load_shader(u32 shader, const char* source_filename) {
 
 }
 
-u32 load_basic_shader_program(const char* vert_filename, const char* frag_filename) {
+u32 opengl_load_basic_shader_program(const char* vert_filename, const char* frag_filename) {
 	u32 vertex_shader = glCreateShader(GL_VERTEX_SHADER);
 	u32 fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
 
-	load_shader(vertex_shader, vert_filename);
-	load_shader(fragment_shader, frag_filename);
+	opengl_load_shader(vertex_shader, vert_filename);
+	opengl_load_shader(fragment_shader, frag_filename);
 
 	u32 shader_program = glCreateProgram();
 
@@ -223,14 +223,14 @@ u32 load_basic_shader_program(const char* vert_filename, const char* frag_filena
 	return shader_program;
 }
 
-i32 get_attrib(u32 program, const char *name) {
+i32 opengl_get_attrib(u32 program, const char *name) {
 	i32 attribute = glGetAttribLocation(program, name);
 	if(attribute == -1)
 		console_print_error("Could not get attribute location %s\n", name);
 	return attribute;
 }
 
-i32 get_uniform(u32 program, const char *name) {
+i32 opengl_get_uniform(u32 program, const char *name) {
 	i32 uniform = glGetUniformLocation(program, name);
 	if(uniform == -1)
 		console_print_error("Could not get uniform location %s\n", name);

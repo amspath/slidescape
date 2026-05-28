@@ -472,27 +472,27 @@ static void opengl_init_renderer(app_state_t* app_state) {
 	}
 
 	// Load the basic shader program (used to render the scene)
-	basic_shader.program = load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
-	basic_shader.u_projection_view_matrix = get_uniform(basic_shader.program, "projection_view_matrix");
-	basic_shader.u_model_matrix = get_uniform(basic_shader.program, "model_matrix");
-	basic_shader.u_tex = get_uniform(basic_shader.program, "the_texture");
-	basic_shader.u_black_level = get_uniform(basic_shader.program, "black_level");
-	basic_shader.u_white_level = get_uniform(basic_shader.program, "white_level");
-	basic_shader.u_background_color = get_uniform(basic_shader.program, "bg_color");
-	basic_shader.u_transparent_color = get_uniform(basic_shader.program, "transparent_color");
-	basic_shader.u_transparent_tolerance = get_uniform(basic_shader.program, "transparent_tolerance");
-	basic_shader.u_use_transparent_filter = get_uniform(basic_shader.program, "use_transparent_filter");
-	basic_shader.u_draw_outlines = get_uniform(basic_shader.program, "draw_outlines");
-	basic_shader.attrib_location_pos = get_attrib(basic_shader.program, "pos");
-	basic_shader.attrib_location_tex_coord = get_attrib(basic_shader.program, "tex_coord");
+	basic_shader.program = opengl_load_basic_shader_program("shaders/basic.vert", "shaders/basic.frag");
+	basic_shader.u_projection_view_matrix = opengl_get_uniform(basic_shader.program, "projection_view_matrix");
+	basic_shader.u_model_matrix = opengl_get_uniform(basic_shader.program, "model_matrix");
+	basic_shader.u_tex = opengl_get_uniform(basic_shader.program, "the_texture");
+	basic_shader.u_black_level = opengl_get_uniform(basic_shader.program, "black_level");
+	basic_shader.u_white_level = opengl_get_uniform(basic_shader.program, "white_level");
+	basic_shader.u_background_color = opengl_get_uniform(basic_shader.program, "bg_color");
+	basic_shader.u_transparent_color = opengl_get_uniform(basic_shader.program, "transparent_color");
+	basic_shader.u_transparent_tolerance = opengl_get_uniform(basic_shader.program, "transparent_tolerance");
+	basic_shader.u_use_transparent_filter = opengl_get_uniform(basic_shader.program, "use_transparent_filter");
+	basic_shader.u_draw_outlines = opengl_get_uniform(basic_shader.program, "draw_outlines");
+	basic_shader.attrib_location_pos = opengl_get_attrib(basic_shader.program, "pos");
+	basic_shader.attrib_location_tex_coord = opengl_get_attrib(basic_shader.program, "tex_coord");
 
 	// load the shader that blits different layers of the scene together
-	finalblit_shader.program = load_basic_shader_program("shaders/finalblit.vert", "shaders/finalblit.frag");
-	finalblit_shader.u_texture0 = get_uniform(finalblit_shader.program, "texture0");
-	finalblit_shader.u_texture1 = get_uniform(finalblit_shader.program, "texture1");
-	finalblit_shader.u_t = get_uniform(finalblit_shader.program, "t");
-	finalblit_shader.attrib_location_pos = get_attrib(finalblit_shader.program, "pos");
-	finalblit_shader.attrib_location_tex_coord = get_attrib(finalblit_shader.program, "tex_coord");
+	finalblit_shader.program = opengl_load_basic_shader_program("shaders/finalblit.vert", "shaders/finalblit.frag");
+	finalblit_shader.u_texture0 = opengl_get_uniform(finalblit_shader.program, "texture0");
+	finalblit_shader.u_texture1 = opengl_get_uniform(finalblit_shader.program, "texture1");
+	finalblit_shader.u_t = opengl_get_uniform(finalblit_shader.program, "t");
+	finalblit_shader.attrib_location_pos = opengl_get_attrib(finalblit_shader.program, "pos");
+	finalblit_shader.attrib_location_tex_coord = opengl_get_attrib(finalblit_shader.program, "tex_coord");
 
 	glUseProgram(finalblit_shader.program);
 	glUniform1i(finalblit_shader.u_texture0, 0);
@@ -501,7 +501,7 @@ static void opengl_init_renderer(app_state_t* app_state) {
 	init_draw_normalized_quad();
 
 #ifdef STRINGIFY_SHADERS
-	write_stringified_shaders();
+	opengl_write_stringified_shaders();
 #endif
 	init_draw_rect();
 

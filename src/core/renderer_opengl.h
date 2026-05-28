@@ -55,7 +55,7 @@ typedef struct finalblit_shader_t {
     u32 program;
     i32 u_texture0;
     i32 u_texture1;
-    float u_t;
+    i32 u_t;
     i32 attrib_location_pos;
     i32 attrib_location_tex_coord;
 } finalblit_shader_t;
