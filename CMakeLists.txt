@@ -361,6 +361,7 @@ if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/win32_main.cpp
             platform/win32_renderer.cpp
+            platform/win32_renderer_opengl.cpp
             platform/win32_utils.c
             platform/win32_gui.cpp
             platform/glad.c
