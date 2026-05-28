@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,47 +16,33 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef WIN32_MAIN
-#define WIN32_MAIN
+#pragma once
+
+#include "common.h"
 
 #include <windows.h>
-#include "platform.h"
-#include "win32_utils.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define BYTES_PER_PIXEL 4
+typedef enum win32_renderer_api_t {
+	WIN32_RENDERER_API_OPENGL = 0,
+} win32_renderer_api_t;
 
-typedef struct {
-	int width;
-	int height;
-} win32_window_dimension_t;
+typedef struct app_state_t app_state_t;
 
-LPSTR* WINAPI CommandLineToArgvA(LPSTR lpCmdline, int* numargs);
-
-// globals
-#if defined(WIN32_GRAPHICAL_APP_IMPL)
-#define INIT(...) __VA_ARGS__
-#define extern
-#else
-#define INIT(...)
-#undef extern
-#endif
-
-//extern HWND global_main_window;
-extern HCURSOR global_cursor_arrow;
-extern HCURSOR global_cursor_crosshair;
-extern HCURSOR global_current_cursor;
-extern bool global_is_using_software_renderer;
-
-#undef INIT
-#undef extern
+bool win32_renderer_init_window(HWND window, win32_renderer_api_t api);
+void win32_renderer_init_viewer(app_state_t* app_state);
+void win32_renderer_init_imgui(app_state_t* app_state);
+void win32_renderer_imgui_new_frame();
+void win32_renderer_render_imgui_draw_data(struct ImDrawData* draw_data);
+void win32_renderer_set_swap_interval(int interval);
+int win32_renderer_get_refresh_rate();
+void win32_renderer_set_viewport(i32 width, i32 height);
+void win32_renderer_present();
+bool win32_renderer_can_present();
 
 #ifdef __cplusplus
 }
-#endif
-
-
 #endif
