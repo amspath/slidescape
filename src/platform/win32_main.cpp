@@ -53,6 +53,9 @@
 
 #include "gui.h"
 
+#ifndef WM_DPICHANGED
+#define WM_DPICHANGED 0x02E0
+#endif
 
 // For some reason, using the Intel integrated graphics is much faster to start up (?)
 // Therefore, disabled this again... also better for power consumption, probably
@@ -616,6 +619,24 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			}
 			DragFinish(hdrop);
 			SetForegroundWindow(window); // set focus on the window (this does not happen automatically)
+		} break;
+
+		case WM_DPICHANGED: {
+			RECT* suggested_rect = (RECT*)lparam;
+			if (suggested_rect) {
+				SetWindowPos(window, NULL,
+				             suggested_rect->left, suggested_rect->top,
+				             suggested_rect->right - suggested_rect->left,
+				             suggested_rect->bottom - suggested_rect->top,
+				             SWP_NOZORDER | SWP_NOACTIVATE);
+			}
+			win32_update_gui_dpi(&global_app_state, true);
+		} break;
+
+		case WM_MOVE:
+		case WM_WINDOWPOSCHANGED: {
+			win32_update_gui_dpi(&global_app_state, false);
+			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
 
 #if 0

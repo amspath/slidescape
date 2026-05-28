@@ -34,6 +34,8 @@
 #include "gui.h"
 #include "font_definitions.h"
 
+static float win32_current_gui_dpi_scale;
+
 void win32_gui_new_frame(app_state_t* app_state) {
 	// Init for the frame
 	gui_reset_all_extra_drawlists();
@@ -42,11 +44,76 @@ void win32_gui_new_frame(app_state_t* app_state) {
 	ImGui::NewFrame();
 }
 
+static void win32_load_imgui_fonts() {
+	ImGuiIO& io = ImGui::GetIO();
+
+	ImFontConfig font_config = ImFontConfig();
+//	font_config.OversampleH = 3;
+//	font_config.OversampleV = 2;
+//	font_config.RasterizerMultiply = 1.2f;
+	static const ImWchar ranges[] =
+	{
+			0x0020, 0x00FF, // Basic Latin + Latin Supplement
+			0x0370, 0x03FF, // Greek
+			0,
+	};
+
+	float system_font_size = 18.0f;
+
+	const char* main_ui_font_filename = "c:\\Windows\\Fonts\\segoeui.ttf";
+	if (file_exists(main_ui_font_filename)) {
+		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, system_font_size, &font_config, ranges);
+	}
+	if (!global_main_font) {
+		console_print_error("Main UI font '%s' could not be loaded", main_ui_font_filename);
+	}
+
+	const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
+	const char* icon_font_filename = "resources/FontAwesome4/font.ttf";
+	if (file_exists(icon_font_filename)) {
+		global_icon_font = io.Fonts->AddFontFromFileTTF(icon_font_filename, 40.0f, &font_config, icon_ranges);
+	}
+	if (!global_icon_font) {
+//		console_print_error("Icon font could not be loaded");
+	}
+
+	const char* fixed_width_font_filename = "c:\\Windows\\Fonts\\consola.ttf";
+	if (file_exists(fixed_width_font_filename)) {
+		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f, &font_config, ranges);
+	}
+	if (!global_fixed_width_font) {
+		console_print_error("Fixed width font '%s' could not be loaded", fixed_width_font_filename);
+	}
+
+	ImFont* font_default = io.Fonts->AddFontDefault();
+	if (!global_main_font) {
+		global_main_font = font_default;
+	}
+	if (!global_fixed_width_font) {
+		global_fixed_width_font = font_default;
+	}
+//	IM_ASSERT(font != NULL);
+
+	// The base font size is small; per-monitor DPI scaling is applied dynamically through FontScaleDpi.
+	io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
+}
+
+void win32_update_gui_dpi(app_state_t* app_state, bool force) {
+	if (!app_state || !app_state->main_window || !ImGui::GetCurrentContext()) return;
+
+	float dpi_scale = ImGui_ImplWin32_GetDpiScaleForHwnd(app_state->main_window);
+	if (dpi_scale <= 0.0f) dpi_scale = 1.0f;
+
+	if (!force && fabsf(dpi_scale - win32_current_gui_dpi_scale) < 0.01f) return;
+
+	win32_current_gui_dpi_scale = dpi_scale;
+	ImGui::GetStyle().FontScaleDpi = dpi_scale;
+}
+
 
 void win32_init_gui(app_state_t* app_state) {
 
 	imgui_create_context();
-	ImGuiIO& io = ImGui::GetIO();
 	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -64,70 +131,8 @@ void win32_init_gui(app_state_t* app_state) {
 	ImGui_ImplWin32_Init(app_state->main_window);
 	ImGui_ImplOpenGL3_Init(NULL, global_is_using_software_renderer ? "opengl32software.dll" : "opengl32.dll");
 
-
-	// Load Fonts
-	// - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-	// - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-	// - If the file cannot be loaded, the function will return NULL. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-	// - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
-	// - Read 'docs/FONTS.txt' for more instructions and details.
-	// - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
-	//io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
-	ImFontConfig font_config = ImFontConfig();
-//	font_config.OversampleH = 3;
-//	font_config.OversampleV = 2;
-//	font_config.RasterizerMultiply = 1.2f;
-	static const ImWchar ranges[] =
-	{
-			0x0020, 0x00FF, // Basic Latin + Latin Supplement
-			0x0370, 0x03FF, // Greek
-			0,
-	};
-
-	float dpi_scale = ImGui_ImplWin32_GetDpiScaleForHwnd(app_state->main_window);
-	float system_font_size = floorf(17.0f * dpi_scale);
-
-	const char* main_ui_font_filename = "c:\\Windows\\Fonts\\segoeui.ttf";
-	if (file_exists(main_ui_font_filename)) {
-		global_main_font = io.Fonts->AddFontFromFileTTF(main_ui_font_filename, system_font_size, &font_config, ranges);
-	}
-	if (!global_main_font) {
-		console_print_error("Main UI font '%s' could not be loaded", main_ui_font_filename);
-	}
-
-	const ImWchar icon_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
-	const char* icon_font_filename = "resources/FontAwesome4/font.ttf";
-	if (file_exists(icon_font_filename)) {
-		global_icon_font = io.Fonts->AddFontFromFileTTF(icon_font_filename, 40.0f * dpi_scale, &font_config, icon_ranges);
-	}
-	if (!global_icon_font) {
-//		console_print_error("Icon font could not be loaded");
-	}
-
-	const char* fixed_width_font_filename = "c:\\Windows\\Fonts\\consola.ttf";
-	if (file_exists(fixed_width_font_filename)) {
-		global_fixed_width_font = io.Fonts->AddFontFromFileTTF(fixed_width_font_filename, 14.0f * dpi_scale, &font_config, ranges);
-	}
-	if (!global_fixed_width_font) {
-		console_print_error("Fixed width font '%s' could not be loaded", fixed_width_font_filename);
-	}
-
-
-	io.Fonts->AddFontDefault();
-//	IM_ASSERT(font != NULL);
-
-	if (system_font_size >= 25.0f) {
-		// If the font size is large, light hinting gives better results because the result better resembles
-		// the original shape (at the cost of a little bit of fuzziness).
-		io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_LightHinting;
-	} else {
-		// If the font size is small, mono hinting seems to give the most crisp results for white text on a
-		// dark background.
-		io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
-	}
+	win32_load_imgui_fonts();
+	win32_update_gui_dpi(app_state, true);
 
 
 	// TODO: Windows high DPI code

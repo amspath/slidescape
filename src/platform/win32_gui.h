@@ -26,8 +26,8 @@ extern "C" {
 #endif
 
 void win32_gui_new_frame(app_state_t* app_state);
-
 void win32_init_gui(app_state_t* app_state);
+void win32_update_gui_dpi(app_state_t* app_state, bool force);
 
 #ifdef __cplusplus
 }
