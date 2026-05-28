@@ -96,6 +96,27 @@ static char g_exe_name[512];
 static char g_root_dir[512];
 static char g_appdata_path[MAX_PATH];
 
+static bool win32_can_render_from_window_messages;
+static bool win32_is_rendering_frame;
+
+const char* wgl_extensions_string;
+
+PFNWGLSWAPINTERVALEXTPROC       wglSwapIntervalEXT = NULL;
+PFNWGLGETSWAPINTERVALEXTPROC    wglGetSwapIntervalEXT = NULL;
+PFNWGLGETEXTENSIONSSTRINGEXTPROC wglGetExtensionsStringEXT = NULL;
+PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = NULL;
+PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = NULL;
+PFNSETPIXELFORMATPROC wglSetPixelFormat = NULL;
+PFNDESCRIBEPIXELFORMATPROC wglDescribePixelFormat = NULL;
+PFNCHOOSEPIXELFORMATPROC wglChoosePixelFormat = NULL;
+PFNWGLGETPROCADDRESSPROC wglGetProcAddress_alt = NULL; // need to rename, because these are already declared in wingdi.h
+PFNWGLCREATECONTEXTPROC wglCreateContext_alt = NULL;
+PFNWGLMAKECURRENTPROC wglMakeCurrent_alt = NULL;
+PFNWGLDELETECONTEXTPROC wglDeleteContext_alt = NULL;
+PFNWGLGETCURRENTDCPROC wglGetCurrentDC_alt = NULL;
+PFNSWAPBUFFERSPROC wglSwapBuffers = NULL;
+
+static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t, HDC glrc_hdc);
 
 
 HKEY win32_registry_create_empty_key(const char* key) {
@@ -633,23 +654,22 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			win32_update_gui_dpi(&global_app_state, true);
 		} break;
 
-		case WM_MOVE:
-		case WM_WINDOWPOSCHANGED: {
+		case WM_MOVE: {
 			win32_update_gui_dpi(&global_app_state, false);
-			result = DefWindowProcA(window, message, wparam, lparam);
-		} break;
-
-#if 0
-		case WM_SIZE: {
-			if (is_main_window_initialized) {
-				glDrawBuffer(GL_BACK);
-				win32_window_dimension_t dimension = win32_get_window_dimension(global_main_window);
-				viewer_update_and_render(curr_input, dimension.width, dimension.height);
-				SwapBuffers(wglGetCurrentDC());
+			if (win32_can_render_from_window_messages) {
+				static input_t render_only_input = {};
+				win32_render_frame(&global_app_state, &render_only_input, 0.0f, wglGetCurrentDC_alt());
 			}
 			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
-#endif
+
+		case WM_SIZE: {
+			if (win32_can_render_from_window_messages) {
+				static input_t render_only_input = {};
+				win32_render_frame(&global_app_state, &render_only_input, 0.0f, wglGetCurrentDC_alt());
+			}
+			result = DefWindowProcA(window, message, wparam, lparam);
+		} break;
 
 		case WM_CLOSE: {
 			// TODO: Handle this as a message to the user?
@@ -711,17 +731,17 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 //			ASSERT(!"Keyboard messages should not be dispatched!");
 		} break;
 
-#if 0
 		case WM_PAINT: {
-			if (is_main_window_initialized) {
-				glDrawBuffer(GL_BACK);
-				win32_window_dimension_t dimension = win32_get_window_dimension(global_main_window);
-				viewer_update_and_render(curr_input, dimension.width, dimension.height);
-				SwapBuffers(wglGetCurrentDC());
+			PAINTSTRUCT paint = {};
+			BeginPaint(window, &paint);
+			if (win32_can_render_from_window_messages) {
+				static input_t render_only_input = {};
+				win32_render_frame(&global_app_state, &render_only_input, 0.0f, wglGetCurrentDC_alt());
 			}
-			result = DefWindowProcA(window, message, wparam, lparam);
+			EndPaint(window, &paint);
+			result = 0;
 		} break;
-#endif
+
 		case WM_KILLFOCUS: {
 			// Lost focus -> release all keys
 			controller_input_t* keyboard_input = &curr_input->keyboard;
@@ -1148,22 +1168,65 @@ void win32_process_xinput_controllers() {
 
 
 
-const char* wgl_extensions_string;
 
-PFNWGLSWAPINTERVALEXTPROC       wglSwapIntervalEXT = NULL;
-PFNWGLGETSWAPINTERVALEXTPROC    wglGetSwapIntervalEXT = NULL;
-PFNWGLGETEXTENSIONSSTRINGEXTPROC wglGetExtensionsStringEXT = NULL;
-PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB = NULL;
-PFNWGLCHOOSEPIXELFORMATARBPROC wglChoosePixelFormatARB = NULL;
-PFNSETPIXELFORMATPROC wglSetPixelFormat = NULL;
-PFNDESCRIBEPIXELFORMATPROC wglDescribePixelFormat = NULL;
-PFNCHOOSEPIXELFORMATPROC wglChoosePixelFormat = NULL;
-PFNWGLGETPROCADDRESSPROC wglGetProcAddress_alt = NULL; // need to rename, because these are already declared in wingdi.h
-PFNWGLCREATECONTEXTPROC wglCreateContext_alt = NULL;
-PFNWGLMAKECURRENTPROC wglMakeCurrent_alt = NULL;
-PFNWGLDELETECONTEXTPROC wglDeleteContext_alt = NULL;
-PFNWGLGETCURRENTDCPROC wglGetCurrentDC_alt = NULL;
-PFNSWAPBUFFERSPROC wglSwapBuffers = NULL;
+static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t, HDC glrc_hdc) {
+	if (!app_state || !input || !glrc_hdc || win32_is_rendering_frame) return;
+	win32_is_rendering_frame = true;
+
+	app_state->last_frame_start = get_clock();
+
+	win32_gui_new_frame(app_state);
+
+	win32_window_dimension_t dimension = win32_get_window_dimension(app_state->main_window);
+	viewer_update_and_render(app_state, input, dimension.width, dimension.height, delta_t);
+
+	if (!is_program_running) {
+		ShowWindow(app_state->main_window, SW_HIDE);
+		win32_is_rendering_frame = false;
+		return;
+	}
+
+	ImGui::Render();
+	glViewport(0, 0, dimension.width, dimension.height);
+
+	// Render any ImGui content submitted to the extra draw lists on worker threads
+	if (global_active_extra_drawlists > 0) {
+		static ImDrawData draw_data = ImDrawData();
+		draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
+		draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
+		draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
+		draw_data.OwnerViewport = ImGui::GetMainViewport();
+		draw_data.TotalIdxCount = 0;
+		draw_data.TotalVtxCount = 0;
+		draw_data.CmdListsCount = 0;
+		draw_data.Textures = &ImGui::GetPlatformIO().Textures;
+		ImVector<ImDrawList*> drawlists;
+		for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
+			ImDrawList* drawlist = global_extra_drawlists[i];
+			if (drawlist) {
+				i32 vertex_buffer_size = drawlist->VtxBuffer.size();
+				if (vertex_buffer_size > 0) {
+					drawlists.push_back(drawlist);
+					draw_data.CmdListsCount += 1;
+					draw_data.TotalIdxCount += drawlist->IdxBuffer.size();
+					draw_data.TotalVtxCount += vertex_buffer_size;
+				}
+			}
+		}
+		draw_data.CmdLists = drawlists;
+		draw_data.Valid = true;
+		if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
+			ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+		}
+	}
+
+	// Render the rest of the ImGui draw data (submitted on the main thread)
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+	wglSwapBuffers(glrc_hdc);
+
+	win32_is_rendering_frame = false;
+}
 
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
 bool win32_wgl_extension_supported(const char *extension_name) {
@@ -2084,13 +2147,13 @@ int main() {
 	app_load_commandline_inputs(app_state);
 
 	HDC glrc_hdc = wglGetCurrentDC_alt();
+	win32_can_render_from_window_messages = true;
 
 	set_swap_interval(is_vsync_enabled ? 1 : 0);
 
 	i64 last_clock = get_clock();
 	while (is_program_running) {
 		i64 current_clock = get_clock();
-		app_state->last_frame_start = current_clock;
 
 		int refresh_rate = GetDeviceCaps(glrc_hdc, VREFRESH);
 		if (refresh_rate <= 1) {
@@ -2108,54 +2171,8 @@ int main() {
 			last_clock = get_clock();
 		}
 
-		win32_gui_new_frame(app_state);
-
-		// Update and render our application
-		win32_window_dimension_t dimension = win32_get_window_dimension(app_state->main_window);
-		viewer_update_and_render(app_state, curr_input, dimension.width, dimension.height, delta_t);
-
-		if (!is_program_running) {
-			ShowWindow(app_state->main_window, SW_HIDE);
-			break;
-		}
-
-		// Render the UI
-		ImGui::Render();
-		glViewport(0, 0, dimension.width, dimension.height);
-
-		// Render any ImGui content submitted to the extra draw lists on worker threads
-		if (global_active_extra_drawlists > 0) {
-			static ImDrawData draw_data = ImDrawData();
-			draw_data.DisplayPos = ImGui::GetMainViewport()->Pos;
-			draw_data.DisplaySize = ImGui::GetMainViewport()->Size;
-			draw_data.FramebufferScale = ImVec2(1.0f, 1.0f);
-			draw_data.OwnerViewport = ImGui::GetMainViewport();
-			draw_data.TotalIdxCount = 0;
-			draw_data.TotalVtxCount = 0;
-			draw_data.CmdListsCount = 0;
-			draw_data.Textures = &ImGui::GetPlatformIO().Textures;
-			ImVector<ImDrawList*> drawlists;
-			for (i32 i = 0; i < global_active_extra_drawlists; ++i) {
-				ImDrawList* drawlist = global_extra_drawlists[i];
-				if (drawlist) {
-					i32 vertex_buffer_size = drawlist->VtxBuffer.size();
-					if (vertex_buffer_size > 0) {
-						drawlists.push_back(drawlist);
-						draw_data.CmdListsCount += 1;
-						draw_data.TotalIdxCount += drawlist->IdxBuffer.size();
-						draw_data.TotalVtxCount += vertex_buffer_size;
-					}
-				}
-			}
-			draw_data.CmdLists = drawlists;
-			draw_data.Valid = true;
-			if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
-				ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
-			}
-		}
-
-		// Render the rest of the ImGui draw data (submitted on the main thread)
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		win32_render_frame(app_state, curr_input, delta_t, glrc_hdc);
+		if (!is_program_running) break;
 
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;
 		float ms_left = predicted_frame_ms - frame_ms;
@@ -2169,7 +2186,6 @@ int main() {
 			}
 		}
 
-		wglSwapBuffers(glrc_hdc);
 	}
 
 	autosave(app_state, true, false); // save any unsaved changes
