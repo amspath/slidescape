@@ -63,7 +63,7 @@ typedef struct finalblit_shader_t {
 
 
 // globals
-#if defined(VIEWER_OPENGL_IMPL)
+#if defined(RENDERER_OPENGL_IMPL)
 #define INIT(...) __VA_ARGS__
 #define extern
 #else

@@ -24,7 +24,7 @@
 #include OPENGL_H
 
 #include "stringified_shaders.h"
-#include "shader.h"
+#include "renderer_opengl_shader.h"
 
 #if DO_DEBUG
 #define STRINGIFY_SHADERS

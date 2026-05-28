@@ -327,12 +327,12 @@ target_compile_definitions(slidescape_nongui PRIVATE
 
 set(VIEWER_SOURCE_FILES
         platform/graphical_app.c
-        platform/shader.c
         core/viewer.cpp
-        core/viewer_opengl.cpp
         core/viewer_io_file.cpp
-        core/viewer_io_remote.cpp
-        core/viewer_options.cpp
+        core/viewer_io_remote.c
+        core/viewer_options.c
+        core/renderer_opengl.c
+        core/renderer_opengl_shader.c
         core/app_input.cpp
         core/commandline.cpp
         core/scene.cpp

@@ -18,13 +18,13 @@
 
 #include "common.h"
 #include "viewer.h"
-#include "viewer_renderer.h"
-#include "shader.h"
+#include "renderer.h"
+#include "renderer_opengl_shader.h"
 
 #include OPENGL_H
 
-#define VIEWER_OPENGL_IMPL
-#include "viewer_opengl.h"
+#define RENDERER_OPENGL_IMPL
+#include "renderer_opengl.h"
 
 static void opengl_init_renderer(app_state_t* app_state);
 

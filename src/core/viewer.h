@@ -37,8 +37,7 @@ extern "C" {
 #include "openslide_api.h"
 #include "caselist.h"
 #include "annotation.h"
-#include "shader.h"
-#include "viewer_renderer.h"
+#include "renderer.h"
 
 typedef enum viewer_completion_event_kind_t {
 	VIEWER_COMPLETION_EVENT_NONE = 0,

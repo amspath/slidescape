@@ -54,10 +54,9 @@
 #include "gui.h"
 #include "caselist.h"
 #include "annotation.h"
-#include "shader.h"
 #include "ini.h"
 #include "image_registration.h"
-#include "viewer_renderer.h"
+#include "renderer.h"
 
 
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration) {

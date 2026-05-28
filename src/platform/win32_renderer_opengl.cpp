@@ -21,7 +21,7 @@
 #include "win32_renderer_backend.h"
 #include "win32_graphical_app.h"
 #include "viewer.h"
-#include "viewer_renderer.h"
+#include "renderer.h"
 #include "stringutils.h"
 
 #include <glad/glad.h>

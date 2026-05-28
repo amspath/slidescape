@@ -20,7 +20,7 @@
 
 #include "common.h"
 #include "mathutils.h"
-#include "viewer_renderer.h"
+#include "renderer.h"
 
 // backends
 #include "mrxs.h"
