@@ -140,7 +140,8 @@ bool app_load_commandline_inputs(app_state_t* app_state) {
 	bool success = true;
 	if (arrlen(command->inputs) > 0) {
 		const char* filename = command->inputs[0];
-		success = app_load_input(app_state, filename, FILETYPE_HINT_NONE);
+		u32 filetype_hint = load_next_image_as_overlay ? FILETYPE_HINT_OVERLAY : 0;
+		success = app_load_input(app_state, filename, filetype_hint);
 		if (success) {
 			for (i32 overlay_index = 0; overlay_index < arrlen(command->overlay_inputs); ++overlay_index) {
 				const char* overlay_filename = command->overlay_inputs[overlay_index];
