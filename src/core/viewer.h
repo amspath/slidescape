@@ -38,6 +38,7 @@ extern "C" {
 #include "caselist.h"
 #include "annotation.h"
 #include "shader.h"
+#include "viewer_renderer.h"
 
 typedef enum viewer_completion_event_kind_t {
 	VIEWER_COMPLETION_EVENT_NONE = 0,
@@ -406,7 +407,7 @@ void draw_rect(u32 texture);
 pixel_transfer_state_t* submit_texture_upload_via_pbo(app_state_t *app_state, i32 width, i32 height,
 													  i32 bytes_per_pixel, u8 *pixels, bool finalize);
 void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state);
-u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format);
+u32 load_texture(void* pixels, i32 width, i32 height, renderer_pixel_format_t pixel_format);
 void unload_texture(u32 texture);
 void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height);
 void init_layer_framebuffers(app_state_t* app_state);

@@ -19,8 +19,6 @@
 #include "common.h"
 #include "platform.h"
 
-#include OPENGL_H
-
 #include "imgui.h"
 #include "imgui_internal.h"
 

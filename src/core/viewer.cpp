@@ -24,7 +24,6 @@
 #else
 #include <sys/mman.h>
 #endif
-#include OPENGL_H
 
 #include "platform.h"
 #include "intrinsics.h"
@@ -58,7 +57,7 @@
 #include "shader.h"
 #include "ini.h"
 #include "image_registration.h"
-#include "viewer_opengl.h"
+#include "viewer_renderer.h"
 
 
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration) {
@@ -445,14 +444,14 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		simple_image_t* label_image = &image->label_image;
 		if (macro_image->is_valid) {
 			if (macro_image->texture == 0 && macro_image->pixels != NULL) {
-				macro_image->texture = load_texture(macro_image->pixels, macro_image->width, macro_image->height, GL_RGBA);
+				macro_image->texture = load_texture(macro_image->pixels, macro_image->width, macro_image->height, RENDERER_PIXEL_FORMAT_RGBA);
 				stbi_image_free(macro_image->pixels);
 				macro_image->pixels = NULL;
 			}
 		}
 		if (label_image->is_valid) {
 			if (label_image->texture == 0 && label_image->pixels != NULL) {
-				label_image->texture = load_texture(label_image->pixels, label_image->width, label_image->height, GL_RGBA);
+				label_image->texture = load_texture(label_image->pixels, label_image->width, label_image->height, RENDERER_PIXEL_FORMAT_RGBA);
 				stbi_image_free(label_image->pixels);
 				label_image->pixels = NULL;
 			}
@@ -515,7 +514,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		} else if (image->backend == IMAGE_BACKEND_STBI) {
 			simple_image_t* simple = &image->simple;
 			if (image->simple.texture == 0 && image->simple.pixels != NULL) {
-				image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, GL_RGBA);
+				image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, RENDERER_PIXEL_FORMAT_RGBA);
 //			    image->origin_offset = (v2f) {50, 100};
 				image->is_freshly_loaded = false;
 				level_image_t* level_image = image->level_images + 0;
@@ -642,32 +641,13 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		mat4x4 projection_view_matrix;
 		mat4x4_mul(projection_view_matrix, projection, view_matrix);
 
-		glUseProgram(basic_shader.program);
-		glActiveTexture(GL_TEXTURE0);
-		glUniform1i(basic_shader.u_tex, 0);
-
-		glUniformMatrix4fv(basic_shader.u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
-
-		glUniform3fv(basic_shader.u_background_color, 1, (GLfloat *) &app_state->clear_color);
-		if (app_state->use_image_adjustments) {
-			glUniform1f(basic_shader.u_black_level, app_state->black_level);
-			glUniform1f(basic_shader.u_white_level, app_state->white_level);
-		} else {
-			glUniform1f(basic_shader.u_black_level, 0.0f);
-			glUniform1f(basic_shader.u_white_level, 1.0f);
-		}
-		glUniform1i(basic_shader.u_use_transparent_filter, scene->use_transparent_filter);
-		glUniform1i(basic_shader.u_draw_outlines, scene->draw_outlines);
-		if (scene->use_transparent_filter) {
-			glUniform3fv(basic_shader.u_transparent_color, 1, (GLfloat *) &app_state->scene.transparent_color);
-			glUniform1f(basic_shader.u_transparent_tolerance, app_state->scene.transparent_tolerance);
-		}
+		renderer_begin_image_render(app_state, scene, projection_view_matrix);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
 		// Render label and macro images
 		if (draw_macro_image_in_background) {
-			glDisable(GL_STENCIL_TEST);
+			renderer_disable_stencil_test();
 			if (macro_image->is_valid && macro_image->texture != 0) {
 				v2f pmax = {};
 				pmax.x = macro_image->width * macro_image->mpp;
@@ -679,14 +659,14 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				                 image->origin_offset.y + macro_image->world_pos.y,
 				                 10.0f);
 				mat4x4_scale_aniso(model_matrix, model_matrix, pmax.x, pmax.y, 1.0f);
-				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+				renderer_set_image_model_matrix(model_matrix);
 
-				draw_rect(macro_image->texture);
+				renderer_draw_textured_rect(macro_image->texture);
 			}
 		}
 
 		if (draw_label_image_in_background) {
-			glDisable(GL_STENCIL_TEST);
+			renderer_disable_stencil_test();
 			if (label_image->is_valid && label_image->texture != 0 && macro_image->is_valid) {
 				v2f pmax = {};
 				pmax.x = label_image->width * label_image->mpp;
@@ -700,9 +680,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				mat4x4_scale_aniso(model_matrix, model_matrix, pmax.x, pmax.y, 1.0f);
 				mat4x4 model_matrix_rot;
 				mat4x4_rotate_Z(model_matrix_rot, model_matrix, 0.5f * M_PI);
-				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix_rot[0][0]);
+				renderer_set_image_model_matrix(model_matrix_rot);
 
-				draw_rect(label_image->texture);
+				renderer_draw_textured_rect(label_image->texture);
 			}
 		}
 
@@ -717,12 +697,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			stencil_bounds.right -= 0.1f / image->mpp_x;
 			stencil_bounds.bottom -= 0.1f / image->mpp_y;
 
-			glEnable(GL_STENCIL_TEST);
-			glStencilFunc(GL_ALWAYS, 1, 0xFF);
-			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-//			glStencilMask(0xFF);
-			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
-			glDepthMask(GL_FALSE); // don't write to depth buffer
+			renderer_begin_stencil_write();
 			{
 				mat4x4 model_matrix;
 				mat4x4_translate(model_matrix, stencil_bounds.left, stencil_bounds.top, 0.0f);
@@ -730,27 +705,17 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				                   stencil_bounds.right - stencil_bounds.left,
 				                   stencil_bounds.bottom - stencil_bounds.top,
 				                   1.0f);
-				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
-				draw_rect(dummy_texture);
+				renderer_set_image_model_matrix(model_matrix);
+				renderer_draw_textured_rect(renderer_get_dummy_texture());
 			}
 
-			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-			glDepthMask(GL_TRUE);
-//			glStencilMask(0xFF);
-			glStencilFunc(GL_EQUAL, 1, 0xFF);
-//			glDisable(GL_STENCIL_TEST);
+			renderer_end_stencil_write();
 
 		}
 
 		// If a background image has already been rendered, we need to blend the tiles on top
 		// while taking into account transparency.
-		if (draw_macro_image_in_background) {
-			glEnable(GL_BLEND);
-			glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-			glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
-		} else {
-			glDisable(GL_BLEND);
-		}
+		renderer_set_tile_blend_enabled(draw_macro_image_in_background);
 
 		// Draw tiles
 		// Draw all levels within the viewport, up to the current zoom factor
@@ -792,9 +757,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 						mat4x4_translate(model_matrix, tile_pos_x, tile_pos_y, 0.0f);
 						mat4x4_scale_aniso(model_matrix, model_matrix, drawn_level->x_tile_side_in_um,
 						                   drawn_level->y_tile_side_in_um, 1.0f);
-						glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+						renderer_set_image_model_matrix(model_matrix);
 
-						draw_rect(texture);
+						renderer_draw_textured_rect(texture);
 					} else {
 						++missing_tiles_on_this_level;
 					}
@@ -807,27 +772,11 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		}
 
-		// restore OpenGL state
-		glDisable(GL_STENCIL_TEST);
+		renderer_finish_image_render();
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
 
 	}
-}
-
-
-void viewer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 client_height) {
-//	glDrawBuffer(GL_BACK);
-	glDisable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_STENCIL_TEST);
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	glDepthMask(GL_TRUE);
-	glStencilFunc(GL_ALWAYS, 1, 0xFF);
-	glStencilMask(0xFF);
-	glViewport(0, 0, client_width, client_height);
-	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
 
@@ -1126,7 +1075,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	app_state->input = input;
 
 	// Set up rendering state for the next frame
-	viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+	renderer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 
 	app_state->allow_idling_next_frame = true; // but we might set it to false later
 
@@ -1791,8 +1740,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	if (app_state->enabled_image_count <= 1) {
 		// Render everything at once
-//		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
-		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+		renderer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
 		image_t* image = app_state->loaded_images[app_state->enabled_image_indices[0]];
 		update_and_render_image(app_state, image);
 	} else {
@@ -1800,9 +1748,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// 1: render to framebuffer
 		// 2: blit framebuffer to screen
 
-		if (!layer_framebuffers_initialized) {
-			init_layer_framebuffers(app_state);
-		}
+		renderer_ensure_layer_framebuffers(app_state);
 
 		i32 running_framebuffer_index = 0;
 		// TODO: iterate over enabled image indices?
@@ -1810,15 +1756,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			image_t* image = app_state->loaded_images[image_index];
 			if (image->is_enabled) {
-				framebuffer_t* framebuffer = layer_framebuffers + running_framebuffer_index;
-				maybe_resize_overlay(framebuffer, client_width, client_height);
-
-				glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
-				viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+				renderer_prepare_layer_framebuffer(running_framebuffer_index, client_width, client_height, app_state->clear_color);
 
 				update_and_render_image(app_state, image);
 
-				glBindFramebuffer(GL_FRAMEBUFFER, 0);
+				renderer_bind_screen_framebuffer();
 				++running_framebuffer_index;
 			}
 			if (running_framebuffer_index == 2) {
@@ -1827,19 +1769,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		// Second pass
-//		glBindFramebuffer(GL_FRAMEBUFFER, 0); // Redundant
-		viewer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
-
-		glUseProgram(finalblit_shader.program);
-		glUniform1f(finalblit_shader.u_t, scene->layer_time);
-		glBindVertexArray(vao_screen);
-		glDisable(GL_DEPTH_TEST); // because we want to make sure the quad always renders in front of everything else
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, layer_framebuffers[0].texture);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, layer_framebuffers[1].texture);
-		glDrawArrays(GL_TRIANGLES, 0, 6);
-		glBindVertexArray(0);
+		renderer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+		renderer_final_blit_layers(scene->layer_time);
 	}
 
 
@@ -1898,7 +1829,7 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 		}
 	}
 
-	//glFinish();
+	//renderer_finish();
 
 	float update_and_render_time = get_seconds_elapsed(app_state->last_frame_start, get_clock());
 //	console_print("Frame time: %g ms\n", update_and_render_time * 1000.0f);

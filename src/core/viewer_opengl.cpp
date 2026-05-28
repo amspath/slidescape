@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "viewer.h"
+#include "viewer_renderer.h"
 #include "shader.h"
 
 #include OPENGL_H
@@ -176,7 +177,17 @@ void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state) {
 
 }
 
-u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format) {
+static u32 renderer_pixel_format_to_opengl(renderer_pixel_format_t pixel_format) {
+	u32 result = GL_BGRA;
+	switch (pixel_format) {
+		case RENDERER_PIXEL_FORMAT_BGRA: result = GL_BGRA; break;
+		case RENDERER_PIXEL_FORMAT_RGBA: result = GL_RGBA; break;
+	}
+	return result;
+}
+
+u32 load_texture(void* pixels, i32 width, i32 height, renderer_pixel_format_t pixel_format) {
+	u32 opengl_pixel_format = renderer_pixel_format_to_opengl(pixel_format);
 	u32 texture = 0; //gl_gen_texture();
 	glGenTextures(1, &texture);
 //	printf("Generated texture %d\n", texture);
@@ -187,7 +198,7 @@ u32 load_texture(void* pixels, i32 width, i32 height, u32 pixel_format) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, default_texture_mag_filter);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, default_texture_min_filter);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, pixel_format, GL_UNSIGNED_BYTE, pixels);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, opengl_pixel_format, GL_UNSIGNED_BYTE, pixels);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 //	glGenerateMipmap(GL_TEXTURE_2D);
@@ -319,6 +330,126 @@ void init_layer_framebuffers(app_state_t* app_state) {
 	// Now that the overlay_framebuffer is complete, we can start rendering to it.
 }
 
+void renderer_begin_image_render(app_state_t* app_state, scene_t* scene, mat4x4 projection_view_matrix) {
+	glUseProgram(basic_shader.program);
+	glActiveTexture(GL_TEXTURE0);
+	glUniform1i(basic_shader.u_tex, 0);
+
+	glUniformMatrix4fv(basic_shader.u_projection_view_matrix, 1, GL_FALSE, &projection_view_matrix[0][0]);
+
+	glUniform3fv(basic_shader.u_background_color, 1, (GLfloat *) &app_state->clear_color);
+	if (app_state->use_image_adjustments) {
+		glUniform1f(basic_shader.u_black_level, app_state->black_level);
+		glUniform1f(basic_shader.u_white_level, app_state->white_level);
+	} else {
+		glUniform1f(basic_shader.u_black_level, 0.0f);
+		glUniform1f(basic_shader.u_white_level, 1.0f);
+	}
+	glUniform1i(basic_shader.u_use_transparent_filter, scene->use_transparent_filter);
+	glUniform1i(basic_shader.u_draw_outlines, scene->draw_outlines);
+	if (scene->use_transparent_filter) {
+		glUniform3fv(basic_shader.u_transparent_color, 1, (GLfloat *) &scene->transparent_color);
+		glUniform1f(basic_shader.u_transparent_tolerance, scene->transparent_tolerance);
+	}
+}
+
+void renderer_set_image_model_matrix(mat4x4 model_matrix) {
+	glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+}
+
+void renderer_draw_textured_rect(u32 texture) {
+	draw_rect(texture);
+}
+
+void renderer_disable_stencil_test() {
+	glDisable(GL_STENCIL_TEST);
+}
+
+void renderer_begin_stencil_write() {
+	glEnable(GL_STENCIL_TEST);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+	glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+//	glStencilMask(0xFF);
+	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
+	glDepthMask(GL_FALSE); // don't write to depth buffer
+}
+
+void renderer_end_stencil_write() {
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+//	glStencilMask(0xFF);
+	glStencilFunc(GL_EQUAL, 1, 0xFF);
+//	glDisable(GL_STENCIL_TEST);
+}
+
+void renderer_set_tile_blend_enabled(bool enabled) {
+	if (enabled) {
+		glEnable(GL_BLEND);
+		glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
+	} else {
+		glDisable(GL_BLEND);
+	}
+}
+
+void renderer_finish_image_render() {
+	glDisable(GL_STENCIL_TEST);
+}
+
+void renderer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 client_height) {
+//	glDrawBuffer(GL_BACK);
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_STENCIL_TEST);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glDepthMask(GL_TRUE);
+	glStencilFunc(GL_ALWAYS, 1, 0xFF);
+	glStencilMask(0xFF);
+	glViewport(0, 0, client_width, client_height);
+	glClearColor(clear_color.r, clear_color.g, clear_color.b, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+}
+
+void renderer_ensure_layer_framebuffers(app_state_t* app_state) {
+	if (!layer_framebuffers_initialized) {
+		init_layer_framebuffers(app_state);
+	}
+}
+
+void renderer_prepare_layer_framebuffer(i32 framebuffer_index, i32 width, i32 height, v4f clear_color) {
+	ASSERT(framebuffer_index >= 0 && framebuffer_index < COUNT(layer_framebuffers));
+	framebuffer_t* framebuffer = layer_framebuffers + framebuffer_index;
+	maybe_resize_overlay(framebuffer, width, height);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
+	renderer_clear_and_set_up_framebuffer(clear_color, width, height);
+}
+
+void renderer_bind_screen_framebuffer() {
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void renderer_final_blit_layers(float layer_time) {
+	glUseProgram(finalblit_shader.program);
+	glUniform1f(finalblit_shader.u_t, layer_time);
+	glBindVertexArray(vao_screen);
+	glDisable(GL_DEPTH_TEST); // because we want to make sure the quad always renders in front of everything else
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, layer_framebuffers[0].texture);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, layer_framebuffers[1].texture);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
+	glBindVertexArray(0);
+}
+
+u32 renderer_get_dummy_texture() {
+	return dummy_texture;
+}
+
+void renderer_finish() {
+	glFinish();
+}
+
 void init_opengl_stuff(app_state_t* app_state) {
 
 	if (use_fast_rendering) {
@@ -369,7 +500,7 @@ void init_opengl_stuff(app_state_t* app_state) {
 	init_draw_rect();
 
 	u32 dummy_texture_color = MAKE_BGRA(255, 255, 0, 255);
-	dummy_texture = load_texture(&dummy_texture_color, 1, 1, GL_BGRA);
+	dummy_texture = load_texture(&dummy_texture_color, 1, 1, RENDERER_PIXEL_FORMAT_BGRA);
 
 	// Make sure NVIDIA drivers don't complain about undefined base level for texture 0.
 	glBindTexture(GL_TEXTURE_2D, 0);

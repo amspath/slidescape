@@ -349,9 +349,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 #if 1
 	upload_tile_on_worker_thread(image, temp_memory, level, tile_index, level_image->tile_width, level_image->tile_height);
 #else
-	glEnable(GL_TEXTURE_2D);
-	u32 texture = load_texture(temp_memory, level_image->tile_width, level_image->tile_height, GL_BGRA);
-	glFinish(); // Block thread execution until all OpenGL operations have finished.
+	u32 texture = load_texture(temp_memory, level_image->tile_width, level_image->tile_height, RENDERER_PIXEL_FORMAT_BGRA);
+	renderer_finish(); // Block thread execution until all rendering operations have finished.
 	write_barrier;
 	task->tile->texture = texture;
 #endif

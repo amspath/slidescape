@@ -131,7 +131,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_queue_post(&global_completion_queue, task->completion_event_kind, &completion_task,
 						                       sizeof(completion_task));
 
-						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM, GL_BGRA);
+						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM, RENDERER_PIXEL_FORMAT_BGRA);
 					}
 
 				}
@@ -140,13 +140,13 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 #if 0
 			// Note: setting task->tile->texture to the texture handle lets the main thread know that the texture
-			// is ready for use. However, the texture may still not *actually* be available until OpenGL has done its
-			// magic, so to be 100% sure we need to call glFinish() before setting task->tile->texture
-			// We only want to call glFinish() once, so we store the new texture handles temporarily while the
+			// is ready for use. However, the texture may still not *actually* be available until the renderer has
+			// finished the work, so to be 100% sure we wait before setting task->tile->texture
+			// We only want to wait once, so we store the new texture handles temporarily while the
 			// rest of the batch is still loading.
 			// Better would be to flag the texture as 'ready for use' as soon as it's done, but I don't know
 			// how we could query this / be notified of this. (maybe an optimization for later?)
-			glFinish();
+			renderer_finish();
 			write_barrier;
 			for (i32 i = 0; i < batch_size; ++i) {
 				load_tile_task_t* task = batch->tile_tasks + i;
