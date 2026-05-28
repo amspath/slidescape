@@ -319,7 +319,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 		for (i32 transfer_index = 0; transfer_index < COUNT(app_state->pixel_transfer_states); ++transfer_index) {
 			pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
 			if (transfer_state->need_finalization) {
-				finalize_texture_upload_using_pbo(transfer_state);
+				renderer_finalize_texture_upload(transfer_state);
 				tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
 				tile->texture = transfer_state->texture;
 			}
@@ -359,8 +359,8 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                     bool need_free_pixel_memory = true;
                     if (task->want_gpu_residency) {
                         pixel_transfer_state_t* transfer_state =
-                                submit_texture_upload_via_pbo(app_state, task->tile_width, task->tile_height,
-                                                              4, task->pixel_memory, finalize_textures_immediately);
+                                renderer_submit_texture_upload(app_state, task->tile_width, task->tile_height,
+                                                               4, task->pixel_memory, finalize_textures_immediately);
                         if (finalize_textures_immediately) {
                             tile->texture = transfer_state->texture;
                         } else {
@@ -392,12 +392,12 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                 tile->is_submitted_for_loading = false;
                 if (tile->is_cached && tile->pixels) {
                     if (tile->need_gpu_residency) {
-                        pixel_transfer_state_t* transfer_state = submit_texture_upload_via_pbo(app_state,
-                                                                                               task->image->tile_width,
-                                                                                               task->image->tile_height,
-                                                                                               4,
-                                                                                               tile->pixels,
-                                                                                               finalize_textures_immediately);
+                        pixel_transfer_state_t* transfer_state = renderer_submit_texture_upload(app_state,
+                                                                                                task->image->tile_width,
+                                                                                                task->image->tile_height,
+                                                                                                4,
+                                                                                                tile->pixels,
+                                                                                                finalize_textures_immediately);
                         tile->texture = transfer_state->texture;
                     } else {
                         ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
@@ -444,14 +444,14 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		simple_image_t* label_image = &image->label_image;
 		if (macro_image->is_valid) {
 			if (macro_image->texture == 0 && macro_image->pixels != NULL) {
-				macro_image->texture = load_texture(macro_image->pixels, macro_image->width, macro_image->height, RENDERER_PIXEL_FORMAT_RGBA);
+				macro_image->texture = renderer_create_texture(macro_image->pixels, macro_image->width, macro_image->height, RENDERER_PIXEL_FORMAT_RGBA);
 				stbi_image_free(macro_image->pixels);
 				macro_image->pixels = NULL;
 			}
 		}
 		if (label_image->is_valid) {
 			if (label_image->texture == 0 && label_image->pixels != NULL) {
-				label_image->texture = load_texture(label_image->pixels, label_image->width, label_image->height, RENDERER_PIXEL_FORMAT_RGBA);
+				label_image->texture = renderer_create_texture(label_image->pixels, label_image->width, label_image->height, RENDERER_PIXEL_FORMAT_RGBA);
 				stbi_image_free(label_image->pixels);
 				label_image->pixels = NULL;
 			}
@@ -514,7 +514,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		} else if (image->backend == IMAGE_BACKEND_STBI) {
 			simple_image_t* simple = &image->simple;
 			if (image->simple.texture == 0 && image->simple.pixels != NULL) {
-				image->simple.texture = load_texture(image->simple.pixels, image->simple.width, image->simple.height, RENDERER_PIXEL_FORMAT_RGBA);
+				image->simple.texture = renderer_create_texture(image->simple.pixels, image->simple.width, image->simple.height, RENDERER_PIXEL_FORMAT_RGBA);
 //			    image->origin_offset = (v2f) {50, 100};
 				image->is_freshly_loaded = false;
 				level_image_t* level_image = image->level_images + 0;
@@ -747,7 +747,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
 					if (tile->texture) {
 						tile->time_last_drawn = app_state->frame_counter;
-						u32 texture = get_texture_for_tile(image, level, tile_x, tile_y);
+						renderer_texture_handle_t texture = get_texture_for_tile(image, level, tile_x, tile_y);
 
 						float tile_pos_x = drawn_level->origin_offset.x + drawn_level->x_tile_side_in_um * tile_x;
 						float tile_pos_y = drawn_level->origin_offset.y + drawn_level->y_tile_side_in_um * tile_y;
@@ -1075,7 +1075,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 	app_state->input = input;
 
 	// Set up rendering state for the next frame
-	renderer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+	renderer_clear_render_target(app_state->clear_color, client_width, client_height);
 
 	app_state->allow_idling_next_frame = true; // but we might set it to false later
 
@@ -1740,7 +1740,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 	if (app_state->enabled_image_count <= 1) {
 		// Render everything at once
-		renderer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+		renderer_clear_render_target(app_state->clear_color, client_width, client_height);
 		image_t* image = app_state->loaded_images[app_state->enabled_image_indices[0]];
 		update_and_render_image(app_state, image);
 	} else {
@@ -1748,7 +1748,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// 1: render to framebuffer
 		// 2: blit framebuffer to screen
 
-		renderer_ensure_layer_framebuffers(app_state);
+		renderer_ensure_layer_render_targets(app_state);
 
 		i32 running_framebuffer_index = 0;
 		// TODO: iterate over enabled image indices?
@@ -1756,11 +1756,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			image_t* image = app_state->loaded_images[image_index];
 			if (image->is_enabled) {
-				renderer_prepare_layer_framebuffer(running_framebuffer_index, client_width, client_height, app_state->clear_color);
+				renderer_prepare_layer_render_target(running_framebuffer_index, client_width, client_height, app_state->clear_color);
 
 				update_and_render_image(app_state, image);
 
-				renderer_bind_screen_framebuffer();
+				renderer_bind_screen_render_target();
 				++running_framebuffer_index;
 			}
 			if (running_framebuffer_index == 2) {
@@ -1769,7 +1769,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		// Second pass
-		renderer_clear_and_set_up_framebuffer(app_state->clear_color, client_width, client_height);
+		renderer_clear_render_target(app_state->clear_color, client_width, client_height);
 		renderer_final_blit_layers(scene->layer_time);
 	}
 

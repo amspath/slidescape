@@ -20,6 +20,7 @@
 
 #include "common.h"
 #include "mathutils.h"
+#include "viewer_renderer.h"
 
 // backends
 #include "mrxs.h"
@@ -108,7 +109,7 @@ typedef struct tile_t {
     i32 tile_x;
     i32 tile_y;
     u8* pixels;
-    u32 texture;
+    renderer_texture_handle_t texture;
     i32 is_submitted_for_loading;
     i32 read_region_refcount; // TODO: do we need only read_region_refcount, or something more general?
     bool8 is_empty;
@@ -150,7 +151,7 @@ typedef struct simple_image_t {
     i32 width;
     i32 height;
     u8* pixels;
-    u32 texture;
+    renderer_texture_handle_t texture;
     float mpp;
     v2f world_pos;
     bool is_valid;
@@ -215,7 +216,7 @@ static inline tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 ti
 	return tile;
 }
 
-static inline u32 get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
+static inline renderer_texture_handle_t get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
 	level_image_t* level_image = image->level_images + level;
 
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;

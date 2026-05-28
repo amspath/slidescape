@@ -625,7 +625,7 @@ int main(int argc, const char** argv)
 
 	io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
 
-    init_opengl_stuff(app_state);
+    renderer_init(app_state);
 
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	app_load_commandline_inputs(app_state);

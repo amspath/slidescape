@@ -26,7 +26,9 @@
 #define VIEWER_OPENGL_IMPL
 #include "viewer_opengl.h"
 
-void init_draw_rect() {
+static void opengl_init_renderer(app_state_t* app_state);
+
+static void init_draw_rect() {
 	ASSERT(!rect_initialized);
 	rect_initialized = true;
 
@@ -69,7 +71,7 @@ void init_draw_rect() {
 
 }
 
-void init_draw_normalized_quad() {
+static void init_draw_normalized_quad() {
 	static bool initialized = false;
 	ASSERT(!initialized);
 	initialized = true;
@@ -98,7 +100,7 @@ void init_draw_normalized_quad() {
 	glEnableVertexAttribArray(1);
 }
 
-void draw_rect(u32 texture) {
+static void opengl_draw_rect(renderer_texture_handle_t texture) {
 	glBindVertexArray(vao_rect);
 //	glUniform1i(basic_shader_u_tex, 0);
 	glActiveTexture(GL_TEXTURE0);
@@ -107,8 +109,8 @@ void draw_rect(u32 texture) {
 }
 
 
-pixel_transfer_state_t* submit_texture_upload_via_pbo(app_state_t *app_state, i32 width, i32 height,
-                                                      i32 bytes_per_pixel, u8 *pixels, bool finalize) {
+pixel_transfer_state_t* renderer_submit_texture_upload(app_state_t *app_state, i32 width, i32 height,
+                                                       i32 bytes_per_pixel, u8 *pixels, bool finalize) {
 	pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + app_state->next_pixel_transfer_to_submit;
 	app_state->next_pixel_transfer_to_submit = (app_state->next_pixel_transfer_to_submit + 1) % COUNT(app_state->pixel_transfer_states);
 	i64 buffer_size = width * height * bytes_per_pixel;
@@ -150,7 +152,7 @@ pixel_transfer_state_t* submit_texture_upload_via_pbo(app_state_t *app_state, i3
 
 }
 
-void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state) {
+void renderer_finalize_texture_upload(pixel_transfer_state_t* transfer_state) {
 	if (transfer_state->need_finalization) {
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, transfer_state->pbo);
 
@@ -186,7 +188,7 @@ static u32 renderer_pixel_format_to_opengl(renderer_pixel_format_t pixel_format)
 	return result;
 }
 
-u32 load_texture(void* pixels, i32 width, i32 height, renderer_pixel_format_t pixel_format) {
+renderer_texture_handle_t renderer_create_texture(void* pixels, i32 width, i32 height, renderer_pixel_format_t pixel_format) {
 	u32 opengl_pixel_format = renderer_pixel_format_to_opengl(pixel_format);
 	u32 texture = 0; //gl_gen_texture();
 	glGenTextures(1, &texture);
@@ -206,7 +208,7 @@ u32 load_texture(void* pixels, i32 width, i32 height, renderer_pixel_format_t pi
 	return texture;
 }
 
-void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
+void renderer_upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height) {
 
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
@@ -266,11 +268,11 @@ void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, 
 
 }
 
-void unload_texture(u32 texture) {
+void renderer_destroy_texture(renderer_texture_handle_t texture) {
 	glDeleteTextures(1, &texture);
 }
 
-void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height) {
+static void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height) {
 	if (framebuffer->width != width || framebuffer->height != height) {
 		framebuffer->width = width;
 		framebuffer->height = height;
@@ -284,7 +286,7 @@ void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height) {
 	}
 }
 
-void init_layer_framebuffers(app_state_t* app_state) {
+static void init_layer_framebuffers(app_state_t* app_state) {
 	ASSERT(!layer_framebuffers_initialized);
 	layer_framebuffers_initialized = true;
 
@@ -357,8 +359,8 @@ void renderer_set_image_model_matrix(mat4x4 model_matrix) {
 	glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 }
 
-void renderer_draw_textured_rect(u32 texture) {
-	draw_rect(texture);
+void renderer_draw_textured_rect(renderer_texture_handle_t texture) {
+	opengl_draw_rect(texture);
 }
 
 void renderer_disable_stencil_test() {
@@ -396,7 +398,7 @@ void renderer_finish_image_render() {
 	glDisable(GL_STENCIL_TEST);
 }
 
-void renderer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i32 client_height) {
+void renderer_clear_render_target(v4f clear_color, i32 client_width, i32 client_height) {
 //	glDrawBuffer(GL_BACK);
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
@@ -410,22 +412,22 @@ void renderer_clear_and_set_up_framebuffer(v4f clear_color, i32 client_width, i3
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
-void renderer_ensure_layer_framebuffers(app_state_t* app_state) {
+void renderer_ensure_layer_render_targets(app_state_t* app_state) {
 	if (!layer_framebuffers_initialized) {
 		init_layer_framebuffers(app_state);
 	}
 }
 
-void renderer_prepare_layer_framebuffer(i32 framebuffer_index, i32 width, i32 height, v4f clear_color) {
-	ASSERT(framebuffer_index >= 0 && framebuffer_index < COUNT(layer_framebuffers));
-	framebuffer_t* framebuffer = layer_framebuffers + framebuffer_index;
+void renderer_prepare_layer_render_target(i32 target_index, i32 width, i32 height, v4f clear_color) {
+	ASSERT(target_index >= 0 && target_index < COUNT(layer_framebuffers));
+	framebuffer_t* framebuffer = layer_framebuffers + target_index;
 	maybe_resize_overlay(framebuffer, width, height);
 
 	glBindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
-	renderer_clear_and_set_up_framebuffer(clear_color, width, height);
+	renderer_clear_render_target(clear_color, width, height);
 }
 
-void renderer_bind_screen_framebuffer() {
+void renderer_bind_screen_render_target() {
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -442,15 +444,19 @@ void renderer_final_blit_layers(float layer_time) {
 	glBindVertexArray(0);
 }
 
-u32 renderer_get_dummy_texture() {
+renderer_texture_handle_t renderer_get_dummy_texture() {
 	return dummy_texture;
+}
+
+void renderer_init(app_state_t* app_state) {
+	opengl_init_renderer(app_state);
 }
 
 void renderer_finish() {
 	glFinish();
 }
 
-void init_opengl_stuff(app_state_t* app_state) {
+static void opengl_init_renderer(app_state_t* app_state) {
 
 	if (use_fast_rendering) {
 		default_texture_mag_filter = GL_NEAREST;
@@ -500,7 +506,7 @@ void init_opengl_stuff(app_state_t* app_state) {
 	init_draw_rect();
 
 	u32 dummy_texture_color = MAKE_BGRA(255, 255, 0, 255);
-	dummy_texture = load_texture(&dummy_texture_color, 1, 1, RENDERER_PIXEL_FORMAT_BGRA);
+	dummy_texture = renderer_create_texture(&dummy_texture_color, 1, 1, RENDERER_PIXEL_FORMAT_BGRA);
 
 	// Make sure NVIDIA drivers don't complain about undefined base level for texture 0.
 	glBindTexture(GL_TEXTURE_2D, 0);

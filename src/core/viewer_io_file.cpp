@@ -347,9 +347,9 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 
 #if USE_MULTIPLE_OPENGL_CONTEXTS
 #if 1
-	upload_tile_on_worker_thread(image, temp_memory, level, tile_index, level_image->tile_width, level_image->tile_height);
+	renderer_upload_tile_on_worker_thread(image, temp_memory, level, tile_index, level_image->tile_width, level_image->tile_height);
 #else
-	u32 texture = load_texture(temp_memory, level_image->tile_width, level_image->tile_height, RENDERER_PIXEL_FORMAT_BGRA);
+	renderer_texture_handle_t texture = renderer_create_texture(temp_memory, level_image->tile_width, level_image->tile_height, RENDERER_PIXEL_FORMAT_BGRA);
 	renderer_finish(); // Block thread execution until all rendering operations have finished.
 	write_barrier;
 	task->tile->texture = texture;

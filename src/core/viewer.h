@@ -277,15 +277,13 @@ typedef struct scene_t {
 
 typedef struct pixel_transfer_state_t {
 	u32 pbo;
-	u32 texture;
+	renderer_texture_handle_t texture;
 	i32 texture_width;
 	i32 texture_height;
 	bool need_finalization;
 	void* userdata;
 	bool8 initialized;
 } pixel_transfer_state_t;
-
-typedef struct framebuffer_t framebuffer_t;
 
 typedef struct tile_streamer_t {
 	image_t* image;
@@ -399,20 +397,6 @@ void scene_update_camera_pos(scene_t* scene, v2f pos);
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_time);
 void do_after_scene_render(app_state_t* app_state, input_t* input);
-
-// viewer_opengl.cpp
-void init_draw_rect();
-void init_draw_normalized_quad();
-void draw_rect(u32 texture);
-pixel_transfer_state_t* submit_texture_upload_via_pbo(app_state_t *app_state, i32 width, i32 height,
-													  i32 bytes_per_pixel, u8 *pixels, bool finalize);
-void finalize_texture_upload_using_pbo(pixel_transfer_state_t* transfer_state);
-u32 load_texture(void* pixels, i32 width, i32 height, renderer_pixel_format_t pixel_format);
-void unload_texture(u32 texture);
-void maybe_resize_overlay(framebuffer_t* framebuffer, i32 width, i32 height);
-void init_layer_framebuffers(app_state_t* app_state);
-void init_opengl_stuff(app_state_t* app_state);
-void upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height);
 
 // viewer_io_file.cpp
 const char* get_active_directory(app_state_t* app_state);

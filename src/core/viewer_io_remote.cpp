@@ -131,7 +131,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_queue_post(&global_completion_queue, task->completion_event_kind, &completion_task,
 						                       sizeof(completion_task));
 
-						//new_textures[i] = load_texture(pixel_memory, TILE_DIM, TILE_DIM, RENDERER_PIXEL_FORMAT_BGRA);
+						//new_textures[i] = renderer_create_texture(pixel_memory, TILE_DIM, TILE_DIM, RENDERER_PIXEL_FORMAT_BGRA);
 					}
 
 				}

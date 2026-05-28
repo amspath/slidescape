@@ -25,7 +25,7 @@
 #define STBI_ASSERT(x) ASSERT(x)
 #include "stb_image.h" // for stbi_image_free()
 
-#include "viewer.h" // for unload_texture()
+#include "viewer.h" // for renderer texture handles
 
 // TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
 void tile_release_cache(tile_t* tile) {
@@ -1475,7 +1475,7 @@ void image_destroy(image_t* image) {
 					image->simple.pixels = NULL;
 				}
 				if (image->simple.texture != 0) {
-					unload_texture(image->simple.texture);
+					renderer_destroy_texture(image->simple.texture);
 					image->simple.texture = 0;
 				}
 				image->simple.is_valid = false;
@@ -1492,7 +1492,7 @@ void image_destroy(image_t* image) {
 				for (i32 j = 0; j < level_image->tile_count; ++j) {
 					tile_t* tile = level_image->tiles + j;
 					if (tile->texture != 0) {
-						unload_texture(tile->texture);
+						renderer_destroy_texture(tile->texture);
 					}
 				}
 			}
@@ -1502,12 +1502,12 @@ void image_destroy(image_t* image) {
 
 		if (image->macro_image.is_valid) {
 			if (image->macro_image.pixels) stbi_image_free(image->simple.pixels);
-			if (image->macro_image.texture) unload_texture(image->macro_image.texture);
+			if (image->macro_image.texture) renderer_destroy_texture(image->macro_image.texture);
 			memset(&image->macro_image, 0, sizeof(image->macro_image));
 		}
 		if (image->label_image.is_valid) {
 			if (image->label_image.pixels) stbi_image_free(image->simple.pixels);
-			if (image->label_image.texture) unload_texture(image->label_image.texture);
+			if (image->label_image.texture) renderer_destroy_texture(image->label_image.texture);
 			memset(&image->label_image, 0, sizeof(image->label_image));
 		}
 

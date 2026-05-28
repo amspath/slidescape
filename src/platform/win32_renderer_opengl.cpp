@@ -21,6 +21,7 @@
 #include "win32_renderer_backend.h"
 #include "win32_graphical_app.h"
 #include "viewer.h"
+#include "viewer_renderer.h"
 #include "stringutils.h"
 
 #include <glad/glad.h>
@@ -49,8 +50,6 @@ PFNWGLGETCURRENTDCPROC wglGetCurrentDC_alt = NULL;
 PFNSWAPBUFFERSPROC wglSwapBuffers = NULL;
 
 static HMODULE opengl32_dll_handle;
-
-extern "C" void init_opengl_stuff(app_state_t* app_state);
 
 // https://stackoverflow.com/questions/589064/how-to-enable-vertical-sync-in-opengl/589232#589232
 static bool win32_wgl_extension_supported(const char *extension_name) {
@@ -476,7 +475,7 @@ static bool win32_renderer_opengl_init_window(HWND window, HINSTANCE instance, c
 }
 
 static void win32_renderer_opengl_init_viewer(app_state_t* app_state) {
-	init_opengl_stuff(app_state);
+	renderer_init(app_state);
 }
 
 static void win32_renderer_opengl_init_imgui(app_state_t* app_state) {
