@@ -99,6 +99,14 @@ static char g_appdata_path[MAX_PATH];
 static bool win32_can_render_from_window_messages;
 static bool win32_is_rendering_frame;
 
+typedef struct win32_renderer_t {
+	win32_renderer_api_t api;
+	HDC glrc_hdc;
+	bool initialized;
+} win32_renderer_t;
+
+static win32_renderer_t win32_renderer;
+
 const char* wgl_extensions_string;
 
 PFNWGLSWAPINTERVALEXTPROC       wglSwapIntervalEXT = NULL;
@@ -116,7 +124,7 @@ PFNWGLDELETECONTEXTPROC wglDeleteContext_alt = NULL;
 PFNWGLGETCURRENTDCPROC wglGetCurrentDC_alt = NULL;
 PFNSWAPBUFFERSPROC wglSwapBuffers = NULL;
 
-static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t, HDC glrc_hdc);
+static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t);
 
 
 HKEY win32_registry_create_empty_key(const char* key) {
@@ -658,7 +666,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			win32_update_gui_dpi(&global_app_state, false);
 			if (win32_can_render_from_window_messages) {
 				static input_t render_only_input = {};
-				win32_render_frame(&global_app_state, &render_only_input, 0.0f, wglGetCurrentDC_alt());
+				win32_render_frame(&global_app_state, &render_only_input, 0.0f);
 			}
 			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
@@ -666,7 +674,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 		case WM_SIZE: {
 			if (win32_can_render_from_window_messages) {
 				static input_t render_only_input = {};
-				win32_render_frame(&global_app_state, &render_only_input, 0.0f, wglGetCurrentDC_alt());
+				win32_render_frame(&global_app_state, &render_only_input, 0.0f);
 			}
 			result = DefWindowProcA(window, message, wparam, lparam);
 		} break;
@@ -736,7 +744,7 @@ LRESULT CALLBACK main_window_callback(HWND window, UINT message, WPARAM wparam, 
 			BeginPaint(window, &paint);
 			if (win32_can_render_from_window_messages) {
 				static input_t render_only_input = {};
-				win32_render_frame(&global_app_state, &render_only_input, 0.0f, wglGetCurrentDC_alt());
+				win32_render_frame(&global_app_state, &render_only_input, 0.0f);
 			}
 			EndPaint(window, &paint);
 			result = 0;
@@ -1169,8 +1177,16 @@ void win32_process_xinput_controllers() {
 
 
 
-static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t, HDC glrc_hdc) {
-	if (!app_state || !input || !glrc_hdc || win32_is_rendering_frame) return;
+static void win32_renderer_render_imgui_draw_data(ImDrawData* draw_data) {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			ImGui_ImplOpenGL3_RenderDrawData(draw_data);
+		} break;
+	}
+}
+
+static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t) {
+	if (!app_state || !input || !win32_renderer_can_present() || win32_is_rendering_frame) return;
 	win32_is_rendering_frame = true;
 
 	app_state->last_frame_start = get_clock();
@@ -1187,7 +1203,7 @@ static void win32_render_frame(app_state_t* app_state, input_t* input, float del
 	}
 
 	ImGui::Render();
-	glViewport(0, 0, dimension.width, dimension.height);
+	win32_renderer_set_viewport(dimension.width, dimension.height);
 
 	// Render any ImGui content submitted to the extra draw lists on worker threads
 	if (global_active_extra_drawlists > 0) {
@@ -1216,14 +1232,14 @@ static void win32_render_frame(app_state_t* app_state, input_t* input, float del
 		draw_data.CmdLists = drawlists;
 		draw_data.Valid = true;
 		if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
-			ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+			win32_renderer_render_imgui_draw_data(&draw_data);
 		}
 	}
 
 	// Render the rest of the ImGui draw data (submitted on the main thread)
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	win32_renderer_render_imgui_draw_data(ImGui::GetDrawData());
 
-	wglSwapBuffers(glrc_hdc);
+	win32_renderer_present();
 
 	win32_is_rendering_frame = false;
 }
@@ -1237,9 +1253,51 @@ bool win32_wgl_extension_supported(const char *extension_name) {
 
 
 void set_swap_interval(int interval) {
-	if (wglSwapIntervalEXT) {
-		wglSwapIntervalEXT(interval);
+	win32_renderer_set_swap_interval(interval);
+}
+
+void win32_renderer_set_swap_interval(int interval) {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			if (wglSwapIntervalEXT) {
+				wglSwapIntervalEXT(interval);
+			}
+		} break;
 	}
+}
+
+int win32_renderer_get_refresh_rate() {
+	int refresh_rate = 0;
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			if (win32_renderer.glrc_hdc) {
+				refresh_rate = GetDeviceCaps(win32_renderer.glrc_hdc, VREFRESH);
+			}
+		} break;
+	}
+	return refresh_rate;
+}
+
+void win32_renderer_set_viewport(i32 width, i32 height) {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			glViewport(0, 0, width, height);
+		} break;
+	}
+}
+
+void win32_renderer_present() {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			if (win32_renderer.glrc_hdc) {
+				wglSwapBuffers(win32_renderer.glrc_hdc);
+			}
+		} break;
+	}
+}
+
+bool win32_renderer_can_present() {
+	return win32_renderer.initialized && win32_renderer.glrc_hdc;
 }
 
 
@@ -1651,6 +1709,49 @@ bool win32_init_opengl(HWND window, bool use_software_renderer) {
 	return true;
 }
 
+bool win32_renderer_init_window(HWND window, win32_renderer_api_t api) {
+	win32_renderer.api = api;
+	win32_renderer.glrc_hdc = NULL;
+	win32_renderer.initialized = false;
+
+	bool result = false;
+	switch (api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			result = win32_init_opengl(window, false);
+			if (result) {
+				win32_renderer.glrc_hdc = wglGetCurrentDC_alt();
+				win32_renderer.initialized = (win32_renderer.glrc_hdc != NULL);
+			}
+		} break;
+	}
+
+	return result && win32_renderer.initialized;
+}
+
+void win32_renderer_init_viewer(app_state_t* app_state) {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			init_opengl_stuff(app_state);
+		} break;
+	}
+}
+
+void win32_renderer_init_imgui(app_state_t* app_state) {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			ImGui_ImplOpenGL3_Init(NULL, global_is_using_software_renderer ? "opengl32software.dll" : "opengl32.dll");
+		} break;
+	}
+}
+
+void win32_renderer_imgui_new_frame() {
+	switch (win32_renderer.api) {
+		case WIN32_RENDERER_API_OPENGL: {
+			ImGui_ImplOpenGL3_NewFrame();
+		} break;
+	}
+}
+
 
 bool win32_process_input(app_state_t* app_state) {
 
@@ -1867,7 +1968,7 @@ void win32_init_main_window(app_state_t* app_state) {
 		fatal_error();
 	}
 
-	win32_init_opengl(app_state->main_window, false);
+	win32_renderer_init_window(app_state->main_window, WIN32_RENDERER_API_OPENGL);
 
 	ShowWindow(app_state->main_window, window_start_maximized ? SW_MAXIMIZE : SW_SHOW);
 
@@ -2141,12 +2242,11 @@ int main() {
 
 	win32_init_gui(app_state);
 
-	init_opengl_stuff(app_state);
+	win32_renderer_init_viewer(app_state);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	app_load_commandline_inputs(app_state);
 
-	HDC glrc_hdc = wglGetCurrentDC_alt();
 	win32_can_render_from_window_messages = true;
 
 	set_swap_interval(is_vsync_enabled ? 1 : 0);
@@ -2155,7 +2255,7 @@ int main() {
 	while (is_program_running) {
 		i64 current_clock = get_clock();
 
-		int refresh_rate = GetDeviceCaps(glrc_hdc, VREFRESH);
+		int refresh_rate = win32_renderer_get_refresh_rate();
 		if (refresh_rate <= 1) {
 			refresh_rate = 60; // guess
 		}
@@ -2171,7 +2271,7 @@ int main() {
 			last_clock = get_clock();
 		}
 
-		win32_render_frame(app_state, curr_input, delta_t, glrc_hdc);
+		win32_render_frame(app_state, curr_input, delta_t);
 		if (!is_program_running) break;
 
 		float frame_ms = get_seconds_elapsed(app_state->last_frame_start, get_clock()) * 1000.0f;

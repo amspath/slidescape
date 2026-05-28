@@ -22,12 +22,9 @@
 #include "platform.h"
 #include "win32_graphical_app.h"
 
-#include <glad/glad.h>
-
 #include "imgui.h"
 #include "misc/freetype/imgui_freetype.h"
 #include "imgui_internal.h"
-#include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_win32.h"
 
 #include "win32_gui.h"
@@ -39,7 +36,7 @@ static float win32_current_gui_dpi_scale;
 void win32_gui_new_frame(app_state_t* app_state) {
 	// Init for the frame
 	gui_reset_all_extra_drawlists();
-	ImGui_ImplOpenGL3_NewFrame();
+	win32_renderer_imgui_new_frame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
 }
@@ -129,7 +126,7 @@ void win32_init_gui(app_state_t* app_state) {
 
 	// Setup Platform/Renderer bindings
 	ImGui_ImplWin32_Init(app_state->main_window);
-	ImGui_ImplOpenGL3_Init(NULL, global_is_using_software_renderer ? "opengl32software.dll" : "opengl32.dll");
+	win32_renderer_init_imgui(app_state);
 
 	win32_load_imgui_fonts();
 	win32_update_gui_dpi(app_state, true);

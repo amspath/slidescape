@@ -34,7 +34,22 @@ typedef struct {
 	int height;
 } win32_window_dimension_t;
 
+typedef enum win32_renderer_api_t {
+	WIN32_RENDERER_API_OPENGL = 0,
+} win32_renderer_api_t;
+
+typedef struct app_state_t app_state_t;
+
 LPSTR* WINAPI CommandLineToArgvA(LPSTR lpCmdline, int* numargs);
+bool win32_renderer_init_window(HWND window, win32_renderer_api_t api);
+void win32_renderer_init_viewer(app_state_t* app_state);
+void win32_renderer_init_imgui(app_state_t* app_state);
+void win32_renderer_imgui_new_frame();
+void win32_renderer_set_swap_interval(int interval);
+int win32_renderer_get_refresh_rate();
+void win32_renderer_set_viewport(i32 width, i32 height);
+void win32_renderer_present();
+bool win32_renderer_can_present();
 
 // globals
 #if defined(WIN32_GRAPHICAL_APP_IMPL)
