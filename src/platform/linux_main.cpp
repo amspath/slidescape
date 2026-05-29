@@ -27,7 +27,7 @@
 #include "viewer.h"
 #include "gui.h" // TODO: move
 #include "dicom.h"
-#include "platform_renderer.h"
+#include "presenter.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
@@ -376,21 +376,21 @@ int main(int argc, const char** argv)
 	console_print_verbose("Initialized SDL in %g seconds\n", seconds_elapsed_sdl_init);
 
 	// Create window with graphics context
-	platform_renderer_window_desc_t renderer_window_desc = {};
+	presenter_window_desc_t renderer_window_desc = {};
 	renderer_window_desc.title = APP_TITLE;
 	renderer_window_desc.width = desired_window_width;
 	renderer_window_desc.height = desired_window_height;
 	renderer_window_desc.start_maximized = window_start_maximized;
-    if (!platform_renderer_init_window(&renderer_window_desc, PLATFORM_RENDERER_API_OPENGL)) {
+    if (!presenter_init_window(&renderer_window_desc, PRESENTER_API_OPENGL)) {
 	    return 1;
     }
-    SDL_Window* window = platform_renderer_get_window();
+    SDL_Window* window = presenter_get_window();
     g_window = window;
 	app_state->main_window = window;
 
 	{
 		i32 gl_w, gl_h;
-		platform_renderer_get_drawable_size(&gl_w, &gl_h);
+		presenter_get_drawable_size(&gl_w, &gl_h);
 		i32 window_w, window_h;
 		SDL_GetWindowSize(window, &window_w, &window_h);
 		app_state->display_scale_factor = (float) gl_w / (float) window_w;
@@ -420,7 +420,7 @@ int main(int argc, const char** argv)
     } else {
     	is_vsync_enabled = 0;
     }
-    platform_renderer_set_swap_interval(is_vsync_enabled); // Enable vsync
+	presenter_set_swap_interval(is_vsync_enabled); // Enable vsync
 
     // Setup Dear ImGui context
     imgui_create_context();
@@ -433,7 +433,7 @@ int main(int argc, const char** argv)
     //ImGui::StyleColorsClassic();
 
     // Setup Platform/Renderer backends
-    platform_renderer_init_imgui(app_state);
+	presenter_init_imgui(app_state);
 
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
@@ -551,7 +551,7 @@ int main(int argc, const char** argv)
 
 	io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
 
-    platform_renderer_init_viewer(app_state);
+	presenter_init_viewer(app_state);
 
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	app_load_commandline_inputs(app_state);
@@ -627,7 +627,7 @@ int main(int argc, const char** argv)
 	        w = h = 0;
 	        display_w = display_h = 0;
         }
-        platform_renderer_get_drawable_size(&display_w, &display_h);
+		presenter_get_drawable_size(&display_w, &display_h);
 
         // After dragging a file onto the window to load it, we want to gain the window focus.
         // Detect if this was successfully done (see event handling code above) and warn the user if it failed.
@@ -642,7 +642,7 @@ int main(int argc, const char** argv)
 
         // Start the Dear ImGui frame
 	    gui_reset_all_extra_drawlists();
-        platform_renderer_imgui_new_frame();
+		presenter_imgui_new_frame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
@@ -651,7 +651,7 @@ int main(int argc, const char** argv)
 
         // Finish up by rendering the UI
         ImGui::Render();
-        platform_renderer_set_viewport((int)io.DisplaySize.x, (int)io.DisplaySize.y);
+		presenter_set_viewport((int) io.DisplaySize.x, (int) io.DisplaySize.y);
 
 	    // Render any ImGui content submitted to the extra draw lists on worker threads
 	    if (global_active_extra_drawlists > 0) {
@@ -680,14 +680,14 @@ int main(int argc, const char** argv)
 		    draw_data.CmdLists = drawlists;
 		    draw_data.Valid = true;
 		    if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
-			    platform_renderer_render_imgui_draw_data(&draw_data);
+				presenter_render_imgui_draw_data(&draw_data);
 		    }
 	    }
 
 		// Render the rest of the ImGui draw data (submitted on the main thread)
-        platform_renderer_render_imgui_draw_data(ImGui::GetDrawData());
+		presenter_render_imgui_draw_data(ImGui::GetDrawData());
 
-        platform_renderer_present();
+		presenter_present();
 
         float frame_time = get_seconds_elapsed(last_clock, get_clock());
 
@@ -706,7 +706,7 @@ int main(int argc, const char** argv)
 	// Cleanup
 	gui_destroy_all_extra_drawlists();
     ImGui_ImplSDL2_Shutdown();
-    platform_renderer_shutdown();
+	presenter_shutdown();
     ImGui::DestroyContext();
     SDL_Quit();
 

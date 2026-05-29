@@ -25,11 +25,11 @@
 extern "C" {
 #endif
 
-typedef enum platform_renderer_api_t {
-	PLATFORM_RENDERER_API_OPENGL = 0,
-} platform_renderer_api_t;
+typedef enum presenter_api_t {
+	PRESENTER_API_OPENGL = 0,
+} presenter_api_t;
 
-typedef struct platform_renderer_window_desc_t {
+typedef struct presenter_window_desc_t {
 	window_handle_t existing_window;
 	const char* title;
 	i32 width;
@@ -37,24 +37,24 @@ typedef struct platform_renderer_window_desc_t {
 	bool start_maximized;
 	void* native_instance;
 	const char* native_window_class_name;
-} platform_renderer_window_desc_t;
+} presenter_window_desc_t;
 
 typedef struct app_state_t app_state_t;
 struct ImDrawData;
 
-bool platform_renderer_init_window(const platform_renderer_window_desc_t* desc, platform_renderer_api_t api);
-window_handle_t platform_renderer_get_window();
-void platform_renderer_init_viewer(app_state_t* app_state);
-void platform_renderer_init_imgui(app_state_t* app_state);
-void platform_renderer_imgui_new_frame();
-void platform_renderer_render_imgui_draw_data(struct ImDrawData* draw_data);
-void platform_renderer_set_swap_interval(int interval);
-int platform_renderer_get_refresh_rate();
-void platform_renderer_set_viewport(i32 width, i32 height);
-void platform_renderer_get_drawable_size(i32* out_width, i32* out_height);
-void platform_renderer_present();
-void platform_renderer_shutdown();
-bool platform_renderer_can_present();
+bool presenter_init_window(const presenter_window_desc_t* desc, presenter_api_t api);
+window_handle_t presenter_get_window();
+void presenter_init_viewer(app_state_t* app_state);
+void presenter_init_imgui(app_state_t* app_state);
+void presenter_imgui_new_frame();
+void presenter_render_imgui_draw_data(struct ImDrawData *draw_data);
+void presenter_set_swap_interval(int interval);
+int presenter_get_refresh_rate();
+void presenter_set_viewport(i32 width, i32 height);
+void presenter_get_drawable_size(i32* out_width, i32* out_height);
+void presenter_present();
+void presenter_shutdown();
+bool presenter_can_present();
 
 #ifdef __cplusplus
 }

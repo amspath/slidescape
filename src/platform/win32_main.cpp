@@ -23,7 +23,7 @@
 
 #include "win32_graphical_app.h"
 #include "win32_gui.h"
-#include "platform_renderer.h"
+#include "presenter.h"
 
 //#define OPENSLIDE_API_IMPL
 #include "openslide_api.h"
@@ -1148,7 +1148,7 @@ void win32_process_xinput_controllers() {
 
 
 static void win32_render_frame(app_state_t* app_state, input_t* input, float delta_t) {
-	if (!app_state || !input || !platform_renderer_can_present() || win32_is_rendering_frame) return;
+	if (!app_state || !input || !presenter_can_present() || win32_is_rendering_frame) return;
 	win32_is_rendering_frame = true;
 
 	app_state->last_frame_start = get_clock();
@@ -1165,7 +1165,7 @@ static void win32_render_frame(app_state_t* app_state, input_t* input, float del
 	}
 
 	ImGui::Render();
-	platform_renderer_set_viewport(dimension.width, dimension.height);
+	presenter_set_viewport(dimension.width, dimension.height);
 
 	// Render any ImGui content submitted to the extra draw lists on worker threads
 	if (global_active_extra_drawlists > 0) {
@@ -1194,20 +1194,20 @@ static void win32_render_frame(app_state_t* app_state, input_t* input, float del
 		draw_data.CmdLists = drawlists;
 		draw_data.Valid = true;
 		if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
-			platform_renderer_render_imgui_draw_data(&draw_data);
+			presenter_render_imgui_draw_data(&draw_data);
 		}
 	}
 
 	// Render the rest of the ImGui draw data (submitted on the main thread)
-	platform_renderer_render_imgui_draw_data(ImGui::GetDrawData());
+	presenter_render_imgui_draw_data(ImGui::GetDrawData());
 
-	platform_renderer_present();
+	presenter_present();
 
 	win32_is_rendering_frame = false;
 }
 
 void set_swap_interval(int interval) {
-	platform_renderer_set_swap_interval(interval);
+	presenter_set_swap_interval(interval);
 }
 
 bool win32_process_input(app_state_t* app_state) {
@@ -1425,11 +1425,11 @@ void win32_init_main_window(app_state_t* app_state) {
 		fatal_error();
 	}
 
-	platform_renderer_window_desc_t renderer_window_desc = {};
+	presenter_window_desc_t renderer_window_desc = {};
 	renderer_window_desc.existing_window = app_state->main_window;
 	renderer_window_desc.native_instance = g_instance;
 	renderer_window_desc.native_window_class_name = main_window_class.lpszClassName;
-	platform_renderer_init_window(&renderer_window_desc, PLATFORM_RENDERER_API_OPENGL);
+	presenter_init_window(&renderer_window_desc, PRESENTER_API_OPENGL);
 
 	ShowWindow(app_state->main_window, window_start_maximized ? SW_MAXIMIZE : SW_SHOW);
 
@@ -1703,7 +1703,7 @@ int main() {
 
 	win32_init_gui(app_state);
 
-	platform_renderer_init_viewer(app_state);
+	presenter_init_viewer(app_state);
 
 	// Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	app_load_commandline_inputs(app_state);
@@ -1716,7 +1716,7 @@ int main() {
 	while (is_program_running) {
 		i64 current_clock = get_clock();
 
-		int refresh_rate = platform_renderer_get_refresh_rate();
+		int refresh_rate = presenter_get_refresh_rate();
 		if (refresh_rate <= 1) {
 			refresh_rate = 60; // guess
 		}

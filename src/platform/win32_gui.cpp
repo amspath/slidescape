@@ -20,7 +20,7 @@
 
 #include <windows.h>
 #include "platform.h"
-#include "platform_renderer.h"
+#include "presenter.h"
 
 #include "imgui.h"
 #include "misc/freetype/imgui_freetype.h"
@@ -36,7 +36,7 @@ static float win32_current_gui_dpi_scale;
 void win32_gui_new_frame(app_state_t* app_state) {
 	// Init for the frame
 	gui_reset_all_extra_drawlists();
-	platform_renderer_imgui_new_frame();
+	presenter_imgui_new_frame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
 }
@@ -126,7 +126,7 @@ void win32_init_gui(app_state_t* app_state) {
 
 	// Setup Platform/Renderer bindings
 	ImGui_ImplWin32_Init(app_state->main_window);
-	platform_renderer_init_imgui(app_state);
+	presenter_init_imgui(app_state);
 
 	win32_load_imgui_fonts();
 	win32_update_gui_dpi(app_state, true);

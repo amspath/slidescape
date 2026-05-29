@@ -17,9 +17,8 @@
 */
 
 #include "common.h"
-#include "platform_renderer_backend.h"
+#include "presenter_backend.h"
 #include "viewer.h"
-#include "renderer.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -53,7 +52,7 @@ using namespace gl;
 static SDL_GLContext sdl_opengl_context;
 static const char* sdl_opengl_glsl_version;
 
-static bool platform_renderer_opengl_init_window(const platform_renderer_window_desc_t* desc, window_handle_t* out_window, void** out_present_handle) {
+static bool presenter_sdl_opengl_init_window(const presenter_window_desc_t* desc, window_handle_t* out_window, void** out_present_handle) {
 #ifdef __APPLE__
 	// GL 3.2 Core + GLSL 150
 	sdl_opengl_glsl_version = "#version 150";
@@ -128,25 +127,25 @@ static bool platform_renderer_opengl_init_window(const platform_renderer_window_
 	return true;
 }
 
-static void platform_renderer_opengl_init_imgui(app_state_t* app_state, window_handle_t window) {
+static void presenter_sdl_opengl_init_imgui(app_state_t* app_state, window_handle_t window) {
 	(void)app_state;
 	ImGui_ImplSDL2_InitForOpenGL(window, sdl_opengl_context);
 	ImGui_ImplOpenGL3_Init(sdl_opengl_glsl_version);
 }
 
-static void platform_renderer_opengl_imgui_new_frame() {
+static void presenter_sdl_opengl_imgui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();
 }
 
-static void platform_renderer_opengl_render_imgui_draw_data(ImDrawData* draw_data) {
+static void presenter_sdl_opengl_render_imgui_draw_data(ImDrawData* draw_data) {
 	ImGui_ImplOpenGL3_RenderDrawData(draw_data);
 }
 
-static void platform_renderer_opengl_set_swap_interval(int interval) {
+static void presenter_sdl_opengl_set_swap_interval(int interval) {
 	SDL_GL_SetSwapInterval(interval);
 }
 
-static int platform_renderer_opengl_get_refresh_rate(window_handle_t window, void* present_handle) {
+static int presenter_sdl_opengl_get_refresh_rate(window_handle_t window, void* present_handle) {
 	(void)present_handle;
 	int refresh_rate = 0;
 	int display_index = SDL_GetWindowDisplayIndex(window);
@@ -159,16 +158,16 @@ static int platform_renderer_opengl_get_refresh_rate(window_handle_t window, voi
 	return refresh_rate;
 }
 
-static void platform_renderer_opengl_get_drawable_size(window_handle_t window, i32* out_width, i32* out_height) {
+static void presenter_sdl_opengl_get_drawable_size(window_handle_t window, i32* out_width, i32* out_height) {
 	SDL_GL_GetDrawableSize(window, out_width, out_height);
 }
 
-static void platform_renderer_opengl_present(window_handle_t window, void* present_handle) {
+static void presenter_sdl_opengl_present(window_handle_t window, void* present_handle) {
 	(void)present_handle;
 	SDL_GL_SwapWindow(window);
 }
 
-static void platform_renderer_opengl_shutdown(window_handle_t window, void* present_handle) {
+static void presenter_sdl_opengl_shutdown(window_handle_t window, void* present_handle) {
 	(void)present_handle;
 	ImGui_ImplOpenGL3_Shutdown();
 	SDL_GL_DeleteContext(sdl_opengl_context);
@@ -178,17 +177,17 @@ static void platform_renderer_opengl_shutdown(window_handle_t window, void* pres
 	}
 }
 
-const platform_renderer_backend_t* platform_renderer_opengl_get_backend() {
-	static const platform_renderer_backend_t backend = {
-		platform_renderer_opengl_init_window,
-		platform_renderer_opengl_init_imgui,
-		platform_renderer_opengl_imgui_new_frame,
-		platform_renderer_opengl_render_imgui_draw_data,
-		platform_renderer_opengl_set_swap_interval,
-		platform_renderer_opengl_get_refresh_rate,
-		platform_renderer_opengl_get_drawable_size,
-		platform_renderer_opengl_present,
-		platform_renderer_opengl_shutdown,
+const presenter_backend_t presenter_opengl_get_backend() {
+	static const presenter_backend_t backend = {
+			presenter_sdl_opengl_init_window,
+			presenter_sdl_opengl_init_imgui,
+			presenter_sdl_opengl_imgui_new_frame,
+			presenter_sdl_opengl_render_imgui_draw_data,
+			presenter_sdl_opengl_set_swap_interval,
+			presenter_sdl_opengl_get_refresh_rate,
+			presenter_sdl_opengl_get_drawable_size,
+			presenter_sdl_opengl_present,
+			presenter_sdl_opengl_shutdown,
 	};
-	return &backend;
+	return backend;
 }

@@ -19,7 +19,7 @@
 
 #include "common.h"
 #include "platform.h"
-#include "platform_renderer.h"
+#include "presenter.h"
 #include "stringutils.h"
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
@@ -50,7 +50,7 @@ void reset_window_title(window_handle_t window) {
 }
 
 void set_swap_interval(int interval) {
-    platform_renderer_set_swap_interval(interval);
+    presenter_set_swap_interval(interval);
 }
 
 

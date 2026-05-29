@@ -17,7 +17,7 @@
 */
 
 #include "common.h"
-#include "platform_renderer_backend.h"
+#include "presenter_backend.h"
 #include "win32_graphical_app.h"
 #include "viewer.h"
 #include "renderer.h"
@@ -465,7 +465,7 @@ static bool win32_init_opengl(HWND window, HINSTANCE instance, const char* windo
 	return true;
 }
 
-static bool platform_renderer_opengl_init_window(const platform_renderer_window_desc_t* desc, window_handle_t* out_window, void** out_present_handle) {
+static bool presenter_win32_opengl_init_window(const presenter_window_desc_t* desc, window_handle_t* out_window, void** out_present_handle) {
 	HWND window = desc->existing_window;
 	HINSTANCE instance = (HINSTANCE)desc->native_instance;
 	const char* window_class_name = desc->native_window_class_name;
@@ -479,27 +479,27 @@ static bool platform_renderer_opengl_init_window(const platform_renderer_window_
 	return result && out_window && *out_window && out_present_handle && *out_present_handle;
 }
 
-static void platform_renderer_opengl_init_imgui(app_state_t* app_state, window_handle_t window) {
+static void presenter_win32_opengl_init_imgui(app_state_t* app_state, window_handle_t window) {
 	(void)app_state;
 	(void)window;
 	ImGui_ImplOpenGL3_Init(NULL, global_is_using_software_renderer ? "opengl32software.dll" : "opengl32.dll");
 }
 
-static void platform_renderer_opengl_imgui_new_frame() {
+static void presenter_win32_opengl_imgui_new_frame() {
 	ImGui_ImplOpenGL3_NewFrame();
 }
 
-static void platform_renderer_opengl_render_imgui_draw_data(ImDrawData* draw_data) {
+static void presenter_win32_opengl_render_imgui_draw_data(ImDrawData* draw_data) {
 	ImGui_ImplOpenGL3_RenderDrawData(draw_data);
 }
 
-static void platform_renderer_opengl_set_swap_interval(int interval) {
+static void presenter_win32_opengl_set_swap_interval(int interval) {
 	if (wglSwapIntervalEXT) {
 		wglSwapIntervalEXT(interval);
 	}
 }
 
-static int platform_renderer_opengl_get_refresh_rate(window_handle_t window, void* present_handle) {
+static int presenter_win32_opengl_get_refresh_rate(window_handle_t window, void* present_handle) {
 	(void)window;
 	int refresh_rate = 0;
 	HDC glrc_hdc = (HDC)present_handle;
@@ -509,13 +509,13 @@ static int platform_renderer_opengl_get_refresh_rate(window_handle_t window, voi
 	return refresh_rate;
 }
 
-static void platform_renderer_opengl_get_drawable_size(window_handle_t window, i32* out_width, i32* out_height) {
+static void presenter_win32_opengl_get_drawable_size(window_handle_t window, i32* out_width, i32* out_height) {
 	win32_window_dimension_t dimension = win32_get_window_dimension(window);
 	if (out_width) *out_width = dimension.width;
 	if (out_height) *out_height = dimension.height;
 }
 
-static void platform_renderer_opengl_present(window_handle_t window, void* present_handle) {
+static void presenter_win32_opengl_present(window_handle_t window, void* present_handle) {
 	(void)window;
 	HDC glrc_hdc = (HDC)present_handle;
 	if (glrc_hdc) {
@@ -523,22 +523,22 @@ static void platform_renderer_opengl_present(window_handle_t window, void* prese
 	}
 }
 
-static void platform_renderer_opengl_shutdown(window_handle_t window, void* present_handle) {
+static void presenter_win32_opengl_shutdown(window_handle_t window, void* present_handle) {
 	(void)window;
 	(void)present_handle;
 }
 
-const platform_renderer_backend_t* platform_renderer_opengl_get_backend() {
-	static const platform_renderer_backend_t backend = {
-		platform_renderer_opengl_init_window,
-		platform_renderer_opengl_init_imgui,
-		platform_renderer_opengl_imgui_new_frame,
-		platform_renderer_opengl_render_imgui_draw_data,
-		platform_renderer_opengl_set_swap_interval,
-		platform_renderer_opengl_get_refresh_rate,
-		platform_renderer_opengl_get_drawable_size,
-		platform_renderer_opengl_present,
-		platform_renderer_opengl_shutdown,
+const presenter_backend_t presenter_opengl_get_backend() {
+	static const presenter_backend_t backend = {
+		presenter_win32_opengl_init_window,
+		presenter_win32_opengl_init_imgui,
+		presenter_win32_opengl_imgui_new_frame,
+		presenter_win32_opengl_render_imgui_draw_data,
+		presenter_win32_opengl_set_swap_interval,
+		presenter_win32_opengl_get_refresh_rate,
+		presenter_win32_opengl_get_drawable_size,
+		presenter_win32_opengl_present,
+		presenter_win32_opengl_shutdown,
 	};
-	return &backend;
+	return backend;
 }
