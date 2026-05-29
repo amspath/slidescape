@@ -58,6 +58,7 @@ pixel_transfer_state_t* renderer_submit_texture_upload(app_state_t *app_state, i
 void renderer_finalize_texture_upload(pixel_transfer_state_t* transfer_state);
 void renderer_upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i32 scale, i32 tile_index, i32 tile_width, i32 tile_height);
 void renderer_init(app_state_t* app_state);
+void renderer_set_viewport(i32 width, i32 height);
 void renderer_finish();
 
 extern bool finalize_textures_immediately;

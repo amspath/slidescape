@@ -327,6 +327,7 @@ target_compile_definitions(slidescape_nongui PRIVATE
 
 set(VIEWER_SOURCE_FILES
         platform/graphical_app.c
+        platform/platform_renderer.cpp
         core/viewer.cpp
         core/viewer_io_file.cpp
         core/viewer_io_remote.c
@@ -360,7 +361,6 @@ set(VIEWER_SOURCE_FILES
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/win32_main.cpp
-            platform/win32_renderer.cpp
             platform/win32_renderer_opengl.cpp
             platform/win32_utils.c
             platform/win32_gui.cpp
@@ -371,6 +371,7 @@ else()
     # Note: SDL2 is used for both Linux and macOS
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
             platform/linux_main.cpp
+            platform/sdl_renderer_opengl.cpp
             platform/linux_utils.c
             platform/linux_gui.cpp
             imgui/backends/imgui_impl_sdl2.cpp

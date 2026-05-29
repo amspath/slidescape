@@ -27,42 +27,16 @@
 #include "viewer.h"
 #include "gui.h" // TODO: move
 #include "dicom.h"
+#include "platform_renderer.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
-#include "backends/imgui_impl_opengl3.h"
 #include <stdio.h>
 
 #include "stb_image.h"
 #include "stringified_icon.h"
 
 #include "misc/freetype/imgui_freetype.h"
-
-// About Desktop OpenGL function loaders:
-//  Modern desktop OpenGL doesn't have a standard portable header file to load OpenGL function pointers.
-//  Helper libraries are often used for this purpose! Here we are supporting a few common ones (gl3w, glew, glad).
-//  You may use another loader/header of your choice (glext, glLoadGen, etc.), or chose to manually implement your own.
-#if defined(IMGUI_IMPL_OPENGL_LOADER_GL3W)
-#include <GL/gl3w.h>            // Initialize with gl3wInit()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
-#include <GL/glew.h>            // Initialize with glewInit()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD)
-#include <glad/glad.h>          // Initialize with gladLoadGL()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD2)
-#include <glad/gl.h>            // Initialize with gladLoadGL(...) or gladLoaderLoadGL()
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING2)
-#define GLFW_INCLUDE_NONE       // GLFW including OpenGL headers causes ambiguity or multiple definition errors.
-#include <glbinding/Binding.h>  // Initialize with glbinding::Binding::initialize()
-#include <glbinding/gl/gl.h>
-using namespace gl;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING3)
-#define GLFW_INCLUDE_NONE       // GLFW including OpenGL headers causes ambiguity or multiple definition errors.
-#include <glbinding/glbinding.h>// Initialize with glbinding::initialize()
-#include <glbinding/gl/gl.h>
-using namespace gl;
-#else
-#include IMGUI_IMPL_OPENGL_LOADER_CUSTOM
-#endif
 
 #include <pthread.h>
 
@@ -401,39 +375,22 @@ int main(int argc, const char** argv)
 	float seconds_elapsed_sdl_init = get_seconds_elapsed(clock_sdl_begin, get_clock());
 	console_print_verbose("Initialized SDL in %g seconds\n", seconds_elapsed_sdl_init);
 
-    // Decide GL+GLSL versions
-#ifdef __APPLE__
-    // GL 3.2 Core + GLSL 150
-    const char* glsl_version = "#version 150";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-#else
-    // GL 3.0 + GLSL 130
-    const char* glsl_version = "#version 130";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-#endif
-
-    // Create window with graphics context
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-    u32 window_flags = (SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    if (window_start_maximized) {
-    	window_flags |= SDL_WINDOW_MAXIMIZED;
+	// Create window with graphics context
+	platform_renderer_window_desc_t renderer_window_desc = {};
+	renderer_window_desc.title = APP_TITLE;
+	renderer_window_desc.width = desired_window_width;
+	renderer_window_desc.height = desired_window_height;
+	renderer_window_desc.start_maximized = window_start_maximized;
+    if (!platform_renderer_init_window(&renderer_window_desc, PLATFORM_RENDERER_API_OPENGL)) {
+	    return 1;
     }
-	window_flags |= SDL_WINDOW_ALLOW_HIGHDPI;
-    SDL_Window* window = SDL_CreateWindow(APP_TITLE, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, desired_window_width, desired_window_height, window_flags);
+    SDL_Window* window = platform_renderer_get_window();
     g_window = window;
 	app_state->main_window = window;
 
 	{
 		i32 gl_w, gl_h;
-		SDL_GL_GetDrawableSize(window, &gl_w, &gl_h);
+		platform_renderer_get_drawable_size(&gl_w, &gl_h);
 		i32 window_w, window_h;
 		SDL_GetWindowSize(window, &window_w, &window_h);
 		app_state->display_scale_factor = (float) gl_w / (float) window_w;
@@ -458,42 +415,12 @@ int main(int argc, const char** argv)
 		}
 	}
 
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    SDL_GL_MakeCurrent(window, gl_context);
-
-    char* version_string = (char*)glGetString(GL_VERSION);
-    console_print("OpenGL supported version: %s\n", version_string);
-
     if (global_system_info.is_macos) {
 	    is_vsync_enabled = 1; // prevent stutter (?)
     } else {
     	is_vsync_enabled = 0;
     }
-    SDL_GL_SetSwapInterval(is_vsync_enabled); // Enable vsync
-
-    // Initialize OpenGL loader
-#if defined(IMGUI_IMPL_OPENGL_LOADER_GL3W)
-    bool err = gl3wInit() != 0;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLEW)
-    bool err = glewInit() != GLEW_OK;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD)
-    bool err = gladLoadGL() == 0;
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLAD2)
-    bool err = gladLoadGL((GLADloadfunc)SDL_GL_GetProcAddress) == 0; // glad2 recommend using the windowing library loader instead of the (optionally) bundled one.
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING2)
-    bool err = false;
-    glbinding::Binding::initialize();
-#elif defined(IMGUI_IMPL_OPENGL_LOADER_GLBINDING3)
-    bool err = false;
-    glbinding::initialize([](const char* name) { return (glbinding::ProcAddress)SDL_GL_GetProcAddress(name); });
-#else
-    bool err = false; // If you use IMGUI_IMPL_OPENGL_LOADER_CUSTOM, your loader is likely to requires some form of initialization.
-#endif
-    if (err)
-    {
-        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
-        return 1;
-    }
+    platform_renderer_set_swap_interval(is_vsync_enabled); // Enable vsync
 
     // Setup Dear ImGui context
     imgui_create_context();
@@ -506,8 +433,7 @@ int main(int argc, const char** argv)
     //ImGui::StyleColorsClassic();
 
     // Setup Platform/Renderer backends
-    ImGui_ImplSDL2_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init(glsl_version);
+    platform_renderer_init_imgui(app_state);
 
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
@@ -625,7 +551,7 @@ int main(int argc, const char** argv)
 
 	io.Fonts->FontLoaderFlags = ImGuiFreeTypeLoaderFlags_MonoHinting;
 
-    renderer_init(app_state);
+    platform_renderer_init_viewer(app_state);
 
     // Load a slide from the command line or through the OS (double-click / drag on executable, etc.)
 	app_load_commandline_inputs(app_state);
@@ -701,7 +627,7 @@ int main(int argc, const char** argv)
 	        w = h = 0;
 	        display_w = display_h = 0;
         }
-        SDL_GL_GetDrawableSize(window, &display_w, &display_h);
+        platform_renderer_get_drawable_size(&display_w, &display_h);
 
         // After dragging a file onto the window to load it, we want to gain the window focus.
         // Detect if this was successfully done (see event handling code above) and warn the user if it failed.
@@ -716,7 +642,7 @@ int main(int argc, const char** argv)
 
         // Start the Dear ImGui frame
 	    gui_reset_all_extra_drawlists();
-        ImGui_ImplOpenGL3_NewFrame();
+        platform_renderer_imgui_new_frame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
@@ -725,7 +651,7 @@ int main(int argc, const char** argv)
 
         // Finish up by rendering the UI
         ImGui::Render();
-        glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+        platform_renderer_set_viewport((int)io.DisplaySize.x, (int)io.DisplaySize.y);
 
 	    // Render any ImGui content submitted to the extra draw lists on worker threads
 	    if (global_active_extra_drawlists > 0) {
@@ -754,14 +680,14 @@ int main(int argc, const char** argv)
 		    draw_data.CmdLists = drawlists;
 		    draw_data.Valid = true;
 		    if (draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0) {
-			    ImGui_ImplOpenGL3_RenderDrawData(&draw_data);
+			    platform_renderer_render_imgui_draw_data(&draw_data);
 		    }
 	    }
 
 		// Render the rest of the ImGui draw data (submitted on the main thread)
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        platform_renderer_render_imgui_draw_data(ImGui::GetDrawData());
 
-        SDL_GL_SwapWindow(window);
+        platform_renderer_present();
 
         float frame_time = get_seconds_elapsed(last_clock, get_clock());
 
@@ -777,14 +703,11 @@ int main(int argc, const char** argv)
 
     autosave(app_state, true, false); // save any unsaved changes
 
-    // Cleanup
+	// Cleanup
 	gui_destroy_all_extra_drawlists();
-    ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL2_Shutdown();
+    platform_renderer_shutdown();
     ImGui::DestroyContext();
-
-    SDL_GL_DeleteContext(gl_context);
-    SDL_DestroyWindow(window);
     SDL_Quit();
 
     return 0;

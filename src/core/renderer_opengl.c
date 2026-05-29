@@ -452,6 +452,10 @@ void renderer_init(app_state_t* app_state) {
 	opengl_init_renderer(app_state);
 }
 
+void renderer_set_viewport(i32 width, i32 height) {
+	glViewport(0, 0, width, height);
+}
+
 void renderer_finish() {
 	glFinish();
 }

@@ -19,22 +19,21 @@
 #pragma once
 
 #include "common.h"
-
-#include <windows.h>
+#include "platform_renderer.h"
 
 typedef struct app_state_t app_state_t;
 struct ImDrawData;
 
-typedef struct win32_renderer_backend_t {
-	bool (*init_window)(HWND window, HINSTANCE instance, const char* window_class_name, void** out_present_handle);
-	void (*init_viewer)(app_state_t* app_state);
-	void (*init_imgui)(app_state_t* app_state);
+typedef struct platform_renderer_backend_t {
+	bool (*init_window)(const platform_renderer_window_desc_t* desc, window_handle_t* out_window, void** out_present_handle);
+	void (*init_imgui)(app_state_t* app_state, window_handle_t window);
 	void (*imgui_new_frame)();
 	void (*render_imgui_draw_data)(ImDrawData* draw_data);
 	void (*set_swap_interval)(int interval);
-	int (*get_refresh_rate)(void* present_handle);
-	void (*set_viewport)(i32 width, i32 height);
-	void (*present)(void* present_handle);
-} win32_renderer_backend_t;
+	int (*get_refresh_rate)(window_handle_t window, void* present_handle);
+	void (*get_drawable_size)(window_handle_t window, i32* out_width, i32* out_height);
+	void (*present)(window_handle_t window, void* present_handle);
+	void (*shutdown)(window_handle_t window, void* present_handle);
+} platform_renderer_backend_t;
 
-const win32_renderer_backend_t* win32_renderer_opengl_get_backend();
+const platform_renderer_backend_t* platform_renderer_opengl_get_backend();

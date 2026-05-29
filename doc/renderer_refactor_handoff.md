@@ -4,14 +4,16 @@ This note captures the current state of the renderer abstraction work and the in
 
 ## Current State
 
-The Windows entry point no longer owns WGL/OpenGL setup directly. `win32_main.cpp` goes through `win32_renderer.*`, and `win32_renderer_opengl.cpp` owns the current OpenGL window/context/present path. `win32_gui.cpp` is renderer-neutral: it initializes the Win32 ImGui platform backend and delegates renderer-side ImGui setup/new-frame/rendering to `win32_renderer_*`.
+The Windows entry point no longer owns WGL/OpenGL setup directly. `win32_main.cpp` goes through `platform_renderer.*`, and `win32_renderer_opengl.cpp` owns the current WGL/OpenGL window/context/present path. `win32_gui.cpp` is renderer-neutral: it initializes the Win32 ImGui platform backend and delegates renderer-side ImGui setup/new-frame/rendering to `platform_renderer_*`.
+
+The Linux/macOS SDL2 entry point follows the same facade. `linux_main.cpp` goes through `platform_renderer.*`, and `sdl_renderer_opengl.cpp` owns the current SDL OpenGL window/context/loader/present path plus renderer-side ImGui OpenGL calls. `linux_gui.cpp` delegates swap interval changes to the platform renderer facade.
 
 The core viewer no longer includes `OPENGL_H` or issues direct GL state calls. `viewer.cpp` calls `renderer.h`, which is currently implemented by `renderer_opengl.c`. The OpenGL code still performs the actual shader setup, framebuffer handling, texture upload, and quad drawing.
 
 ## Important Boundaries
 
-- `src/platform/win32_renderer.h`: public Windows renderer facade used by Win32 platform code.
-- `src/platform/win32_renderer_backend.h`: backend vtable used by the Windows facade. Calls are direct after initialization; avoid per-frame or per-tile null checks.
+- `src/platform/platform_renderer.h`: public platform renderer facade used by Win32 and Linux/macOS platform code.
+- `src/platform/platform_renderer_backend.h`: backend vtable used by the platform renderer facade. Calls are direct after initialization; avoid per-frame or per-tile null checks.
 - `src/core/renderer.h`: renderer-facing API used by core viewer code. This is the boundary to shape before implementing Vulkan.
 - `src/core/renderer_opengl.c` and `.h`: current OpenGL implementation details and globals.
 - `src/core/renderer_opengl_shader.c` and `.h`: OpenGL shader compilation/linking helpers. These are backend-private helpers and should not be used by core viewer code directly.
@@ -29,7 +31,7 @@ Before adding Vulkan, keep making `renderer.h` less OpenGL-shaped while preservi
 
 - `renderer_opengl.c` still owns OpenGL resources and GL state.
 - `renderer_opengl.h` still exposes OpenGL globals to OpenGL implementation files.
-- `linux_main.cpp` still directly uses SDL/OpenGL/ImGui OpenGL. This can be deferred while the optional Vulkan path is Windows-only.
+- `sdl_renderer_opengl.cpp` still directly uses SDL OpenGL and ImGui OpenGL for the Linux/macOS GUI path.
 - Image and tile structs still store renderer texture handles as integer fields. This is acceptable for now, but Vulkan will likely require an indexed or pointer-like backend resource handle internally.
 
 ## Caution

@@ -19,9 +19,9 @@
 
 #include "common.h"
 #include "platform.h"
+#include "platform_renderer.h"
 #include "stringutils.h"
 #include "imgui.h"
-#include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl2.h"
 
 #include <time.h>
@@ -50,7 +50,7 @@ void reset_window_title(window_handle_t window) {
 }
 
 void set_swap_interval(int interval) {
-    SDL_GL_SetSwapInterval(interval);
+    platform_renderer_set_swap_interval(interval);
 }
 
 
@@ -235,5 +235,4 @@ bool check_fullscreen(window_handle_t window) {
     bool fullscreen = SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN_DESKTOP;
     return fullscreen;
 }
-
 
