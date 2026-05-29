@@ -510,9 +510,10 @@ static int presenter_win32_opengl_get_refresh_rate(window_handle_t window, void*
 }
 
 static void presenter_win32_opengl_get_drawable_size(window_handle_t window, i32* out_width, i32* out_height) {
-	win32_window_dimension_t dimension = win32_get_window_dimension(window);
-	if (out_width) *out_width = dimension.width;
-	if (out_height) *out_height = dimension.height;
+	RECT rect;
+	GetClientRect(window, &rect);
+	if (out_width) *out_width = rect.right - rect.left;
+	if (out_height) *out_height = rect.bottom - rect.top;
 }
 
 static void presenter_win32_opengl_present(window_handle_t window, void* present_handle) {
@@ -528,7 +529,7 @@ static void presenter_win32_opengl_shutdown(window_handle_t window, void* presen
 	(void)present_handle;
 }
 
-const presenter_backend_t presenter_opengl_get_backend() {
+presenter_backend_t presenter_opengl_get_backend() {
 	static const presenter_backend_t backend = {
 		presenter_win32_opengl_init_window,
 		presenter_win32_opengl_init_imgui,

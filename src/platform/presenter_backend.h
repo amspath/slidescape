@@ -36,4 +36,4 @@ typedef struct presenter_backend_t {
 	void (*shutdown)(window_handle_t window, void* present_handle);
 } presenter_backend_t;
 
-const presenter_backend_t presenter_opengl_get_backend();
+presenter_backend_t presenter_opengl_get_backend();

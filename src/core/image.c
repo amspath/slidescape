@@ -25,7 +25,8 @@
 #define STBI_ASSERT(x) ASSERT(x)
 #include "stb_image.h" // for stbi_image_free()
 
-#include "viewer.h" // for renderer texture handles
+#include "renderer.h" // for renderer_texture_handle_t
+#include "viewer.h" // for tile load routines
 
 // TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
 void tile_release_cache(tile_t* tile) {

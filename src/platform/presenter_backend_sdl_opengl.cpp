@@ -177,7 +177,7 @@ static void presenter_sdl_opengl_shutdown(window_handle_t window, void* present_
 	}
 }
 
-const presenter_backend_t presenter_opengl_get_backend() {
+presenter_backend_t presenter_opengl_get_backend() {
 	static const presenter_backend_t backend = {
 			presenter_sdl_opengl_init_window,
 			presenter_sdl_opengl_init_imgui,
