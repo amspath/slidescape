@@ -72,6 +72,13 @@
 #define APPLE_ARM 0
 #endif
 
+#if defined(__linux__) || (!defined(__APPLE__) && (defined(__unix__) || defined(_POSIX_VERSION)))
+#define LINUX 1
+#define OPENGL_H <GL/glew.h>
+#else
+#define LINUX 0
+#endif
+
 #if LINUX
 #include <features.h>
 #endif
@@ -80,19 +87,6 @@
 #include <stdlib.h>
 //#define _aligned_malloc(size, alignment) aligned_alloc(alignment, size)
 //#define _aligned_free(ptr) free(ptr)
-#if __SIZEOF_POINTER__==8
-#define fseeko64 fseek
-#define fopen64 fopen
-#define fgetpos64 fgetpos
-#define fsetpos64 fsetpos
-#endif
-#endif
-
-#if defined(__linux__) || (!defined(__APPLE__) && (defined(__unix__) || defined(_POSIX_VERSION)))
-#define LINUX 1
-#define OPENGL_H <GL/glew.h>
-#else
-#define LINUX 0
 #endif
 
 // Compiler detection
@@ -138,6 +132,11 @@
 #define strcasecmp _stricmp
 #define alloca _alloca
 #define fseeko64 _fseeki64
+#define fopen64 fopen
+#endif
+
+#if !WINDOWS && !LINUX
+#define fseeko64 fseeko
 #define fopen64 fopen
 #endif
 

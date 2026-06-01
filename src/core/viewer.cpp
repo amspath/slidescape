@@ -95,7 +95,7 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
             }
         }
     }
-    strncpy(app_state->last_active_directory, image->directory, COUNT(app_state->last_active_directory));
+    copy_cstring(app_state->last_active_directory, image->directory, COUNT(app_state->last_active_directory));
 }
 
 void renderer_destroy_image_resources(image_t* image) {

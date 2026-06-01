@@ -136,15 +136,16 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
 				while (isspace(*pos)) {
 					++pos;
 				}
-				strncpy(section_name, pos, sizeof(section_name));
-                size_t len = strlen(section_name);
-				pos = section_name + len - 1;
-				while (pos > section_name) {
-					if (*pos == ']') {
-						*pos = '\0';
-						break;
+				size_t len = copy_cstring(section_name, pos, sizeof(section_name));
+				if (len > 0) {
+					pos = section_name + len - 1;
+					while (pos > section_name) {
+						if (*pos == ']') {
+							*pos = '\0';
+							break;
+						}
+						--pos;
 					}
-					--pos;
 				}
                 mrxs_slidedat_ini_parse_section_name(mrxs, section_name, &section, &layer, &level);
             } else {

@@ -179,7 +179,7 @@ void slide_score_client_init(slide_score_client_t* ss, const char* server_url_or
     ss->server_name[hostname_len] = 0;
 
     if (api_key) {
-        strncpy(ss->api_key, api_key, sizeof(ss->api_key) - 1);
+        copy_cstring(ss->api_key, api_key, sizeof(ss->api_key));
         trim_whitespace(ss->api_key);
     }
 }
@@ -255,10 +255,10 @@ void web_api_populate_struct_with_field(const char* field_name, const char* valu
                         *(float*)((result_struct_generic)+binding->offset) = atof(value);
                     } break;
                     case FIELD_TYPE_STRING_256CHARS: {
-                        strncpy((((char*)result_struct_generic)+binding->offset), value, 255);
+                        copy_cstring((((char*)result_struct_generic)+binding->offset), value, 256);
                     } break;
                     case FIELD_TYPE_STRING_512CHARS: {
-                        strncpy((((char*)result_struct_generic)+binding->offset), value, 511);
+                        copy_cstring((((char*)result_struct_generic)+binding->offset), value, 512);
                     } break;
                     default: break;
                 }

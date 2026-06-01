@@ -153,14 +153,14 @@ static void opengl_load_shader(u32 shader, const char* source_filename) {
 
 		ASSERT(shader_count < COUNT(shader_filenames));
 		shader_sources[shader_count] = strdup(shader_source);
-		strncpy(shader_filenames[shader_count], stripped_filename, MAX_SHADER_FILENAME);
+		copy_cstring(shader_filenames[shader_count], stripped_filename, sizeof(shader_filenames[shader_count]));
 #endif
 		++shader_count;
 	} else {
 		are_any_shader_sources_missing = true;
 		const char* stripped_filename = one_past_last_slash(source_filename, MAX_SHADER_FILENAME);
 		char source_name_temp[MAX_SHADER_FILENAME] = {0};
-		strncpy(source_name_temp, stripped_filename, MAX_SHADER_FILENAME);
+		copy_cstring(source_name_temp, stripped_filename, sizeof(source_name_temp));
 		dots_to_underscores(source_name_temp, MAX_SHADER_FILENAME);
 		for (i32 i = 0; i < COUNT(stringified_shader_source_names); ++i) {
 			const char* name = stringified_shader_source_names[i];
@@ -236,4 +236,3 @@ i32 opengl_get_uniform(u32 program, const char *name) {
 		console_print_error("Could not get uniform location %s\n", name);
 	return uniform;
 }
-

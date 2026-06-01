@@ -214,7 +214,7 @@ bool save_file_dialog(app_state_t* app_state, char* path_buffer, i32 path_buffer
         if (IGFD::FileDialog::Instance()->IsOk() == true) {
             std::string file_path_name = IGFD::FileDialog::Instance()->GetFilePathName();
             const char* filename_c = file_path_name.c_str();
-            strncpy(global_export_save_as_filename, filename_c, sizeof(global_export_save_as_filename)-1);
+            copy_cstring(global_export_save_as_filename, filename_c, sizeof(global_export_save_as_filename));
         }
         // close
         IGFD::FileDialog::Instance()->Close();

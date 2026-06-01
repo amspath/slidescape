@@ -40,7 +40,7 @@ typedef enum viewer_file_type_enum {
 typedef struct file_info_t {
 	char full_filename[512];
 	char filename_prefix[512]; // directory name + trailing slash
-	const char* filename_in_directory;
+	char filename_in_directory[512];
 	char ext[16];
 	i64 filesize;
 	viewer_file_type_enum type;

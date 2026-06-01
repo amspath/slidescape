@@ -1630,6 +1630,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 
 		size_t pixel_memory_size = level_ifd->tile_width * level_ifd->tile_height * BYTES_PER_PIXEL;
 		u8* pixel_memory = (u8*)malloc(pixel_memory_size);
+		u8* decompressed = NULL; // allocated later if needed
 
 		// Take into account either tiled or multi-strip TIFF files
 		u8** compressed_streams;
@@ -1646,8 +1647,6 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 		} else {
 			goto decompression_failed;
 		}
-
-		u8* decompressed = NULL; // allocated later if needed
 
 		for (i32 compressed_stream_index = 0; compressed_stream_index < compressed_stream_count; ++compressed_stream_index) {
 

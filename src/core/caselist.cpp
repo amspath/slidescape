@@ -218,7 +218,7 @@ bool32 load_caselist_from_file(caselist_t* caselist, const char* json_filename) 
 
 	if (caselist_file) {
 		// Set the 'working directory' of the case list to the folder the JSON file is located in.
-		strncpy(caselist->folder_prefix, json_filename, sizeof(caselist->folder_prefix) - 1);
+		copy_cstring(caselist->folder_prefix, json_filename, sizeof(caselist->folder_prefix));
 		char* prefix_end = (char*) one_past_last_slash(caselist->folder_prefix, sizeof(caselist->folder_prefix));
 		ASSERT(prefix_end >= caselist->folder_prefix);
 		*prefix_end = '\0';

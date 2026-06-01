@@ -57,6 +57,29 @@ char* find_next_token(const char* s, char separator) {
 	return NULL;
 }
 
+// NOTE: this serves as an alternative to strncpy: copies up to dest_size-1 and always null-terminates
+size_t copy_cstring(char* dest, const char* src, size_t dest_size) {
+	size_t len = 0;
+
+	if (!src) {
+		if (dest_size > 0) dest[0] = '\0';
+		return 0;
+	}
+
+	if (dest_size > 0) {
+		for (; len + 1 < dest_size && src[len]; ++len) {
+			dest[len] = src[len];
+		}
+		dest[len] = '\0';
+	}
+
+	while (src[len]) {
+		++len;
+	}
+
+	return len; // source length; truncation if return >= dest_size
+}
+
 void dots_to_underscores(char* s, i32 max) {
 	for (char* pos = s; pos < s + max; ++pos) {
 		char c = *pos;

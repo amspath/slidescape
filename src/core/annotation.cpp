@@ -34,7 +34,7 @@ static rgba_t default_group_color = RGBA(60, 220, 50, 255);
 i32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 	annotation_group_t new_group = {};
     new_group.color = default_group_color; // default color
-	strncpy(new_group.name, name, sizeof(new_group.name));
+	copy_cstring(new_group.name, name, sizeof(new_group.name));
 	arrput(annotation_set->stored_groups, new_group);
 	i32 new_stored_group_index = annotation_set->stored_group_count++;
 
@@ -46,7 +46,7 @@ i32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 
 i32 add_annotation_feature(annotation_set_t* annotation_set, const char* name) {
 	annotation_feature_t new_feature = {};
-	strncpy(new_feature.name, name, sizeof(new_feature.name));
+	copy_cstring(new_feature.name, name, sizeof(new_feature.name));
 	i32 new_stored_feature_index = annotation_set->stored_feature_count++;
 	new_feature.id = new_stored_feature_index;
 	arrput(annotation_set->stored_features, new_feature);
@@ -2928,9 +2928,9 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				// TODO: which image to associate the annotations with?
 				if (arrlen(app_state->loaded_images) > 0) {
 					image_t* image = app_state->loaded_images[0];
-					strncpy(image_name_buf, image->name, MIN(sizeof(image_name_buf), sizeof(image->name)));
+					copy_cstring(image_name_buf, image->name, MIN(sizeof(image_name_buf), sizeof(image->name)));
 				} else {
-					strncpy(image_name_buf, "unknown_image", sizeof(image_name_buf));
+					copy_cstring(image_name_buf, "unknown_image", sizeof(image_name_buf));
 				}
 				replace_file_extension(image_name_buf, sizeof(image_name_buf), "xml");
 				snprintf(annotation_set->asap_xml_filename, sizeof(annotation_set->asap_xml_filename), "%s%s", get_annotation_directory(app_state), image_name_buf);
@@ -3100,4 +3100,3 @@ void annotation_set_init_from_template(annotation_set_t* annotation_set, annotat
         add_annotation_group(annotation_set, "None");
     }
 }
-

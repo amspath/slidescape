@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2024  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -74,7 +74,7 @@ static void annotation_set_attribute(annotation_set_t* annotation_set, annotatio
 	if (strcmp(attr, "Color") == 0) {
 		annotation->color = asap_xml_parse_color(value);
 	} else if (strcmp(attr, "Name") == 0) {
-		strncpy(annotation->name, value, sizeof(annotation->name));
+		copy_cstring(annotation->name, value, sizeof(annotation->name));
 	} else if (strcmp(attr, "PartOfGroup") == 0) {
 		annotation->group_id = find_annotation_group_or_create_if_not_found(annotation_set, value);
 	} else if (strcmp(attr, "Type") == 0) {
@@ -109,7 +109,7 @@ static void group_set_attribute(annotation_group_t* group, const char* attr, con
 	if (strcmp(attr, "Color") == 0) {
 		group->color = asap_xml_parse_color(value);
 	} else if (strcmp(attr, "Name") == 0) {
-		strncpy(group->name, value, sizeof(group->name));
+		copy_cstring(group->name, value, sizeof(group->name));
 	} else if (strcmp(attr, "PartOfGroup") == 0) {
 		// TODO: allow nested groups?
 	}
@@ -119,7 +119,7 @@ static void feature_set_attribute(annotation_set_t* annotation_set, annotation_f
 	if (strcmp(attr, "Value") == 0) {
 		feature->value = (float)atof(value);
 	} else if (strcmp(attr, "Name") == 0) {
-		strncpy(feature->name, value, sizeof(feature->name));
+		copy_cstring(feature->name, value, sizeof(feature->name));
 	} else if (strcmp(attr, "RestrictToGroup") == 0) {
 		feature->group_id = find_annotation_group_or_create_if_not_found(annotation_set, value);
 		feature->restrict_to_group = true;
@@ -404,7 +404,7 @@ bool load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 		annotation_set->active_annotation_indices[i] = i;
 	}
 
-	strncpy(annotation_set->asap_xml_filename, filename, sizeof(annotation_set->asap_xml_filename)-1);
+	copy_cstring(annotation_set->asap_xml_filename, filename, sizeof(annotation_set->asap_xml_filename));
 	annotation_set->export_as_asap_xml = true;
 	annotation_set->annotations_were_loaded_from_file = true;
 	success = true;

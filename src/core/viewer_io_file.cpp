@@ -64,7 +64,7 @@ static tls_connection_t* slide_score_get_worker_connection(const char* hostname)
 	if (!slide_score_worker_connection.connection) {
 		slide_score_worker_connection.connection = remote_connection_open(hostname, 443);
 		if (slide_score_worker_connection.connection) {
-			strncpy(slide_score_worker_connection.hostname, hostname, sizeof(slide_score_worker_connection.hostname) - 1);
+			copy_cstring(slide_score_worker_connection.hostname, hostname, sizeof(slide_score_worker_connection.hostname));
 		}
 	}
 	return slide_score_worker_connection.connection;
@@ -218,7 +218,7 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 				// Enable export as XML (make sure XML annotations do not get out of date!)
 				annotation_set->export_as_asap_xml = true;
 				replace_file_extension(temp_filename, temp_size, "xml");
-				strncpy(annotation_set->asap_xml_filename, temp_filename, sizeof(annotation_set->asap_xml_filename)-1);
+				copy_cstring(annotation_set->asap_xml_filename, temp_filename, sizeof(annotation_set->asap_xml_filename));
 
 
 			} else {
@@ -344,7 +344,7 @@ const char* get_annotation_directory(app_state_t* app_state) {
 }
 
 void set_annotation_directory(app_state_t* app_state, const char* path) {
-	strncpy(app_state->annotation_directory, path, COUNT(app_state->annotation_directory)-2);
+	copy_cstring(app_state->annotation_directory, path, COUNT(app_state->annotation_directory)-2);
 	i32 prefix_len = (i32)strlen(app_state->annotation_directory);
 	if (prefix_len > 0) {
 		// discard folder names "." and ".."

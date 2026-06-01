@@ -19,6 +19,7 @@
 #include "common.h"
 #include "viewer.h"
 #include "ini.h"
+#include "stringutils.h"
 
 static char options_ini_filename[512];
 
@@ -26,7 +27,7 @@ void viewer_init_options(app_state_t* app_state) {
 	if (global_settings_dir) {
 		snprintf(options_ini_filename, sizeof(options_ini_filename), "%s" PATH_SEP "%s", global_settings_dir, "slidescape.ini");
 	} else {
-		strncpy(options_ini_filename, "slidescape.ini", sizeof(options_ini_filename));
+		copy_cstring(options_ini_filename, "slidescape.ini", sizeof(options_ini_filename));
 	}
 
 	ini_t* ini = ini_load_from_file(options_ini_filename);

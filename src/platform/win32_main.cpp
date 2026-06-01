@@ -375,7 +375,7 @@ void load_dicom_task(int logical_thread_index, void* userdata) {
 void win32_setup_appdata() {
 	if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, g_appdata_path))) {
 		i32 appdata_path_len = strlen(g_appdata_path);
-		strncpy(g_appdata_path + appdata_path_len, "\\Slidescape", sizeof(g_appdata_path) - appdata_path_len);
+		copy_cstring(g_appdata_path + appdata_path_len, "\\Slidescape", sizeof(g_appdata_path) - appdata_path_len);
 //		console_print("%s\n", path_buf);
 		if (!file_exists(g_appdata_path)) {
 			if (!CreateDirectoryA(g_appdata_path, 0)) {
@@ -1542,10 +1542,10 @@ void win32_check_already_running() {
 				message_data.argc = g_argc;
 				if (g_argc > 1) {
 					message_data.need_open = true;
-					strncpy(message_data.filename, g_argv[1], sizeof(message_data.filename)-1);
+					copy_cstring(message_data.filename, g_argv[1], sizeof(message_data.filename));
 					i32 argc_to_send = MIN(g_argc, WIN32_COPYDATA_MAX_ARGS);
 					for (i32 arg_index = 0; arg_index < argc_to_send; ++arg_index) {
-						strncpy(message_data.argv[arg_index], g_argv[arg_index], sizeof(message_data.argv[arg_index])-1);
+						copy_cstring(message_data.argv[arg_index], g_argv[arg_index], sizeof(message_data.argv[arg_index]));
 					}
 				}
 
@@ -1599,7 +1599,7 @@ void win32_init_cmdline() {
 	GetModuleFileNameA(NULL, g_exe_name, sizeof(g_exe_name));
 	g_exe_name[sizeof(g_exe_name)-1] = '\0';
 
-	strncpy(g_root_dir, g_exe_name, sizeof(g_root_dir));
+	copy_cstring(g_root_dir, g_exe_name, sizeof(g_root_dir));
 	PathStripToRootA(g_root_dir);
 	// N.B. the root path requires a trailing backslash for e.g. GetDriveType to work:
 	// https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getdrivetypea

@@ -24,6 +24,7 @@
 #include "listing.h"
 
 #include "viewer.h"
+#include "stringutils.h"
 
 #include "dicom.h"
 #include "dicom_wsi.h"
@@ -191,8 +192,8 @@ static dicom_uid_enum dicom_uid_lookup(const char* uid_str, u32 len) {
 
 dicom_ui_t dicom_parse_uid(str_t s) {
     dicom_ui_t ui = {};
-    i32 len = ATMOST(s.len, sizeof(ui.value)-1);
-    strncpy(ui.value, s.s, len);
+    i32 len = ATMOST(s.len, sizeof(ui.value));
+    copy_cstring(ui.value, s.s, len);
     ui.value[len] = '\0';
     ui.len = strlen(ui.value);
     ui.as_enum = dicom_uid_lookup(ui.value, ui.len);
@@ -306,9 +307,9 @@ static void debug_print_dicom_element(dicom_instance_t* instance, dicom_data_ele
 			// print identifier
 			char identifier[65];
 			u32 length = MIN(64, dicom_get_element_length_without_trailing_whitespace(element_data, element.length));
-			strncpy(identifier, (const char*) element_data, length);
-			identifier[length] = '\0';
 			if (length > 0) {
+				memcpy(identifier, element_data, length);
+				identifier[length] = '\0';
 				memrw_printf(&string_builder, " - \"%s\"", identifier);
 				if (element.vr == DICOM_VR_UI) {
                     dicom_ui_t ui = dicom_parse_uid((str_t){(const char*) element_data, length});
@@ -1126,7 +1127,7 @@ dicom_instance_t dicom_load_file(dicom_series_t* dicom_series, file_info_t* file
 
 	file_stream_t fp = file_stream_open_for_reading(file->full_filename);
 	if (fp) {
-		strncpy(instance.filename, file->full_filename, MIN(sizeof(instance.filename), sizeof(file->full_filename)) - 1);
+		copy_cstring(instance.filename, file->full_filename, sizeof(instance.filename));
 		size_t chunk_size = KILOBYTES(64);
 		size_t bytes_to_read = MIN(chunk_size, file->filesize);
 

@@ -796,7 +796,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 				if (image->name[0] != '\0') {
 					size_t buffer_size = sizeof(image->name);
 					char* new_name_hint = (char*)alloca(buffer_size);
-					strncpy(new_name_hint, image->name, buffer_size);
+					copy_cstring(new_name_hint, image->name, buffer_size);
 					// Strip filename extension
 					size_t len = strlen(new_name_hint);
 					i32 append_pos = len;
@@ -809,7 +809,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					new_name_hint[append_pos] = '\0';
 					// TODO: allow custom postfix?
 					// add '_export'
-					strncpy(new_name_hint + append_pos, global_export_region_filename_postfix, buffer_size - append_pos);
+					copy_cstring(new_name_hint + append_pos, global_export_region_filename_postfix, buffer_size - append_pos);
 					name_hint = new_name_hint;
 				}
 			}
@@ -846,7 +846,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					if (!(strcasecmp(extension, "tiff") == 0 || strcasecmp(extension, "tif") == 0 || strcasecmp(extension, "ptif") == 0)) {
 						// if extension incorrect, append it at the end
 						i64 remaining_len = filename_buffer_size - filename_len;
-						strncpy(filename_buffer + filename_len, ".tiff", remaining_len-1);
+						copy_cstring(filename_buffer + filename_len, ".tiff", remaining_len);
 					}
 				} else {
 //					console_print_verbose("Export region: save file dialog returned 0\n");

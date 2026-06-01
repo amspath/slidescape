@@ -25,6 +25,7 @@
 #include "common.h"
 #include "viewer.h"
 #include "gui.h" // for global data, TODO: refactor
+#include "stringutils.h"
 #include "tiff_write.h"
 
 app_command_t app_parse_commandline(int argc, const char** argv) {
@@ -165,14 +166,14 @@ void export_region_get_name_hint(app_state_t* app_state, char* output_buffer, si
 			if (image->name[0] != '\0') {
 				size_t buffer_size = sizeof(image->name);
 				char* new_name_hint = (char*)alloca(buffer_size);
-				strncpy(new_name_hint, image->name, buffer_size);
+				copy_cstring(new_name_hint, image->name, buffer_size);
 				// Strip filename extension
 				size_t len = strlen(new_name_hint);
 				for (i32 pos = len-1; pos >= 1; --pos) {
 					if (new_name_hint[pos] == '.') {
 						new_name_hint[pos] = '\0';
 						// add '_region'
-						strncpy(new_name_hint + pos, global_export_region_filename_postfix, buffer_size - pos);
+						copy_cstring(new_name_hint + pos, global_export_region_filename_postfix, buffer_size - pos);
 						name_hint = new_name_hint;
 						break;
 					}

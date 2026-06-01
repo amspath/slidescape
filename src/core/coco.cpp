@@ -756,7 +756,7 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 		annotation_group_t* group = annotation_set->stored_groups + i;
 		group->id = category->id;
 		group->color = category->color;
-		strncpy(group->name, category->name, MIN(sizeof(group->name), sizeof(category->name)));
+		copy_cstring(group->name, category->name, sizeof(group->name));
 	}
 
 	// Transfer features
@@ -773,7 +773,7 @@ void coco_transfer_annotations_to_annotation_set(coco_t* coco, annotation_set_t*
 		feature->group_id = coco_feature->category_id; // TODO: lookup in hash table?
 		feature->restrict_to_group = coco_feature->restrict_to_group;
 		feature->id = coco_feature->id;
-		strncpy(feature->name, coco_feature->name, MIN(sizeof(feature->name), sizeof(coco_feature->name)));
+		copy_cstring(feature->name, coco_feature->name, sizeof(feature->name));
 	}
 
 	// Transfer annotations
@@ -935,4 +935,3 @@ void coco_destroy(coco_t* coco) {
 	}
 	arrfree(coco->annotations);
 }
-

@@ -132,7 +132,7 @@ static bool win32_init_opengl(HWND window, HINSTANCE instance, const char* windo
 		GetModuleFileNameA(NULL, dll_path, sizeof(dll_path));
 		char* pos = (char*)one_past_last_slash(dll_path, sizeof(dll_path));
 		i32 chars_left = sizeof(dll_path) - (pos - dll_path);
-		strncpy(pos, "softwarerenderer", chars_left);
+		copy_cstring(pos, "softwarerenderer", chars_left);
 		SetDllDirectoryA(dll_path);
 		opengl32_dll_handle = LoadLibraryA("opengl32software.dll");
 		use_fast_rendering = true;
@@ -236,7 +236,7 @@ static bool win32_init_opengl(HWND window, HINSTANCE instance, const char* windo
 
 	char version_string[256] = {};
 	char* version_string_retrieved = (char*)temp_glGetString(GL_VERSION);
-	strncpy(version_string, version_string_retrieved, sizeof(version_string)-1);
+	copy_cstring(version_string, version_string_retrieved, sizeof(version_string));
 	if (use_software_renderer) {
 		console_print("OpenGL software renderer: %s\n", version_string);
 	} else {

@@ -36,6 +36,7 @@
 #include "common.h"
 #include "memrw.h"
 #include "platform.h"
+#include "stringutils.h"
 
 #include "yxml.h"
 #include "lz4.h"
@@ -464,13 +465,13 @@ static void dicom_dict_xml_parse_tag_td(dicom_dict_parser_t* parser) {
 		}
 	} else if (parser->td_index == 1) {
 		// Name
-		strncpy(parser->current_dicom_name, content, sizeof(parser->current_dicom_name));
+		copy_cstring(parser->current_dicom_name, content, sizeof(parser->current_dicom_name));
 		if (strlen(content) == 0) {
 			parser->current_dicom_invalid = true;
 		}
 	} else if (parser->td_index == 2) {
 		// Keyword
-		strncpy(parser->current_dicom_keyword, content, sizeof(parser->current_dicom_name));
+		copy_cstring(parser->current_dicom_keyword, content, sizeof(parser->current_dicom_name));
 		if (strlen(content) == 0) {
 			parser->current_dicom_invalid = true;
 		}
@@ -550,21 +551,21 @@ static void dicom_dict_xml_parse_uid_td(dicom_dict_parser_t* parser) {
 		// UID Value, e.g. 1.2.840.10008.1.1
 		if (content_len > 14 && strncmp(content, "1.2.840.10008.", 14) == 0) {
 			// Standard prefix can be omitted
-			strncpy(parser->current_dicom_uid, content+14, sizeof(parser->current_dicom_uid));
+			copy_cstring(parser->current_dicom_uid, content+14, sizeof(parser->current_dicom_uid));
 		} else {
 			parser->current_dicom_invalid = true;
 			console_print_verbose("DICOM UID with unexpected layout: %s\n", content);
 		}
 	} else if (parser->td_index == 1) {
 		// UID Name
-		strncpy(parser->current_dicom_name, content, sizeof(parser->current_dicom_name));
+		copy_cstring(parser->current_dicom_name, content, sizeof(parser->current_dicom_name));
 		parser->current_dicom_retired = (strstr(content, "(Retired)") != NULL);
 		if (strlen(content) == 0) {
 			parser->current_dicom_invalid = true;
 		}
 	} else if (parser->td_index == 2) {
 		// UID Keyword
-		strncpy(parser->current_dicom_keyword, content, sizeof(parser->current_dicom_name));
+		copy_cstring(parser->current_dicom_keyword, content, sizeof(parser->current_dicom_name));
 		if (strlen(content) == 0) {
 			parser->current_dicom_invalid = true;
 		}
@@ -769,7 +770,7 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 							cleaned[pos] = '\0';
 							i32 cleaned_len = pos;
 							if (cleaned_len > 0) {
-								strncpy(parser.current_cleaned_content, (char*)cleaned, MIN(sizeof(parser.current_cleaned_content), sizeof(cleaned)));
+								copy_cstring(parser.current_cleaned_content, (char*)cleaned, MIN(sizeof(parser.current_cleaned_content), sizeof(cleaned)));
 								parser.current_cleaned_content_len = cleaned_len;
 							}
 						}

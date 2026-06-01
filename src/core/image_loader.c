@@ -198,12 +198,13 @@ file_info_t viewer_get_file_info(const char* filename) {
 	}
 	memcpy(file.full_filename, filename, filename_len);
 	const char* ext = get_file_extension(filename);
-	strncpy(file.ext, ext, sizeof(file.ext) - 1);
-	file.filename_in_directory = one_past_last_slash(file.full_filename, filename_len);
-	i64 prefix_len = file.filename_in_directory - file.full_filename;
+	copy_cstring(file.ext, ext, sizeof(file.ext));
+	const char* filename_in_directory = one_past_last_slash(file.full_filename, filename_len);
+	copy_cstring(file.filename_in_directory, filename_in_directory, sizeof(file.filename_in_directory));
+	i64 prefix_len = filename_in_directory - file.full_filename;
 	ASSERT(prefix_len >= 0 && prefix_len < filename_len);
 	if (prefix_len > 0 && prefix_len < filename_len) {
-		strncpy(file.filename_prefix, filename, prefix_len);
+		memcpy(file.filename_prefix, filename, prefix_len);
 	}
 
 	struct stat st;
@@ -312,7 +313,7 @@ image_t* image_load_from_file(file_info_t* file, directory_info_t* directory, im
 	const char* filename = file->full_filename;
 	size_t filename_len = strlen(filename);
 	const char* name = one_past_last_slash(filename, filename_len);
-	strncpy(image->name, name, sizeof(image->name)-1);
+	copy_cstring(image->name, name, sizeof(image->name));
 
 	if (name > filename) {
 		size_t directory_len = (u64)name - (u64)filename;
@@ -368,7 +369,7 @@ image_t* image_load_from_file(file_info_t* file, directory_info_t* directory, im
 		if (file->is_regular_file) {
 			// Strip .mrxs extension to get the name of the corresponding slide folder
 			char basename[512];
-			strncpy(basename, filename, sizeof(basename));
+			copy_cstring(basename, filename, sizeof(basename));
 			char* end = basename + filename_len;
 			for (char* pos = end - 1; pos >= basename; --pos) {
 				if (*pos == '.') {

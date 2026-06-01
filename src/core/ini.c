@@ -1,6 +1,6 @@
 /*
   Slidescape, a whole-slide image viewer for digital pathology.
-  Copyright (C) 2019-2023  Pieter Valkema
+  Copyright (C) 2019-2026  Pieter Valkema
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -134,7 +134,7 @@ void ini_begin_section(ini_t* ini, const char* section_name) {
 	}
 	if (!match) {
 		ini_section_t section = {0};
-		strncpy(section.name, section_name, INI_MAX_NAME);
+		copy_cstring(section.name, section_name, sizeof(section.name));
 		arrput(ini->sections, section);
 		ini->current_section_index = ini->section_count++;
 	}
@@ -157,7 +157,7 @@ void ini_register_option(ini_t* ini, const char* name, u32 link_type, u32 link_s
 	}
 	if (!match) {
 		ini_option_t option = {0};
-		strncpy(option.name, name, INI_MAX_NAME);
+		copy_cstring(option.name, name, sizeof(option.name));
 		option.link_type = link_type;
 		option.link_size = link_size;
 		option.link = link;
@@ -191,7 +191,7 @@ ini_entry_t ini_parse_line(char* line_string) {
 			result.type = INI_ENTRY_SECTION;
 			i32 name_len = close_bracket - name_start;
 			ASSERT(name_len >= 0);
-			strncpy(result.name, name_start, MIN(name_len, sizeof(result.name)-1));
+			copy_cstring(result.name, name_start, MIN(name_len, sizeof(result.name)));
 			return result;
 		} else {
 			return result; // invalid, ignore line
@@ -204,14 +204,14 @@ ini_entry_t ini_parse_line(char* line_string) {
 			i32 name_len = equals_sign - line_string;
 			name_len -= count_whitespace_reverse(equals_sign, name_len);
 			ASSERT(name_len >= 0);
-			strncpy(result.name, line_string, MIN(name_len, sizeof(result.name)-1));
+			copy_cstring(result.name, line_string, MIN(name_len, sizeof(result.name)));
 			char* value_string = (equals_sign+1);
 			i32 value_len = len - (value_string - line_string);
 			i32 leading_whitespace = count_leading_whitespace(value_string, value_len);
 			value_string += leading_whitespace;
 			value_len -= leading_whitespace;
 			ASSERT(value_len >= 0);
-			strncpy(result.value, value_string, MIN(value_len, sizeof(result.value)-1));
+			copy_cstring(result.value, value_string, MIN(value_len, sizeof(result.value)));
 			return result;
 		} else {
 			return result;// invalid, ignore line
