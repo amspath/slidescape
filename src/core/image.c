@@ -21,12 +21,12 @@
 #include "image.h"
 #include "jpeg_decoder.h"
 #include "isyntax_reader.h" // for isyntax_cache_t
+#include "isyntax_streamer.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
 #include "stb_image.h" // for stbi_image_free()
 
-#include "renderer.h" // for renderer_texture_handle_t
-#include "viewer.h" // for tile load routines
+#include "tile_loader.h"
 
 // TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
 void tile_release_cache(tile_t* tile) {
@@ -946,6 +946,14 @@ void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
 
 }
 
+void unload_openslide_wsi(wsi_t* wsi) {
+    if (wsi->osr) {
+        openslide.close(wsi->osr);
+        wsi->osr = NULL;
+    }
+}
+
+
 // TODO: optimize?
 float f32_rgb_to_f32_y(float R, float G, float B) {
     float Co  = R - B;
@@ -1167,7 +1175,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					if (completion_queue_poll(&read_completion_queue, &entry)) {
 						platform_mutex_lock(&image->lock);
 						++tile_loads_completed;
-						viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
+						tile_load_completion_task_t* task = (tile_load_completion_task_t*) entry.userdata;
 						if (task->pixel_memory) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 							tile->is_submitted_for_loading = false;
@@ -1350,7 +1358,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			y -= offset;
 
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
-				isyntax_do_first_load_immediately(isyntax, wsi, image->resource_id, VIEWER_COMPLETION_EVENT_TILE_LOADED); //TODO: should not need to include viewer.h because of this enum?
+				isyntax_do_first_load_immediately(isyntax, wsi, image->resource_id, TILE_LOADER_COMPLETION_EVENT_TILE_LOADED);
 			}
 
 			if (libisyntax_read_region(&image->isyntax, isyntax->cache, level, x, y, w, h, intermediate_pixel_buffer, translated_pixel_format) != LIBISYNTAX_OK) {
@@ -1446,6 +1454,16 @@ void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 
 	};
 }
 
+static bool check_image_texture_destroyed(renderer_texture_handle_t texture) {
+    if (texture == 0) {
+        return true;
+    } else {
+        console_print_error("image_destroy(): texture %u is still in use (did you call viewer_destroy_image_textures() first?)\n", texture);
+        ASSERT(!"check_image_texture_destroyed");
+        return false;
+    }
+}
+
 void image_destroy(image_t* image) {
     image->is_deleted = true;
     while (image->refcount > 0) {
@@ -1475,10 +1493,7 @@ void image_destroy(image_t* image) {
 					stbi_image_free(image->simple.pixels);
 					image->simple.pixels = NULL;
 				}
-				if (image->simple.texture != 0) {
-					renderer_destroy_texture(image->simple.texture);
-					image->simple.texture = 0;
-				}
+                check_image_texture_destroyed(image->simple.texture);
 				image->simple.is_valid = false;
 			} else {
 				fatal_error("invalid image backend");
@@ -1492,9 +1507,7 @@ void image_destroy(image_t* image) {
 			if (level_image->tiles) {
 				for (i32 j = 0; j < level_image->tile_count; ++j) {
 					tile_t* tile = level_image->tiles + j;
-					if (tile->texture != 0) {
-						renderer_destroy_texture(tile->texture);
-					}
+                    check_image_texture_destroyed(tile->texture);
 				}
 			}
 			free(level_image->tiles);
@@ -1502,14 +1515,14 @@ void image_destroy(image_t* image) {
 		}
 
 		if (image->macro_image.is_valid) {
-			if (image->macro_image.pixels) stbi_image_free(image->simple.pixels);
-			if (image->macro_image.texture) renderer_destroy_texture(image->macro_image.texture);
+			if (image->macro_image.pixels) stbi_image_free(image->macro_image.pixels);
+            check_image_texture_destroyed(image->macro_image.texture);
 			memset(&image->macro_image, 0, sizeof(image->macro_image));
 		}
 		if (image->label_image.is_valid) {
-			if (image->label_image.pixels) stbi_image_free(image->simple.pixels);
-			if (image->label_image.texture) renderer_destroy_texture(image->label_image.texture);
-			memset(&image->label_image, 0, sizeof(image->label_image));
+			if (image->label_image.pixels) stbi_image_free(image->label_image.pixels);
+            check_image_texture_destroyed(image->label_image.texture);
+            memset(&image->label_image, 0, sizeof(image->label_image));
 		}
 
 		if (image->lock_initialized) {

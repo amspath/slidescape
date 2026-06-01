@@ -99,6 +99,49 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
     strncpy(app_state->last_active_directory, image->directory, COUNT(app_state->last_active_directory));
 }
 
+static void viewer_destroy_image_textures(image_t* image) {
+	if (!image) return;
+
+	if (image->backend == IMAGE_BACKEND_STBI) {
+		renderer_texture_handle_t simple_destroyed_texture_handle = 0;
+		if (image->simple.texture != 0) {
+			simple_destroyed_texture_handle = image->simple.texture;
+			renderer_destroy_texture(image->simple.texture);
+			image->simple.texture = 0;
+		}
+		// NOTE: simple/stbi images have only 1 tile, the texture of which is just the whole image.
+		// We shouldn't destroy that texture twice, so here we're just setting it to 0.
+		level_image_t* level_image = image->level_images;
+		if (level_image && level_image[0].tiles) {
+			tile_t* tile = &level_image[0].tiles[0];
+			if (tile->texture != 0 && tile->texture == simple_destroyed_texture_handle) {
+				tile->texture = 0;
+			}
+		}
+	}
+
+	for (i32 i = 0; i < image->level_count; ++i) {
+		level_image_t* level_image = image->level_images + i;
+		if (!level_image->tiles) continue;
+		for (i32 j = 0; j < level_image->tile_count; ++j) {
+			tile_t* tile = level_image->tiles + j;
+			if (tile->texture != 0) {
+				renderer_destroy_texture(tile->texture);
+				tile->texture = 0;
+			}
+		}
+	}
+
+	if (image->macro_image.texture != 0) {
+		renderer_destroy_texture(image->macro_image.texture);
+		image->macro_image.texture = 0;
+	}
+	if (image->label_image.texture != 0) {
+		renderer_destroy_texture(image->label_image.texture);
+		image->label_image.texture = 0;
+	}
+}
+
 // TODO: make this based on scene (allow loading multiple images independently side by side)
 void unload_all_images(app_state_t *app_state) {
 	autosave(app_state, true, false); // save recent changes to annotations, if necessary
@@ -108,6 +151,7 @@ void unload_all_images(app_state_t *app_state) {
 		ASSERT(app_state->loaded_images);
 		for (i32 i = 0; i < current_image_count; ++i) {
 			image_t* old_image = app_state->loaded_images[i];
+			viewer_destroy_image_textures(old_image);
 			image_destroy(old_image);
             free(old_image);
 		}
@@ -153,6 +197,9 @@ void init_app_state(app_state_t* app_state, app_command_t command) {
 	ASSERT(!app_state->initialized); // check sanity
 	ASSERT(app_state->temp_storage_memory == NULL);
 //	memset(app_state, 0, sizeof(app_state_t));
+
+	tile_loader_set_remote_tiff_batch_callback(tiff_load_tile_batch_func);
+	tile_loader_set_slide_score_batch_callback(slide_score_load_tile_batch_func);
 
 	app_state->command = command;
 	app_state->headless = command.headless;
@@ -209,87 +256,6 @@ void autosave(app_state_t* app_state, bool force_ignore_delay, bool async) {
 
 }
 
-i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
-	i32 tasks_waiting = thread_pool_get_task_count(&global_thread_pool);
-	i32 max_acceptable_tasks = thread_pool_get_task_capacity(&global_thread_pool);
-	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
-	if (tiles_to_load > usable_slots) {
-		console_print_error("request_tiles(): requested %d tiles, but only %d tasks fit into the work queue", tiles_to_load, usable_slots);
-		tiles_to_load = usable_slots;
-	}
-
-	i32 tile_loads_submitted = 0;
-
-	if (tiles_to_load > 0){
-		if ((image->backend == IMAGE_BACKEND_TIFF && image->tiff.is_remote) || image->backend == IMAGE_BACKEND_SLIDE_SCORE) {
-			// For remote slides, only send out a batch request every so often, instead of single tile requests every frame.
-			// (to reduce load on the server)
-			static u32 intermittent = 0;
-			++intermittent;
-			u32 intermittent_interval = 1;
-			if (image->backend == IMAGE_BACKEND_TIFF) {
-				intermittent_interval = 5; // reduce load on remote server; can be tweaked
-			}
-			if (intermittent % intermittent_interval == 0) {
-				load_tile_task_batch_t batch = {};
-				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
-				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
-				work_queue_callback_t* load_func = (image->backend == IMAGE_BACKEND_SLIDE_SCORE) ? slide_score_load_tile_batch_func : tiff_load_tile_batch_func;
-				if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
-					// success
-					for (i32 i = 0; i < batch.task_count; ++i) {
-						load_tile_task_t* task = batch.tile_tasks + i;
-						tile_t* tile = task->tile;
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
-                        atomic_add(&image->refcount, task->refcount_to_decrement);
-						++tile_loads_submitted;
-					}
-				}
-			}
-		} else {
-			// regular file loading
-			for (i32 i = 0; i < tiles_to_load; ++i) {
-				load_tile_task_t task = wishlist[i];
-				tile_t* tile = task.tile;
-
-				// Try to get an exclusive lock to submit this tile load request
-				// (if we fail here, some other thread is also attempting to do the same)
-				if (atomic_compare_exchange(&tile->is_submitted_for_loading, 1, 0)) {
-					if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
-						// only GPU upload needed
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
-						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
-						task_group_begin(task.task_group);
-						if (!completion_queue_post(&global_completion_queue, VIEWER_COMPLETION_EVENT_UPLOAD_CACHED_TILE, &task, sizeof(task))) {
-							tile->is_submitted_for_loading = false;
-						}
-						task_group_end(task.task_group);
-					} else {
-						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
-						if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
-							// success
-							atomic_add(&image->refcount, task.refcount_to_decrement);
-							++tile_loads_submitted;
-						} else {
-							// TODO: should we even allow this to fail?
-							tile->is_submitted_for_loading = false;
-						}
-					}
-				} else {
-					console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", tile->tile_x, tile->tile_y);
-				}
-			}
-		}
-	}
-	return tile_loads_submitted;
-}
-
 bool is_resource_valid(app_state_t* app_state, i32 resource_id) {
 	for (i32 i = 0; i < arrlen(app_state->active_resources); ++i) {
 		if (app_state->active_resources[i] == resource_id) {
@@ -342,8 +308,8 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 	i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
 	completion_event_t entry = {0};
 	while (completion_queue_poll(&global_completion_queue, &entry)) {
-        if (entry.kind == VIEWER_COMPLETION_EVENT_TILE_LOADED) {
-            viewer_notify_tile_completed_task_t* task = (viewer_notify_tile_completed_task_t*) entry.userdata;
+        if (entry.kind == TILE_LOADER_COMPLETION_EVENT_TILE_LOADED) {
+            tile_load_completion_task_t* task = (tile_load_completion_task_t*) entry.userdata;
             image_t* image = get_image_from_resource_id(app_state, task->resource_id);
             if (!image) {
                 // Image doesn't exist anymore (was unloaded?)
@@ -381,7 +347,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                 }
             }
 
-        } else if (entry.kind == VIEWER_COMPLETION_EVENT_UPLOAD_CACHED_TILE) {
+        } else if (entry.kind == TILE_LOADER_COMPLETION_EVENT_UPLOAD_CACHED_TILE) {
             load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
             if (!is_resource_valid(app_state, task->resource_id)) {
                 // Image no longer exists
@@ -490,7 +456,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			tile_streamer.wsi = wsi;
 			tile_streamer.resource_id = image->resource_id;
 			tile_streamer.tile_completion_queue = &global_completion_queue;
-			tile_streamer.tile_completed_event_kind = VIEWER_COMPLETION_EVENT_TILE_LOADED;
+			tile_streamer.tile_completed_event_kind = TILE_LOADER_COMPLETION_EVENT_TILE_LOADED;
             tile_streamer.pixel_format = LIBISYNTAX_PIXEL_FORMAT_BGRA;
 			if (!wsi->first_load_complete && !wsi->first_load_in_progress) {
 				// NOTE: this fails if isyntax_tile_read() is called once already
@@ -585,7 +551,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.need_gpu_residency = true,
 								.need_keep_in_cache = tile->need_keep_in_cache,
 								.completion_queue = &global_completion_queue,
-								.completion_event_kind = VIEWER_COMPLETION_EVENT_TILE_LOADED,
+								.completion_event_kind = TILE_LOADER_COMPLETION_EVENT_TILE_LOADED,
                                 .refcount_to_decrement = 1, // will be decremented at and of thread proc load_tile_func()
 						};
 						tile_wishlist[num_tasks_on_wishlist++] = task;

@@ -38,12 +38,7 @@ extern "C" {
 #include "caselist.h"
 #include "annotation.h"
 #include "renderer.h"
-
-typedef enum viewer_completion_event_kind_t {
-	VIEWER_COMPLETION_EVENT_NONE = 0,
-	VIEWER_COMPLETION_EVENT_TILE_LOADED,
-	VIEWER_COMPLETION_EVENT_UPLOAD_CACHED_TILE,
-} viewer_completion_event_kind_t;
+#include "tile_loader.h"
 
 typedef enum viewer_file_type_enum {
 	VIEWER_FILE_TYPE_UNKNOWN = 0,
@@ -83,8 +78,6 @@ typedef struct directory_info_t {
 	bool is_valid;
 } directory_info_t;
 
-#define BYTES_PER_PIXEL 4
-
 typedef enum filetype_hint_enum {
 	FILETYPE_HINT_NONE = 0,
 	FILETYPE_HINT_CASELIST,
@@ -92,55 +85,6 @@ typedef enum filetype_hint_enum {
 	FILETYPE_HINT_BASE_IMAGE,
 	FILETYPE_HINT_OVERLAY,
 } filetype_hint_enum;
-
-typedef enum task_type_enum {
-	TASK_NONE = 0,
-	TASK_LOAD_TILE = 0,
-} task_type_enum;
-
-typedef enum load_tile_error_code_enum {
-	LOAD_TILE_SUCCESS,
-	LOAD_TILE_EMPTY,
-	LOAD_TILE_READ_LOCAL_FAILED,
-	LOAD_TILE_READ_REMOTE_FAILED,
-} load_tile_error_code_enum;
-
-typedef struct load_tile_task_t {
-	i32 resource_id;
-	image_t* image;
-	tile_t* tile;
-	i32 level;
-	i32 tile_x;
-	i32 tile_y;
-	i32 priority;
-	bool8 need_gpu_residency;
-	bool8 need_keep_in_cache;
-	bool8 invert_colors;
-	completion_queue_t* completion_queue;
-	completion_event_kind_t completion_event_kind;
-	task_group_t* task_group;
-    i32 refcount_to_decrement;
-} load_tile_task_t;
-
-typedef struct viewer_notify_tile_completed_task_t {
-	u8* pixel_memory;
-	i32 scale;
-	i32 tile_index;
-	i32 tile_width;
-	i32 tile_height;
-	i32 resource_id;
-	bool want_gpu_residency;
-	bool is_empty; // TODO: check this value
-	bool failed;
-} viewer_notify_tile_completed_task_t;
-
-
-#define TILE_LOAD_BATCH_MAX 8
-
-typedef struct load_tile_task_batch_t {
-	i32 task_count;
-	load_tile_task_t tile_tasks[TILE_LOAD_BATCH_MAX];
-} load_tile_task_batch_t;
 
 typedef struct scale_bar_t {
 	char text[64];
@@ -382,7 +326,6 @@ bool app_get_slide_score_api_key_filename(char* buffer, size_t buffer_size);
 void app_read_slide_score_api_key(char* buffer, size_t buffer_size);
 bool app_write_slide_score_api_key(const char* api_key);
 image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
-void load_tile_func(i32 logical_thread_index, void* userdata);
 void load_openslide_wsi(wsi_t* wsi, const char* filename);
 void unload_openslide_wsi(wsi_t* wsi);
 bool was_button_pressed(button_state_t* button);
@@ -391,7 +334,6 @@ bool was_key_pressed(input_t* input, i32 keycode);
 bool is_key_down(input_t* input, i32 keycode);
 void init_app_state(app_state_t* app_state, app_command_t command);
 void autosave(app_state_t* app_state, bool force_ignore_delay, bool async);
-i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load);
 void scene_update_camera_pos(scene_t* scene, v2f pos);
 void viewer_switch_tool(app_state_t* app_state, placement_tool_enum tool);
 void viewer_update_and_render(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height, float delta_time);

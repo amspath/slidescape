@@ -35,6 +35,10 @@
 extern "C" {
 #endif
 
+#ifndef BYTES_PER_PIXEL
+#define BYTES_PER_PIXEL 4
+#endif
+
 typedef enum pixel_format_enum {
     PIXEL_FORMAT_UNDEFINED = 0,
     PIXEL_FORMAT_U8_BGRA = 1,
@@ -239,6 +243,7 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
 bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay);
 bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overlay);
 void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay);
+void unload_openslide_wsi(wsi_t* wsi);
 bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, void* dest, pixel_format_enum desired_pixel_format);
 void begin_level_image_indexing(image_t* image, level_image_t* level_image, i32 scale);
 void image_destroy(image_t* image);

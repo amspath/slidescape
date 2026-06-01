@@ -292,6 +292,8 @@ set(SLIDESCAPE_NONGUI_BASE_FILES
         src/utils/block_allocator.c
         src/utils/timerutils.c
         src/platform/platform_mutex.c
+        src/core/image.c
+        src/core/tile_loader.c
         src/utils/phasecorrelate.c
         src/third_party/lz4.c
         src/third_party/yxml.c
@@ -345,7 +347,6 @@ set(VIEWER_SOURCE_FILES
         core/ini.c
         core/remote.c
         core/slide_score.c
-        core/image.c
         core/image_registration.c
         core/image_resize.c
         imgui/imgui.cpp
