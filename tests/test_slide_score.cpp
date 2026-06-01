@@ -32,16 +32,6 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
 	(void)need_image_registration;
 }
 
-void image_destroy(image_t* image) {
-	(void)image;
-}
-
-bool init_image_from_slide_score(image_t* image, slide_score_remote_image_t* remote, bool is_overlay) {
-	(void)image;
-	(void)remote;
-	(void)is_overlay;
-	return false;
-}
 }
 
 TEST_CASE("Slide Score metadata parser handles nested metadata and arrays") {

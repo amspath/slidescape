@@ -10,10 +10,6 @@ add_executable(slidescape_tests
         test_stringutils.cpp
         test_work_queue.cpp
         ../src/core/slide_score.c
-        ../src/utils/mathutils.c
-        ../src/utils/memrw.c
-        ../src/utils/stringutils.c
-        ../src/third_party/ltalloc.cc
 )
 
 target_include_directories(slidescape_tests PRIVATE

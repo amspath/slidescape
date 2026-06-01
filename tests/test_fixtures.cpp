@@ -4,6 +4,7 @@
 #include "stringutils.h"
 #include "tiff.h"
 #include "isyntax.h"
+#include "image_loader.h"
 
 #include <stdint.h>
 
@@ -190,6 +191,78 @@ static bool pixel_buffer_has_variation(const u32* pixels, size_t pixel_count) {
 	return false;
 }
 
+static void ensure_image_read_region_thread_pool(void) {
+	if (!global_thread_pool.initialized) {
+		init_global_system_info(false);
+		if (global_system_info.suggested_total_thread_count < 2) {
+			global_system_info.suggested_total_thread_count = 2;
+		}
+		init_thread_pool(&global_thread_pool, 128, true, false, NULL);
+	}
+}
+
+typedef struct selected_tiff_tile_t {
+	i32 level;
+	i32 tile_x;
+	i32 tile_y;
+	i32 tile_index;
+	i32 read_width;
+	i32 read_height;
+	u8* pixels;
+} selected_tiff_tile_t;
+
+static bool select_decodable_tiff_tile(image_t* image, selected_tiff_tile_t* out_tile) {
+	ASSERT(image && image->backend == IMAGE_BACKEND_TIFF);
+	level_image_t* level_image = image->level_images + 0;
+	tiff_ifd_t* ifd = image->tiff.level_images_ifd + level_image->pyramid_image_index;
+	for (i32 tile_y = 0; tile_y < (i32)level_image->height_in_tiles; ++tile_y) {
+		for (i32 tile_x = 0; tile_x < (i32)level_image->width_in_tiles; ++tile_x) {
+			i32 tile_index = tile_y * (i32)level_image->width_in_tiles + tile_x;
+			if (ifd->tile_offsets[tile_index] == 0 || ifd->tile_byte_counts[tile_index] == 0) continue;
+
+			u8* pixels = tiff_decode_tile(0, &image->tiff, ifd, tile_index, 0, tile_x, tile_y);
+			if (!pixels) continue;
+
+			i64 x = (i64)tile_x * (i64)level_image->tile_width;
+			i64 y = (i64)tile_y * (i64)level_image->tile_height;
+			i32 read_width = (i32)MIN((i64)level_image->tile_width, level_image->width_in_pixels - x);
+			i32 read_height = (i32)MIN((i64)level_image->tile_height, level_image->height_in_pixels - y);
+			if (read_width <= 0 || read_height <= 0) {
+				free(pixels);
+				continue;
+			}
+
+			*out_tile = {};
+			out_tile->level = 0;
+			out_tile->tile_x = tile_x;
+			out_tile->tile_y = tile_y;
+			out_tile->tile_index = tile_index;
+			out_tile->read_width = read_width;
+			out_tile->read_height = read_height;
+			out_tile->pixels = pixels;
+			return true;
+		}
+	}
+	return false;
+}
+
+static image_t* load_tiff_fixture_image(const fixture_t* fixture) {
+	file_info_t file = viewer_get_file_info(fixture->path);
+	REQUIRE(file.is_valid);
+	REQUIRE(file.is_regular_file);
+	REQUIRE(file.type == VIEWER_FILE_TYPE_TIFF);
+
+	image_load_options_t options = {};
+	options.use_builtin_tiff_backend = true;
+	options.resource_id = 2000;
+	options.thread_pool = &global_thread_pool;
+	image_t* image = image_load_from_file(&file, NULL, &options);
+	REQUIRE(image != NULL);
+	REQUIRE(image->is_valid);
+	REQUIRE(image->backend == IMAGE_BACKEND_TIFF);
+	return image;
+}
+
 TEST_CASE("fixture manifest is readable") {
 	fixture_manifest_t* manifest = fixture_manifest();
 	REQUIRE(manifest->fixture_count > 0);
@@ -372,6 +445,92 @@ TEST_CASE("decode a representative TIFF tile") {
 
 	free(pixels);
 	tiff_destroy(&tiff);
+}
+
+TEST_CASE("load TIFF fixture as image_t and read a tile region") {
+	const fixture_t* fixture = first_available_fixture("tiff", "tiff-tile");
+	if (!fixture) fixture = first_available_fixture("tiff");
+	if (!fixture) {
+		MESSAGE("Skipping image_read_region TIFF check: no TIFF fixture is present locally.");
+		return;
+	}
+
+	ensure_image_read_region_thread_pool();
+
+	image_t* image = load_tiff_fixture_image(fixture);
+	level_image_t* level_image = image->level_images + 0;
+	REQUIRE(level_image->exists);
+
+	selected_tiff_tile_t tile = {};
+	REQUIRE(select_decodable_tiff_tile(image, &tile));
+	CAPTURE(fixture->path);
+	CAPTURE(tile.tile_index);
+	CAPTURE(tile.tile_x);
+	CAPTURE(tile.tile_y);
+
+	i32 x = tile.tile_x * (i32)level_image->tile_width;
+	i32 y = tile.tile_y * (i32)level_image->tile_height;
+	size_t region_size = (size_t)tile.read_width * (size_t)tile.read_height * sizeof(u32);
+	u32* region = (u32*)calloc((size_t)tile.read_width * (size_t)tile.read_height, sizeof(u32));
+	REQUIRE(region != NULL);
+
+	REQUIRE(image_read_region(image, 0, x, y, tile.read_width, tile.read_height, region, PIXEL_FORMAT_U8_BGRA));
+	for (i32 row = 0; row < tile.read_height; ++row) {
+		u32* expected_row = (u32*)tile.pixels + (size_t)row * (size_t)level_image->tile_width;
+		u32* actual_row = region + (size_t)row * (size_t)tile.read_width;
+		CHECK(memcmp(actual_row, expected_row, (size_t)tile.read_width * sizeof(u32)) == 0);
+	}
+	CHECK(region_size > 0);
+
+	free(region);
+	free(tile.pixels);
+	image_destroy(image);
+	free(image);
+}
+
+TEST_CASE("image_read_region converts TIFF BGRA pixels to F32 luminance") {
+	const fixture_t* fixture = first_available_fixture("tiff", "tiff-tile");
+	if (!fixture) fixture = first_available_fixture("tiff");
+	if (!fixture) {
+		MESSAGE("Skipping image_read_region F32 conversion check: no TIFF fixture is present locally.");
+		return;
+	}
+
+	ensure_image_read_region_thread_pool();
+
+	image_t* image = load_tiff_fixture_image(fixture);
+	level_image_t* level_image = image->level_images + 0;
+	REQUIRE(level_image->exists);
+
+	selected_tiff_tile_t tile = {};
+	REQUIRE(select_decodable_tiff_tile(image, &tile));
+
+	i32 read_width = MIN(tile.read_width, 16);
+	i32 read_height = MIN(tile.read_height, 16);
+	REQUIRE(read_width > 0);
+	REQUIRE(read_height > 0);
+
+	i32 x = tile.tile_x * (i32)level_image->tile_width;
+	i32 y = tile.tile_y * (i32)level_image->tile_height;
+	float* luminance = (float*)calloc((size_t)read_width * (size_t)read_height, sizeof(float));
+	REQUIRE(luminance != NULL);
+
+	REQUIRE(image_read_region(image, 0, x, y, read_width, read_height, luminance, PIXEL_FORMAT_F32_Y));
+	for (i32 row = 0; row < read_height; ++row) {
+		for (i32 col = 0; col < read_width; ++col) {
+			u8* bgra = tile.pixels + ((size_t)row * (size_t)level_image->tile_width + (size_t)col) * 4;
+			float b = (float)bgra[0] * (1.0f / 255.0f);
+			float g = (float)bgra[1] * (1.0f / 255.0f);
+			float r = (float)bgra[2] * (1.0f / 255.0f);
+			float expected = f32_rgb_to_f32_y(r, g, b);
+			CHECK(luminance[(size_t)row * (size_t)read_width + (size_t)col] == doctest::Approx(expected));
+		}
+	}
+
+	free(luminance);
+	free(tile.pixels);
+	image_destroy(image);
+	free(image);
 }
 
 TEST_CASE("open iSyntax fixture and read WSI metadata through libisyntax" ) {
