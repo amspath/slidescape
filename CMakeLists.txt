@@ -293,6 +293,7 @@ set(SLIDESCAPE_NONGUI_BASE_FILES
         src/utils/timerutils.c
         src/platform/platform_mutex.c
         src/core/image.c
+        src/core/image_loader.c
         src/core/tile_loader.c
         src/utils/phasecorrelate.c
         src/third_party/lz4.c

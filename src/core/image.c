@@ -1458,7 +1458,7 @@ static bool check_image_texture_destroyed(renderer_texture_handle_t texture) {
     if (texture == 0) {
         return true;
     } else {
-        console_print_error("image_destroy(): texture %u is still in use (did you call viewer_destroy_image_textures() first?)\n", texture);
+        console_print_error("image_destroy(): texture %u is still in use (did you call renderer_destroy_image_resources() first?)\n", texture);
         ASSERT(!"check_image_texture_destroyed");
         return false;
     }

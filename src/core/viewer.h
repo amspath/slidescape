@@ -39,52 +39,7 @@ extern "C" {
 #include "annotation.h"
 #include "renderer.h"
 #include "tile_loader.h"
-
-typedef enum viewer_file_type_enum {
-	VIEWER_FILE_TYPE_UNKNOWN = 0,
-	VIEWER_FILE_TYPE_SIMPLE_IMAGE,
-	VIEWER_FILE_TYPE_TIFF,
-	VIEWER_FILE_TYPE_NDPI,
-	VIEWER_FILE_TYPE_MRXS,
-	VIEWER_FILE_TYPE_DICOM,
-	VIEWER_FILE_TYPE_ISYNTAX,
-	VIEWER_FILE_TYPE_OPENSLIDE_COMPATIBLE,
-	VIEWER_FILE_TYPE_XML,
-	VIEWER_FILE_TYPE_JSON,
-} viewer_file_type_enum;
-
-typedef struct file_info_t {
-	char full_filename[512];
-	char filename_prefix[512]; // directory name + trailing slash
-	const char* filename_in_directory;
-	char ext[16];
-	i64 filesize;
-	viewer_file_type_enum type;
-	bool is_valid;
-	bool is_directory;
-	bool is_regular_file;
-	bool is_image;
-    bool is_openslide_compatible;
-	u8 header[256];
-} file_info_t;
-
-typedef struct directory_info_t {
-	file_info_t* dicom_files; // array
-	file_info_t* nondicom_files; // array
-	directory_info_t* directories; // array
-	bool contains_dicom_files;
-	bool contains_nondicom_images;
-	bool contains_mrxs_files;
-	bool is_valid;
-} directory_info_t;
-
-typedef enum filetype_hint_enum {
-	FILETYPE_HINT_NONE = 0,
-	FILETYPE_HINT_CASELIST,
-	FILETYPE_HINT_ANNOTATIONS,
-	FILETYPE_HINT_BASE_IMAGE,
-	FILETYPE_HINT_OVERLAY,
-} filetype_hint_enum;
+#include "image_loader.h"
 
 typedef struct scale_bar_t {
 	char text[64];
@@ -326,8 +281,6 @@ bool app_get_slide_score_api_key_filename(char* buffer, size_t buffer_size);
 void app_read_slide_score_api_key(char* buffer, size_t buffer_size);
 bool app_write_slide_score_api_key(const char* api_key);
 image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint);
-void load_openslide_wsi(wsi_t* wsi, const char* filename);
-void unload_openslide_wsi(wsi_t* wsi);
 bool was_button_pressed(button_state_t* button);
 bool was_button_released(button_state_t* button);
 bool was_key_pressed(input_t* input, i32 keycode);
@@ -343,8 +296,6 @@ void do_after_scene_render(app_state_t* app_state, input_t* input);
 const char* get_active_directory(app_state_t* app_state);
 const char* get_annotation_directory(app_state_t* app_state);
 void set_annotation_directory(app_state_t* app_state, const char* path);
-file_info_t viewer_get_file_info(const char* filename);
-void viewer_directory_info_destroy(directory_info_t* info);
 void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 
 // viewer_io_remote.cpp

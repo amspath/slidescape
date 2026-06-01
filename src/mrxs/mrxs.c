@@ -21,7 +21,7 @@
 #include "mrxs.h"
 #include "stringutils.h"
 #include "listing.h"
-#include "viewer.h" // for file_info_t and directory_info_t
+#include "image_loader.h"
 #include "jpeg_decoder.h"
 #include "stb_image.h"
 #include "miniz.h"

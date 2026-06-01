@@ -39,7 +39,6 @@
 #include "listing.h"
 
 #define STBI_ASSERT(x) ASSERT(x)
-#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #include "image.h"
@@ -99,7 +98,7 @@ void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, boo
     strncpy(app_state->last_active_directory, image->directory, COUNT(app_state->last_active_directory));
 }
 
-static void viewer_destroy_image_textures(image_t* image) {
+void renderer_destroy_image_resources(image_t* image) {
 	if (!image) return;
 
 	if (image->backend == IMAGE_BACKEND_STBI) {
@@ -151,7 +150,7 @@ void unload_all_images(app_state_t *app_state) {
 		ASSERT(app_state->loaded_images);
 		for (i32 i = 0; i < current_image_count; ++i) {
 			image_t* old_image = app_state->loaded_images[i];
-			viewer_destroy_image_textures(old_image);
+			renderer_destroy_image_resources(old_image);
 			image_destroy(old_image);
             free(old_image);
 		}
