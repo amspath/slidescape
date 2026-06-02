@@ -20,6 +20,7 @@
 #include "viewer.h"
 #include "remote.h"
 #include "jpeg_decoder.h"
+#include "tile_streamer.h"
 
 void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
@@ -51,11 +52,38 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 			i32 bytes_read = 0;
 			i32 batch_size = batch->task_count;
+			load_tile_task_t* active_tasks[TILE_LOAD_BATCH_MAX] = {0};
+			i32 active_task_count = 0;
+			for (i32 i = 0; i < batch_size; ++i) {
+				load_tile_task_t* task = batch->tile_tasks + i;
+				if (tile_streamer_is_task_stale(image, task)) {
+					level_image_t* level_image = image->level_images + task->level;
+					tile_load_completion_task_t completion_task = {0};
+					completion_task.resource_id = task->resource_id;
+					completion_task.tile_width = level_image->tile_width;
+					completion_task.tile_height = level_image->tile_height;
+					completion_task.scale = task->level;
+					completion_task.tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
+					completion_task.want_gpu_residency = task->need_gpu_residency;
+					completion_task.stale = true;
+					completion_task.stream_generation = task->stream_generation;
+					if (task->completion_queue) {
+						completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
+					}
+				} else {
+					active_tasks[active_task_count++] = task;
+				}
+			}
+			if (active_task_count == 0) {
+				atomic_subtract(&image->refcount, refcount_decrement_amount);
+				return;
+			}
+			batch_size = active_task_count;
 			i64 chunk_offsets[TILE_LOAD_BATCH_MAX];
 			i64 chunk_sizes[TILE_LOAD_BATCH_MAX];
 			i64 total_read_size = 0;
 			for (i32 i = 0; i < batch_size; ++i) {
-				load_tile_task_t* task = batch->tile_tasks + i;
+				load_tile_task_t* task = active_tasks[i];
 
 				i32 level = task->level;
 				i32 tile_x = task->tile_x;
@@ -94,7 +122,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 					i64 chunk_offset_in_read_buffer = 0;
 					for (i32 i = 0; i < batch_size; ++i) {
-						load_tile_task_t* task = batch->tile_tasks + i;
+						load_tile_task_t* task = active_tasks[i];
 						level_image_t* level_image = image->level_images + task->level;
 
 						size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
@@ -124,12 +152,16 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_task.pixel_memory = pixel_memory;
 						// TODO: check if we need to pass the tile height here too?
 						completion_task.tile_width = level_image->tile_width;
+						completion_task.tile_height = level_image->tile_height;
 						completion_task.scale = task->level;
 						completion_task.tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
 						completion_task.want_gpu_residency = true;
+						completion_task.stale = tile_streamer_is_task_stale(image, task);
+						completion_task.stream_generation = task->stream_generation;
 
-						completion_queue_post(&global_completion_queue, task->completion_event_kind, &completion_task,
-						                       sizeof(completion_task));
+						if (task->completion_queue) {
+							completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
+						}
 
 						//new_textures[i] = renderer_create_texture(pixel_memory, TILE_DIM, TILE_DIM, RENDERER_PIXEL_FORMAT_BGRA);
 					}

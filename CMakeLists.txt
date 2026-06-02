@@ -295,6 +295,7 @@ set(SLIDESCAPE_NONGUI_BASE_FILES
         src/core/image.c
         src/core/image_loader.c
         src/core/tile_loader.c
+        src/core/tile_streamer.c
         src/utils/phasecorrelate.c
         src/third_party/lz4.c
         src/third_party/yxml.c

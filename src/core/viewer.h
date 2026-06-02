@@ -183,18 +183,6 @@ typedef struct pixel_transfer_state_t {
 	bool8 initialized;
 } pixel_transfer_state_t;
 
-typedef struct tile_streamer_t {
-	image_t* image;
-	scene_t* scene;
-	v2f origin_offset;
-	v2f camera_center;
-	bounds2f camera_bounds;
-	bounds2f crop_bounds;
-	bool is_cropped;
-	zoom_state_t zoom;
-} tile_streamer_t;
-
-
 typedef enum command_enum {
 	COMMAND_NONE,
 	COMMAND_PRINT_VERSION,

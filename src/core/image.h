@@ -49,6 +49,7 @@ typedef enum pixel_format_enum {
 #define WSI_TILE_DIM 512
 
 typedef struct image_t image_t;
+typedef struct tile_streamer_t tile_streamer_t;
 
 typedef struct {
     i64 width;
@@ -115,6 +116,7 @@ typedef struct tile_t {
     u8* pixels;
     renderer_texture_handle_t texture;
     i32 is_submitted_for_loading;
+    i32 submitted_stream_generation;
     i32 read_region_refcount; // TODO: do we need only read_region_refcount, or something more general?
     bool8 is_empty;
     bool8 is_cached;
@@ -196,7 +198,8 @@ typedef struct image_t {
     v2f origin_offset;
     simple_image_t macro_image;
     simple_image_t label_image;
-    i32 resource_id;
+	i32 resource_id;
+	tile_streamer_t* tile_streamer;
 	volatile i32 refcount;
 	platform_mutex_t lock;
 	bool lock_initialized;
