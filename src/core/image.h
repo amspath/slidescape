@@ -113,14 +113,9 @@ typedef struct tile_t {
     u32 tile_index;
     i32 tile_x;
     i32 tile_y;
-    u8* pixels;
     renderer_texture_handle_t texture;
     i32 is_submitted_for_loading;
-    i32 read_region_refcount; // TODO: do we need only read_region_refcount, or something more general?
     bool8 is_empty;
-    bool8 is_cached;
-    bool8 need_keep_in_cache;
-    bool8 need_gpu_residency; // TODO: revise: still needed?
     i64 time_last_drawn;
 } tile_t;
 
@@ -235,7 +230,6 @@ static inline renderer_texture_handle_t get_texture_for_tile(image_t* image, i32
 float f32_rgb_to_f32_y(float R, float G, float B);
 void image_convert_u8_rgba_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components);
 void image_convert_u8_bgra_to_f32_y(u8* src, float* dest, i32 w, i32 h, i32 components);
-void tile_release_cache(tile_t* tile);
 const char* get_image_backend_name(image_t* image);
 const char* get_image_descriptive_type_name(image_t* image);
 bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t* parent_image);

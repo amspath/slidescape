@@ -56,6 +56,7 @@
 #include "ini.h"
 #include "image_registration.h"
 #include "renderer.h"
+#include "tile_cache.h"
 
 
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration) {
@@ -332,10 +333,9 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                             tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
                         }
                     }
-                    if (tile->need_keep_in_cache) {
+                    if (task->need_cpu_residency || tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
                         need_free_pixel_memory = false;
-                        tile->pixels = task->pixel_memory;
-                        tile->is_cached = true;
+                        tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
                     }
                     if (need_free_pixel_memory) {
                         free(task->pixel_memory);
@@ -354,21 +354,23 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                 tile_t* tile = task->tile;
                 ASSERT(tile);
                 tile->is_submitted_for_loading = false;
-                if (tile->is_cached && tile->pixels) {
-                    if (tile->need_gpu_residency) {
+                i32 tile_index = task->tile_y * task->image->level_images[task->level].width_in_tiles + task->tile_x;
+                u8* cached_pixels = tile_cache_get_cpu_pixels(task->image, task->level, tile_index);
+                if (cached_pixels) {
+                    if (task->need_gpu_residency) {
                         pixel_transfer_state_t* transfer_state = renderer_submit_texture_upload(app_state,
                                                                                                 task->image->tile_width,
                                                                                                 task->image->tile_height,
                                                                                                 4,
-                                                                                                tile->pixels,
+                                                                                                cached_pixels,
                                                                                                 finalize_textures_immediately);
                         tile->texture = transfer_state->texture;
                     } else {
-                        ASSERT(!"viewer_only_upload_cached_tile() called but !tile->need_gpu_residency\n");
+                        ASSERT(!"viewer_only_upload_cached_tile() called but !task->need_gpu_residency\n");
                     }
 
-                    if (!task->need_keep_in_cache) {
-                        tile_release_cache(tile);
+                    if (!task->need_cpu_residency) {
+                        tile_cache_release_cpu_pixels_if_unpinned(task->image, task->level, tile_index);
                     }
                 } else {
                     console_print("Warning: viewer_only_upload_cached_tile() called on a non-cached tile\n");
@@ -548,7 +550,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.image = image, .tile = tile, .level = scale, .tile_x = tile_x, .tile_y = tile_y,
 								.priority = tile_priority,
 								.need_gpu_residency = true,
-								.need_keep_in_cache = tile->need_keep_in_cache,
+								.need_cpu_residency = tile_cache_tile_is_cpu_pinned(image, scale, tile->tile_index),
 								.completion_queue = &global_completion_queue,
 								.completion_event_kind = TILE_LOADER_COMPLETION_EVENT_TILE_LOADED,
                                 .refcount_to_decrement = 1, // will be decremented at and of thread proc load_tile_func()

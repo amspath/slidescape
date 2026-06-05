@@ -29,20 +29,6 @@
 #include "tile_loader.h"
 #include "tile_cache.h"
 
-// TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
-void tile_release_cache(tile_t* tile) {
-	ASSERT(tile);
-	if (tile->read_region_refcount > 0) {
-		tile->need_keep_in_cache = true;
-		return;
-	}
-	if (tile->pixels) free(tile->pixels);
-	tile->pixels = NULL;
-	tile->is_cached = false;
-	tile->need_keep_in_cache = false;
-}
-
-
 const char* get_image_backend_name(image_t* image) {
     const char* result = "--";
     if (image->backend == IMAGE_BACKEND_TIFF) {
@@ -1127,8 +1113,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 						tile_t* tile = get_tile(level_image, tile_x, tile_y);
 						if (!tile->is_empty) {
-							++tile->read_region_refcount;
-							tile->need_keep_in_cache = true;
+							tile_cache_pin_cpu_tile(image, level, tile->tile_index, TILE_CACHE_DEMAND_READ_REGION);
 						}
 					}
 				}
@@ -1138,22 +1123,19 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 						tile_t *tile = get_tile(level_image, tile_x, tile_y);
 						if (tile->is_empty) continue; // no need to load empty tiles
-						if (tile->is_cached && tile->pixels) {
-							//TODO: retain
+						if (tile_cache_tile_has_cpu_pixels(image, level, tile->tile_index)) {
 							continue; // already cached
 						}
 						if (tile->is_submitted_for_loading) {
-							tile->need_keep_in_cache = true;
 							continue; // another read_region() or viewer request is already loading it
 						}
-						tile->need_keep_in_cache = true;
 						wishlist[tiles_to_load++] = (load_tile_task_t) {
 								.resource_id = image->resource_id,
 								.image = image, .tile = tile, .level = level,
 								.tile_x = tile->tile_x,
 								.tile_y = tile->tile_y,
 								.need_gpu_residency = false,
-								.need_keep_in_cache = true,
+								.need_cpu_residency = true,
 								.invert_colors = invert_colors,
 								.completion_queue = &read_completion_queue,
 								.task_group = &read_task_group,
@@ -1180,12 +1162,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						if (task->pixel_memory) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 							tile->is_submitted_for_loading = false;
-							if (tile->pixels == NULL) {
-								tile->pixels = task->pixel_memory; // TODO: retain
-								tile->is_cached = true;
-							} else {
-								free(task->pixel_memory);
-							}
+							tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
 						} else if (task->failed || task->is_empty) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 							tile->is_submitted_for_loading = false;
@@ -1199,9 +1176,8 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 							for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 								tile_t *tile = get_tile(level_image, tile_x, tile_y);
-								if (!tile->is_empty && !(tile->is_cached && tile->pixels)) {
+								if (!tile->is_empty && !tile_cache_tile_has_cpu_pixels(image, level, tile->tile_index)) {
 									all_tiles_ready = false;
-									tile->need_keep_in_cache = true;
 									if (!tile->is_submitted_for_loading) {
 										wishlist[retry_tiles_to_load++] = (load_tile_task_t) {
 												.resource_id = image->resource_id,
@@ -1209,7 +1185,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 												.tile_x = tile->tile_x,
 												.tile_y = tile->tile_y,
 												.need_gpu_residency = false,
-												.need_keep_in_cache = true,
+												.need_cpu_residency = true,
 												.invert_colors = invert_colors,
 												.completion_queue = &read_completion_queue,
 												.task_group = &read_task_group,
@@ -1281,9 +1257,10 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					if (tile_x >= 0 && tile_y >= 0 && tile_x < level_image->width_in_tiles && tile_y < level_image->height_in_tiles) {
 						// Source tile is within range -> try to read its pixels
 						tile_t* tile = get_tile(level_image, tile_x, tile_y);
-						if (!tile->is_empty && tile->is_cached && tile->pixels) {
+						u8* cached_pixels = tile_cache_get_cpu_pixels(image, level, tile->tile_index);
+						if (!tile->is_empty && cached_pixels) {
 							// Copy the relevant portion of the tile to the region
-							u32* pixels = (u32*)tile->pixels;
+							u32* pixels = (u32*)cached_pixels;
 							for (int64_t i = 0; i < copy_height; ++i) {
 								int64_t dest_index = (dest_y + i) * w + dest_x;
 								int64_t src_index = (src_y + i) * tile_width + src_x;
@@ -1302,12 +1279,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 			for (i32 tile_y = tiles_within_level_bounds.min.y; tile_y < tiles_within_level_bounds.max.y; ++tile_y) {
 				for (i32 tile_x = tiles_within_level_bounds.min.x; tile_x < tiles_within_level_bounds.max.x; ++tile_x) {
 					tile_t* tile = get_tile(level_image, tile_x, tile_y);
-					if (tile->read_region_refcount > 0) {
-						--tile->read_region_refcount;
-						if (tile->read_region_refcount == 0) {
-							tile_release_cache(tile);
-						}
-					}
+					tile_cache_unpin_cpu_tile(image, level, tile->tile_index, TILE_CACHE_DEMAND_READ_REGION);
 				}
 			}
             platform_mutex_unlock(&image->lock);

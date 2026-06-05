@@ -20,6 +20,7 @@
 
 #include "dicom_wsi.h"
 #include "mrxs.h"
+#include "tile_cache.h"
 #include "tiff.h"
 
 static work_queue_callback_t* remote_tiff_load_tile_batch_func;
@@ -74,8 +75,6 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 						load_tile_task_t* task = batch.tile_tasks + i;
 						tile_t* tile = task->tile;
 						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task->need_gpu_residency;
-						tile->need_keep_in_cache = task->need_keep_in_cache;
 						atomic_add(&image->refcount, task->refcount_to_decrement);
 						++tile_loads_submitted;
 					}
@@ -89,11 +88,10 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 				// Try to get an exclusive lock to submit this tile load request
 				// (if we fail here, some other thread is also attempting to do the same)
 				if (atomic_compare_exchange(&tile->is_submitted_for_loading, 1, 0)) {
-					if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
+					if (tile_cache_tile_has_cpu_pixels(image, task.level, task.tile_y * image->level_images[task.level].width_in_tiles + task.tile_x) &&
+					    tile->texture == 0 && task.need_gpu_residency) {
 						// only GPU upload needed
 						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
 						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
 						task_group_begin(task.task_group);
 						if (!completion_queue_post(&global_completion_queue, TILE_LOADER_COMPLETION_EVENT_UPLOAD_CACHED_TILE, &task, sizeof(task))) {
@@ -102,8 +100,6 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 						task_group_end(task.task_group);
 					} else {
 						tile->is_submitted_for_loading = true;
-						tile->need_gpu_residency = task.need_gpu_residency;
-						tile->need_keep_in_cache = task.need_keep_in_cache;
 						if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
 							atomic_add(&image->refcount, task.refcount_to_decrement);
 							++tile_loads_submitted;

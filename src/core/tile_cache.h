@@ -73,6 +73,13 @@ tile_cache_t* tile_cache_create(image_t* image);
 tile_cache_t* tile_cache_get_or_create(image_t* image);
 void tile_cache_destroy(tile_cache_t* cache);
 tile_cache_tile_t* tile_cache_get_tile_state(image_t* image, i32 level, i32 tile_index);
+void tile_cache_pin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
+void tile_cache_unpin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
+bool tile_cache_tile_has_cpu_pixels(image_t* image, i32 level, i32 tile_index);
+bool tile_cache_tile_is_cpu_pinned(image_t* image, i32 level, i32 tile_index);
+u8* tile_cache_get_cpu_pixels(image_t* image, i32 level, i32 tile_index);
+void tile_cache_store_cpu_pixels(image_t* image, i32 level, i32 tile_index, u8* pixels);
+void tile_cache_release_cpu_pixels_if_unpinned(image_t* image, i32 level, i32 tile_index);
 
 #ifdef __cplusplus
 }

@@ -48,7 +48,7 @@ typedef struct load_tile_task_t {
 	i32 tile_y;
 	i32 priority;
 	bool8 need_gpu_residency;
-	bool8 need_keep_in_cache;
+	bool8 need_cpu_residency;
 	bool8 invert_colors;
 	completion_queue_t* completion_queue;
 	completion_event_kind_t completion_event_kind;
