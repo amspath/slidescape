@@ -68,6 +68,7 @@ bool gui_draw_selected_annotation_submenu_section(app_state_t* app_state, scene_
 void gui_draw_insert_annotation_submenu(app_state_t* app_state);
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height);
 void gui_do_modal_popups();
+void draw_profiler_window(app_state_t* app_state);
 void gui_add_modal_message_popup(const char* title, const char* message, ...);
 void gui_add_modal_progress_bar_popup(const char* title, float* progress, bool allow_cancel);
 void draw_export_region_dialog(app_state_t* app_state);
@@ -102,6 +103,7 @@ extern bool show_about_window;
 extern bool show_export_region_dialog;
 extern bool show_mouse_pos_overlay;
 extern bool show_console_window INIT(= DO_DEBUG);
+extern bool show_profiler_window;
 extern bool show_menu_bar INIT(= true);
 extern bool load_next_image_as_overlay;
 extern i32 layers_window_selected_image_index; // TODO: make this a property of scene_t?

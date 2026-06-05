@@ -21,6 +21,7 @@
 
 #include "imgui.h"
 #include "imgui_internal.h"
+#include "imgui_widget_flamegraph.h"
 
 #include "openslide_api.h"
 #include "viewer.h"
@@ -29,6 +30,7 @@
 #include "image.h"
 #include "image_registration.h"
 #include "slide_score.h"
+#include "profiler.h"
 
 
 #define GUI_IMPL
@@ -374,6 +376,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 			if (ImGui::BeginMenu("Debug")) {
 				if (ImGui::MenuItem("Show console", "F3 or `", &show_console_window)) {}
+				if (ImGui::MenuItem("Show profiler", "F2", &show_profiler_window)) {}
 				if (ImGui::MenuItem("Show demo window", "F1", &show_demo_window)) {}
 				if (ImGui::MenuItem("Show debugging window", "Ctrl+F1", &show_debugging_window)) {}
 				ImGui::Separator();
@@ -1119,6 +1122,148 @@ void gui_draw_open_uri_window(app_state_t* app_state) {
     ImGui::End();
 }
 
+static void profiler_flamegraph_getter(float* start, float* end, ImU8* level, const char** caption, const void* data, int idx) {
+	const profiler_frame_t* frame = (const profiler_frame_t*)data;
+	if (idx < 0 || idx >= PROFILER_SECTION_COUNT) return;
+	const profiler_section_t* s = &frame->sections[idx];
+	if (start) *start = (s->start > 0 && frame->frame_start > 0) ? get_seconds_elapsed(frame->frame_start, s->start) * 1000.0f : 0.0f;
+	if (end)   *end   = (s->end   > 0 && frame->frame_start > 0) ? get_seconds_elapsed(frame->frame_start, s->end)   * 1000.0f : 0.0f;
+	if (level)   *level   = s->level;
+	if (caption) *caption = profiler_section_names[idx];
+}
+
+void draw_profiler_window(app_state_t* app_state) {
+	static i32 pinned_frame = -1;
+
+	if (!ImGui::Begin("Profiler", &show_profiler_window)) {
+		ImGui::End();
+		return;
+	}
+
+	if (ImGui::Button(global_profiler.paused ? "Resume" : "Pause")) {
+		global_profiler.paused = !global_profiler.paused;
+		if (!global_profiler.paused) pinned_frame = -1;
+	}
+	ImGui::SameLine();
+
+	i32 display_idx = (pinned_frame >= 0) ? pinned_frame : global_profiler.displayed_frame;
+	const profiler_frame_t* frame = &global_profiler.frames[display_idx];
+
+	float frame_ms = (frame->frame_end > 0 && frame->frame_start > 0)
+		? get_seconds_elapsed(frame->frame_start, frame->frame_end) * 1000.0f : 0.0f;
+	float fps = frame_ms > 0.0f ? 1000.0f / frame_ms : 0.0f;
+	ImGui::Text("%.2f ms  |  %.1f FPS%s", frame_ms, fps, global_profiler.paused ? "  [PAUSED]" : "");
+
+	ImGui::Separator();
+
+	// Frametime history graph
+	const float graph_height = 56.0f;
+	const float max_display_ms = 33.3f;
+	const float target_ms = 1000.0f / 60.0f;
+
+	ImVec2 canvas_pos = ImGui::GetCursorScreenPos();
+	float canvas_w = ImGui::GetContentRegionAvail().x;
+	ImVec2 canvas_size = ImVec2(canvas_w, graph_height);
+	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+	draw_list->AddRectFilled(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), IM_COL32(20, 20, 20, 220));
+	draw_list->AddRect(canvas_pos, ImVec2(canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y), IM_COL32(80, 80, 80, 255));
+
+	float target_y = canvas_pos.y + canvas_size.y * (1.0f - target_ms / max_display_ms);
+	draw_list->AddLine(ImVec2(canvas_pos.x, target_y), ImVec2(canvas_pos.x + canvas_size.x, target_y), IM_COL32(80, 200, 80, 100), 1.0f);
+
+	const i32 buf_size = PROFILER_FRAME_BUFFER_SIZE;
+	float bar_w = canvas_w / (float)buf_size;
+
+	bool clicked_graph = false;
+	i32 clicked_frame_idx = -1;
+	ImVec2 mouse_pos = ImGui::GetIO().MousePos;
+	bool mouse_in_graph = mouse_pos.x >= canvas_pos.x && mouse_pos.x < canvas_pos.x + canvas_w &&
+	                      mouse_pos.y >= canvas_pos.y && mouse_pos.y < canvas_pos.y + canvas_size.y;
+
+	if (mouse_in_graph && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered()) {
+		clicked_graph = true;
+		float rel_x = (mouse_pos.x - canvas_pos.x) / canvas_w;
+		clicked_frame_idx = (i32)(rel_x * buf_size);
+		if (clicked_frame_idx < 0) clicked_frame_idx = 0;
+		if (clicked_frame_idx >= buf_size) clicked_frame_idx = buf_size - 1;
+	}
+
+	for (i32 i = 0; i < buf_size; ++i) {
+		const profiler_frame_t* f = &global_profiler.frames[i];
+		float ft = (f->frame_end > 0 && f->frame_start > 0)
+			? get_seconds_elapsed(f->frame_start, f->frame_end) * 1000.0f : 0.0f;
+
+		float bar_h = ft / max_display_ms * canvas_size.y;
+		if (bar_h > canvas_size.y) bar_h = canvas_size.y;
+
+		float x0 = canvas_pos.x + i * bar_w;
+		float x1 = x0 + (bar_w >= 2.0f ? bar_w - 1.0f : bar_w);
+		float y1 = canvas_pos.y + canvas_size.y;
+		float y0 = y1 - bar_h;
+
+		bool is_selected = (i == display_idx);
+		ImU32 color;
+		if (is_selected) {
+			color = IM_COL32(255, 255, 80, 255);
+		} else if (ft > target_ms * 1.5f) {
+			color = IM_COL32(220, 70, 70, 220);
+		} else if (ft > target_ms) {
+			color = IM_COL32(220, 170, 60, 220);
+		} else {
+			color = IM_COL32(70, 170, 70, 220);
+		}
+
+		if (bar_h > 0.0f) {
+			draw_list->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), color);
+		}
+	}
+
+	// Transparent button to capture interactions over the graph area
+	ImGui::InvisibleButton("##framegraph", canvas_size);
+
+	if (clicked_graph && clicked_frame_idx >= 0) {
+		pinned_frame = clicked_frame_idx;
+		global_profiler.paused = true;
+	}
+
+	if (ImGui::IsItemHovered()) {
+		float rel_x = (mouse_pos.x - canvas_pos.x) / canvas_w;
+		i32 hover_idx = (i32)(rel_x * buf_size);
+		if (hover_idx < 0) hover_idx = 0;
+		if (hover_idx >= buf_size) hover_idx = buf_size - 1;
+		const profiler_frame_t* hf = &global_profiler.frames[hover_idx];
+		float hft = (hf->frame_end > 0 && hf->frame_start > 0)
+			? get_seconds_elapsed(hf->frame_start, hf->frame_end) * 1000.0f : 0.0f;
+		ImGui::SetTooltip("Frame %d: %.2f ms (%.1f FPS)\nClick to inspect", hover_idx, hft, hft > 0.0f ? 1000.0f / hft : 0.0f);
+	}
+
+	if (!global_profiler.paused) pinned_frame = -1;
+
+	// Flamegraph
+	ImGui::Separator();
+	ImGui::TextUnformatted("Main Thread");
+
+	if (frame->frame_start > 0) {
+		float scale_max = (frame->frame_end > 0 && frame->frame_end > frame->frame_start)
+			? get_seconds_elapsed(frame->frame_start, frame->frame_end) * 1000.0f
+			: FLT_MAX;
+		ImGuiWidgetFlameGraph::PlotFlame("CPU",
+			profiler_flamegraph_getter,
+			(const void*)frame,
+			PROFILER_SECTION_COUNT,
+			0,
+			NULL,
+			0.0f,
+			scale_max,
+			ImVec2(ImGui::GetContentRegionAvail().x, 0.0f));
+	} else {
+		ImGui::TextDisabled("No frame data yet.");
+	}
+
+	ImGui::End();
+}
+
 void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 client_height) {
 	ImGuiIO &io = ImGui::GetIO();
 
@@ -1558,6 +1703,10 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 	if (show_console_window) {
 		draw_console_window(app_state, "Console", &show_console_window);
+	}
+
+	if (show_profiler_window) {
+		draw_profiler_window(app_state);
 	}
 
 	// Draw modal popups last

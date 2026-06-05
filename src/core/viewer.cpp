@@ -57,6 +57,7 @@
 #include "image_registration.h"
 #include "renderer.h"
 #include "tile_cache.h"
+#include "profiler.h"
 
 
 void add_image(app_state_t* app_state, image_t* image, bool need_zoom_reset, bool need_image_registration) {
@@ -318,6 +319,7 @@ static bool viewer_process_loaded_tile(app_state_t* app_state, image_t* image, t
 }
 
 void viewer_process_completion_queue(app_state_t* app_state) {
+	profiler_begin(PROFILER_SECTION_COMPLETION_QUEUE);
 	float max_texture_load_time = 0.007f; // TODO: pin to frame time
 #if 1
 	if (!finalize_textures_immediately) {
@@ -428,6 +430,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 			break;
 		}
 	}
+	profiler_end(PROFILER_SECTION_COMPLETION_QUEUE);
 }
 
 void update_and_render_image(app_state_t* app_state, image_t* image) {
@@ -531,6 +534,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		} else {
 
 			// Create a 'wishlist' of tiles to request
+			profiler_begin(PROFILER_SECTION_TILE_LOADING);
 			load_tile_task_t tile_wishlist[32];
 			i32 num_tasks_on_wishlist = 0;
 			float screen_radius = ATLEAST(1.0f, sqrtf(SQUARE(client_width/2) + SQUARE(client_height/2)));
@@ -615,10 +619,12 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		}
 
 		platform_mutex_unlock(&image->lock);
+		profiler_end(PROFILER_SECTION_TILE_LOADING);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: load tiles", 5.0f);
 
 		// RENDERING
+		profiler_begin(PROFILER_SECTION_SCENE_RENDER);
 		mat4x4 projection = {};
 		{
 			float l = -0.5f * scene->r_minus_l;
@@ -776,6 +782,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 		}
 
 		renderer_finish_image_render();
+		profiler_end(PROFILER_SECTION_SCENE_RENDER);
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (2)", 5.0f);
 
@@ -1249,6 +1256,8 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		scene->mouse = scene->camera;
 
 		if (input) {
+			profiler_begin(PROFILER_SECTION_PROCESS_WSI_INPUT);
+
 			controller_input_t* controller = get_preferred_controller(input);
 
 			scene_update_mouse_pos(scene, input->mouse_xy);
@@ -1706,7 +1715,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 			/*if (scene->clicked && !gui_want_capture_mouse) {
 				scene->has_selection_box = false; // deselect selection box
 			}*/
-
+			profiler_end(PROFILER_SECTION_PROCESS_WSI_INPUT);
 		}
 
 #if DO_DEBUG
@@ -1735,7 +1744,11 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 		draw_grid(scene);
 //		i64 start = get_clock();
+
+		profiler_begin(PROFILER_SECTION_DRAW_ANNOTATIONS);
 		draw_annotations(app_state, scene, &scene->annotation_set, scene->camera_bounds.min);
+		profiler_end(PROFILER_SECTION_DRAW_ANNOTATIONS);
+
 //		console_print_verbose("draw_annotations() took %.01f ms\n", get_seconds_elapsed(start, get_clock()) * 1000.0f);
 		draw_selection_box(scene);
 		draw_scale_bar(&scene->scale_bar);
@@ -1759,12 +1772,14 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 
 			image_t* image = app_state->loaded_images[image_index];
 			if (image->is_enabled) {
+				profiler_begin(PROFILER_SECTION_RENDER_IMAGE);
 				renderer_prepare_layer_render_target(running_framebuffer_index, client_width, client_height, app_state->clear_color);
 
 				update_and_render_image(app_state, image);
 
 				renderer_bind_screen_render_target();
 				++running_framebuffer_index;
+				profiler_end(PROFILER_SECTION_RENDER_IMAGE);
 			}
 			if (running_framebuffer_index == 2) {
 				break; // only 2 images can be drawn together at the same time
@@ -1787,6 +1802,9 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 		} else {
 			show_demo_window = !show_demo_window; // F1
 		}
+	}
+	if (was_key_pressed(input, KEY_F2)) {
+		show_profiler_window = !show_profiler_window;
 	}
 	if (was_key_pressed(input, KEY_F3) || was_key_pressed(input, KEY_Grave)) {
 		show_console_window = !show_console_window;
@@ -1818,7 +1836,9 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
     }
 
 
+	profiler_begin(PROFILER_SECTION_GUI_DRAW);
 	gui_draw(app_state, curr_input, app_state->client_viewport.w, app_state->client_viewport.h);
+	profiler_end(PROFILER_SECTION_GUI_DRAW);
 //	last_section = profiler_end_section(last_section, "gui draw", 10.0f);
 
 	autosave(app_state, false, true);

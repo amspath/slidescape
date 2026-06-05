@@ -47,6 +47,7 @@
 
 #include "stringutils.h"
 #include "intrinsics.h"
+#include "profiler.h"
 
 #include "gui.h"
 
@@ -1153,17 +1154,25 @@ static void win32_render_frame(app_state_t* app_state, input_t* input, float del
 
 	app_state->last_frame_start = get_clock();
 
+	profiler_begin(PROFILER_SECTION_FRAME);
+
+	profiler_begin(PROFILER_SECTION_GUI_NEW_FRAME);
 	win32_gui_new_frame(app_state);
+	profiler_end(PROFILER_SECTION_GUI_NEW_FRAME);
 
 	win32_window_dimension_t dimension = win32_get_window_dimension(app_state->main_window);
+	profiler_begin(PROFILER_SECTION_VIEWER);
 	viewer_update_and_render(app_state, input, dimension.width, dimension.height, delta_t);
+	profiler_end(PROFILER_SECTION_VIEWER);
 
 	if (!is_program_running) {
+		profiler_end(PROFILER_SECTION_FRAME);
 		ShowWindow(app_state->main_window, SW_HIDE);
 		win32_is_rendering_frame = false;
 		return;
 	}
 
+	profiler_begin(PROFILER_SECTION_IMGUI_RENDER);
 	ImGui::Render();
 	presenter_set_viewport(dimension.width, dimension.height);
 
@@ -1200,8 +1209,13 @@ static void win32_render_frame(app_state_t* app_state, input_t* input, float del
 
 	// Render the rest of the ImGui draw data (submitted on the main thread)
 	presenter_render_imgui_draw_data(ImGui::GetDrawData());
+	profiler_end(PROFILER_SECTION_IMGUI_RENDER);
 
+	profiler_begin(PROFILER_SECTION_PRESENT);
 	presenter_present();
+	profiler_end(PROFILER_SECTION_PRESENT);
+
+	profiler_end(PROFILER_SECTION_FRAME);
 
 	win32_is_rendering_frame = false;
 }
@@ -1727,7 +1741,11 @@ int main() {
 		last_clock = current_clock;
 		delta_t = ATMOST(2.0f / 60.0f, delta_t); // prevent physics overshoot at lag spikes
 
+		profiler_new_frame();
+
+		profiler_begin(PROFILER_SECTION_INPUT);
 		bool did_idle = win32_process_input(app_state);
+		profiler_end(PROFILER_SECTION_INPUT);
 		if (did_idle) {
 			last_clock = get_clock();
 		}

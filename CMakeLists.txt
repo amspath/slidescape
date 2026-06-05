@@ -358,8 +358,10 @@ set(VIEWER_SOURCE_FILES
         imgui/imgui_tables.cpp
         imgui/backends/imgui_impl_opengl3.cpp
         imgui/misc/freetype/imgui_freetype.cpp
+        imgui/imgui_widget_flamegraph.cpp
         third_party/http_parser.c
         utils/triangulate.c
+        utils/profiler.c
         )
 if (WIN32)
     set(VIEWER_SOURCE_FILES ${VIEWER_SOURCE_FILES}
