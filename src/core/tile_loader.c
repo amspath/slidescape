@@ -101,14 +101,13 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 		} else {
 			for (i32 i = 0; i < tiles_to_load; ++i) {
 				load_tile_task_t task = wishlist[i];
-				tile_t* tile = task.tile;
 				level_image_t* level_image = image->level_images + task.level;
 				i32 tile_index = task.tile_y * level_image->width_in_tiles + task.tile_x;
 				u32 demand_flags = task.need_gpu_residency ? TILE_CACHE_DEMAND_GPU_RESIDENCY : 0;
 				demand_flags |= task.need_cpu_residency ? TILE_CACHE_DEMAND_CPU_RESIDENCY : 0;
 
 				if (tile_cache_tile_has_cpu_pixels(image, task.level, tile_index) &&
-					    tile->texture == 0 && task.need_gpu_residency) {
+					    tile_cache_get_gpu_texture(image, task.level, tile_index) == 0 && task.need_gpu_residency) {
 					if (tile_cache_try_begin_upload(image, task.level, tile_index, demand_flags, task.priority)) {
 						// only GPU upload needed
 						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
@@ -118,7 +117,7 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 						}
 						task_group_end(task.task_group);
 					} else {
-						console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", tile->tile_x, tile->tile_y);
+						console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", task.tile_x, task.tile_y);
 					}
 				} else if (tile_cache_try_begin_decode(image, task.level, tile_index, demand_flags, task.priority)) {
 					if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
@@ -129,7 +128,7 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 						tile_cache_cancel_decode(image, task.level, tile_index);
 					}
 				} else {
-					console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", tile->tile_x, tile->tile_y);
+					console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", task.tile_x, task.tile_y);
 				}
 			}
 		}
@@ -264,8 +263,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.tile_height = level_image->tile_height;
 	completion_task.scale = level;
 	completion_task.tile_index = tile_index;
-	completion_task.need_gpu_residency = task->need_gpu_residency;
-	completion_task.need_cpu_residency = task->need_cpu_residency;
+	completion_task.want_gpu_residency = task->need_gpu_residency;
+	completion_task.want_cpu_residency = task->need_cpu_residency;
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 

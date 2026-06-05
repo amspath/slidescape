@@ -63,8 +63,8 @@ typedef struct tile_load_completion_task_t {
 	i32 tile_width;
 	i32 tile_height;
 	i32 resource_id;
-	bool need_gpu_residency;
-	bool need_cpu_residency;
+	bool want_gpu_residency;
+	bool want_cpu_residency;
 	bool is_empty;
 	bool failed;
 } tile_load_completion_task_t;

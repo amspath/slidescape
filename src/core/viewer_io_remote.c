@@ -126,8 +126,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_task.tile_width = level_image->tile_width;
 						completion_task.scale = task->level;
 						completion_task.tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
-						completion_task.need_gpu_residency = task->need_gpu_residency;
-						completion_task.need_cpu_residency = task->need_cpu_residency;
+						completion_task.want_gpu_residency = task->need_gpu_residency;
+						completion_task.want_cpu_residency = task->need_cpu_residency;
 
 						completion_queue_post(&global_completion_queue, task->completion_event_kind, &completion_task,
 						                       sizeof(completion_task));
@@ -140,9 +140,9 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 			}
 
 #if 0
-			// Note: setting task->tile->texture to the texture handle lets the main thread know that the texture
+			// Note: publishing the texture handle lets the main thread know that the texture
 			// is ready for use. However, the texture may still not *actually* be available until the renderer has
-			// finished the work, so to be 100% sure we wait before setting task->tile->texture
+			// finished the work, so to be 100% sure we wait before publishing the texture
 			// We only want to wait once, so we store the new texture handles temporarily while the
 			// rest of the batch is still loading.
 			// Better would be to flag the texture as 'ready for use' as soon as it's done, but I don't know
@@ -151,7 +151,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 			write_barrier;
 			for (i32 i = 0; i < batch_size; ++i) {
 				load_tile_task_t* task = batch->tile_tasks + i;
-				task->tile->texture = new_textures[i];
+				tile_cache_store_gpu_texture(image, task->level, task->tile_y * image->level_images[task->level].width_in_tiles + task->tile_x, new_textures[i]);
 			}
 #endif
 

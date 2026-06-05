@@ -1479,8 +1479,7 @@ void image_destroy(image_t* image) {
 			level_image_t* level_image = image->level_images + i;
 			if (level_image->tiles) {
 				for (i32 j = 0; j < level_image->tile_count; ++j) {
-					tile_t* tile = level_image->tiles + j;
-                    check_image_texture_destroyed(tile->texture);
+                    check_image_texture_destroyed(tile_cache_get_gpu_texture(image, i, j));
 				}
 			}
 			free(level_image->tiles);

@@ -223,6 +223,42 @@ void tile_cache_mark_upload_finished(image_t* image, i32 level, i32 tile_index) 
 	tile->last_gpu_access_time = get_clock();
 }
 
+renderer_texture_handle_t tile_cache_get_gpu_texture(image_t* image, i32 level, i32 tile_index) {
+	tile_cache_tile_t* tile = tile_cache_get_tile_state(image, level, tile_index);
+	if (!tile || !tile->gpu_resident) {
+		return 0;
+	}
+	tile->last_gpu_access_time = get_clock();
+	return tile->texture;
+}
+
+void tile_cache_store_gpu_texture(image_t* image, i32 level, i32 tile_index, renderer_texture_handle_t texture) {
+	tile_cache_t* cache = tile_cache_get_or_create(image);
+	if (!cache || texture == 0) {
+		return;
+	}
+	tile_cache_tile_t* tile = tile_cache_get_tile_state(image, level, tile_index);
+	if (!tile) {
+		return;
+	}
+	tile->texture = texture;
+	tile->gpu_resident = true;
+	tile->upload_pending = false;
+	tile->last_gpu_access_time = get_clock();
+}
+
+renderer_texture_handle_t tile_cache_take_gpu_texture(image_t* image, i32 level, i32 tile_index) {
+	tile_cache_tile_t* tile = tile_cache_get_tile_state(image, level, tile_index);
+	if (!tile) {
+		return 0;
+	}
+	renderer_texture_handle_t result = tile->texture;
+	tile->texture = 0;
+	tile->gpu_resident = false;
+	tile->upload_pending = false;
+	return result;
+}
+
 u8* tile_cache_get_cpu_pixels(image_t* image, i32 level, i32 tile_index) {
 	tile_cache_tile_t* tile = tile_cache_get_tile_state(image, level, tile_index);
 	if (!tile || !tile->cpu_resident) {

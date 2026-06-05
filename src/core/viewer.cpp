@@ -113,9 +113,9 @@ void renderer_destroy_image_resources(image_t* image) {
 		// We shouldn't destroy that texture twice, so here we're just setting it to 0.
 		level_image_t* level_image = image->level_images;
 		if (level_image && level_image[0].tiles) {
-			tile_t* tile = &level_image[0].tiles[0];
-			if (tile->texture != 0 && tile->texture == simple_destroyed_texture_handle) {
-				tile->texture = 0;
+			renderer_texture_handle_t texture = tile_cache_get_gpu_texture(image, 0, 0);
+			if (texture != 0 && texture == simple_destroyed_texture_handle) {
+				tile_cache_take_gpu_texture(image, 0, 0);
 			}
 		}
 	}
@@ -124,10 +124,9 @@ void renderer_destroy_image_resources(image_t* image) {
 		level_image_t* level_image = image->level_images + i;
 		if (!level_image->tiles) continue;
 		for (i32 j = 0; j < level_image->tile_count; ++j) {
-			tile_t* tile = level_image->tiles + j;
-			if (tile->texture != 0) {
-				renderer_destroy_texture(tile->texture);
-				tile->texture = 0;
+			renderer_texture_handle_t texture = tile_cache_take_gpu_texture(image, i, j);
+			if (texture != 0) {
+				renderer_destroy_texture(texture);
 			}
 		}
 	}
@@ -285,9 +284,8 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 			pixel_transfer_state_t* transfer_state = app_state->pixel_transfer_states + transfer_index;
 			if (transfer_state->need_finalization) {
 				renderer_finalize_texture_upload(transfer_state);
-				tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
-				tile->texture = transfer_state->texture;
 				if (transfer_state->image) {
+					tile_cache_store_gpu_texture(transfer_state->image, transfer_state->level, transfer_state->tile_index, transfer_state->texture);
 					tile_cache_mark_upload_finished(transfer_state->image, transfer_state->level, transfer_state->tile_index);
 					transfer_state->image = NULL;
 				}
@@ -326,22 +324,21 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 
                 if (task->pixel_memory) {
                     bool need_free_pixel_memory = true;
-                    if (task->need_gpu_residency) {
+                    if (task->want_gpu_residency) {
                         pixel_transfer_state_t* transfer_state =
                                 renderer_submit_texture_upload(app_state, task->tile_width, task->tile_height,
                                                                4, task->pixel_memory, finalize_textures_immediately);
                         if (finalize_textures_immediately) {
-                            tile->texture = transfer_state->texture;
+                            tile_cache_store_gpu_texture(image, task->scale, task->tile_index, transfer_state->texture);
                             tile_cache_mark_upload_finished(image, task->scale, task->tile_index);
                         } else {
-                            transfer_state->userdata = (void*) tile;
                             transfer_state->image = image;
                             transfer_state->level = task->scale;
                             transfer_state->tile_index = task->tile_index;
                             tile_cache_mark_upload_pending(image, task->scale, task->tile_index);
                         }
                     }
-                    if (task->need_cpu_residency || tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
+                    if (task->want_cpu_residency || tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
                         need_free_pixel_memory = false;
                         tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
                     }
@@ -371,8 +368,15 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                                                                                                 4,
                                                                                                 cached_pixels,
                                                                                                 finalize_textures_immediately);
-                        tile->texture = transfer_state->texture;
-                        tile_cache_mark_upload_finished(task->image, task->level, tile_index);
+                        if (finalize_textures_immediately) {
+                            tile_cache_store_gpu_texture(task->image, task->level, tile_index, transfer_state->texture);
+                            tile_cache_mark_upload_finished(task->image, task->level, tile_index);
+                        } else {
+                            transfer_state->image = task->image;
+                            transfer_state->level = task->level;
+                            transfer_state->tile_index = tile_index;
+                            tile_cache_mark_upload_pending(task->image, task->level, tile_index);
+                        }
                     } else {
                         ASSERT(!"viewer_only_upload_cached_tile() called but !task->need_gpu_residency\n");
                     }
@@ -494,7 +498,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				level_image_t* level_image = image->level_images + 0;
 				ASSERT(level_image->tiles && level_image->tile_count > 0);
 				tile_t* tile = level_image->tiles + 0;
-				tile->texture = image->simple.texture;
+				tile_cache_store_gpu_texture(image, 0, 0, image->simple.texture);
 			}
 
 		} else {
@@ -535,7 +539,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 						tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
                         // TODO: check that the file offset is actually known (level might need indexing)
-						if (tile->texture != 0 || tile->is_empty || tile_cache_tile_is_busy(image, scale, tile->tile_index)) {
+						if (tile_cache_get_gpu_texture(image, scale, tile->tile_index) != 0 || tile->is_empty || tile_cache_tile_is_busy(image, scale, tile->tile_index)) {
 							continue; // nothing needs to be done with this tile
 						}
 
@@ -719,9 +723,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
 
 					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
-					if (tile->texture) {
+					renderer_texture_handle_t texture = tile_cache_get_gpu_texture(image, level, tile->tile_index);
+					if (texture) {
 						tile->time_last_drawn = app_state->frame_counter;
-						renderer_texture_handle_t texture = get_texture_for_tile(image, level, tile_x, tile_y);
 
 						float tile_pos_x = drawn_level->origin_offset.x + drawn_level->x_tile_side_in_um * tile_x;
 						float tile_pos_y = drawn_level->origin_offset.y + drawn_level->y_tile_side_in_um * tile_y;

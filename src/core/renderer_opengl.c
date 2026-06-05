@@ -20,6 +20,7 @@
 #include "viewer.h"
 #include "renderer.h"
 #include "renderer_opengl_shader.h"
+#include "tile_cache.h"
 
 #include OPENGL_H
 
@@ -250,9 +251,7 @@ void renderer_upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i3
 	glFinish();
 
 	ASSERT(image);
-	level_image_t* level = image->level_images + scale;
-	tile_t* tile = level->tiles + tile_index;
-	tile->texture = texture;
+	tile_cache_store_gpu_texture(image, scale, tile_index, texture);
 #else
 	tile_load_completion_task_t completion_task = {};
 	completion_task.pixel_memory = (u8*)tile_pixels;
@@ -260,7 +259,7 @@ void renderer_upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i3
 	completion_task.tile_height = tile_height;
 	completion_task.scale = scale;
 	completion_task.tile_index = tile_index;
-	completion_task.need_gpu_residency = true;
+	completion_task.want_gpu_residency = true;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
 	completion_queue_post(&global_completion_queue, TILE_LOADER_COMPLETION_EVENT_TILE_LOADED, &completion_task,
 	                       sizeof(completion_task));

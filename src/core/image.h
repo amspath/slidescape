@@ -113,7 +113,6 @@ typedef struct tile_t {
     u32 tile_index;
     i32 tile_x;
     i32 tile_y;
-    renderer_texture_handle_t texture;
     bool8 is_empty;
     i64 time_last_drawn;
 } tile_t;
@@ -214,16 +213,6 @@ static inline tile_t* get_tile_from_tile_index(image_t* image, i32 scale, i32 ti
 	level_image_t* level_image = image->level_images + scale;
 	tile_t* tile = level_image->tiles + tile_index;
 	return tile;
-}
-
-static inline renderer_texture_handle_t get_texture_for_tile(image_t* image, i32 level, i32 tile_x, i32 tile_y) {
-	level_image_t* level_image = image->level_images + level;
-
-	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
-	ASSERT(tile_index >= 0 && tile_index < level_image->tile_count);
-	tile_t* tile = level_image->tiles + tile_index;
-
-	return tile->texture;
 }
 
 float f32_rgb_to_f32_y(float R, float G, float B);
