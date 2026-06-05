@@ -47,15 +47,13 @@ typedef struct load_tile_task_t {
 	i32 tile_x;
 	i32 tile_y;
 	i32 priority;
-	bool need_gpu_residency;
-	bool need_keep_in_cache;
-	bool invert_colors;
-	bool may_discard_if_stale;
+	bool8 need_gpu_residency;
+	bool8 need_keep_in_cache;
+	bool8 invert_colors;
 	completion_queue_t* completion_queue;
 	completion_event_kind_t completion_event_kind;
 	task_group_t* task_group;
 	i32 refcount_to_decrement;
-	i32 stream_generation;
 } load_tile_task_t;
 
 typedef struct tile_load_completion_task_t {
@@ -68,8 +66,6 @@ typedef struct tile_load_completion_task_t {
 	bool want_gpu_residency;
 	bool is_empty;
 	bool failed;
-	bool stale;
-	i32 stream_generation;
 } tile_load_completion_task_t;
 
 #define TILE_LOAD_BATCH_MAX 8

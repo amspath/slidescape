@@ -294,8 +294,8 @@ set(SLIDESCAPE_NONGUI_BASE_FILES
         src/platform/platform_mutex.c
         src/core/image.c
         src/core/image_loader.c
+        src/core/tile_cache.c
         src/core/tile_loader.c
-        src/core/tile_streamer.c
         src/utils/phasecorrelate.c
         src/third_party/lz4.c
         src/third_party/yxml.c

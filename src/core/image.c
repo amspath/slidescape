@@ -27,7 +27,7 @@
 #include "stb_image.h" // for stbi_image_free()
 
 #include "tile_loader.h"
-#include "tile_streamer.h"
+#include "tile_cache.h"
 
 // TODO: refcount mechanism and eviction scheme, retain tiles for re-use?
 void tile_release_cache(tile_t* tile) {
@@ -1129,7 +1129,6 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						if (!tile->is_empty) {
 							++tile->read_region_refcount;
 							tile->need_keep_in_cache = true;
-							tile_streamer_pin_tile(image, level, tile->tile_index, TILE_STREAM_DEMAND_READ_REGION);
 						}
 					}
 				}
@@ -1308,7 +1307,6 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						if (tile->read_region_refcount == 0) {
 							tile_release_cache(tile);
 						}
-						tile_streamer_unpin_tile(image, level, tile->tile_index, TILE_STREAM_DEMAND_READ_REGION);
 					}
 				}
 			}
@@ -1516,8 +1514,9 @@ void image_destroy(image_t* image) {
 			free(level_image->tiles);
 			level_image->tiles = NULL;
 		}
-		tile_streamer_destroy(image->tile_streamer);
-		image->tile_streamer = NULL;
+
+		tile_cache_destroy(image->tile_cache);
+		image->tile_cache = NULL;
 
 		if (image->macro_image.is_valid) {
 			if (image->macro_image.pixels) stbi_image_free(image->macro_image.pixels);

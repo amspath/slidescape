@@ -21,7 +21,6 @@
 #include "dicom_wsi.h"
 #include "mrxs.h"
 #include "tiff.h"
-#include "tile_streamer.h"
 
 static work_queue_callback_t* remote_tiff_load_tile_batch_func;
 static work_queue_callback_t* slide_score_load_tile_batch_func;
@@ -67,26 +66,18 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 			static u32 intermittent = 0;
 			++intermittent;
 			if (intermittent % intermittent_interval == 0) {
-				i32 batch_size = TILE_LOAD_BATCH_MAX;
-				if (wishlist[0].may_discard_if_stale) {
-					batch_size = tile_streamer_get_batch_size(image, batch_size);
-				}
-				for (i32 first_tile = 0; first_tile < tiles_to_load; first_tile += batch_size) {
-					load_tile_task_batch_t batch = {0};
-					batch.task_count = ATMOST(batch_size, tiles_to_load - first_tile);
-					memcpy(batch.tile_tasks, wishlist + first_tile, batch.task_count * sizeof(load_tile_task_t));
-					if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
-						for (i32 i = 0; i < batch.task_count; ++i) {
-							load_tile_task_t* task = batch.tile_tasks + i;
-							tile_t* tile = task->tile;
-							tile->is_submitted_for_loading = true;
-							tile->submitted_stream_generation = task->stream_generation;
-							tile_streamer_mark_task_submitted(image, task);
-							tile->need_gpu_residency = task->need_gpu_residency;
-							tile->need_keep_in_cache = task->need_keep_in_cache;
-							atomic_add(&image->refcount, task->refcount_to_decrement);
-							++tile_loads_submitted;
-						}
+				load_tile_task_batch_t batch = {0};
+				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
+				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
+				if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
+					for (i32 i = 0; i < batch.task_count; ++i) {
+						load_tile_task_t* task = batch.tile_tasks + i;
+						tile_t* tile = task->tile;
+						tile->is_submitted_for_loading = true;
+						tile->need_gpu_residency = task->need_gpu_residency;
+						tile->need_keep_in_cache = task->need_keep_in_cache;
+						atomic_add(&image->refcount, task->refcount_to_decrement);
+						++tile_loads_submitted;
 					}
 				}
 			}
@@ -101,24 +92,19 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 					if (tile->is_cached && tile->texture == 0 && task.need_gpu_residency) {
 						// only GPU upload needed
 						tile->is_submitted_for_loading = true;
-						tile->submitted_stream_generation = task.stream_generation;
 						tile->need_gpu_residency = task.need_gpu_residency;
 						tile->need_keep_in_cache = task.need_keep_in_cache;
 						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
 						task_group_begin(task.task_group);
 						if (!completion_queue_post(&global_completion_queue, TILE_LOADER_COMPLETION_EVENT_UPLOAD_CACHED_TILE, &task, sizeof(task))) {
 							tile->is_submitted_for_loading = false;
-						} else {
-							tile_streamer_mark_task_submitted(image, &task);
 						}
 						task_group_end(task.task_group);
 					} else {
 						tile->is_submitted_for_loading = true;
-						tile->submitted_stream_generation = task.stream_generation;
 						tile->need_gpu_residency = task.need_gpu_residency;
 						tile->need_keep_in_cache = task.need_keep_in_cache;
 						if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
-							tile_streamer_mark_task_submitted(image, &task);
 							atomic_add(&image->refcount, task.refcount_to_decrement);
 							++tile_loads_submitted;
 						} else {
@@ -151,25 +137,6 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	level_image_t* level_image = image->level_images + level;
 	ASSERT(level_image->exists);
 	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
-
-	bool stale = tile_streamer_is_task_stale(image, task);
-	if (stale) {
-		tile_load_completion_task_t completion_task = {0};
-		completion_task.resource_id = task->resource_id;
-		completion_task.scale = level;
-		completion_task.tile_index = tile_index;
-		completion_task.tile_width = level_image->tile_width;
-		completion_task.tile_height = level_image->tile_height;
-		completion_task.want_gpu_residency = task->need_gpu_residency;
-		completion_task.stale = true;
-		completion_task.stream_generation = task->stream_generation;
-		if (task->completion_queue) {
-			completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
-		}
-		atomic_subtract(&image->refcount, task->refcount_to_decrement);
-		return;
-	}
-
 	ASSERT(level_image->x_tile_side_in_um > 0 && level_image->y_tile_side_in_um > 0);
 	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
 	float tile_world_pos_y_end = (tile_y + 1) * level_image->y_tile_side_in_um;
@@ -284,8 +251,6 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.want_gpu_residency = task->need_gpu_residency;
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
-	completion_task.stale = tile_streamer_is_task_stale(image, task);
-	completion_task.stream_generation = task->stream_generation;
 
 	if (task->completion_queue) {
 		completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));

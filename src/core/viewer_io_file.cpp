@@ -24,7 +24,6 @@
 #include "stb_image.h"
 #include "remote.h"
 #include "jpeg_decoder.h"
-#include "tile_streamer.h"
 
 #include "gui.h" // for global data, TODO: refactor
 
@@ -43,8 +42,6 @@ static void slide_score_post_tile_result(load_tile_task_t* task, u8* pixel_memor
 	completion_task.want_gpu_residency = task->need_gpu_residency;
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
-	completion_task.stale = tile_streamer_is_task_stale(image, task);
-	completion_task.stream_generation = task->stream_generation;
 
 	if (task->completion_queue) {
 		completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
@@ -103,12 +100,6 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 	for (i32 i = 0; i < batch->task_count; ++i) {
 		load_tile_task_t* task = batch->tile_tasks + i;
 		level_image_t* level_image = image->level_images + task->level;
-
-		if (tile_streamer_is_task_stale(image, task)) {
-			slide_score_post_tile_result(task, NULL, false, false);
-			continue;
-		}
-
 		size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 		u8* pixel_memory = (u8*)malloc(pixel_memory_size);
 		memset(pixel_memory, image->is_background_black ? 0 : 0xFF, pixel_memory_size);
