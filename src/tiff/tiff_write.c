@@ -900,7 +900,6 @@ void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t*
 
     //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
     if (!thread_pool_submit_task(&global_thread_pool, export_cropped_bigtiff_with_resample_func, &task, sizeof(task))) {
-//		tile->is_submitted_for_loading = false; // chicken out
 //		atomic_decrement(&isyntax->refcount);
         app_state->is_export_in_progress = false;
     };

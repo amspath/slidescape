@@ -180,6 +180,9 @@ typedef struct pixel_transfer_state_t {
 	i32 texture_height;
 	bool need_finalization;
 	void* userdata;
+	image_t* image;
+	i32 level;
+	i32 tile_index;
 	bool8 initialized;
 } pixel_transfer_state_t;
 

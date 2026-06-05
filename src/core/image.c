@@ -1126,7 +1126,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						if (tile_cache_tile_has_cpu_pixels(image, level, tile->tile_index)) {
 							continue; // already cached
 						}
-						if (tile->is_submitted_for_loading) {
+						if (tile_cache_tile_is_busy(image, level, tile->tile_index)) {
 							continue; // another read_region() or viewer request is already loading it
 						}
 						wishlist[tiles_to_load++] = (load_tile_task_t) {
@@ -1161,11 +1161,11 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						tile_load_completion_task_t* task = (tile_load_completion_task_t*) entry.userdata;
 						if (task->pixel_memory) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-							tile->is_submitted_for_loading = false;
+							tile_cache_mark_decode_finished(image, task->scale, task->tile_index, false);
 							tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
 						} else if (task->failed || task->is_empty) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-							tile->is_submitted_for_loading = false;
+							tile_cache_mark_decode_finished(image, task->scale, task->tile_index, task->failed);
 							tile->is_empty = true;
 						}
 						platform_mutex_unlock(&image->lock);
@@ -1178,7 +1178,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								tile_t *tile = get_tile(level_image, tile_x, tile_y);
 								if (!tile->is_empty && !tile_cache_tile_has_cpu_pixels(image, level, tile->tile_index)) {
 									all_tiles_ready = false;
-									if (!tile->is_submitted_for_loading) {
+									if (!tile_cache_tile_is_busy(image, level, tile->tile_index)) {
 										wishlist[retry_tiles_to_load++] = (load_tile_task_t) {
 												.resource_id = image->resource_id,
 												.image = image, .tile = tile, .level = level,

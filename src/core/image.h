@@ -114,7 +114,6 @@ typedef struct tile_t {
     i32 tile_x;
     i32 tile_y;
     renderer_texture_handle_t texture;
-    i32 is_submitted_for_loading;
     bool8 is_empty;
     i64 time_last_drawn;
 } tile_t;

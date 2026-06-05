@@ -77,6 +77,14 @@ void tile_cache_pin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 dema
 void tile_cache_unpin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
 bool tile_cache_tile_has_cpu_pixels(image_t* image, i32 level, i32 tile_index);
 bool tile_cache_tile_is_cpu_pinned(image_t* image, i32 level, i32 tile_index);
+bool tile_cache_tile_is_busy(image_t* image, i32 level, i32 tile_index);
+bool tile_cache_try_begin_decode(image_t* image, i32 level, i32 tile_index, u32 demand_flags, i32 priority);
+bool tile_cache_try_begin_upload(image_t* image, i32 level, i32 tile_index, u32 demand_flags, i32 priority);
+void tile_cache_cancel_decode(image_t* image, i32 level, i32 tile_index);
+void tile_cache_cancel_upload(image_t* image, i32 level, i32 tile_index);
+void tile_cache_mark_decode_finished(image_t* image, i32 level, i32 tile_index, bool failed);
+void tile_cache_mark_upload_pending(image_t* image, i32 level, i32 tile_index);
+void tile_cache_mark_upload_finished(image_t* image, i32 level, i32 tile_index);
 u8* tile_cache_get_cpu_pixels(image_t* image, i32 level, i32 tile_index);
 void tile_cache_store_cpu_pixels(image_t* image, i32 level, i32 tile_index, u8* pixels);
 void tile_cache_release_cpu_pixels_if_unpinned(image_t* image, i32 level, i32 tile_index);

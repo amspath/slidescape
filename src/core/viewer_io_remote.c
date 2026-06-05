@@ -126,7 +126,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_task.tile_width = level_image->tile_width;
 						completion_task.scale = task->level;
 						completion_task.tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
-						completion_task.want_gpu_residency = true;
+						completion_task.need_gpu_residency = task->need_gpu_residency;
+						completion_task.need_cpu_residency = task->need_cpu_residency;
 
 						completion_queue_post(&global_completion_queue, task->completion_event_kind, &completion_task,
 						                       sizeof(completion_task));

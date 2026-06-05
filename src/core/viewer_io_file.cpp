@@ -39,7 +39,8 @@ static void slide_score_post_tile_result(load_tile_task_t* task, u8* pixel_memor
 	completion_task.tile_height = level_image->tile_height;
 	completion_task.scale = task->level;
 	completion_task.tile_index = tile_index;
-	completion_task.want_gpu_residency = task->need_gpu_residency;
+	completion_task.need_gpu_residency = task->need_gpu_residency;
+	completion_task.need_cpu_residency = task->need_cpu_residency;
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 

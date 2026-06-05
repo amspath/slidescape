@@ -68,15 +68,33 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 			++intermittent;
 			if (intermittent % intermittent_interval == 0) {
 				load_tile_task_batch_t batch = {0};
-				batch.task_count = ATMOST(COUNT(batch.tile_tasks), tiles_to_load);
-				memcpy(batch.tile_tasks, wishlist, batch.task_count * sizeof(load_tile_task_t));
+				for (i32 i = 0; i < tiles_to_load && batch.task_count < COUNT(batch.tile_tasks); ++i) {
+					load_tile_task_t* task = wishlist + i;
+					level_image_t* level_image = image->level_images + task->level;
+					i32 tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
+					u32 demand_flags = task->need_gpu_residency ? TILE_CACHE_DEMAND_GPU_RESIDENCY : 0;
+					demand_flags |= task->need_cpu_residency ? TILE_CACHE_DEMAND_CPU_RESIDENCY : 0;
+					if (tile_cache_try_begin_decode(image, task->level, tile_index, demand_flags, task->priority)) {
+						batch.tile_tasks[batch.task_count++] = *task;
+					} else {
+						console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", task->tile_x, task->tile_y);
+					}
+				}
+				if (batch.task_count == 0) {
+					return 0;
+				}
 				if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
 					for (i32 i = 0; i < batch.task_count; ++i) {
 						load_tile_task_t* task = batch.tile_tasks + i;
-						tile_t* tile = task->tile;
-						tile->is_submitted_for_loading = true;
 						atomic_add(&image->refcount, task->refcount_to_decrement);
 						++tile_loads_submitted;
+					}
+				} else {
+					for (i32 i = 0; i < batch.task_count; ++i) {
+						load_tile_task_t* task = batch.tile_tasks + i;
+						level_image_t* level_image = image->level_images + task->level;
+						i32 tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
+						tile_cache_cancel_decode(image, task->level, tile_index);
 					}
 				}
 			}
@@ -84,29 +102,31 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 			for (i32 i = 0; i < tiles_to_load; ++i) {
 				load_tile_task_t task = wishlist[i];
 				tile_t* tile = task.tile;
+				level_image_t* level_image = image->level_images + task.level;
+				i32 tile_index = task.tile_y * level_image->width_in_tiles + task.tile_x;
+				u32 demand_flags = task.need_gpu_residency ? TILE_CACHE_DEMAND_GPU_RESIDENCY : 0;
+				demand_flags |= task.need_cpu_residency ? TILE_CACHE_DEMAND_CPU_RESIDENCY : 0;
 
-				// Try to get an exclusive lock to submit this tile load request
-				// (if we fail here, some other thread is also attempting to do the same)
-				if (atomic_compare_exchange(&tile->is_submitted_for_loading, 1, 0)) {
-					if (tile_cache_tile_has_cpu_pixels(image, task.level, task.tile_y * image->level_images[task.level].width_in_tiles + task.tile_x) &&
+				if (tile_cache_tile_has_cpu_pixels(image, task.level, tile_index) &&
 					    tile->texture == 0 && task.need_gpu_residency) {
+					if (tile_cache_try_begin_upload(image, task.level, tile_index, demand_flags, task.priority)) {
 						// only GPU upload needed
-						tile->is_submitted_for_loading = true;
 						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
 						task_group_begin(task.task_group);
 						if (!completion_queue_post(&global_completion_queue, TILE_LOADER_COMPLETION_EVENT_UPLOAD_CACHED_TILE, &task, sizeof(task))) {
-							tile->is_submitted_for_loading = false;
+							tile_cache_cancel_upload(image, task.level, tile_index);
 						}
 						task_group_end(task.task_group);
 					} else {
-						tile->is_submitted_for_loading = true;
-						if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
-							atomic_add(&image->refcount, task.refcount_to_decrement);
-							++tile_loads_submitted;
-						} else {
-							// TODO: should we even allow this to fail?
-							tile->is_submitted_for_loading = false;
-						}
+						console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", tile->tile_x, tile->tile_y);
+					}
+				} else if (tile_cache_try_begin_decode(image, task.level, tile_index, demand_flags, task.priority)) {
+					if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
+						atomic_add(&image->refcount, task.refcount_to_decrement);
+						++tile_loads_submitted;
+					} else {
+						// TODO: should we even allow this to fail?
+						tile_cache_cancel_decode(image, task.level, tile_index);
 					}
 				} else {
 					console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", tile->tile_x, tile->tile_y);
@@ -244,7 +264,8 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.tile_height = level_image->tile_height;
 	completion_task.scale = level;
 	completion_task.tile_index = tile_index;
-	completion_task.want_gpu_residency = task->need_gpu_residency;
+	completion_task.need_gpu_residency = task->need_gpu_residency;
+	completion_task.need_cpu_residency = task->need_cpu_residency;
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 

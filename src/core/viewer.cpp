@@ -287,6 +287,10 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 				renderer_finalize_texture_upload(transfer_state);
 				tile_t* tile = (tile_t*) transfer_state->userdata;  // TODO: think of something more elegant?
 				tile->texture = transfer_state->texture;
+				if (transfer_state->image) {
+					tile_cache_mark_upload_finished(transfer_state->image, transfer_state->level, transfer_state->tile_index);
+					transfer_state->image = NULL;
+				}
 			}
 			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
 			if (time_elapsed > max_texture_load_time) {
@@ -318,19 +322,23 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                 // Upload the tile to the GPU
                 tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
                 ASSERT(tile);
-                tile->is_submitted_for_loading = false;
+                tile_cache_mark_decode_finished(image, task->scale, task->tile_index, task->failed);
 
                 if (task->pixel_memory) {
                     bool need_free_pixel_memory = true;
-                    if (task->want_gpu_residency) {
+                    if (task->need_gpu_residency) {
                         pixel_transfer_state_t* transfer_state =
                                 renderer_submit_texture_upload(app_state, task->tile_width, task->tile_height,
                                                                4, task->pixel_memory, finalize_textures_immediately);
                         if (finalize_textures_immediately) {
                             tile->texture = transfer_state->texture;
+                            tile_cache_mark_upload_finished(image, task->scale, task->tile_index);
                         } else {
                             transfer_state->userdata = (void*) tile;
-                            tile->is_submitted_for_loading = true; // stuff still needs to happen, don't resubmit!
+                            transfer_state->image = image;
+                            transfer_state->level = task->scale;
+                            transfer_state->tile_index = task->tile_index;
+                            tile_cache_mark_upload_pending(image, task->scale, task->tile_index);
                         }
                     }
                     if (task->need_cpu_residency || tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
@@ -353,7 +361,6 @@ void viewer_process_completion_queue(app_state_t* app_state) {
             } else {
                 tile_t* tile = task->tile;
                 ASSERT(tile);
-                tile->is_submitted_for_loading = false;
                 i32 tile_index = task->tile_y * task->image->level_images[task->level].width_in_tiles + task->tile_x;
                 u8* cached_pixels = tile_cache_get_cpu_pixels(task->image, task->level, tile_index);
                 if (cached_pixels) {
@@ -365,6 +372,7 @@ void viewer_process_completion_queue(app_state_t* app_state) {
                                                                                                 cached_pixels,
                                                                                                 finalize_textures_immediately);
                         tile->texture = transfer_state->texture;
+                        tile_cache_mark_upload_finished(task->image, task->level, tile_index);
                     } else {
                         ASSERT(!"viewer_only_upload_cached_tile() called but !task->need_gpu_residency\n");
                     }
@@ -527,7 +535,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 						tile_t* tile = get_tile(drawn_level, tile_x, tile_y);
                         // TODO: check that the file offset is actually known (level might need indexing)
-						if (tile->texture != 0 || tile->is_empty || tile->is_submitted_for_loading) {
+						if (tile->texture != 0 || tile->is_empty || tile_cache_tile_is_busy(image, scale, tile->tile_index)) {
 							continue; // nothing needs to be done with this tile
 						}
 
