@@ -1098,8 +1098,6 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				load_tile_task_t *wishlist = calloc(width_in_tiles_to_read * height_in_tiles_to_read, sizeof(load_tile_task_t));
 				i32 tiles_to_load = 0;
 
-				// NOTE: the completion queue and task group have to outlive all submitted tile jobs.
-				completion_queue_t read_completion_queue = completion_queue_create(width_in_tiles_to_read * height_in_tiles_to_read);
 				task_group_t read_task_group = {0};
 
                 // NOTE: we are getting an exclusive lock for the purpose of requesting image tiles
@@ -1137,7 +1135,6 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 								.need_gpu_residency = false,
 								.need_cpu_residency = true,
 								.invert_colors = invert_colors,
-								.completion_queue = &read_completion_queue,
 								.task_group = &read_task_group,
 								.refcount_to_decrement = 1, // refcount will be decremented at end of thread proc load_tile_func()
 						};
@@ -1154,15 +1151,20 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				// tile coverage overlaps, so some needed tiles may have been submitted by another caller.
 				// Wait until every required tile is cached/empty, not just until this call's submissions finish.
 				for (;;) {
-					completion_event_t entry = {0};
-					if (completion_queue_poll(&read_completion_queue, &entry)) {
+					tile_load_completion_task_t cache_result = {0};
+					if (tile_cache_poll_load_result(image, &cache_result)) {
 						platform_mutex_lock(&image->lock);
 						++tile_loads_completed;
-						tile_load_completion_task_t* task = (tile_load_completion_task_t*) entry.userdata;
+						tile_load_completion_task_t* task = &cache_result;
 						if (task->pixel_memory) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 							tile_cache_mark_decode_finished(image, task->scale, task->tile_index, false);
-							tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
+							if (task->want_cpu_residency || task->want_gpu_residency ||
+							    tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
+								tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
+							} else {
+								free(task->pixel_memory);
+							}
 						} else if (task->failed || task->is_empty) {
 							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
 							tile_cache_mark_decode_finished(image, task->scale, task->tile_index, task->failed);
@@ -1187,7 +1189,6 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 												.need_gpu_residency = false,
 												.need_cpu_residency = true,
 												.invert_colors = invert_colors,
-												.completion_queue = &read_completion_queue,
 												.task_group = &read_task_group,
 												.refcount_to_decrement = 1,
 										};
@@ -1201,7 +1202,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                         platform_mutex_unlock(&image->lock);
 
 						if (all_tiles_ready) {
-							if (task_group_is_complete(&read_task_group) && !completion_queue_has_events(&read_completion_queue)) {
+							if (task_group_is_complete(&read_task_group)) {
 								break;
 							} else {
 								// It seems we're done, BUT: we still need to process tasks that not yet completed
@@ -1218,11 +1219,9 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				}
 
 				// NOTE: careful: we need to make sure that all submitted tasks are processed (completion work queue might otherwise be accessed after destruction)
-				if (!task_group_is_complete(&read_task_group) || completion_queue_has_events(&read_completion_queue) || tile_loads_submitted != tile_loads_completed) {
+				if (!task_group_is_complete(&read_task_group)) {
 					fatal_error();
 				}
-
-				completion_queue_destroy(&read_completion_queue);
 				free(wishlist);
 
 

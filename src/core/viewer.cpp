@@ -275,6 +275,48 @@ image_t* get_image_from_resource_id(app_state_t* app_state, i32 resource_id) {
 	return NULL;
 }
 
+static bool viewer_process_loaded_tile(app_state_t* app_state, image_t* image, tile_load_completion_task_t* task) {
+	bool submitted_texture_upload = false;
+	if (!image || !task) {
+		if (task && task->pixel_memory) free(task->pixel_memory);
+		return false;
+	}
+
+	tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
+	ASSERT(tile);
+	tile_cache_mark_decode_finished(image, task->scale, task->tile_index, task->failed);
+
+	if (task->pixel_memory) {
+		bool need_free_pixel_memory = true;
+		if (task->want_gpu_residency) {
+			pixel_transfer_state_t* transfer_state =
+					renderer_submit_texture_upload(app_state, task->tile_width, task->tile_height,
+					                               4, task->pixel_memory, finalize_textures_immediately);
+			submitted_texture_upload = true;
+			if (finalize_textures_immediately) {
+				tile_cache_store_gpu_texture(image, task->scale, task->tile_index, transfer_state->texture);
+				tile_cache_mark_upload_finished(image, task->scale, task->tile_index);
+			} else {
+				transfer_state->image = image;
+				transfer_state->level = task->scale;
+				transfer_state->tile_index = task->tile_index;
+				tile_cache_mark_upload_pending(image, task->scale, task->tile_index);
+			}
+		}
+		if (task->want_cpu_residency || tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
+			need_free_pixel_memory = false;
+			tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
+		}
+		if (need_free_pixel_memory) {
+			free(task->pixel_memory);
+		}
+	} else {
+		// TODO: handle possible I/O errors? Don't just assume the tile was empty!
+		tile->is_empty = true; // failed; don't resubmit!
+	}
+	return submitted_texture_upload;
+}
+
 void viewer_process_completion_queue(app_state_t* app_state) {
 	float max_texture_load_time = 0.007f; // TODO: pin to frame time
 #if 1
@@ -306,50 +348,35 @@ void viewer_process_completion_queue(app_state_t* app_state) {
 //	last_section = profiler_end_section(last_section, "viewer_update_and_render: texture finalization", 7.0f);
 #endif
 
-	// Retrieve completed tasks from the worker threads
 	i32 pixel_transfer_index_start = app_state->next_pixel_transfer_to_submit;
+	bool stop_processing_completions = false;
+	for (i32 image_index = 0; image_index < arrlen(app_state->loaded_images) && !stop_processing_completions; ++image_index) {
+		image_t* image = app_state->loaded_images[image_index];
+		tile_load_completion_task_t task = {0};
+		while (tile_cache_poll_load_result(image, &task)) {
+			bool submitted_texture_upload = viewer_process_loaded_tile(app_state, image, &task);
+			float time_elapsed = get_seconds_elapsed(app_state->last_frame_start, get_clock());
+			if (time_elapsed > max_texture_load_time) {
+//				console_print("Warning: texture submission is taking too much time\n");
+				stop_processing_completions = true;
+				break;
+			}
+
+			if (submitted_texture_upload && pixel_transfer_index_start == app_state->next_pixel_transfer_to_submit) {
+//				console_print("Warning: not enough PBO's to do all the pixel transfers\n");
+				stop_processing_completions = true;
+				break;
+			}
+		}
+	}
+
+	// Retrieve completed tasks from the worker threads
 	completion_event_t entry = {0};
-	while (completion_queue_poll(&global_completion_queue, &entry)) {
+	while (!stop_processing_completions && completion_queue_poll(&global_completion_queue, &entry)) {
         if (entry.kind == TILE_LOADER_COMPLETION_EVENT_TILE_LOADED) {
             tile_load_completion_task_t* task = (tile_load_completion_task_t*) entry.userdata;
             image_t* image = get_image_from_resource_id(app_state, task->resource_id);
-            if (!image) {
-                // Image doesn't exist anymore (was unloaded?)
-                if (task->pixel_memory) free(task->pixel_memory);
-            } else {
-                // Upload the tile to the GPU
-                tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-                ASSERT(tile);
-                tile_cache_mark_decode_finished(image, task->scale, task->tile_index, task->failed);
-
-                if (task->pixel_memory) {
-                    bool need_free_pixel_memory = true;
-                    if (task->want_gpu_residency) {
-                        pixel_transfer_state_t* transfer_state =
-                                renderer_submit_texture_upload(app_state, task->tile_width, task->tile_height,
-                                                               4, task->pixel_memory, finalize_textures_immediately);
-                        if (finalize_textures_immediately) {
-                            tile_cache_store_gpu_texture(image, task->scale, task->tile_index, transfer_state->texture);
-                            tile_cache_mark_upload_finished(image, task->scale, task->tile_index);
-                        } else {
-                            transfer_state->image = image;
-                            transfer_state->level = task->scale;
-                            transfer_state->tile_index = task->tile_index;
-                            tile_cache_mark_upload_pending(image, task->scale, task->tile_index);
-                        }
-                    }
-                    if (task->want_cpu_residency || tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
-                        need_free_pixel_memory = false;
-                        tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
-                    }
-                    if (need_free_pixel_memory) {
-                        free(task->pixel_memory);
-                    }
-                } else {
-                    // TODO: handle possible I/O errors? Don't just assume the tile was empty!
-                    tile->is_empty = true; // failed; don't resubmit!
-                }
-            }
+            viewer_process_loaded_tile(app_state, image, task);
 
         } else if (entry.kind == TILE_LOADER_COMPLETION_EVENT_UPLOAD_CACHED_TILE) {
             load_tile_task_t* task = (load_tile_task_t*) entry.userdata;
@@ -563,8 +590,6 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 								.priority = tile_priority,
 								.need_gpu_residency = true,
 								.need_cpu_residency = tile_cache_tile_is_cpu_pinned(image, scale, tile->tile_index),
-								.completion_queue = &global_completion_queue,
-								.completion_event_kind = TILE_LOADER_COMPLETION_EVENT_TILE_LOADED,
                                 .refcount_to_decrement = 1, // will be decremented at and of thread proc load_tile_func()
 						};
 						tile_wishlist[num_tasks_on_wishlist++] = task;

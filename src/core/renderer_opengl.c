@@ -259,10 +259,14 @@ void renderer_upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i3
 	completion_task.tile_height = tile_height;
 	completion_task.scale = scale;
 	completion_task.tile_index = tile_index;
+	completion_task.resource_id = image ? image->resource_id : 0;
 	completion_task.want_gpu_residency = true;
 	//	console_print("[thread %d] Loaded tile: level=%d tile_x=%d tile_y=%d\n", logical_thread_index, level, tile_x, tile_y);
-	completion_queue_post(&global_completion_queue, TILE_LOADER_COMPLETION_EVENT_TILE_LOADED, &completion_task,
-	                       sizeof(completion_task));
+	if (!tile_cache_post_load_result(image, &completion_task)) {
+		if (completion_task.pixel_memory) {
+			free(completion_task.pixel_memory);
+		}
+	}
 #endif
 
 }

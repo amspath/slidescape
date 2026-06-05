@@ -268,8 +268,10 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 
-	if (task->completion_queue) {
-		completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
+	if (!tile_cache_post_load_result(image, &completion_task)) {
+		if (completion_task.pixel_memory) {
+			free(completion_task.pixel_memory);
+		}
 	}
 
 	// NOTE: we guarantee existence of image_t until the jobs submitted from the main thread are done.

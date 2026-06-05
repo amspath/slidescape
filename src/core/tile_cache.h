@@ -26,6 +26,8 @@ extern "C" {
 #include "image.h"
 #include "platform.h"
 
+typedef struct tile_load_completion_task_t tile_load_completion_task_t;
+
 typedef enum tile_cache_request_state_enum {
 	TILE_CACHE_UNREQUESTED,
 	TILE_CACHE_QUEUED,
@@ -66,6 +68,7 @@ typedef struct tile_cache_t {
 	image_t* image;
 	platform_mutex_t lock;
 	bool8 lock_initialized;
+	completion_queue_t result_queue;
 	tile_cache_tile_t* level_tiles[IMAGE_PYRAMID_MAX_LEVELS];
 } tile_cache_t;
 
@@ -73,6 +76,8 @@ tile_cache_t* tile_cache_create(image_t* image);
 tile_cache_t* tile_cache_get_or_create(image_t* image);
 void tile_cache_destroy(tile_cache_t* cache);
 tile_cache_tile_t* tile_cache_get_tile_state(image_t* image, i32 level, i32 tile_index);
+bool tile_cache_post_load_result(image_t* image, tile_load_completion_task_t* task);
+bool tile_cache_poll_load_result(image_t* image, tile_load_completion_task_t* out_task);
 void tile_cache_pin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
 void tile_cache_unpin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
 bool tile_cache_tile_has_cpu_pixels(image_t* image, i32 level, i32 tile_index);

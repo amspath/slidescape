@@ -18,6 +18,8 @@
 
 #include "tile_cache.h"
 
+#include "tile_loader.h"
+
 tile_cache_t* tile_cache_create(image_t* image) {
 	if (!image) {
 		return NULL;
@@ -30,6 +32,7 @@ tile_cache_t* tile_cache_create(image_t* image) {
 	cache->image = image;
 	platform_mutex_init(&cache->lock);
 	cache->lock_initialized = true;
+	cache->result_queue = completion_queue_create(4096);
 
 	for (i32 level = 0; level < image->level_count; ++level) {
 		level_image_t* level_image = image->level_images + level;
@@ -60,6 +63,15 @@ void tile_cache_destroy(tile_cache_t* cache) {
 		return;
 	}
 
+	if (cache->result_queue.entries) {
+		tile_load_completion_task_t task = {0};
+		while (tile_cache_poll_load_result(cache->image, &task)) {
+			if (task.pixel_memory) {
+				free(task.pixel_memory);
+			}
+		}
+	}
+
 	for (i32 level = 0; level < COUNT(cache->level_tiles); ++level) {
 		tile_cache_tile_t* tiles = cache->level_tiles[level];
 		if (tiles) {
@@ -81,6 +93,7 @@ void tile_cache_destroy(tile_cache_t* cache) {
 		platform_mutex_destroy(&cache->lock);
 		cache->lock_initialized = false;
 	}
+	completion_queue_destroy(&cache->result_queue);
 	free(cache);
 }
 
@@ -97,6 +110,30 @@ tile_cache_tile_t* tile_cache_get_tile_state(image_t* image, i32 level, i32 tile
 		return NULL;
 	}
 	return cache->level_tiles[level] ? cache->level_tiles[level] + tile_index : NULL;
+}
+
+bool tile_cache_post_load_result(image_t* image, tile_load_completion_task_t* task) {
+	tile_cache_t* cache = tile_cache_get_or_create(image);
+	if (!cache || !task) {
+		return false;
+	}
+	return completion_queue_post(&cache->result_queue, TILE_LOADER_COMPLETION_EVENT_TILE_LOADED, task, sizeof(*task));
+}
+
+bool tile_cache_poll_load_result(image_t* image, tile_load_completion_task_t* out_task) {
+	tile_cache_t* cache = image ? image->tile_cache : NULL;
+	if (!cache || !out_task) {
+		return false;
+	}
+	completion_event_t event = {0};
+	if (!completion_queue_poll(&cache->result_queue, &event)) {
+		return false;
+	}
+	if (event.kind != TILE_LOADER_COMPLETION_EVENT_TILE_LOADED) {
+		return false;
+	}
+	*out_task = *(tile_load_completion_task_t*)event.userdata;
+	return true;
 }
 
 void tile_cache_pin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags) {

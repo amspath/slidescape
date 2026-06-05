@@ -50,8 +50,6 @@ typedef struct load_tile_task_t {
 	bool8 need_gpu_residency;
 	bool8 need_cpu_residency;
 	bool8 invert_colors;
-	completion_queue_t* completion_queue;
-	completion_event_kind_t completion_event_kind;
 	task_group_t* task_group;
 	i32 refcount_to_decrement;
 } load_tile_task_t;

@@ -24,6 +24,7 @@
 #include "stb_image.h"
 #include "remote.h"
 #include "jpeg_decoder.h"
+#include "tile_cache.h"
 
 #include "gui.h" // for global data, TODO: refactor
 
@@ -44,8 +45,10 @@ static void slide_score_post_tile_result(load_tile_task_t* task, u8* pixel_memor
 	completion_task.failed = failed;
 	completion_task.is_empty = is_empty;
 
-	if (task->completion_queue) {
-		completion_queue_post(task->completion_queue, task->completion_event_kind, &completion_task, sizeof(completion_task));
+	if (!tile_cache_post_load_result(image, &completion_task)) {
+		if (completion_task.pixel_memory) {
+			free(completion_task.pixel_memory);
+		}
 	}
 }
 

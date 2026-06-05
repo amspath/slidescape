@@ -20,6 +20,7 @@
 #include "viewer.h"
 #include "remote.h"
 #include "jpeg_decoder.h"
+#include "tile_cache.h"
 
 void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 	load_tile_task_batch_t* batch = (load_tile_task_batch_t*) userdata;
@@ -129,8 +130,11 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 						completion_task.want_gpu_residency = task->need_gpu_residency;
 						completion_task.want_cpu_residency = task->need_cpu_residency;
 
-						completion_queue_post(&global_completion_queue, task->completion_event_kind, &completion_task,
-						                       sizeof(completion_task));
+						if (!tile_cache_post_load_result(image, &completion_task)) {
+							if (completion_task.pixel_memory) {
+								free(completion_task.pixel_memory);
+							}
+						}
 
 						//new_textures[i] = renderer_create_texture(pixel_memory, TILE_DIM, TILE_DIM, RENDERER_PIXEL_FORMAT_BGRA);
 					}
