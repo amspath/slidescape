@@ -1129,9 +1129,9 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 						}
 						wishlist[tiles_to_load++] = (load_tile_task_t) {
 								.resource_id = image->resource_id,
-								.image = image, .tile = tile, .level = level,
-								.tile_x = tile->tile_x,
-								.tile_y = tile->tile_y,
+								.image = image,
+								.level = level,
+								.tile_index = tile->tile_index,
 								.need_gpu_residency = false,
 								.need_cpu_residency = true,
 								.invert_colors = invert_colors,
@@ -1142,7 +1142,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 					}
 				}
 
-				i32 tile_loads_submitted = request_tiles(image, wishlist, tiles_to_load);
+				i32 tile_loads_submitted = tile_loader_submit_requests(image, wishlist, tiles_to_load);
 				i32 tile_loads_completed = 0;
 
                 platform_mutex_unlock(&image->lock);
@@ -1151,23 +1151,25 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 				// tile coverage overlaps, so some needed tiles may have been submitted by another caller.
 				// Wait until every required tile is cached/empty, not just until this call's submissions finish.
 				for (;;) {
-					tile_load_completion_task_t cache_result = {0};
+					tile_cache_result_t cache_result = {0};
 					if (tile_cache_poll_load_result(image, &cache_result)) {
 						platform_mutex_lock(&image->lock);
 						++tile_loads_completed;
-						tile_load_completion_task_t* task = &cache_result;
-						if (task->pixel_memory) {
-							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-							tile_cache_mark_decode_finished(image, task->scale, task->tile_index, false);
+						tile_cache_result_t* task = &cache_result;
+						if (task->stale) {
+							tile_cache_cancel_decode(image, task->level, task->tile_index);
+						} else if (task->pixel_memory) {
+							tile_t* tile = get_tile_from_tile_index(image, task->level, task->tile_index);
+							tile_cache_mark_decode_finished(image, task->level, task->tile_index, false);
 							if (task->want_cpu_residency || task->want_gpu_residency ||
-							    tile_cache_tile_is_cpu_pinned(image, task->scale, task->tile_index)) {
-								tile_cache_store_cpu_pixels(image, task->scale, task->tile_index, task->pixel_memory);
+							    tile_cache_tile_is_cpu_pinned(image, task->level, task->tile_index)) {
+								tile_cache_store_cpu_pixels(image, task->level, task->tile_index, task->pixel_memory);
 							} else {
 								free(task->pixel_memory);
 							}
 						} else if (task->failed || task->is_empty) {
-							tile_t* tile = get_tile_from_tile_index(image, task->scale, task->tile_index);
-							tile_cache_mark_decode_finished(image, task->scale, task->tile_index, task->failed);
+							tile_t* tile = get_tile_from_tile_index(image, task->level, task->tile_index);
+							tile_cache_mark_decode_finished(image, task->level, task->tile_index, task->failed);
 							tile->is_empty = true;
 						}
 						platform_mutex_unlock(&image->lock);
@@ -1183,9 +1185,9 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 									if (!tile_cache_tile_is_busy(image, level, tile->tile_index)) {
 										wishlist[retry_tiles_to_load++] = (load_tile_task_t) {
 												.resource_id = image->resource_id,
-												.image = image, .tile = tile, .level = level,
-												.tile_x = tile->tile_x,
-												.tile_y = tile->tile_y,
+												.image = image,
+												.level = level,
+												.tile_index = tile->tile_index,
 												.need_gpu_residency = false,
 												.need_cpu_residency = true,
 												.invert_colors = invert_colors,
@@ -1197,7 +1199,7 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
 							}
 						}
 						if (retry_tiles_to_load > 0) {
-							tile_loads_submitted += request_tiles(image, wishlist, retry_tiles_to_load);
+							tile_loads_submitted += tile_loader_submit_requests(image, wishlist, retry_tiles_to_load);
 						}
                         platform_mutex_unlock(&image->lock);
 

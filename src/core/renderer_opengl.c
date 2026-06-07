@@ -253,11 +253,11 @@ void renderer_upload_tile_on_worker_thread(image_t* image, void* tile_pixels, i3
 	ASSERT(image);
 	tile_cache_store_gpu_texture(image, scale, tile_index, texture);
 #else
-	tile_load_completion_task_t completion_task = {};
+	tile_cache_result_t completion_task = {};
 	completion_task.pixel_memory = (u8*)tile_pixels;
 	completion_task.tile_width = tile_width;
 	completion_task.tile_height = tile_height;
-	completion_task.scale = scale;
+	completion_task.level = scale;
 	completion_task.tile_index = tile_index;
 	completion_task.resource_id = image ? image->resource_id : 0;
 	completion_task.want_gpu_residency = true;

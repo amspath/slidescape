@@ -34,12 +34,24 @@ void tile_loader_set_slide_score_batch_callback(work_queue_callback_t* callback)
 	slide_score_load_tile_batch_func = callback;
 }
 
-i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
+static void tile_loader_get_tile_xy(image_t* image, i32 level, i32 tile_index, i32* out_tile_x, i32* out_tile_y) {
+	level_image_t* level_image = image->level_images + level;
+	*out_tile_x = tile_index % level_image->width_in_tiles;
+	*out_tile_y = tile_index / level_image->width_in_tiles;
+}
+
+static void tile_loader_post_stale_result(load_tile_task_t* task) {
+	if (!tile_cache_post_stale_result(task->image, task->resource_id, task->level, task->tile_index)) {
+		tile_cache_cancel_decode(task->image, task->level, task->tile_index);
+	}
+}
+
+i32 tile_loader_submit_requests(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load) {
 	i32 tasks_waiting = thread_pool_get_task_count(&global_thread_pool);
 	i32 max_acceptable_tasks = thread_pool_get_task_capacity(&global_thread_pool);
 	i32 usable_slots = max_acceptable_tasks - tasks_waiting;
 	if (tiles_to_load > usable_slots) {
-		console_print_error("request_tiles(): requested %d tiles, but only %d tasks fit into the work queue", tiles_to_load, usable_slots);
+		console_print_error("tile_loader_submit_requests(): requested %d tiles, but only %d tasks fit into the work queue", tiles_to_load, usable_slots);
 		tiles_to_load = usable_slots;
 	}
 
@@ -58,7 +70,7 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 			}
 
 			if (!load_func) {
-				console_print_error("request_tiles(): remote tile batch callback is not registered\n");
+				console_print_error("tile_loader_submit_requests(): remote tile batch callback is not registered\n");
 				return 0;
 			}
 
@@ -67,68 +79,79 @@ i32 request_tiles(image_t* image, load_tile_task_t* wishlist, i32 tiles_to_load)
 			static u32 intermittent = 0;
 			++intermittent;
 			if (intermittent % intermittent_interval == 0) {
-				load_tile_task_batch_t batch = {0};
-				for (i32 i = 0; i < tiles_to_load && batch.task_count < COUNT(batch.tile_tasks); ++i) {
-					load_tile_task_t* task = wishlist + i;
-					level_image_t* level_image = image->level_images + task->level;
-					i32 tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
-					u32 demand_flags = task->need_gpu_residency ? TILE_CACHE_DEMAND_GPU_RESIDENCY : 0;
-					demand_flags |= task->need_cpu_residency ? TILE_CACHE_DEMAND_CPU_RESIDENCY : 0;
-					if (tile_cache_try_begin_decode(image, task->level, tile_index, demand_flags, task->priority)) {
-						batch.tile_tasks[batch.task_count++] = *task;
+				i32 policy_batch_size = TILE_LOAD_BATCH_MAX;
+				if (image->tile_cache && image->tile_cache->policy.batch_size > 0) {
+					policy_batch_size = image->tile_cache->policy.batch_size;
+				}
+				policy_batch_size = CLAMP(policy_batch_size, 1, TILE_LOAD_BATCH_MAX);
+				for (i32 first_tile = 0; first_tile < tiles_to_load; first_tile += policy_batch_size) {
+					load_tile_task_batch_t batch = {0};
+					for (i32 i = first_tile; i < tiles_to_load && batch.task_count < policy_batch_size; ++i) {
+						load_tile_task_t* task = wishlist + i;
+						u32 demand_flags = task->need_gpu_residency ? TILE_CACHE_DEMAND_GPU_RESIDENCY : 0;
+						demand_flags |= task->need_cpu_residency ? TILE_CACHE_DEMAND_CPU_RESIDENCY : 0;
+						if (tile_cache_try_begin_decode(image, task->level, task->tile_index, demand_flags, task->priority, task->generation)) {
+							batch.tile_tasks[batch.task_count++] = *task;
+						} else {
+							console_print_verbose("tile_loader_submit_requests(): tile already requested by another thread (%d)\n", task->tile_index);
+						}
+					}
+					if (batch.task_count == 0) {
+						continue;
+					}
+					if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
+						for (i32 i = 0; i < batch.task_count; ++i) {
+							load_tile_task_t* task = batch.tile_tasks + i;
+							atomic_add(&image->refcount, task->refcount_to_decrement);
+							++tile_loads_submitted;
+						}
 					} else {
-						console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", task->tile_x, task->tile_y);
-					}
-				}
-				if (batch.task_count == 0) {
-					return 0;
-				}
-				if (thread_pool_submit_task_to_group(&global_thread_pool, batch.tile_tasks[0].task_group, load_func, &batch, sizeof(batch))) {
-					for (i32 i = 0; i < batch.task_count; ++i) {
-						load_tile_task_t* task = batch.tile_tasks + i;
-						atomic_add(&image->refcount, task->refcount_to_decrement);
-						++tile_loads_submitted;
-					}
-				} else {
-					for (i32 i = 0; i < batch.task_count; ++i) {
-						load_tile_task_t* task = batch.tile_tasks + i;
-						level_image_t* level_image = image->level_images + task->level;
-						i32 tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
-						tile_cache_cancel_decode(image, task->level, tile_index);
+						for (i32 i = 0; i < batch.task_count; ++i) {
+							load_tile_task_t* task = batch.tile_tasks + i;
+							tile_cache_cancel_decode(image, task->level, task->tile_index);
+						}
 					}
 				}
 			}
 		} else {
 			for (i32 i = 0; i < tiles_to_load; ++i) {
 				load_tile_task_t task = wishlist[i];
-				level_image_t* level_image = image->level_images + task.level;
-				i32 tile_index = task.tile_y * level_image->width_in_tiles + task.tile_x;
 				u32 demand_flags = task.need_gpu_residency ? TILE_CACHE_DEMAND_GPU_RESIDENCY : 0;
 				demand_flags |= task.need_cpu_residency ? TILE_CACHE_DEMAND_CPU_RESIDENCY : 0;
 
-				if (tile_cache_tile_has_cpu_pixels(image, task.level, tile_index) &&
-					    tile_cache_get_gpu_texture(image, task.level, tile_index) == 0 && task.need_gpu_residency) {
-					if (tile_cache_try_begin_upload(image, task.level, tile_index, demand_flags, task.priority)) {
-						// only GPU upload needed
-						// TODO: shouldn't we submit to the task's completion queue here, instead of the global completion queue?
+				if (tile_cache_tile_has_cpu_pixels(image, task.level, task.tile_index) &&
+					    tile_cache_get_gpu_texture(image, task.level, task.tile_index) == 0 && task.need_gpu_residency) {
+					if (tile_cache_try_begin_upload(image, task.level, task.tile_index, demand_flags, task.priority, task.generation)) {
 						task_group_begin(task.task_group);
-						if (!completion_queue_post(&global_completion_queue, TILE_LOADER_COMPLETION_EVENT_UPLOAD_CACHED_TILE, &task, sizeof(task))) {
-							tile_cache_cancel_upload(image, task.level, tile_index);
+						level_image_t* level_image = image->level_images + task.level;
+						tile_cache_result_t upload_request = {0};
+						upload_request.resource_id = task.resource_id;
+						upload_request.level = task.level;
+						upload_request.tile_index = task.tile_index;
+						upload_request.tile_width = level_image->tile_width;
+						upload_request.tile_height = level_image->tile_height;
+						upload_request.want_gpu_residency = task.need_gpu_residency;
+						upload_request.want_cpu_residency = task.need_cpu_residency;
+						upload_request.upload_from_cached_pixels = true;
+						if (!tile_cache_post_load_result(image, &upload_request)) {
+							tile_cache_cancel_upload(image, task.level, task.tile_index);
+						} else {
+							++tile_loads_submitted;
 						}
 						task_group_end(task.task_group);
 					} else {
-						console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", task.tile_x, task.tile_y);
+						console_print_verbose("tile_loader_submit_requests(): tile already requested by another thread (%d)\n", task.tile_index);
 					}
-				} else if (tile_cache_try_begin_decode(image, task.level, tile_index, demand_flags, task.priority)) {
+				} else if (tile_cache_try_begin_decode(image, task.level, task.tile_index, demand_flags, task.priority, task.generation)) {
 					if (thread_pool_submit_task_to_group(&global_thread_pool, task.task_group, load_tile_func, &task, sizeof(task))) {
 						atomic_add(&image->refcount, task.refcount_to_decrement);
 						++tile_loads_submitted;
 					} else {
 						// TODO: should we even allow this to fail?
-						tile_cache_cancel_decode(image, task.level, tile_index);
+						tile_cache_cancel_decode(image, task.level, task.tile_index);
 					}
 				} else {
-					console_print_verbose("request_tiles(): tile already requested by another thread (%d,%d)\n", task.tile_x, task.tile_y);
+					console_print_verbose("tile_loader_submit_requests(): tile already requested by another thread (%d)\n", task.tile_index);
 				}
 			}
 		}
@@ -147,11 +170,18 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 	}
 
 	i32 level = task->level;
-	i32 tile_x = task->tile_x;
-	i32 tile_y = task->tile_y;
 	level_image_t* level_image = image->level_images + level;
 	ASSERT(level_image->exists);
-	i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
+	i32 tile_index = task->tile_index;
+	i32 tile_x = 0;
+	i32 tile_y = 0;
+	tile_loader_get_tile_xy(image, level, tile_index, &tile_x, &tile_y);
+
+	if (task->may_discard_if_stale && tile_cache_task_is_stale(image, level, tile_index, task->generation)) {
+		tile_loader_post_stale_result(task);
+		atomic_subtract(&image->refcount, task->refcount_to_decrement);
+		return;
+	}
 	ASSERT(level_image->x_tile_side_in_um > 0 && level_image->y_tile_side_in_um > 0);
 	float tile_world_pos_x_end = (tile_x + 1) * level_image->x_tile_side_in_um;
 	float tile_world_pos_y_end = (tile_y + 1) * level_image->y_tile_side_in_um;
@@ -256,12 +286,12 @@ void load_tile_func(i32 logical_thread_index, void* userdata) {
 		temp_memory = NULL;
 	}
 
-	tile_load_completion_task_t completion_task = {0};
+	tile_cache_result_t completion_task = {0};
 	completion_task.resource_id = task->resource_id;
 	completion_task.pixel_memory = temp_memory;
 	completion_task.tile_width = level_image->tile_width;
 	completion_task.tile_height = level_image->tile_height;
-	completion_task.scale = level;
+	completion_task.level = level;
 	completion_task.tile_index = tile_index;
 	completion_task.want_gpu_residency = task->need_gpu_residency;
 	completion_task.want_cpu_residency = task->need_cpu_residency;

@@ -31,15 +31,14 @@
 static void slide_score_post_tile_result(load_tile_task_t* task, u8* pixel_memory, bool failed, bool is_empty) {
 	image_t* image = task->image;
 	level_image_t* level_image = image->level_images + task->level;
-	i32 tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
 
-	tile_load_completion_task_t completion_task = {};
+	tile_cache_result_t completion_task = {};
 	completion_task.resource_id = task->resource_id;
 	completion_task.pixel_memory = pixel_memory;
 	completion_task.tile_width = level_image->tile_width;
 	completion_task.tile_height = level_image->tile_height;
-	completion_task.scale = task->level;
-	completion_task.tile_index = tile_index;
+	completion_task.level = task->level;
+	completion_task.tile_index = task->tile_index;
 	completion_task.want_gpu_residency = task->need_gpu_residency;
 	completion_task.want_cpu_residency = task->need_cpu_residency;
 	completion_task.failed = failed;
@@ -104,6 +103,15 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 	for (i32 i = 0; i < batch->task_count; ++i) {
 		load_tile_task_t* task = batch->tile_tasks + i;
 		level_image_t* level_image = image->level_images + task->level;
+		i32 tile_x = task->tile_index % level_image->width_in_tiles;
+		i32 tile_y = task->tile_index / level_image->width_in_tiles;
+		if (task->may_discard_if_stale &&
+		    tile_cache_task_is_stale(image, task->level, task->tile_index, task->generation)) {
+			if (!tile_cache_post_stale_result(image, task->resource_id, task->level, task->tile_index)) {
+				tile_cache_cancel_decode(image, task->level, task->tile_index);
+			}
+			continue;
+		}
 		size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
 		u8* pixel_memory = (u8*)malloc(pixel_memory_size);
 		memset(pixel_memory, image->is_background_black ? 0 : 0xFF, pixel_memory_size);
@@ -111,13 +119,13 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 		bool failed = false;
 		char path[512];
 		if (remote->use_qupath_tile_endpoint) {
-			slide_score_build_qupath_tile_path(path, sizeof(path), remote, task->level, task->tile_x, task->tile_y,
+			slide_score_build_qupath_tile_path(path, sizeof(path), remote, task->level, tile_x, tile_y,
 			                                   level_image->tile_width, level_image->tile_height,
 			                                   level_image->width_in_pixels, level_image->height_in_pixels);
 		} else {
 			snprintf(path, sizeof(path), "/i/%d/%s/i_files/%d/%d_%d.jpeg",
 			         remote->image_id, remote->tile_server.url_part, level_image->pyramid_image_index,
-			         task->tile_x, task->tile_y);
+			         tile_x, tile_y);
 		}
 
 		http_response_t* response = NULL;
@@ -158,7 +166,7 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 			} else {
 				i32 status_code = response ? response->status_code : 0;
 				console_print_error("[thread %d] Slide Score tile request failed: HTTP %d, level %d tile (%d, %d)\n",
-				                    logical_thread_index, status_code, task->level, task->tile_x, task->tile_y);
+				                    logical_thread_index, status_code, task->level, tile_x, tile_y);
 				if (remote->use_qupath_tile_endpoint) {
 					console_print_error("Slide Score QuPath tile endpoint failed for '%s'. The link may be expired or this server may not support unauthenticated raw tile access.\n", path);
 				}

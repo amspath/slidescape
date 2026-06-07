@@ -52,6 +52,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 
 			i32 bytes_read = 0;
 			i32 batch_size = batch->task_count;
+			load_tile_task_t* active_tasks[TILE_LOAD_BATCH_MAX] = {0};
+			i32 active_count = 0;
 			i64 chunk_offsets[TILE_LOAD_BATCH_MAX];
 			i64 chunk_sizes[TILE_LOAD_BATCH_MAX];
 			i64 total_read_size = 0;
@@ -59,11 +61,17 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				load_tile_task_t* task = batch->tile_tasks + i;
 
 				i32 level = task->level;
-				i32 tile_x = task->tile_x;
-				i32 tile_y = task->tile_y;
 				level_image_t* level_image = image->level_images + level;
-				tile_t* tile = task->tile;
-				i32 tile_index = tile_y * level_image->width_in_tiles + tile_x;
+				i32 tile_index = task->tile_index;
+				i32 tile_x = tile_index % level_image->width_in_tiles;
+				i32 tile_y = tile_index / level_image->width_in_tiles;
+				if (task->may_discard_if_stale &&
+				    tile_cache_task_is_stale(image, level, tile_index, task->generation)) {
+					if (!tile_cache_post_stale_result(image, task->resource_id, level, tile_index)) {
+						tile_cache_cancel_decode(image, level, tile_index);
+					}
+					continue;
+				}
 				tiff_ifd_t* level_ifd = tiff->level_images_ifd + level_image->pyramid_image_index;
 				u64 tile_offset = level_ifd->tile_offsets[tile_index];
 				u64 chunk_size = level_ifd->tile_byte_counts[tile_index];
@@ -72,9 +80,15 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				ASSERT(tile_offset != 0);
 				ASSERT(chunk_size != 0);
 
-				chunk_offsets[i] = tile_offset;
-				chunk_sizes[i] = chunk_size;
+				active_tasks[active_count] = task;
+				chunk_offsets[active_count] = tile_offset;
+				chunk_sizes[active_count] = chunk_size;
 				total_read_size += chunk_size;
+				++active_count;
+			}
+			if (active_count == 0) {
+				atomic_subtract(&image->refcount, refcount_decrement_amount);
+				return;
 			}
 
 
@@ -84,7 +98,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 			// It would be faster to pipeline this somehow.
 			u8* read_buffer = download_remote_batch(tiff->location.hostname, tiff->location.portno,
 			                                        tiff->location.filename,
-			                                        chunk_offsets, chunk_sizes, batch_size, &bytes_read, logical_thread_index);
+			                                        chunk_offsets, chunk_sizes, active_count, &bytes_read, logical_thread_index);
 			if (read_buffer && bytes_read > 0) {
 				i64 content_offset = find_end_of_http_headers(read_buffer, bytes_read);
 				i64 content_length = bytes_read - content_offset;
@@ -94,8 +108,8 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 				if (content_length >= total_read_size) {
 
 					i64 chunk_offset_in_read_buffer = 0;
-					for (i32 i = 0; i < batch_size; ++i) {
-						load_tile_task_t* task = batch->tile_tasks + i;
+					for (i32 i = 0; i < active_count; ++i) {
+						load_tile_task_t* task = active_tasks[i];
 						level_image_t* level_image = image->level_images + task->level;
 
 						size_t pixel_memory_size = level_image->tile_width * level_image->tile_height * BYTES_PER_PIXEL;
@@ -116,17 +130,20 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 							                     pixel_memory, (level_ifd->color_space == TIFF_PHOTOMETRIC_YCBCR))) {
 //		                    console_print("thread %d: successfully decoded level %d, tile %d (%d, %d)\n", logical_thread_index, level, tile_index, tile_x, tile_y);
 							} else {
-								console_print_error("[thread %d] failed to decode level %d, tile (%d, %d)\n", logical_thread_index, task->level, task->tile_x, task->tile_y);
+								i32 tile_x = task->tile_index % level_image->width_in_tiles;
+								i32 tile_y = task->tile_index / level_image->width_in_tiles;
+								console_print_error("[thread %d] failed to decode level %d, tile (%d, %d)\n", logical_thread_index, task->level, tile_x, tile_y);
 							}
 						}
 
-						tile_load_completion_task_t completion_task = {};
+						tile_cache_result_t completion_task = {};
 						completion_task.resource_id = task->resource_id;
 						completion_task.pixel_memory = pixel_memory;
 						// TODO: check if we need to pass the tile height here too?
 						completion_task.tile_width = level_image->tile_width;
-						completion_task.scale = task->level;
-						completion_task.tile_index = task->tile_y * level_image->width_in_tiles + task->tile_x;
+						completion_task.tile_height = level_image->tile_height;
+						completion_task.level = task->level;
+						completion_task.tile_index = task->tile_index;
 						completion_task.want_gpu_residency = task->need_gpu_residency;
 						completion_task.want_cpu_residency = task->need_cpu_residency;
 
@@ -155,7 +172,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata) {
 			write_barrier;
 			for (i32 i = 0; i < batch_size; ++i) {
 				load_tile_task_t* task = batch->tile_tasks + i;
-				tile_cache_store_gpu_texture(image, task->level, task->tile_y * image->level_images[task->level].width_in_tiles + task->tile_x, new_textures[i]);
+				tile_cache_store_gpu_texture(image, task->level, task->tile_index, new_textures[i]);
 			}
 #endif
 

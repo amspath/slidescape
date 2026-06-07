@@ -26,8 +26,6 @@ extern "C" {
 #include "image.h"
 #include "platform.h"
 
-typedef struct tile_load_completion_task_t tile_load_completion_task_t;
-
 typedef enum tile_cache_request_state_enum {
 	TILE_CACHE_UNREQUESTED,
 	TILE_CACHE_QUEUED,
@@ -45,6 +43,41 @@ typedef enum tile_cache_demand_flags_enum {
 	TILE_CACHE_DEMAND_CPU_RESIDENCY = 1 << 5,
 	TILE_CACHE_DEMAND_GPU_RESIDENCY = 1 << 6,
 } tile_cache_demand_flags_enum;
+
+typedef struct tile_cache_policy_t {
+	i32 max_inflight_tiles;
+	i32 max_submit_per_tick;
+	i32 batch_size;
+	bool8 discard_stale_before_read;
+	bool8 discard_stale_before_decode;
+	bool8 discard_stale_before_upload;
+	bool8 latency_bound;
+} tile_cache_policy_t;
+
+typedef struct tile_cache_viewer_request_t {
+	bounds2f camera_bounds;
+	bounds2f crop_bounds;
+	v2f camera_center;
+	i32 zoom_level;
+	i32 client_width;
+	i32 client_height;
+	bool8 is_cropped;
+} tile_cache_viewer_request_t;
+
+typedef struct tile_cache_result_t {
+	u8* pixel_memory;
+	i32 level;
+	i32 tile_index;
+	i32 tile_width;
+	i32 tile_height;
+	i32 resource_id;
+	bool8 want_gpu_residency;
+	bool8 want_cpu_residency;
+	bool8 is_empty;
+	bool8 failed;
+	bool8 stale;
+	bool8 upload_from_cached_pixels;
+} tile_cache_result_t;
 
 typedef struct tile_cache_tile_t {
 	u8 request_state;
@@ -69,6 +102,14 @@ typedef struct tile_cache_t {
 	platform_mutex_t lock;
 	bool8 lock_initialized;
 	completion_queue_t result_queue;
+	i32 viewer_generation;
+	bool8 viewer_state_initialized;
+	bounds2f last_camera_bounds;
+	bounds2f last_crop_bounds;
+	v2f last_camera_center;
+	i32 last_zoom_level;
+	bool8 last_is_cropped;
+	tile_cache_policy_t policy;
 	tile_cache_tile_t* level_tiles[IMAGE_PYRAMID_MAX_LEVELS];
 } tile_cache_t;
 
@@ -76,15 +117,16 @@ tile_cache_t* tile_cache_create(image_t* image);
 tile_cache_t* tile_cache_get_or_create(image_t* image);
 void tile_cache_destroy(tile_cache_t* cache);
 tile_cache_tile_t* tile_cache_get_tile_state(image_t* image, i32 level, i32 tile_index);
-bool tile_cache_post_load_result(image_t* image, tile_load_completion_task_t* task);
-bool tile_cache_poll_load_result(image_t* image, tile_load_completion_task_t* out_task);
+bool tile_cache_post_load_result(image_t* image, tile_cache_result_t* task);
+bool tile_cache_post_stale_result(image_t* image, i32 resource_id, i32 level, i32 tile_index);
+bool tile_cache_poll_load_result(image_t* image, tile_cache_result_t* out_task);
 void tile_cache_pin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
 void tile_cache_unpin_cpu_tile(image_t* image, i32 level, i32 tile_index, u32 demand_flags);
 bool tile_cache_tile_has_cpu_pixels(image_t* image, i32 level, i32 tile_index);
 bool tile_cache_tile_is_cpu_pinned(image_t* image, i32 level, i32 tile_index);
 bool tile_cache_tile_is_busy(image_t* image, i32 level, i32 tile_index);
-bool tile_cache_try_begin_decode(image_t* image, i32 level, i32 tile_index, u32 demand_flags, i32 priority);
-bool tile_cache_try_begin_upload(image_t* image, i32 level, i32 tile_index, u32 demand_flags, i32 priority);
+bool tile_cache_try_begin_decode(image_t* image, i32 level, i32 tile_index, u32 demand_flags, i32 priority, i32 generation);
+bool tile_cache_try_begin_upload(image_t* image, i32 level, i32 tile_index, u32 demand_flags, i32 priority, i32 generation);
 void tile_cache_cancel_decode(image_t* image, i32 level, i32 tile_index);
 void tile_cache_cancel_upload(image_t* image, i32 level, i32 tile_index);
 void tile_cache_mark_decode_finished(image_t* image, i32 level, i32 tile_index, bool failed);
@@ -96,6 +138,8 @@ renderer_texture_handle_t tile_cache_take_gpu_texture(image_t* image, i32 level,
 u8* tile_cache_get_cpu_pixels(image_t* image, i32 level, i32 tile_index);
 void tile_cache_store_cpu_pixels(image_t* image, i32 level, i32 tile_index, u8* pixels);
 void tile_cache_release_cpu_pixels_if_unpinned(image_t* image, i32 level, i32 tile_index);
+i32 tile_cache_request_viewer_tiles(image_t* image, tile_cache_viewer_request_t* request);
+bool tile_cache_task_is_stale(image_t* image, i32 level, i32 tile_index, i32 generation);
 
 #ifdef __cplusplus
 }
