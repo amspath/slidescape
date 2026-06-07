@@ -215,7 +215,7 @@ static inline u32 bit_scan_forward(u32 x) {
 #elif defined(__OpenBSD__)
 
 #include <sys/types.h>
-#define bswap_32(x) swap16(x)
+#define bswap_16(x) swap16(x)
 #define bswap_32(x) swap32(x)
 #define bswap_64(x) swap64(x)
 
@@ -235,16 +235,94 @@ static inline u32 bit_scan_forward(u32 x) {
 
 #endif
 
-static inline u16 maybe_swap_16(u16 x, bool is_big_endian) {
-	return is_big_endian ? bswap_16(x) : x;
+static inline u16 maybe_swap_16(u16 x, bool data_is_big_endian) {
+#if HOST_BIG_ENDIAN
+	return data_is_big_endian ? x : bswap_16(x);
+#else
+	return data_is_big_endian ? bswap_16(x) : x;
+#endif
 }
 
-static inline u32 maybe_swap_32(u32 x, bool is_big_endian) {
-	return is_big_endian ? bswap_32(x) : x;
+static inline u32 maybe_swap_32(u32 x, bool data_is_big_endian) {
+#if HOST_BIG_ENDIAN
+	return data_is_big_endian ? x : bswap_32(x);
+#else
+	return data_is_big_endian ? bswap_32(x) : x;
+#endif
 }
 
-static inline u64 maybe_swap_64(u64 x, bool is_big_endian) {
-	return is_big_endian ? bswap_64(x) : x;
+static inline u64 maybe_swap_64(u64 x, bool data_is_big_endian) {
+#if HOST_BIG_ENDIAN
+	return data_is_big_endian ? x : bswap_64(x);
+#else
+	return data_is_big_endian ? bswap_64(x) : x;
+#endif
+}
+
+static inline u16 read_u16_le(const void* src) {
+	u16 result;
+	memcpy(&result, src, sizeof(result));
+#if HOST_BIG_ENDIAN
+	result = bswap_16(result);
+#endif
+	return result;
+}
+
+static inline u32 read_u32_le(const void* src) {
+	u32 result;
+	memcpy(&result, src, sizeof(result));
+#if HOST_BIG_ENDIAN
+	result = bswap_32(result);
+#endif
+	return result;
+}
+
+static inline u64 read_u64_le(const void* src) {
+	u64 result;
+	memcpy(&result, src, sizeof(result));
+#if HOST_BIG_ENDIAN
+	result = bswap_64(result);
+#endif
+	return result;
+}
+
+static inline u16 read_u16_be(const void* src) {
+	u16 result;
+	memcpy(&result, src, sizeof(result));
+#if HOST_LITTLE_ENDIAN
+	result = bswap_16(result);
+#endif
+	return result;
+}
+
+static inline u32 read_u32_be(const void* src) {
+	u32 result;
+	memcpy(&result, src, sizeof(result));
+#if HOST_LITTLE_ENDIAN
+	result = bswap_32(result);
+#endif
+	return result;
+}
+
+static inline u64 read_u64_be(const void* src) {
+	u64 result;
+	memcpy(&result, src, sizeof(result));
+#if HOST_LITTLE_ENDIAN
+	result = bswap_64(result);
+#endif
+	return result;
+}
+
+static inline u16 read_u16_endian(const void* src, bool data_is_big_endian) {
+	return data_is_big_endian ? read_u16_be(src) : read_u16_le(src);
+}
+
+static inline u32 read_u32_endian(const void* src, bool data_is_big_endian) {
+	return data_is_big_endian ? read_u32_be(src) : read_u32_le(src);
+}
+
+static inline u64 read_u64_endian(const void* src, bool data_is_big_endian) {
+	return data_is_big_endian ? read_u64_be(src) : read_u64_le(src);
 }
 
 #if APPLE_ARM

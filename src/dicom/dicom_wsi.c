@@ -17,10 +17,26 @@
 */
 
 #include "common.h"
+#include "intrinsics.h"
 #include "dicom.h"
 #include "dicom_wsi.h"
 
 #include "jpeg_decoder.h"
+
+static inline bool dicom_wsi_element_is_big_endian(dicom_instance_t* instance, dicom_data_element_t element) {
+	return instance->encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN_RETIRED && element.tag.group != 2;
+}
+
+static inline u32 dicom_wsi_read_u32(dicom_instance_t* instance, dicom_data_element_t element, const void* data) {
+	return read_u32_endian(data, dicom_wsi_element_is_big_endian(instance, element));
+}
+
+static inline float dicom_wsi_read_float(dicom_instance_t* instance, dicom_data_element_t element, const void* data) {
+	u32 raw = dicom_wsi_read_u32(instance, element, data);
+	float result;
+	memcpy(&result, &raw, sizeof(result));
+	return result;
+}
 
 // Returns either &array[index] if it already exists, or a newly added and zeroed element at the end of the array
 #define array_last_maybe_expand(array, index) \
@@ -137,19 +153,19 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 			// Type 1C
 			// Width of total imaged volume (distance in the direction of rows in each frame) in mm.
 			// Required if Image Type (0008,0008) Value 3 is VOLUME. May be present otherwise.
-			instance->imaged_volume_width = *(float*)data;
+			instance->imaged_volume_width = dicom_wsi_read_float(instance, element, data);
 		} break;
 		case DICOM_ImagedVolumeHeight: {
 			// Type 1C
 			// Height of total imaged volume (distance in the direction of columns in each frame) in mm.
 			// Required if Image Type (0008,0008) Value 3 is VOLUME. May be present otherwise.
-			instance->imaged_volume_height = *(float*)data;
+			instance->imaged_volume_height = dicom_wsi_read_float(instance, element, data);
 		} break;
 		case DICOM_ImagedVolumeDepth: {
 			// Type 1C
 			// Depth of total imaged volume (distance in the Z direction of focal planes) in µm.
 			// Required if Image Type (0008,0008) Value 3 is VOLUME. May be present otherwise.
-			instance->imaged_volume_depth = *(float*)data;
+			instance->imaged_volume_depth = dicom_wsi_read_float(instance, element, data);
 		} break;
 		case DICOM_SamplesPerPixel: {
 			// Type 1
@@ -290,12 +306,12 @@ void dicom_wsi_interpret_top_level_data_element(dicom_instance_t* instance, dico
 		case DICOM_TotalPixelMatrixColumns: {
 			// Type 1
 			// Total number of columns in pixel matrix; i.e., width of total imaged volume in pixels.
-			instance->total_pixel_matrix_columns = *(u32*)data;
+			instance->total_pixel_matrix_columns = dicom_wsi_read_u32(instance, element, data);
 		} break;
 		case DICOM_TotalPixelMatrixRows: {
 			// Type 1
 			// Total number of rows in pixel matrix; i.e., height of total imaged volume in pixels.
-			instance->total_pixel_matrix_rows = *(u32*)data;
+			instance->total_pixel_matrix_rows = dicom_wsi_read_u32(instance, element, data);
 		} break;
 	}
 }
@@ -315,7 +331,7 @@ void dicom_wsi_interpret_nested_data_element(dicom_instance_t* instance, dicom_d
                 } break;
                     // Either IlluminationWaveLength or IlluminationColorCodeSequence is required to be present
                 case DICOM_IlluminationWaveLength: {
-                    optical_path->illumination_wavelength = *(float*)data;
+                    optical_path->illumination_wavelength = dicom_wsi_read_float(instance, element, data);
                 } break;
                 case DICOM_IlluminationColorCodeSequence: {
                     // TODO

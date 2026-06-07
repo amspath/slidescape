@@ -804,7 +804,8 @@ bool parse_dicom_part06_xml(const char* xml, i64 length) {
 
 							if (is_verbose_mode) {
 								char vr_text[4] = {}; // convert 2-byte VR to printable form
-								*(u16*) vr_text = parser.current_dicom_vr;
+								vr_text[0] = (char)(parser.current_dicom_vr & 0xff);
+								vr_text[1] = (char)((parser.current_dicom_vr >> 8) & 0xff);
 								if (!parser.current_dicom_invalid) {
 									console_print_verbose("(%04x,%04x) | %s | %s | %s\n", parser.current_dicom_group,
 									                      parser.current_dicom_element, vr_text, parser.current_dicom_name, parser.current_dicom_keyword);

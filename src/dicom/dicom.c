@@ -20,6 +20,7 @@
 
 #include "common.h"
 #include "platform.h"
+#include "intrinsics.h"
 #include "mathutils.h"
 #include "listing.h"
 
@@ -68,6 +69,34 @@ static inline bool32 need_alternate_element_layout(u16 vr) {
 	          (vr == DICOM_VR_UT) +
 	          (vr == DICOM_VR_UN);
 	return (sum != 0);
+}
+
+static inline bool dicom_encoding_is_big_endian(dicom_transfer_syntax_enum encoding) {
+	return encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN_RETIRED;
+}
+
+static inline dicom_tag_t dicom_make_tag(u16 group, u16 element) {
+	dicom_tag_t result = {};
+	result.group = group;
+	result.element = element;
+	return result;
+}
+
+static inline u16 dicom_read_u16(dicom_instance_t* instance, dicom_data_element_t element, const void* data) {
+	bool is_big_endian = dicom_encoding_is_big_endian(instance->encoding) && element.tag.group != 2;
+	return read_u16_endian(data, is_big_endian);
+}
+
+static inline u32 dicom_read_u32(dicom_instance_t* instance, dicom_data_element_t element, const void* data) {
+	bool is_big_endian = dicom_encoding_is_big_endian(instance->encoding) && element.tag.group != 2;
+	return read_u32_endian(data, is_big_endian);
+}
+
+static inline float dicom_read_float(dicom_instance_t* instance, dicom_data_element_t element, const void* data) {
+	u32 raw = dicom_read_u32(instance, element, data);
+	float result;
+	memcpy(&result, &raw, sizeof(result));
+	return result;
 }
 
 dicom_dict_entry_t* dicom_dict_entries;
@@ -214,7 +243,8 @@ dicom_data_element_t dicom_read_data_element(u8* data_start, i64 data_offset, di
 	u8* pos = data_start + data_offset;
 	if (bytes_available >= 8) {
 		result.is_valid = true; // may override with false later
-		result.tag = *(dicom_tag_t*) pos;
+		bool is_big_endian = dicom_encoding_is_big_endian(encoding);
+		result.tag = dicom_make_tag(read_u16_endian(pos + 0, is_big_endian), read_u16_endian(pos + 2, is_big_endian));
 
 		if (result.tag.group == 0xFFFE &&
 				(result.tag.as_u32 == DICOM_Item ||
@@ -222,38 +252,36 @@ dicom_data_element_t dicom_read_data_element(u8* data_start, i64 data_offset, di
 				result.tag.as_u32 == DICOM_SequenceDelimitationItem))
 		{
 			// special cases: DICOM_Item, DICOM_ItemDelimitationItem, DICOM_SequenceDelimitationItem
-			dicom_implicit_data_element_header_t* element_header = (dicom_implicit_data_element_header_t*) pos;
-			result.tag = element_header->tag;
-			result.length = element_header->value_length;
+			result.length = read_u32_endian(pos + 4, is_big_endian);
 //			result.data = element_header->data;
-			result.data_offset = data_offset + sizeof(*element_header);
+			result.data_offset = data_offset + sizeof(dicom_implicit_data_element_header_t);
 			result.vr = 0; // undefined
-		} else if (encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN || result.tag.group == 2 /*File Meta info*/ ) {
+		} else if (encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_LITTLE_ENDIAN ||
+				   encoding == DICOM_TRANSFER_SYNTAX_EXPLICIT_VR_BIG_ENDIAN_RETIRED ||
+				   result.tag.group == 2 /*File Meta info*/ ) {
 			// Data element is Explicit VR.
-			dicom_explicit_data_element_header_t* element_header = (dicom_explicit_data_element_header_t*) pos;
-			result.vr = element_header->vr;
+			is_big_endian = is_big_endian && result.tag.group != 2;
+			result.vr = LE_2CHARS(pos[4], pos[5]);
 
 			// Some VRs have the value length field stored differently...
 			if (need_alternate_element_layout(result.vr)) {
 				if (bytes_available >= 12) {
-					result.length = *(u32*) &element_header->variable_part[+2];
+					result.length = read_u32_endian(pos + 8, is_big_endian);
 //					result.data = pos + 12; // Advance to value field
 					result.data_offset = data_offset + 12; // Advance to value field
 				} else {
 					result.is_valid = false;
 				}
 			} else {
-				result.length = *(u16*) &element_header->variable_part[0];
+				result.length = read_u16_endian(pos + 6, is_big_endian);
 //				result.data = pos + 8;
 				result.data_offset = data_offset + 8;
 			}
 		} else {
 			// Data element is Implicit VR.
-			dicom_implicit_data_element_header_t* element_header = (dicom_implicit_data_element_header_t*) pos;
-			result.tag = element_header->tag;
-			result.length = element_header->value_length;
+			result.length = read_u32_endian(pos + 4, is_big_endian);
 //			result.data = element_header->data;
-			result.data_offset = data_offset + sizeof(*element_header);
+			result.data_offset = data_offset + sizeof(dicom_implicit_data_element_header_t);
 			result.vr = get_dicom_tag_vr(result.tag.as_u32); // look up the VR from the data dictionary.
 		}
 	}
@@ -280,7 +308,8 @@ static void debug_print_dicom_element(dicom_instance_t* instance, dicom_data_ele
 	}
 
 	char vr_text[4] = {}; // convert 2-byte VR to printable form
-	*(u16*) vr_text = element.vr;
+	vr_text[0] = (char)(element.vr & 0xff);
+	vr_text[1] = (char)((element.vr >> 8) & 0xff);
 	const char* keyword = get_dicom_tag_keyword(element.tag.as_u32);
 	memrw_printf(&string_builder, "(%04x,%04x) - %s - length: %d - %s",
 	             element.tag.group, element.tag.element, vr_text, element.length,
@@ -322,23 +351,23 @@ static void debug_print_dicom_element(dicom_instance_t* instance, dicom_data_ele
 			}
 		} break;
 		case DICOM_VR_UL: {
-			u32 value = *(u32*) element_data;
+			u32 value = dicom_read_u32(instance, element, element_data);
 			memrw_printf(&string_builder, " - %u", value);
 		} break;
 		case DICOM_VR_SL: {
-			i32 value = *(i32*) element_data;
+			i32 value = (i32)dicom_read_u32(instance, element, element_data);
 			memrw_printf(&string_builder, " - %d", value);
 		} break;
 		case DICOM_VR_US: {
-			u32 value = *(u16*) element_data;
+			u32 value = dicom_read_u16(instance, element, element_data);
 			memrw_printf(&string_builder, " - %u", value);
 		} break;
 		case DICOM_VR_SS: {
-			i32 value = *(i16*) element_data;
+			i32 value = (i16)dicom_read_u16(instance, element, element_data);
 			memrw_printf(&string_builder, " - %d", value);
 		} break;
 		case DICOM_VR_FL: {
-			float value = *(float*) element_data;
+			float value = dicom_read_float(instance, element, element_data);
 			memrw_printf(&string_builder, " - %g", value);
 		} break;
 	}
@@ -653,14 +682,14 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
                     instance->concatenation_uid = dicom_parse_uid(str);
                 } break;
                 case DICOM_InConcatenationNumber: {
-                    instance->in_concatenation_number = *(u16*)data;
+                    instance->in_concatenation_number = dicom_read_u16(instance, element, data);
                 } break;
                 case DICOM_InConcatenationTotalNumber: {
                     // value is optional; don't assume present
                 } break;
                 case DICOM_ConcatenationFrameOffsetNumber: {
                     // NOTE: If this is part of a concatenation, add this to the frame number in the file to get the actual frame number
-                    instance->concatenation_frame_offset_number = *(u32*)data;
+                    instance->concatenation_frame_offset_number = dicom_read_u32(instance, element, data);
                 } break;
 			}
 		} break;
@@ -668,7 +697,7 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 			switch(element.tag.as_u32) {
 				default: break;
 				case DICOM_SamplesPerPixel: {
-					instance->samples_per_pixel = *(u16*)data;
+					instance->samples_per_pixel = dicom_read_u16(instance, element, data);
 				} break;
 				case DICOM_PhotometricInterpretation: {
 					dicom_photometric_interpretation_enum photometric_interpretation = DICOM_PHOTOMETRIC_INTERPRETATION_UNKNOWN;
@@ -690,16 +719,16 @@ static void dicom_interpret_top_level_data_element(dicom_instance_t* instance, d
 					}
 					instance->photometric_interpretation = photometric_interpretation;
 				} break;
-				case DICOM_PlanarConfiguration: { instance->planar_configuration = *(u16*)data; } break;
+				case DICOM_PlanarConfiguration: { instance->planar_configuration = dicom_read_u16(instance, element, data); } break;
 				case DICOM_NumberOfFrames: {
 					instance->number_of_frames = dicom_parse_integer_string(str, NULL);
 				} break;
-				case DICOM_Rows:                instance->rows = *(u16*)data; break;
-				case DICOM_Columns:             instance->columns = *(u16*)data; break;
-				case DICOM_BitsAllocated:       instance->bits_allocated = *(u16*)data; break;
-				case DICOM_BitsStored:          instance->bits_stored = *(u16*)data; break;
-				case DICOM_HighBit:             instance->high_bit = *(u16*)data; break;
-				case DICOM_PixelRepresentation: instance->high_bit = *(u16*)data; break;
+				case DICOM_Rows:                instance->rows = dicom_read_u16(instance, element, data); break;
+				case DICOM_Columns:             instance->columns = dicom_read_u16(instance, element, data); break;
+				case DICOM_BitsAllocated:       instance->bits_allocated = dicom_read_u16(instance, element, data); break;
+				case DICOM_BitsStored:          instance->bits_stored = dicom_read_u16(instance, element, data); break;
+				case DICOM_HighBit:             instance->high_bit = dicom_read_u16(instance, element, data); break;
+				case DICOM_PixelRepresentation: instance->high_bit = dicom_read_u16(instance, element, data); break;
 				case DICOM_BurnedInAnnotation: {
 
 				} break;
@@ -789,7 +818,10 @@ bool dicom_read_encapsulated_pixel_data_item(dicom_instance_t* instance, dicom_d
 				ASSERT(offset_count == instance->number_of_frames);
 				ASSERT(instance->pixel_data_offsets != NULL);
 				ASSERT(offset_count * sizeof(u32) == element.length);
-				memcpy(instance->pixel_data_offsets, instance->data + element.data_offset, offset_count * sizeof(u32));
+				u8* offset_data = instance->data + element.data_offset;
+				for (u32 i = 0; i < offset_count; ++i) {
+					instance->pixel_data_offsets[i] = read_u32_le(offset_data + i * sizeof(u32));
+				}
                 ASSERT(instance->pixel_data_sizes == NULL);
 				instance->pixel_data_sizes = malloc(offset_count * sizeof(u32));
 				for (i32 i = 0; i < offset_count - 1; ++i) {
@@ -1468,8 +1500,7 @@ bool dicom_open_from_file(dicom_series_t* dicom, file_info_t* file) {
 bool is_file_a_dicom_file(u8* file_header_data, size_t file_header_data_len) {
 	if (file_header_data_len > sizeof(dicom_header_t)) {
 		dicom_header_t* dicom_header = (dicom_header_t*) file_header_data;
-		u32 prefix = *(u32*) dicom_header->prefix;
-		if (prefix == LE_4CHARS('D','I','C','M')) {
+		if (memcmp(dicom_header->prefix, "DICM", 4) == 0) {
 			return true;
 		}
 	}

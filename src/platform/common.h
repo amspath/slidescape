@@ -102,6 +102,27 @@
 #define COMPILER_GCC 0
 #endif
 
+// Host byte order is assumed to be known at compile time. If a new compiler does
+// not expose byte-order macros, define HOST_BIG_ENDIAN in config.h.
+#ifndef HOST_BIG_ENDIAN
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+#define HOST_BIG_ENDIAN 1
+#elif defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+#define HOST_BIG_ENDIAN 0
+#elif defined(_WIN32) || defined(__LITTLE_ENDIAN__) || defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__) || \
+      defined(__ARMEL__) || defined(__AARCH64EL__) || defined(__i386__) || defined(__x86_64__)
+#define HOST_BIG_ENDIAN 0
+#elif defined(__BIG_ENDIAN__) || defined(_MIPSEB) || defined(__MIPSEB) || defined(__MIPSEB__) || \
+      defined(__ARMEB__) || defined(__AARCH64EB__) || defined(__powerpc__) || defined(__ppc__) || defined(__PPC__)
+#define HOST_BIG_ENDIAN 1
+#else
+#error "Could not determine host byte order. Define HOST_BIG_ENDIAN in config.h."
+#endif
+#endif
+
+#define HOST_LITTLE_ENDIAN (!HOST_BIG_ENDIAN)
+#define DATA_ENDIAN_DIFFERS(data_is_big_endian) ((data_is_big_endian) != HOST_BIG_ENDIAN)
+
 // IDE detection (for dealing with pesky preprocessor highlighting issues)
 #if defined(__JETBRAINS_IDE__)
 #define CODE_EDITOR 1

@@ -53,6 +53,23 @@
 
 #include "isyntax.h"
 
+static inline isyntax_dicom_tag_header_t isyntax_read_dicom_tag_header(const void* src) {
+	const u8* data = (const u8*)src;
+	isyntax_dicom_tag_header_t result = {};
+	result.group = read_u16_le(data + 0);
+	result.element = read_u16_le(data + 2);
+	result.size = read_u32_le(data + 4);
+	return result;
+}
+
+static inline u32 isyntax_read_u32_le(const void* src) {
+	return read_u32_le(src);
+}
+
+static inline u64 isyntax_read_u64_le(const void* src) {
+	return read_u64_le(src);
+}
+
 // XML library for parsing the header
 #include "stringutils.h"
 #include "yxml.h"
@@ -713,9 +730,9 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					u8* decoded = isyntax_base64_decode(value, value_len, &decoded_len);
 					if (decoded) {
 
-						u32 header_size = *(u32*) decoded + 0;
+						u32 header_size = isyntax_read_u32_le(decoded);
 						u8* block_header_start = decoded + 4;
-						isyntax_dicom_tag_header_t sequence_element = *(isyntax_dicom_tag_header_t*) (block_header_start);
+						isyntax_dicom_tag_header_t sequence_element = isyntax_read_dicom_tag_header(block_header_start);
 						if (sequence_element.size == 40) {
 							// We have a partial header structure, with 'Block Data Offset' and 'Block Size' missing (stored in Seektable)
 							// Full block header size (including the sequence element) is 48 bytes
@@ -730,14 +747,14 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							image->header_codeblocks_are_partial = true;
 
 							for (i32 i = 0; i < block_count; ++i) {
-								isyntax_partial_block_header_t* header = ((isyntax_partial_block_header_t*)(block_header_start)) + i;
+								u8* header = block_header_start + i * sizeof(isyntax_partial_block_header_t);
 								isyntax_codeblock_t* codeblock = image->codeblocks + i;
-								codeblock->x_coordinate = header->x_coordinate;
-								codeblock->y_coordinate = header->y_coordinate;
-								codeblock->color_component = header->color_component;
-								codeblock->scale = header->scale;
-								codeblock->coefficient = header->coefficient;
-								codeblock->block_header_template_id = header->block_header_template_id;
+								codeblock->x_coordinate = isyntax_read_u32_le(header + offsetof(isyntax_partial_block_header_t, x_coordinate));
+								codeblock->y_coordinate = isyntax_read_u32_le(header + offsetof(isyntax_partial_block_header_t, y_coordinate));
+								codeblock->color_component = isyntax_read_u32_le(header + offsetof(isyntax_partial_block_header_t, color_component));
+								codeblock->scale = isyntax_read_u32_le(header + offsetof(isyntax_partial_block_header_t, scale));
+								codeblock->coefficient = isyntax_read_u32_le(header + offsetof(isyntax_partial_block_header_t, coefficient));
+								codeblock->block_header_template_id = isyntax_read_u32_le(header + offsetof(isyntax_partial_block_header_t, block_header_template_id));
 								DUMMY_STATEMENT;
 							}
 
@@ -754,16 +771,16 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 							image->header_codeblocks_are_partial = false;
 
 							for (i32 i = 0; i < block_count; ++i) {
-								isyntax_full_block_header_t* header = ((isyntax_full_block_header_t*)(block_header_start)) + i;
+								u8* header = block_header_start + i * sizeof(isyntax_full_block_header_t);
 								isyntax_codeblock_t* codeblock = image->codeblocks + i;
-								codeblock->x_coordinate = header->x_coordinate;
-								codeblock->y_coordinate = header->y_coordinate;
-								codeblock->color_component = header->color_component;
-								codeblock->scale = header->scale;
-								codeblock->coefficient = header->coefficient;
-								codeblock->block_data_offset = header->block_data_offset; // extra
-								codeblock->block_size = header->block_size; // extra
-								codeblock->block_header_template_id = header->block_header_template_id;
+								codeblock->x_coordinate = isyntax_read_u32_le(header + offsetof(isyntax_full_block_header_t, x_coordinate));
+								codeblock->y_coordinate = isyntax_read_u32_le(header + offsetof(isyntax_full_block_header_t, y_coordinate));
+								codeblock->color_component = isyntax_read_u32_le(header + offsetof(isyntax_full_block_header_t, color_component));
+								codeblock->scale = isyntax_read_u32_le(header + offsetof(isyntax_full_block_header_t, scale));
+								codeblock->coefficient = isyntax_read_u32_le(header + offsetof(isyntax_full_block_header_t, coefficient));
+								codeblock->block_data_offset = isyntax_read_u64_le(header + offsetof(isyntax_full_block_header_t, block_data_offset)); // extra
+								codeblock->block_size = isyntax_read_u64_le(header + offsetof(isyntax_full_block_header_t, block_size)); // extra
+								codeblock->block_header_template_id = isyntax_read_u32_le(header + offsetof(isyntax_full_block_header_t, block_header_template_id));
 								DUMMY_STATEMENT;
 							}
 						} else {
@@ -787,10 +804,10 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					u8* decoded = isyntax_base64_decode(value, value_len, &decoded_len);
 					if (decoded) {
 						u8* decoded_end = decoded + decoded_len;
-						u32 header_size = *(u32*) decoded + 0;
+						u32 header_size = isyntax_read_u32_le(decoded);
 						u8* block_header_start = decoded + 4;
 						u8* pos = block_header_start;
-						isyntax_dicom_tag_header_t sequence_element = *(isyntax_dicom_tag_header_t*) pos;
+						isyntax_dicom_tag_header_t sequence_element = isyntax_read_dicom_tag_header(pos);
 
 						// first element should be a sequence tag
 						if (!(sequence_element.group == 0xfffe && sequence_element.element == 0xe000)) {
@@ -799,9 +816,13 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 						// pass 1: check how many clusters there are
 						i32 cluster_count = 1;
 						for (;;) {
-							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + ((isyntax_dicom_tag_header_t*)pos)->size;
-							isyntax_dicom_tag_header_t* next_sequence_element = (isyntax_dicom_tag_header_t*)next_sequence_element_pos;
-							if (next_sequence_element_pos >= decoded_end || next_sequence_element->element != 0xe000) {
+							isyntax_dicom_tag_header_t current_sequence_element = isyntax_read_dicom_tag_header(pos);
+							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + current_sequence_element.size;
+							if (next_sequence_element_pos >= decoded_end) {
+								break;
+							}
+							isyntax_dicom_tag_header_t next_sequence_element = isyntax_read_dicom_tag_header(next_sequence_element_pos);
+							if (next_sequence_element.element != 0xe000) {
 								break;
 							}
 							++cluster_count;
@@ -827,8 +848,8 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 						i32 running_codeblock_index = 0;
 						for (i32 i = 0; i < cluster_count; ++i) {
 
-							sequence_element = *(isyntax_dicom_tag_header_t*) pos;
-							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + ((isyntax_dicom_tag_header_t*)pos)->size;
+							sequence_element = isyntax_read_dicom_tag_header(pos);
+							u8* next_sequence_element_pos = pos + sizeof(isyntax_dicom_tag_header_t) + sequence_element.size;
 //							dicom_tag_header_t* next_sequence_element = (dicom_tag_header_t*)next_sequence_element_pos;
 
 							u32 cluster_block_size = sequence_element.size;
@@ -839,75 +860,75 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 
 							// advance to cluster coordinates
 							pos += sizeof(isyntax_dicom_tag_header_t);
-							isyntax_dicom_tag_header_t element = *(isyntax_dicom_tag_header_t*) pos;
+							isyntax_dicom_tag_header_t element = isyntax_read_dicom_tag_header(pos);
 							u8* next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
 							if (next_element > cluster_block_end) {
 								goto decoding_cluster_header_table_failed;
 							}
 
 							i32 cluster_coordinate_count = element.size / 4;
-							i32* coordinates = (i32*)(pos + sizeof(isyntax_dicom_tag_header_t));
 							if (cluster_coordinate_count < 2) {
 								// Expect only X and Y coordinates (provides the X/Y coordinates of the cluster)
 								// Scale, coefficient and color component are not needed, these can be derived from the cluster header templates
 								// (even so, scale seems to be included: in the example files, cluster_coordinate_count is 3)
 								goto decoding_cluster_header_table_failed;
 							}
-							i32 cluster_x = coordinates[0];
-							i32 cluster_y = coordinates[1];
+							u8* coordinates = pos + sizeof(isyntax_dicom_tag_header_t);
+							i32 cluster_x = (i32)isyntax_read_u32_le(coordinates + 0);
+							i32 cluster_y = (i32)isyntax_read_u32_le(coordinates + 4);
 
 							// read cluster header template ID
 							pos = next_element;
-							element = *(isyntax_dicom_tag_header_t*) pos;
+							element = isyntax_read_dicom_tag_header(pos);
 							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
 							if (next_element > cluster_block_end || element.size != 4) {
 								goto decoding_cluster_header_table_failed;
 							}
-							u32 cluster_header_template_id = *(u32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							u32 cluster_header_template_id = isyntax_read_u32_le(pos + sizeof(isyntax_dicom_tag_header_t));
 							if (cluster_header_template_id >= isyntax->cluster_header_template_count) {
 								goto decoding_cluster_header_table_failed;
 							}
 							isyntax_cluster_header_template_t* cluster_header_template = isyntax->cluster_header_templates + cluster_header_template_id;
 							if (cluster_coordinate_count >= 3) {
-								ASSERT(cluster_header_template->base_scale == coordinates[2]);
+								ASSERT(cluster_header_template->base_scale == (i32)isyntax_read_u32_le(coordinates + 8));
 							}
 
 							// read cluster data offset
 							pos = next_element;
-							element = *(isyntax_dicom_tag_header_t*) pos;
+							element = isyntax_read_dicom_tag_header(pos);
 							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
 							if (next_element > cluster_block_end || element.size != 8) {
 								goto decoding_cluster_header_table_failed;
 							}
-							u64 cluster_data_offset = *(u64*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							u64 cluster_data_offset = isyntax_read_u64_le(pos + sizeof(isyntax_dicom_tag_header_t));
 
 							// read cluster size
 							pos = next_element;
-							element = *(isyntax_dicom_tag_header_t*) pos;
+							element = isyntax_read_dicom_tag_header(pos);
 							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
 							if (next_element > cluster_block_end || element.size != 8) {
 								goto decoding_cluster_header_table_failed;
 							}
-							u64 cluster_size = *(u64*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							u64 cluster_size = isyntax_read_u64_le(pos + sizeof(isyntax_dicom_tag_header_t));
 
 							// read cluster block data offsets
 							pos = next_element;
-							element = *(isyntax_dicom_tag_header_t*) pos;
+							element = isyntax_read_dicom_tag_header(pos);
 							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
 							if (next_element > cluster_block_end) {
 								goto decoding_cluster_header_table_failed;
 							}
 							u32 block_count = element.size / 4;
-							u32* cluster_block_data_offsets = (u32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							u8* cluster_block_data_offsets = pos + sizeof(isyntax_dicom_tag_header_t);
 
 							// read cluster block sizes
 							pos = next_element;
-							element = *(isyntax_dicom_tag_header_t*) pos;
+							element = isyntax_read_dicom_tag_header(pos);
 							next_element = pos + sizeof(isyntax_dicom_tag_header_t) + element.size;
 							if (next_element > cluster_block_end || element.size / 4 != block_count) {
 								goto decoding_cluster_header_table_failed;
 							}
-							u32* cluster_block_sizes = (u32*)(pos + sizeof(isyntax_dicom_tag_header_t));
+							u8* cluster_block_sizes = pos + sizeof(isyntax_dicom_tag_header_t);
 
 							i32 top_codeblock_index = running_codeblock_index;
 							bool has_ll = false;
@@ -924,14 +945,14 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 								// account for different wavelet coefficient encoding in iSyntax v2 / data model >= 100
 								codeblock->coefficient = (relative_codeblock_in_cluster_info->waveletcoeff == 3) ? 0 : 1;
 								if (codeblock->coefficient == 0) has_ll = true;
-								codeblock->block_data_offset = cluster_data_offset + cluster_block_data_offsets[j];
-								codeblock->block_size = cluster_block_sizes[j];
+								codeblock->block_data_offset = cluster_data_offset + isyntax_read_u32_le(cluster_block_data_offsets + j * sizeof(u32));
+								codeblock->block_size = isyntax_read_u32_le(cluster_block_sizes + j * sizeof(u32));
 								codeblock->block_header_template_id = relative_codeblock_in_cluster_info->block_header_template_id;
 								++running_codeblock_index;
 							}
 
 							isyntax_data_chunk_t* cluster = image->data_chunks + i;
-							cluster->offset = cluster_data_offset + cluster_block_data_offsets[0];
+							cluster->offset = cluster_data_offset + isyntax_read_u32_le(cluster_block_data_offsets);
 							cluster->size = cluster_size;
 							cluster->top_codeblock_index = top_codeblock_index;
 							cluster->codeblock_count_per_color = block_count / 3;
@@ -2425,14 +2446,14 @@ void isyntax_decompress_codeblock_in_chunk(isyntax_codeblock_t* codeblock, i32 b
 // Read between 57 and 64 bits (7 bytes + 1-8 bits) from a bitstream (least significant bit first).
 // Requires that at least 7 safety bytes are present at the end of the stream (don't trigger a segmentation fault)!
 static inline u64 bitstream_lsb_read(u8* buffer, u32 pos) {
-	u64 raw = *(u64*)(buffer + pos / 8);
+	u64 raw = read_u64_le(buffer + pos / 8);
 	raw >>= pos % 8;
 	return raw;
 }
 
 static inline u64 bitstream_lsb_read_advance(u8* buffer, i32* bits_read, i32 bits_to_read) {
-	u64 raw = *(u64*)(buffer + (*bits_read / 8));
-	raw >>= (*bits_read / 8);
+	u64 raw = read_u64_le(buffer + (*bits_read / 8));
+	raw >>= (*bits_read % 8);
 	*bits_read += bits_to_read;
 	return raw;
 }
@@ -2543,19 +2564,19 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 	i32 total_mask_bits = coeff_bit_depth * coeff_count;
 	u8* byte_pos = compressed;
 	if (compressor_version == 1) {
-		serialized_length = *(u32*)byte_pos;
+		serialized_length = read_u32_le(byte_pos);
 		byte_pos += 4;
 		bits_read += 4*8;
 	} else {
 		if (coeff_count == 1) {
-			bitmasks[0] = *(u16*)(byte_pos);
+			bitmasks[0] = read_u16_le(byte_pos);
 			byte_pos += 2;
 			bits_read += 2*8;
 			total_mask_bits = popcount(bitmasks[0]);
 		} else if (coeff_count == 3) {
-			bitmasks[0] = *(u16*)(byte_pos);
-			bitmasks[1] = *(u16*)(byte_pos+2);
-			bitmasks[2] = *(u16*)(byte_pos+4);
+			bitmasks[0] = read_u16_le(byte_pos);
+			bitmasks[1] = read_u16_le(byte_pos+2);
+			bitmasks[2] = read_u16_le(byte_pos+4);
 			byte_pos += 6;
 			bits_read += 6*8;
 			total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
@@ -2845,13 +2866,13 @@ bool isyntax_hulsken_decompress(u8* compressed, size_t compressed_size, i32 bloc
 		u64 expected_length = total_mask_bits * bytes_per_bitplane;
 		if (decompressed_length < expected_length) {
 			if (coeff_count == 1) {
-				bitmasks[0] = *(u16*)(decompressed_buffer + decompressed_length - 2);
+				bitmasks[0] = read_u16_le(decompressed_buffer + decompressed_length - 2);
 				total_mask_bits = popcount(bitmasks[0]);
 			} else if (coeff_count == 3) {
 				byte_pos = decompressed_buffer + decompressed_length - 6;
-				bitmasks[0] = *(u16*)(byte_pos);
-				bitmasks[1] = *(u16*)(byte_pos+2);
-				bitmasks[2] = *(u16*)(byte_pos+4);
+				bitmasks[0] = read_u16_le(byte_pos);
+				bitmasks[1] = read_u16_le(byte_pos+2);
+				bitmasks[2] = read_u16_le(byte_pos+4);
 				total_mask_bits = popcount(bitmasks[0]) + popcount(bitmasks[1]) + popcount(bitmasks[2]);
 			} else {
 				fatal_error("invalid coeff_count");
@@ -3294,8 +3315,9 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 				file_stream_set_pos(fp, isyntax_data_offset);
 				if (wsi_image->header_codeblocks_are_partial) {
 					// The seektable is required to be present, because the block header table did not contain all information.
-					isyntax_dicom_tag_header_t seektable_header_tag = {0};
-					file_stream_read(&seektable_header_tag, sizeof(isyntax_dicom_tag_header_t), fp);
+					u8 seektable_header_bytes[sizeof(isyntax_dicom_tag_header_t)] = {0};
+					file_stream_read(seektable_header_bytes, sizeof(seektable_header_bytes), fp);
+					isyntax_dicom_tag_header_t seektable_header_tag = isyntax_read_dicom_tag_header(seektable_header_bytes);
 
 					io_ticks_elapsed += (get_clock() - io_begin);
 					parse_begin = get_clock();
@@ -3324,11 +3346,12 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 								ASSERT(!"block ID out of bounds");
 								goto failed;
 							}
-							isyntax_seektable_codeblock_header_t* seektable_entry = seektable + codeblock->block_id;
-							ASSERT(seektable_entry->block_data_offset_header.group == 0x301D);
-							ASSERT(seektable_entry->block_data_offset_header.element == 0x2010);
-							codeblock->block_data_offset = seektable_entry->block_data_offset;
-							codeblock->block_size = seektable_entry->block_size;
+							u8* seektable_entry = (u8*)(seektable + codeblock->block_id);
+							isyntax_dicom_tag_header_t block_data_offset_header = isyntax_read_dicom_tag_header(seektable_entry + offsetof(isyntax_seektable_codeblock_header_t, block_data_offset_header));
+							ASSERT(block_data_offset_header.group == 0x301D);
+							ASSERT(block_data_offset_header.element == 0x2010);
+							codeblock->block_data_offset = isyntax_read_u64_le(seektable_entry + offsetof(isyntax_seektable_codeblock_header_t, block_data_offset));
+							codeblock->block_size = isyntax_read_u64_le(seektable_entry + offsetof(isyntax_seektable_codeblock_header_t, block_size));
 
 #if 0
 							// Debug test:

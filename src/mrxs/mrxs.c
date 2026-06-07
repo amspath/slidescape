@@ -743,10 +743,12 @@ u8* mrxs_decode_image_to_bgra(u8* compressed_data, size_t compressed_length, enu
             // swap RGBA to BGRA
             i32 pixel_count = width * height;
             for (i32 i = 0; i < pixel_count; ++i) {
-                // assume little-endian order: 0xAABBGGRR
-                // TODO: big-endian compatibility
                 u32 pixel = pixels[i];
-                u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF)<<16) | ((pixel>>16) & 0xFF);
+#if HOST_BIG_ENDIAN
+                u32 new_pixel = (pixel & 0x00FF00FF) | ((pixel >> 16) & 0x0000FF00) | ((pixel << 16) & 0xFF000000);
+#else
+                u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF) << 16) | ((pixel >> 16) & 0xFF);
+#endif
                 pixels[i] = new_pixel;
             }
             result = (u8*)pixels;

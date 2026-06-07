@@ -1359,10 +1359,12 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                 // swap RGBA to BGRA
                 i32 pixel_count = w * h;
                 for (i32 i = 0; i < pixel_count; ++i) {
-                    // assume little-endian order: 0xAABBGGRR
-                    // TODO: big-endian compatibility
                     u32 pixel = ((u32*)intermediate_pixel_buffer)[i];
-                    u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF)<<16) | ((pixel>>16) & 0xFF);
+#if HOST_BIG_ENDIAN
+                    u32 new_pixel = (pixel & 0x00FF00FF) | ((pixel >> 16) & 0x0000FF00) | ((pixel << 16) & 0xFF000000);
+#else
+                    u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF) << 16) | ((pixel >> 16) & 0xFF);
+#endif
                     ((u32*)dest)[i] = new_pixel;
                 }
             } else {
@@ -1376,10 +1378,12 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
         		// swap BGRA to RGBA
         		i32 pixel_count = w * h;
         		for (i32 i = 0; i < pixel_count; ++i) {
-        			// assume little-endian order: 0xAARRGGBB
-        			// TODO: big-endian compatibility
         			u32 pixel = ((u32*)intermediate_pixel_buffer)[i];
-        			u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF)<<16) | ((pixel>>16) & 0xFF);
+#if HOST_BIG_ENDIAN
+        			u32 new_pixel = (pixel & 0x00FF00FF) | ((pixel >> 16) & 0x0000FF00) | ((pixel << 16) & 0xFF000000);
+#else
+        			u32 new_pixel = (pixel & 0xFF00FF00) | ((pixel & 0xFF) << 16) | ((pixel >> 16) & 0xFF);
+#endif
         			((u32*)dest)[i] = new_pixel;
         		}
         	} else {

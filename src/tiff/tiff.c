@@ -42,7 +42,7 @@ u32 get_tiff_field_size(u16 data_type) {
 }
 
 static void maybe_swap_tiff_field(void* field, u16 data_type, u64 data_count, bool32 is_big_endian) {
-	if (is_big_endian) {
+	if (DATA_ENDIAN_DIFFERS(is_big_endian)) {
 		u32 field_size = get_tiff_field_size(data_type);
 		if (field_size > 1) {
 			// Some fields consist of two smaller field (RATIONAL, SRATIONAL), their components need to be swapped individually
@@ -150,7 +150,7 @@ u64* tiff_read_field_integers(tiff_t* tiff, tiff_tag_t* tag) {
 		if (bytesize == 8) {
 			// the numbers are already 64-bit, no need to widen
 			integers = (u64*) temp_integers;
-			if (tiff->is_big_endian) {
+			if (DATA_ENDIAN_DIFFERS(tiff->is_big_endian)) {
 				for (i32 i = 0; i < tag->data_count; ++i) {
 					integers[i] = bswap_64(integers[i]);
 				}
@@ -209,7 +209,7 @@ u16* tiff_read_field_u16(tiff_t* tiff, tiff_tag_t* tag) {
 				return NULL; // failed
 			}
 			// Endian-swap if necessary
-			if (tiff->is_big_endian) {
+			if (DATA_ENDIAN_DIFFERS(tiff->is_big_endian)) {
 				for (i32 i = 0; i < tag->data_count; ++i) {
 					integers[i] = bswap_16((integers)[i]);
 				}
@@ -256,7 +256,7 @@ tiff_rational_t* tiff_read_field_rationals(tiff_t* tiff, tiff_tag_t* tag) {
 		rationals[0] = *(tiff_rational_t*) &tag->data_u64;
 	}
 
-	if (tiff->is_big_endian) {
+	if (DATA_ENDIAN_DIFFERS(tiff->is_big_endian)) {
 		for (i32 i = 0; i < tag->data_count; ++i) {
 			tiff_rational_t* rational = rationals + i;
 			rational->a = bswap_32(rational->a);
@@ -345,9 +345,7 @@ bool tiff_read_ifd(tiff_t* tiff, tiff_ifd_t* ifd, u64* next_ifd_offset) {
 	u64 tag_count = 0;
 	u64 tag_count_num_bytes = is_bigtiff ? 8 : 2;
 	if (file_stream_read(&tag_count, tag_count_num_bytes, tiff->fp) != tag_count_num_bytes) return false;
-	if (is_big_endian) {
-		tag_count = is_bigtiff ? bswap_64(tag_count) : bswap_16(tag_count);
-	}
+	tag_count = is_bigtiff ? maybe_swap_64(tag_count, is_big_endian) : maybe_swap_16(tag_count, is_big_endian);
 
 	// Read the tags
 	u64 tag_size = is_bigtiff ? 20 : 12;
