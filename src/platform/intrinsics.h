@@ -51,6 +51,8 @@
 #endif
 
 #if WINDOWS
+#include <windows.h>
+
 #define write_barrier do { _WriteBarrier(); _mm_sfence(); } while (0)
 #define read_barrier _ReadBarrier()
 
