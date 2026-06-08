@@ -156,9 +156,11 @@
 #define fopen64 fopen
 #endif
 
-#if !WINDOWS && !LINUX
+#if APPLE
 #define fseeko64 fseeko
 #define fopen64 fopen
+#define fgetpos64 fgetpos
+#define fsetpos64 fsetpos
 #endif
 
 #ifndef THREAD_LOCAL
