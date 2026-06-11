@@ -169,7 +169,7 @@ static viewer_file_type_enum viewer_determine_file_type(file_info_t* file) {
 			return VIEWER_FILE_TYPE_SIMPLE_IMAGE; // i.e. stb_image compatible
 		} else if (strcasecmp(file->ext, "xml") == 0) {
 			return VIEWER_FILE_TYPE_XML;
-		} else if (strcasecmp(file->ext, "json") == 0) {
+		} else if (strcasecmp(file->ext, "json") == 0 || strcasecmp(file->ext, "geojson") == 0) {
 			return VIEWER_FILE_TYPE_JSON;
 		} else if (strcasecmp(file->ext, "dcm") == 0) {
 			return VIEWER_FILE_TYPE_DICOM;

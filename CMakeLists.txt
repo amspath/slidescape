@@ -344,8 +344,8 @@ set(VIEWER_SOURCE_FILES
         core/gui.cpp
         core/console.cpp
         core/annotation.cpp
-        core/caselist.cpp
-        core/coco.cpp
+        core/annotation_asap_xml.cpp
+        core/annotation_geojson.cpp
         core/ini.c
         core/remote.c
         core/slide_score.c

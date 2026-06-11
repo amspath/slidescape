@@ -111,7 +111,6 @@ void gui_make_next_window_appear_in_center_of_screen() {
 
 void menu_close_file(app_state_t* app_state) {
 	unload_all_images(app_state);
-	reset_global_caselist(app_state);
 	unload_and_reinit_annotations(&app_state->scene.annotation_set);
 	if (app_state->remember_annotation_groups_as_template && app_state->scene.annotation_set_template.is_valid) {
 		annotation_set_init_from_template(&app_state->scene.annotation_set, &app_state->scene.annotation_set_template);
@@ -178,13 +177,9 @@ void gui_draw_bounds_in_scene(bounds2f bounds, rgba_t color, float thickness, sc
 	gui_draw_polygon_outline_in_scene(points, 4, color, true, thickness, scene, drawlist);
 }
 
-bool enable_load_debug_coco_file;
-const char* coco_test_filename = "coco_test_in.json";
-
 static void check_presence_of_debug_test_files() {
 	static bool checked;
 	if (!checked) {
-		enable_load_debug_coco_file = file_exists(coco_test_filename);
 		checked = true;
 	}
 }
@@ -296,7 +291,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool open_uri;
 			bool exit_program;
 			bool new_dataset_asap_xml;
-			bool new_dataset_coco;
 			bool new_dataset_geojson;
 			bool select_region_create_box;
 			bool select_region_encompass_annotations;
@@ -304,7 +298,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			bool deselect;
 			bool crop_region;
 			bool export_region;
-			bool load_coco_test_file;
 			bool reset_zoom;
 		} menu_items_clicked;
 		memset(&menu_items_clicked, 0, sizeof(menu_items_clicked));
@@ -384,12 +377,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 				ImGui::Separator();
 				if (ImGui::MenuItem("Show menu bar", "Alt+F12", &show_menu_bar)) {}
 				if (ImGui::MenuItem("Load next as overlay", "F6", &load_next_image_as_overlay)) {}
-				if (enable_load_debug_coco_file) {
-					if (ImGui::MenuItem("Load COCO test file", NULL, &menu_items_clicked.load_coco_test_file)) {}
-				}
-				ImGui::Separator();
-				if (ImGui::MenuItem("Show case list", NULL, &show_slide_list_window)) {}
-				ImGui::Separator();
 				if (ImGui::MenuItem("Show mouse position", NULL, &show_mouse_pos_overlay)) {}
                 ImGui::Separator();
                 if (ImGui::MenuItem("Set working directory...")) {
@@ -460,11 +447,6 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			}
 
 
-		} else if (menu_items_clicked.load_coco_test_file) {
-			coco_t coco = {};
-			if (load_coco_from_file(&coco, coco_test_filename)) {
-				save_coco(&coco);
-			}
 		} else if (menu_items_clicked.reset_zoom) {
 			scene->need_zoom_reset = true;
 		}
@@ -1309,20 +1291,9 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			}
 			else
 #endif
-			if (strcasecmp(ext, "json") == 0) {
-				// Open as 'caselist'
-				unload_all_images(app_state);
-				reset_global_caselist(app_state);
-				if (load_caselist_from_remote(&app_state->caselist, remote_hostname, atoi(remote_port), remote_filename)) {
-					show_slide_list_window = true;
-					show_open_remote_window = false; // success!
-					caselist_select_first_case(app_state, &app_state->caselist);
-				}
-			} else {
-				// Open as 'slide'
-				if (open_remote_slide(app_state, remote_hostname, atoi(remote_port), remote_filename)) {
-					show_open_remote_window = false; // success!
-				}
+			// Open as 'slide'
+			if (open_remote_slide(app_state, remote_hostname, atoi(remote_port), remote_filename)) {
+				show_open_remote_window = false; // success!
 			}
 
 
@@ -1548,115 +1519,6 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		ImGui::End();
 	}
 
-
-
-	if (show_slide_list_window) {
-
-		ImGui::SetNextWindowPos(ImVec2(20, 50), ImGuiCond_FirstUseEver);
-		ImGui::SetNextWindowSize(ImVec2(460,541), ImGuiCond_FirstUseEver);
-
-		ImGui::Begin("Case info", &show_slide_list_window);
-
-		caselist_t* caselist = &app_state->caselist;
-
-		const char* case_preview = "";
-		case_t* selected_case = app_state->selected_case;
-		i32 selected_case_index = app_state->selected_case_index;
-
-		case_t* previous_selected_case = selected_case;
-
-		if (selected_case) {
-			case_preview = selected_case->name;
-		}
-
-		bool can_move_left = (selected_case_index > 0);
-		bool can_move_right = (selected_case_index < (i32)caselist->case_count-1);
-
-		if (!can_move_left) ImGui::BeginDisabled();
-		if (ImGui::ArrowButton("##left", ImGuiDir_Left)) {
-			if (caselist->cases && can_move_left) {
-				app_state->selected_case_index = (--selected_case_index);
-				app_state->selected_case = selected_case = caselist->cases + selected_case_index;
-			}
-		}
-		if (!can_move_left) ImGui::EndDisabled();
-		ImGui::SameLine();
-		if (!can_move_right) ImGui::BeginDisabled();
-		if (ImGui::ArrowButton("##right", ImGuiDir_Right)) {
-			if (caselist->cases && can_move_right) {
-				app_state->selected_case_index = (++selected_case_index);
-				app_state->selected_case = selected_case = caselist->cases + selected_case_index;
-			}
-		}
-		if (!can_move_right) ImGui::EndDisabled();
-		ImGui::SameLine();
-
-		if (ImGui::BeginCombo("##Select_case", case_preview, ImGuiComboFlags_HeightLarge)) {
-			if (caselist->cases) {
-				for (u32 i = 0; i < caselist->case_count; ++i) {
-					case_t* the_case = caselist->cases + i;
-					if (ImGui::Selectable(the_case->name, selected_case_index == (i32)i)) {
-						app_state->selected_case = selected_case = the_case;
-						app_state->selected_case_index = selected_case_index = (i32)i;
-					}
-				}
-			}
-			ImGui::EndCombo();
-		}
-
-		if (selected_case != previous_selected_case) {
-			if (selected_case && selected_case->slides) {
-				caselist_open_slide(app_state, caselist, selected_case->slides);
-			}
-		}
-
-
-		ImGui::NewLine();
-		ImGui::Separator();
-		ImGui::NewLine();
-
-		if (selected_case != NULL) {
-//			ImGui::TextWrapped("%s\n", selected_case->name);
-
-			slide_info_t* slides = selected_case->slides;
-			u32 slide_count = selected_case->slide_count;
-			for (u32 slide_index = 0; slide_index < slide_count; ++slide_index) {
-				slide_info_t* slide = slides + slide_index;
-				if (ImGui::Button(slide->stain) && slide_count > 1) {
-					caselist_open_slide(app_state, &app_state->caselist, slide);
-				}
-				// TODO: correctly wrap buttons to the next line? For now, 5 per line.
-				if (slide_index < 4 || ((slide_index + 1) % 5) != 0) {
-					ImGui::SameLine();
-				}
-			}
-			ImGui::NewLine();
-
-			ImGui::TextWrapped("%s\n", selected_case->clinical_context);
-			ImGui::NewLine();
-
-			if (ImGui::TreeNode("Diagnosis and comment")) {
-				ImGui::TextWrapped("%s\n", selected_case->diagnosis);
-				ImGui::TextWrapped("%s\n", selected_case->notes);
-				ImGui::TreePop();
-			}
-
-
-		}
-
-		if (caselist->case_count == 0) {
-			ImGui::TextWrapped("No case list has currently been loaded.\n\n"
-					  "To load a case list, you can do one of the following:\n"
-	                  "- Open a local case list file (with a '.json' file extension)\n"
-			          "- Connect to a remote case list (using File > Open remote)\n");
-		}
-
-
-
-		ImGui::End();
-
-
-	}
 
 
 

@@ -191,7 +191,6 @@ void slide_score_load_tile_batch_func(i32 logical_thread_index, void* userdata) 
 
 bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_info_t* directory, u32 filetype_hint) {
 	// assume it is an image file?
-	reset_global_caselist(app_state);
 	bool is_base_image = filetype_hint != FILETYPE_HINT_OVERLAY;
 	if (is_base_image) {
 		unload_all_images(app_state);
@@ -208,59 +207,35 @@ bool viewer_load_new_image(app_state_t* app_state, file_info_t* file, directory_
 //            unload_and_reinit_annotations(annotation_set); // no need, already unloaded!
             annotation_set->mpp = V2F(image->mpp_x, image->mpp_y);
 
-            // Check if there is an associated ASAP XML or COCO JSON annotations file
+            // Check if there is an associated annotation file.
             char temp_filename[512];
             temp_filename[0] = '\0';
             const char* prefix = (app_state->annotation_directory[0] != '\0') ? app_state->annotation_directory : file->filename_prefix;
             snprintf(temp_filename, sizeof(temp_filename), "%s%s", prefix, file->filename_in_directory);
             bool were_annotations_loaded = false;
 
-            // Load JSON first
-#if 0
-            replace_file_extension(temp_filename, temp_size, "json");
-			annotation_set->coco_filename = strdup(temp_filename); // TODO: do this somewhere else
-			if (file_exists(temp_filename)) {
-				console_print("Found JSON annotations: '%s'\n", temp_filename);
-				coco_t coco = {};
-				load_coco_from_file(&coco, temp_filename);
-				coco_transfer_annotations_to_annotation_set(&coco, annotation_set);
-				coco_destroy(&coco);
-				were_annotations_loaded = true;
-
-				// Enable export as XML (make sure XML annotations do not get out of date!)
-				annotation_set->export_as_asap_xml = true;
-				replace_file_extension(temp_filename, temp_size, "xml");
-				copy_cstring(annotation_set->asap_xml_filename, temp_filename, sizeof(annotation_set->asap_xml_filename));
-
-
-			} else {
-				coco_init_main_image(&annotation_set->coco, &image);
+			const char* annotation_extensions[] = { "xml", "geojson", "json" };
+			for (i32 extension_index = 0; extension_index < COUNT(annotation_extensions); ++extension_index) {
+				snprintf(temp_filename, sizeof(temp_filename), "%s%s", prefix, file->filename_in_directory);
+				replace_file_extension(temp_filename, sizeof(temp_filename), annotation_extensions[extension_index]);
+				if (file_exists(temp_filename)) {
+					if (were_annotations_loaded) {
+						console_print("Ignoring additional annotation file: '%s'\n", temp_filename);
+						continue;
+					}
+					console_print("Found annotations: '%s'\n", temp_filename);
+					if (load_annotations(app_state, temp_filename)) {
+						were_annotations_loaded = true;
+						// Don't hide annotations when first loading the slide, that might lead the user to believe that there are none.
+						app_state->scene.enable_annotations = true;
+					}
+				}
 			}
-#else
-            // TODO: remove?
-            coco_init_main_image(&annotation_set->coco, image);
-#endif
-
-            // TODO: use most recently updated annotations?
-            replace_file_extension(temp_filename, sizeof(temp_filename), "xml");
-            if (file_exists(temp_filename)) {
-                console_print("Found XML annotations: '%s'\n", temp_filename);
-                if (!were_annotations_loaded) {
-                    load_asap_xml_annotations(app_state, temp_filename);
-                    were_annotations_loaded = true;
-	                // Don't hide annotations when first loading the slide, that might lead the user to believe that there are none!
-					app_state->scene.enable_annotations = true;
-                }
-            }
 
             if (app_state->remember_annotation_groups_as_template && !were_annotations_loaded && app_state->scene.annotation_set_template.is_valid) {
                 annotation_set_init_from_template(annotation_set, &app_state->scene.annotation_set_template);
             }
 
-            // TODO: only save/convert COCO, not the XML as well!
-            if (annotation_set->export_as_asap_xml) {
-//				annotation_set->modified = true; // to force export in COCO as well
-            }
         }
 
 		console_print("Loaded '%s'\n", file->full_filename);
@@ -288,7 +263,7 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 			} else if (file.is_image) {
 				success = viewer_load_new_image(app_state, &file, NULL, filetype_hint);
 			} else {
-				if (file.type == VIEWER_FILE_TYPE_XML) {
+				if (file.type == VIEWER_FILE_TYPE_XML || file.type == VIEWER_FILE_TYPE_JSON) {
 					// TODO: how to get the correct scale factor for the annotations?
 					// Maybe a placeholder value, which gets updated based on the scale of the scene image?
 					annotation_set_t* annotation_set = &app_state->scene.annotation_set;
@@ -299,12 +274,7 @@ bool load_generic_file(app_state_t* app_state, const char* filename, u32 filetyp
 					} else {
 						annotation_set->mpp = V2F(0.25f, 0.25f);
 					}
-					success = load_asap_xml_annotations(app_state, filename);
-				} else if (file.type == VIEWER_FILE_TYPE_JSON) {
-					// TODO: disambiguate between COCO annotations and case lists
-					reload_global_caselist(app_state, filename);
-					show_slide_list_window = true;
-					success = caselist_select_first_case(app_state, &app_state->caselist);
+					success = load_annotations(app_state, filename);
 				}
 			}
 		} else if (file.is_directory) {

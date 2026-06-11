@@ -505,13 +505,6 @@ u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename
 	return read_buffer;
 }
 
-u8* download_remote_caselist(const char* hostname, i32 portno, const char* filename, i32* bytes_read) {
-	char uri[2048];
-	snprintf(uri, sizeof(uri), "/slide_set/%s", filename);
-	u8* read_buffer = do_http_request(hostname, portno, uri, bytes_read, 0);
-	return read_buffer;
-}
-
 bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename) {
 
 	bool success = false;

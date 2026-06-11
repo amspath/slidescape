@@ -35,7 +35,6 @@ extern "C" {
 #include "isyntax_streamer.h"
 #include "dicom.h"
 #include "openslide_api.h"
-#include "caselist.h"
 #include "annotation.h"
 #include "renderer.h"
 #include "tile_loader.h"
@@ -241,9 +240,6 @@ typedef struct app_state_t {
 	i32 enabled_image_indices[2];
 	i32 base_image_index;
 	bool is_any_image_loaded;
-	caselist_t caselist;
-	case_t* selected_case;
-	i32 selected_case_index;
 	bool use_builtin_tiff_backend;
 	bool use_image_adjustments;
 	bool initialized;
@@ -262,7 +258,6 @@ typedef struct app_state_t {
 	input_t* input;
 	i32* active_resources; // array
 	bool is_export_in_progress;
-	bool export_as_coco;
 	bool enable_autosave;
     bool remember_annotation_groups_as_template;
 	bool headless;

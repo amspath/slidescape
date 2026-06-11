@@ -93,7 +93,6 @@ extern bool show_debugging_window;
 extern bool show_image_options_window;
 extern bool show_open_remote_window;
 extern bool show_open_uri_window;
-extern bool show_slide_list_window;
 extern bool show_layers_window;
 extern bool show_annotations_window;
 extern bool show_annotation_group_assignment_window;
@@ -143,9 +142,6 @@ extern bool show_save_quit_prompt;
 extern bool dont_ask_to_delete_annotations;
 extern bool show_annotation_palette_window INIT(=true);
 extern bool show_annotation_inspector_window INIT(=false);
-
-// gui_coco.cpp
-extern bool show_coco_editor_window;
 
 extern i32 desired_region_export_format;
 extern u16 tiff_export_desired_color_space INIT(= TIFF_PHOTOMETRIC_YCBCR);//TIFF_PHOTOMETRIC_RGB;

@@ -18,6 +18,13 @@
 
 // Annotation save/load procedures.
 
+#include "common.h"
+#include "annotation.h"
+#include "viewer.h"
+#include "platform.h"
+#include "stringutils.h"
+#include "yxml.h"
+
 // XML parsing using the yxml library.
 // https://dev.yorhel.nl/yxml/man
 #define YXML_STACK_BUFFER_SIZE KILOBYTES(32)
@@ -404,8 +411,8 @@ bool load_asap_xml_annotations(app_state_t* app_state, const char* filename) {
 		annotation_set->active_annotation_indices[i] = i;
 	}
 
-	copy_cstring(annotation_set->asap_xml_filename, filename, sizeof(annotation_set->asap_xml_filename));
-	annotation_set->export_as_asap_xml = true;
+	copy_cstring(annotation_set->annotation_filename, filename, sizeof(annotation_set->annotation_filename));
+	annotation_set->preferred_output_format = ANNOTATION_FILE_FORMAT_ASAP_XML;
 	annotation_set->annotations_were_loaded_from_file = true;
 	success = true;
 	float seconds_elapsed = get_seconds_elapsed(start, get_clock());

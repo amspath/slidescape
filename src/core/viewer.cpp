@@ -51,7 +51,6 @@
 #include "jpeg_decoder.h"
 #include "remote.h"
 #include "gui.h"
-#include "caselist.h"
 #include "annotation.h"
 #include "ini.h"
 #include "image_registration.h"

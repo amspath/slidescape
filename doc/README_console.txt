@@ -59,20 +59,20 @@ Specifies the text to append to the input filename for the output file, before t
 Example: an input filename of "1.isyntax" with a postfix of ".exported" will generate an output filename of "1.exported.tiff".
 
 --roi <name of annotation>
-Specifies the name of the region of interest (ROI) annotation in the associated XML file.
+Specifies the name of the region of interest (ROI) annotation in the associated annotation file.
 The region to export will be set to a rectangle-shaped area bounded/encompassed by the specified annotation's coordinates.
-An XML annotation file with the same name as the input WSI file is required to be present.
+An annotation file with the same name as the input WSI file is required to be present. Supported sidecar extensions are .geojson, .json and .xml.
 Example: slidescape_console.exe 1.mrxs 2.mrxs --export --roi "Annotation 0"
 
 --first-roi
-Specifies that the first annotation present in the associated XML file should be used as the region of interest (ROI).
+Specifies that the first annotation present in the associated annotation file should be used as the region of interest (ROI).
 The region to export will be set to a rectangle-shaped area bounded/encompassed by the annotation's coordinates.
-An XML annotation file with the same name as the input WSI file is required to be present.
+An annotation file with the same name as the input WSI file is required to be present.
 Example: slidescape_console.exe 1.mrxs 2.mrxs --export --first-roi
 
 --with-annotations
 Enables saving of annotations within the region of interest (ROI), as specified by the --roi or --first-roi flags.
-If there any annotations are visible within the ROI, a new XML file will be created for the output WSI containing those annotations.
+If there any annotations are visible within the ROI, a new annotation file will be created for the output WSI containing those annotations.
 
 
 To iterate over all WSI files with a particular extension in a folder (e.g. .isyntax), you can use a batch script like so:

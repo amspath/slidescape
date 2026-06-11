@@ -23,13 +23,8 @@
 #include "stringutils.h"
 #include "triangulate.h"
 #include "gui.h"
-#include "yxml.h"
-
-#include "coco.h"
 
 static rgba_t default_group_color = RGBA(60, 220, 50, 255);
-
-#include "annotation_asap_xml.cpp"
 
 i32 add_annotation_group(annotation_set_t* annotation_set, const char* name) {
 	annotation_group_t new_group = {};
@@ -374,7 +369,7 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 
 void create_line_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_t new_annotation = {};
-	new_annotation.type = ANNOTATION_POLYGON;
+	new_annotation.type = ANNOTATION_LINE;
 	new_annotation.p0 = pos;
 	new_annotation.p1 = pos;
 	new_annotation.bounds = {};
@@ -730,7 +725,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 //http://gbenro-myinventions.blogspot.com/2014/08/geometry-of-plane-areas-and-2-x-2.html?showComment=1457999073412&m=1
 float area_for_annotation(annotation_t* annotation) {
     float area = 0.0f;
-    if (annotation->coordinate_count >=3) {
+    if (annotation->type != ANNOTATION_LINE && annotation->type != ANNOTATION_POINT && annotation->coordinate_count >=3) {
         v2f prev_coord = annotation->coordinates[annotation->coordinate_count-1];
         double sum_of_determinants = 0.0f;
         for (i32 i = 0; i < annotation->coordinate_count; ++i) {
@@ -890,7 +885,9 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 		v2f closest_projected_point = {};
 		float t_closest = 0.0f;
 		bool found_closest = false;
-		for (i32 i = 0; i < annotation->coordinate_count; ++i) {
+		bool is_open_polyline = annotation->is_open || annotation->type == ANNOTATION_LINE;
+		i32 segment_count = is_open_polyline ? annotation->coordinate_count - 1 : annotation->coordinate_count;
+		for (i32 i = 0; i < segment_count; ++i) {
 			v2f* coordinate_current = annotation->coordinates + i;
 			i32 coordinate_index_after = (i + 1) % annotation->coordinate_count;
 			v2f* coordinate_after = annotation->coordinates + coordinate_index_after;
@@ -903,11 +900,15 @@ i32 project_point_onto_annotation(annotation_set_t* annotation_set, annotation_t
 				found_closest = true;
 				closest_distance_sq = distance_sq;
 				closest_projected_point = projected_point;
+				t_closest = t;
 				insert_before_index = coordinate_index_after;
 			}
 		}
 		ASSERT(found_closest);
 		if (found_closest) {
+			if (t_ptr) {
+				*t_ptr = t_closest;
+			}
 			if (projected_point_ptr) {
 				*projected_point_ptr = closest_projected_point;
 			}
@@ -1280,7 +1281,7 @@ enum annotation_draw_condition_enum {
 annotation_draw_condition_enum annotation_draw_fill_area_condition = ANNOTATION_DRAW_IF_AT_LEAST_ONE_FEATURE_SET;
 
 bool annotation_need_draw_fill_area(annotation_t* annotation) {
-	if (annotation_highlight_inside_of_polygons && annotation->coordinate_count >= 3 && !annotation->is_open) {
+	if (annotation_highlight_inside_of_polygons && annotation->type != ANNOTATION_LINE && annotation->coordinate_count >= 3 && !annotation->is_open) {
 		switch(annotation_draw_fill_area_condition) {
 			default:
 			case ANNOTATION_DRAW_NEVER: return false; break;
@@ -1400,8 +1401,8 @@ void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_se
 		if (annotation->coordinate_count > 0) {
 			temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
 
-			// Only draw the closing line back to the starting point if needed
-			bool closed = !annotation->is_open;
+			// Only draw the closing line back to the starting point for closed area annotations.
+			bool closed = !annotation->is_open && annotation->type != ANNOTATION_LINE;
 
 			// Draw the inside of the annotation
 			if (need_full_draw && annotation_need_draw_fill_area(annotation)) {
@@ -1427,7 +1428,7 @@ void draw_annotation_batch(app_state_t* app_state, scene_t* scene, annotation_se
 				for (i32 i = 0; i < annotation->coordinate_count; ++i) {
 					points[i] = world_pos_to_screen_pos(scene, annotation->coordinates[i]);
 				}
-				if (annotation->coordinate_count >= 4) {
+				if (annotation->coordinate_count >= 4 || annotation->type == ANNOTATION_LINE) {
 					gui_draw_polygon_outline(points, annotation->coordinate_count, line_color, closed, thickness, draw_list);
 				} else if (annotation->coordinate_count >= 2) {
 					draw_list->AddLine(points[0], points[1], *(u32*)(&line_color), thickness);
@@ -1665,7 +1666,7 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 							annotation_set->is_insert_coordinate_mode = true;
 							annotation_set->is_split_mode = false;
 						};
-						if (ImGui::MenuItem("Split annotation here")) {
+						if (annotation->type != ANNOTATION_LINE && ImGui::MenuItem("Split annotation here")) {
 							annotation_set->selected_coordinate_index = annotation_set->hovered_coordinate;
 							annotation_set->selected_coordinate_annotation_index = annotation_set->hovered_annotation;
 							annotation_set->is_split_mode = true;
@@ -1886,12 +1887,7 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		ImGui::Begin("Annotations", &show_annotations_window, 0);
 
-        const char* annotation_filename = "";
-		if (app_state->export_as_coco) {
-            annotation_filename = annotation_set->coco_filename;
-		} else if (annotation_set->export_as_asap_xml) {
-            annotation_filename = annotation_set->asap_xml_filename;
-		}
+        const char* annotation_filename = annotation_set->annotation_filename;
         if (annotation_filename[0] != '\0') {
             ImGui::TextWrapped("Annotation filename: %s\n", annotation_filename);
         } else {
@@ -2038,28 +2034,6 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 
 		}
 
-
-		/*if (ImGui::CollapsingHeader("Dataset info")) {
-			if (ImGui::InputText("Description", annotation_set->coco.info.description, COCO_MAX_FIELD)) {
-				notify_annotation_set_modified(annotation_set);
-			}
-			if (ImGui::InputText("URL", annotation_set->coco.info.url, COCO_MAX_FIELD)) {
-				notify_annotation_set_modified(annotation_set);
-			}
-			if (ImGui::InputText("Version", annotation_set->coco.info.version, COCO_MAX_FIELD)) {
-				notify_annotation_set_modified(annotation_set);
-			}
-			if (ImGui::InputInt("Year", &annotation_set->coco.info.year, 1, 100)) {
-				notify_annotation_set_modified(annotation_set);
-			}
-			if (ImGui::InputText("Contributor", annotation_set->coco.info.contributor, COCO_MAX_FIELD)) {
-				notify_annotation_set_modified(annotation_set);
-			}
-			if (ImGui::InputText("Date created", annotation_set->coco.info.date_created, COCO_MAX_FIELD)) {
-				notify_annotation_set_modified(annotation_set);
-			}
-			// TODO: Image, license etc.
-		}*/
 
 		// Interface for viewing/editing annotation groups
 		if (ImGui::CollapsingHeader("Edit groups"))
@@ -2365,7 +2339,6 @@ void draw_annotations_window(app_state_t* app_state, input_t* input) {
 			ImGui::SliderFloat("Freeform node interval", &annotation_freeform_insert_interval_distance, 1.0f, 100.0f, "%.0f px");
 
 			ImGui::NewLine();
-			ImGui::Checkbox("Save in both XML and JSON formats", &app_state->export_as_coco);
 		}
 
 
@@ -2757,7 +2730,6 @@ void destroy_annotation_set(annotation_set_t* annotation_set) {
 	arrfree(annotation_set->active_group_indices);
 	arrfree(annotation_set->stored_features);
 	arrfree(annotation_set->active_feature_indices);
-	if (annotation_set->coco.is_valid) coco_destroy(&annotation_set->coco);
 
 }
 
@@ -2774,64 +2746,7 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 	// reserve annotation group 0 for the "None" category
 	i32 group_index = add_annotation_group(annotation_set, "None");
     annotation_group_t* group = get_active_annotation_group(annotation_set, group_index);
-	annotation_set->export_as_asap_xml = true;
-
-	annotation_set->coco = coco_create_empty();
-}
-
-void geojson_print_feature(FILE* fp, annotation_set_t* annotation_set, annotation_t* annotation) {
-	const char* geometry_type;
-	switch(annotation->type) {
-		default:
-		case ANNOTATION_RECTANGLE:
-		case ANNOTATION_POLYGON:
-		case ANNOTATION_SPLINE:
-			geometry_type = "Polygon"; break;
-		case ANNOTATION_POINT:
-			geometry_type = "Point"; break;
-		case ANNOTATION_LINE:
-			geometry_type = "LineString"; break;
-	}
-	fprintf(fp, "  {\n"
-			    "    \"type\": \"Feature\",\n"
-	            "    \"geometry\": {\n"
-			    "      \"type\": \"%s\","
-	            "      \"coordinates\": ", geometry_type);
-	if (annotation->coordinate_count > 0) {
-		for (i32 coordinate_index = 0; coordinate_index < annotation->coordinate_count; ++coordinate_index) {
-			if (coordinate_index != 0) {
-				fprintf(fp, ", ");
-			}
-			v2f* coordinate = annotation->coordinates + coordinate_index;
-			fprintf(fp, "[%g, %g]", coordinate->x / annotation_set->mpp.x, coordinate->y / annotation_set->mpp.y);
-		}
-	}
-	fprintf(fp, "\n"
-			     "    }");
-	if (annotation->has_properties) {
-		fprintf(fp,     ",\n"
-		            "    \"properties\": {\n"
-		            "      \"group\": ");
-	}
-	fprintf(fp, "  }\n"
-	            "}");
-
-}
-
-void save_geojson_annotations(annotation_set_t* annotation_set, const char* filename_out) {
-	ASSERT(annotation_set);
-	FILE* fp = fopen(filename_out, "wb");
-	if (fp) {
-		i32 indent = 0;
-		fprintf(fp, "{\n"
-		            "  \"type\": \"FeatureCollection\",\n"
-			        "  \"features\": [\n");
-	}
-	for (i32 annotation_index = 0; annotation_index < annotation_set->active_annotation_count; ++annotation_index) {
-		annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
-
-		// stub
-	}
+	annotation_set->preferred_output_format = ANNOTATION_FILE_FORMAT_ASAP_XML;
 }
 
 annotation_set_t* duplicate_annotation_set(annotation_set_t* annotation_set) {
@@ -2866,33 +2781,75 @@ annotation_set_t* duplicate_annotation_set(annotation_set_t* annotation_set) {
 	arrsetlen(copy->active_feature_indices, copy->active_feature_count);
 	memcpy(copy->active_feature_indices, annotation_set->active_feature_indices, arrlen(annotation_set->active_feature_indices) * sizeof(i32));
 
-	annotation_set->coco.is_valid = false;
-
 	return copy;
 }
 
-static void save_asap_xml_annotations_with_backup(app_state_t* app_state, annotation_set_t* annotation_set, const char* filename_out) {
-	// Backup original XML file to .orig
-	if (annotation_set->asap_xml_filename[0] != '\0' && annotation_set->annotations_were_loaded_from_file) {
+annotation_file_format_enum annotation_format_from_filename(const char* filename) {
+	annotation_file_format_enum result = ANNOTATION_FILE_FORMAT_NONE;
+	const char* ext = get_file_extension(filename);
+	if (ext) {
+		if (strcasecmp(ext, "xml") == 0) {
+			result = ANNOTATION_FILE_FORMAT_ASAP_XML;
+		} else if (strcasecmp(ext, "geojson") == 0 || strcasecmp(ext, "json") == 0) {
+			result = ANNOTATION_FILE_FORMAT_GEOJSON;
+		}
+	}
+	return result;
+}
+
+const char* annotation_format_default_extension(annotation_file_format_enum format) {
+	switch (format) {
+		default:
+		case ANNOTATION_FILE_FORMAT_ASAP_XML: return "xml";
+		case ANNOTATION_FILE_FORMAT_GEOJSON: return "geojson";
+	}
+}
+
+bool load_annotations(app_state_t* app_state, const char* filename) {
+	annotation_file_format_enum format = annotation_format_from_filename(filename);
+	if (format == ANNOTATION_FILE_FORMAT_ASAP_XML) {
+		return load_asap_xml_annotations(app_state, filename);
+	} else if (format == ANNOTATION_FILE_FORMAT_GEOJSON) {
+		return load_geojson_annotations(app_state, filename);
+	}
+	console_print_error("Unsupported annotation file format: '%s'\n", filename);
+	return false;
+}
+
+static void save_annotations_to_file(annotation_set_t* annotation_set, const char* filename_out) {
+	switch (annotation_set->preferred_output_format) {
+		default:
+		case ANNOTATION_FILE_FORMAT_ASAP_XML:
+			save_asap_xml_annotations(annotation_set, filename_out);
+			break;
+		case ANNOTATION_FILE_FORMAT_GEOJSON:
+			save_geojson_annotations(annotation_set, filename_out);
+			break;
+	}
+}
+
+static void save_annotations_with_backup(app_state_t* app_state, annotation_set_t* annotation_set, const char* filename_out) {
+	// Backup original annotation file to .orig.
+	if (annotation_set->annotation_filename[0] != '\0' && annotation_set->annotations_were_loaded_from_file) {
 		char backup_filename[4096];
-		snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->asap_xml_filename);
+		snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->annotation_filename);
 		if (!file_exists(backup_filename)) {
-			rename(annotation_set->asap_xml_filename, backup_filename);
+			rename(annotation_set->annotation_filename, backup_filename);
 		}
 	}
 
-	save_asap_xml_annotations(annotation_set, filename_out);
+	save_annotations_to_file(annotation_set, filename_out);
 }
 
-typedef struct save_asap_xml_async_task_t {
+typedef struct save_annotations_async_task_t {
 	app_state_t* app_state;
 	annotation_set_t* annotation_set;
 	const char* filename_out;
 	volatile i32* in_progress_state;
-} save_asap_xml_async_task_t;
+} save_annotations_async_task_t;
 
-static void save_asap_xml_async_func(i32 logical_thread_id, void* userdata) {
-	save_asap_xml_async_task_t* task = (save_asap_xml_async_task_t*) userdata;
+static void save_annotations_async_func(i32 logical_thread_id, void* userdata) {
+	save_annotations_async_task_t* task = (save_annotations_async_task_t*) userdata;
 	// Try once to get an exclusive lock, on the original annotation_set_t (not the deep copy we made for safety)
 	// (if we fail here, somebody else is already attempting to save -> don't interfere, they have higher priority)
 	if (atomic_compare_exchange(task->in_progress_state, 1, 0)) {
@@ -2901,7 +2858,7 @@ static void save_asap_xml_async_func(i32 logical_thread_id, void* userdata) {
 //		platform_sleep(10000);
 //		console_print("threading test: proceeding with save\n");
 
-		save_asap_xml_annotations_with_backup(task->app_state, task->annotation_set, task->filename_out);
+		save_annotations_with_backup(task->app_state, task->annotation_set, task->filename_out);
 		*task->in_progress_state = 0;
 	}
 	// Destroy the deep copy of the annotation set we received
@@ -2921,9 +2878,9 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 		}
 	}
 	if (proceed) {
-		if (annotation_set->export_as_asap_xml) {
+		if (annotation_set->preferred_output_format != ANNOTATION_FILE_FORMAT_NONE) {
 			// Construct a sensible filename
-			if (annotation_set->asap_xml_filename[0] == '\0') {
+			if (annotation_set->annotation_filename[0] == '\0') {
 				char image_name_buf[512];
 				// TODO: which image to associate the annotations with?
 				if (arrlen(app_state->loaded_images) > 0) {
@@ -2932,9 +2889,9 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				} else {
 					copy_cstring(image_name_buf, "unknown_image", sizeof(image_name_buf));
 				}
-				replace_file_extension(image_name_buf, sizeof(image_name_buf), "xml");
-				snprintf(annotation_set->asap_xml_filename, sizeof(annotation_set->asap_xml_filename), "%s%s", get_annotation_directory(app_state), image_name_buf);
-				annotation_set->asap_xml_filename[sizeof(annotation_set->asap_xml_filename)-1] = '\0';
+				replace_file_extension(image_name_buf, sizeof(image_name_buf), annotation_format_default_extension(annotation_set->preferred_output_format));
+				snprintf(annotation_set->annotation_filename, sizeof(annotation_set->annotation_filename), "%s%s", get_annotation_directory(app_state), image_name_buf);
+				annotation_set->annotation_filename[sizeof(annotation_set->annotation_filename)-1] = '\0';
 			}
 
 			if (async) {
@@ -2944,13 +2901,13 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				// For safety, we must first  prepare an immutable copy (we'll save that instead of the 'real' instance)
 				annotation_set_t* copy = duplicate_annotation_set(annotation_set);
 
-				save_asap_xml_async_task_t task = {
+				save_annotations_async_task_t task = {
 					.app_state = app_state,
 					.annotation_set = copy,
-					.filename_out = annotation_set->asap_xml_filename,
+					.filename_out = annotation_set->annotation_filename,
 					.in_progress_state = &annotation_set->is_saving_in_progress,
 				};
-				if (thread_pool_submit_task(&global_thread_pool, save_asap_xml_async_func, &task, sizeof(save_asap_xml_async_task_t))) {
+				if (thread_pool_submit_task(&global_thread_pool, save_annotations_async_func, &task, sizeof(save_annotations_async_task_t))) {
 					// annotations will be saved on a worker thread
 					// The copy will be destroyed after saving is done
 				} else {
@@ -2959,26 +2916,9 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				}
 			} else {
 				// Save annotations synchronously on the main thread
-				save_asap_xml_annotations_with_backup(app_state, annotation_set, annotation_set->asap_xml_filename);
+				save_annotations_with_backup(app_state, annotation_set, annotation_set->annotation_filename);
 			}
 		}
-		// TODO: remove COCO support
-		/*if (app_state->export_as_coco && annotation_set->coco_filename) {
-			char backup_filename[4096];
-			snprintf(backup_filename, sizeof(backup_filename), "%s.orig", annotation_set->coco_filename);
-			if (!file_exists(backup_filename)) {
-				rename(annotation_set->coco_filename, backup_filename);
-			}
-			coco_transfer_annotations_from_annotation_set(&annotation_set->coco, annotation_set);
-			memrw_t out = save_coco(&annotation_set->coco);
-			// TODO: save in the background
-			FILE* fp = fopen(annotation_set->coco_filename, "wb");
-			if (fp) {
-				fwrite(out.data, out.used_size, 1, fp);
-				fclose(fp);
-			}
-			memrw_destroy(&out);
-		}*/
 		annotation_set->modified = false;
 
 

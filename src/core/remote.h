@@ -40,7 +40,6 @@ u8 *download_remote_chunk(const char *hostname, i32 portno, const char *filename
                           i32 *bytes_read, i32 thread_id);
 u8 *download_remote_batch(const char *hostname, i32 portno, const char *filename, i64 *chunk_offsets, i64 *chunk_sizes,
                           i32 batch_size, i32 *bytes_read, i32 thread_id);
-u8* download_remote_caselist(const char* hostname, i32 portno, const char* filename, i32* bytes_read);
 bool open_remote_slide(app_state_t *app_state, const char *hostname, i32 portno, const char *filename);
 http_response_t* open_remote_uri(app_state_t *app_state, const char *uri, const char* api_token);
 http_response_t* open_remote_uri_with_extra_headers(const char *uri, const char* api_token, const char* cookie_header);

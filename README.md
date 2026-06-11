@@ -45,8 +45,7 @@ To load an image as an overlay, press `F6` before loading the second image.
 
 
 ### Annotations
-Slidescape can create and edit annotations in XML format, 
-compatible with [ASAP](https://github.com/computationalpathologygroup/ASAP).
+Slidescape can create and edit annotations in ASAP-compatible XML format and QuPath-compatible GeoJSON format.
 
 Annotations can be manipulated in a variety of ways:
 * New annotations can be created (points `Q`, lines `M`, rectangles `R`, freeforms `F`).
@@ -54,7 +53,7 @@ Annotations can be manipulated in a variety of ways:
 * Annotations can be assigned a (color-coded) group.
 * Annotations can be split into parts.
 
-Changes to annotations are autosaved by default (a backup of the original unchanged XML file will be preserved with file extension `.orig`).
+Changes to annotations are autosaved by default. If annotations were loaded from an existing file, the output format follows that file (`.xml`, `.geojson` or `.json`) and a backup of the original unchanged annotation file will be preserved with file extension `.orig`.
 
 ### Image exporting
 
@@ -114,24 +113,24 @@ Example: an input filename of `1.isyntax` with a postfix of ".exported" will gen
 
 `--roi <name of annotation>`
 
-Specifies the name of the region of interest (ROI) annotation in the associated XML file.
+Specifies the name of the region of interest (ROI) annotation in the associated annotation file.
 The region to export will be set to a rectangle-shaped area bounded/encompassed by the specified annotation's coordinates.
-An XML annotation file with the same name as the input WSI file is required to be present.
+An annotation file with the same name as the input WSI file is required to be present. Supported sidecar extensions are `.geojson`, `.json` and `.xml`.
 
 Example: `slidescape 1.mrxs 2.mrxs --export --roi "Annotation 0"`
 
 `--first-roi`
 
-Specifies that the first annotation present in the associated XML file should be used as the region of interest (ROI).
+Specifies that the first annotation present in the associated annotation file should be used as the region of interest (ROI).
 The region to export will be set to a rectangle-shaped area bounded/encompassed by the annotation's coordinates.
-An XML annotation file with the same name as the input WSI file is required to be present.
+An annotation file with the same name as the input WSI file is required to be present.
 
 Example: `slidescape 1.mrxs 2.mrxs --export --first-roi`
 
 `--with-annotations`
 
 Enables saving of annotations within the region of interest (ROI), as specified by the `--roi` or `--first-roi` flags.
-If there any annotations are visible within the ROI, a new XML file will be created for the output WSI containing those annotations.
+If there any annotations are visible within the ROI, a new annotation file will be created for the output WSI containing those annotations.
 
 Note that on Windows, the separate build `slidescape_console.exe` should be used instead of the regular `slidescape.exe`,
 in order to make console output visible. See [README_console.txt](doc/README_console.txt) for more information.

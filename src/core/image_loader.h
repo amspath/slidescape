@@ -64,7 +64,6 @@ typedef struct directory_info_t {
 
 typedef enum filetype_hint_enum {
 	FILETYPE_HINT_NONE = 0,
-	FILETYPE_HINT_CASELIST,
 	FILETYPE_HINT_ANNOTATIONS,
 	FILETYPE_HINT_BASE_IMAGE,
 	FILETYPE_HINT_OVERLAY,

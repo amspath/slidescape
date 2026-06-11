@@ -22,14 +22,21 @@
 
 #include "common.h"
 #include "mathutils.h"
-#include "viewer.h"
-#include "coco.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct scene_t scene_t;
+typedef struct app_state_t app_state_t;
+typedef struct input_t input_t;
+typedef struct image_t image_t;
+
+typedef enum annotation_file_format_enum {
+	ANNOTATION_FILE_FORMAT_NONE = 0,
+	ANNOTATION_FILE_FORMAT_ASAP_XML = 1,
+	ANNOTATION_FILE_FORMAT_GEOJSON = 2,
+} annotation_file_format_enum;
 
 typedef enum annotation_type_enum {
 	ANNOTATION_UNKNOWN_TYPE = 0,
@@ -140,9 +147,9 @@ typedef struct annotation_set_t {
 	i32* active_feature_indices; // array
 	i32 active_feature_count;
 
-	char asap_xml_filename[512];
-	char* coco_filename;
+	char annotation_filename[512];
 	char base_filename[512];
+	annotation_file_format_enum preferred_output_format;
 	bool modified;
 	i64 last_modification_time;
 	i32 hovered_annotation;
@@ -163,9 +170,7 @@ typedef struct annotation_set_t {
 	bool last_assigned_group_is_valid;
 	i32 editing_annotation_index; // The active index of the annotation that is currently being edited; invalid if -1
 	v2f mpp; // microns per pixel
-	coco_t coco; // TODO: delete
 	volatile i32 is_saving_in_progress;
-	bool export_as_asap_xml;
 	bool annotations_were_loaded_from_file;
 } annotation_set_t;
 
@@ -206,6 +211,7 @@ void select_annotation(annotation_set_t* annotation_set, annotation_t* annotatio
 void deselect_all_annotations(annotation_set_t* annotation_set);
 void annotation_set_rectangle_coordinates_to_bounding_box(annotation_set_t* annotation_set, annotation_t* annotation);
 void do_drag_annotation_node(scene_t* scene);
+void annotation_set_automatic_name(annotation_t* annotation, i32 annotation_index);
 void create_ellipse_annotation(annotation_set_t* annotation_set, v2f pos);
 void do_mouse_tool_create_ellipse(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set);
 void create_rectangle_annotation(annotation_set_t* annotation_set, v2f pos);
@@ -245,6 +251,11 @@ void destroy_annotation_set(annotation_set_t* annotation_set);
 void unload_and_reinit_annotations(annotation_set_t* annotation_set);
 bool load_asap_xml_annotations(app_state_t* app_state, const char* filename);
 void save_asap_xml_annotations(annotation_set_t* annotation_set, const char* filename_out);
+bool load_geojson_annotations(app_state_t* app_state, const char* filename);
+void save_geojson_annotations(annotation_set_t* annotation_set, const char* filename_out);
+annotation_file_format_enum annotation_format_from_filename(const char* filename);
+const char* annotation_format_default_extension(annotation_file_format_enum format);
+bool load_annotations(app_state_t* app_state, const char* filename);
 void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, bool force_ignore_delay, bool async);
 void recount_selected_annotations(app_state_t* app_state, annotation_set_t* annotation_set);
 annotation_set_t create_offsetted_annotation_set_for_area(annotation_set_t* annotation_set, bounds2f area, bool push_coordinates_inward);
