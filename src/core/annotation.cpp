@@ -281,13 +281,91 @@ void create_freeform_annotation(annotation_set_t* annotation_set, v2f pos) {
 	annotation_set->is_edit_mode = true;
 }
 
+static bool annotation_is_endpoint_close_to_endpoint(annotation_t* annotation, scene_t* scene) {
+	if (!annotation || annotation->coordinate_count < 2 || scene->zoom.screen_point_width <= 0.0f) return false;
+	v2f first = annotation->coordinates[0];
+	v2f last = annotation->coordinates[annotation->coordinate_count - 1];
+	float distance_px = v2f_length(v2f_subtract(first, last)) / scene->zoom.screen_point_width;
+	return distance_px < annotation_hover_distance;
+}
+
+static void convert_polyline_to_polygon(annotation_set_t* annotation_set, annotation_t* annotation) {
+	if (!annotation || annotation->type != ANNOTATION_LINE || annotation->coordinate_count < 3) return;
+	if (annotation->coordinate_count > 3) {
+		v2f first = annotation->coordinates[0];
+		v2f last = annotation->coordinates[annotation->coordinate_count - 1];
+		if (v2f_length(v2f_subtract(first, last)) < 0.01f) {
+			arrpop(annotation->coordinates);
+			--annotation->coordinate_count;
+		}
+	}
+	annotation->type = ANNOTATION_POLYGON;
+	annotation->is_open = false;
+	annotation_invalidate_derived_calculations_from_coordinates(annotation);
+	notify_annotation_set_modified(annotation_set);
+}
+
+static void convert_polygon_to_polyline_at_coordinate(annotation_set_t* annotation_set, annotation_t* annotation, i32 coordinate_index) {
+	if (!annotation || annotation->type == ANNOTATION_LINE || annotation->type == ANNOTATION_POINT) return;
+	if (!coordinate_index_valid_for_annotation(coordinate_index, annotation) || annotation->coordinate_count < 3) return;
+
+	v2f* new_coordinates = NULL;
+	arrsetcap(new_coordinates, annotation->coordinate_count + 1);
+	for (i32 i = 0; i <= annotation->coordinate_count; ++i) {
+		i32 source_index = (coordinate_index + i) % annotation->coordinate_count;
+		arrput(new_coordinates, annotation->coordinates[source_index]);
+	}
+
+	arrfree(annotation->coordinates);
+	annotation->coordinates = new_coordinates;
+	annotation->coordinate_count = arrlen(annotation->coordinates);
+	annotation->type = ANNOTATION_LINE;
+	annotation->is_open = false;
+	annotation_invalidate_derived_calculations_from_coordinates(annotation);
+	notify_annotation_set_modified(annotation_set);
+}
+
+static void reverse_annotation_coordinates(annotation_t* annotation) {
+	for (i32 i = 0; i < annotation->coordinate_count / 2; ++i) {
+		i32 j = annotation->coordinate_count - 1 - i;
+		v2f temp = annotation->coordinates[i];
+		annotation->coordinates[i] = annotation->coordinates[j];
+		annotation->coordinates[j] = temp;
+	}
+}
+
+static void continue_polyline_from_endpoint(app_state_t* app_state, annotation_set_t* annotation_set, i32 annotation_index, i32 coordinate_index) {
+	annotation_t* annotation = get_active_annotation(annotation_set, annotation_index);
+	if (!annotation || annotation->type != ANNOTATION_LINE || annotation->coordinate_count < 2) return;
+	if (coordinate_index != 0 && coordinate_index != annotation->coordinate_count - 1) return;
+
+	if (coordinate_index == 0) {
+		reverse_annotation_coordinates(annotation);
+	}
+	annotation->is_open = true;
+	select_annotation(annotation_set, annotation);
+	viewer_switch_tool(app_state, TOOL_CREATE_FREEFORM);
+	annotation_set->editing_annotation_index = annotation_index;
+	annotation_set->selected_coordinate_annotation_index = annotation_index;
+	annotation_set->selected_coordinate_index = annotation->coordinate_count - 1;
+	annotation_set->is_edit_mode = true;
+	notify_annotation_set_modified(annotation_set);
+}
+
 void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene_t* scene, annotation_set_t* annotation_set) {
+	static i64 last_click_time;
+	static v2f last_click_pos;
+	static annotation_t* last_click_annotation;
+
 	if (annotation_set->editing_annotation_index < 0) {
 		// Start a new freeform
 		if (was_key_pressed(input, KEY_Escape)) {
 			viewer_switch_tool(app_state, TOOL_NONE);
 		} else if (scene->drag_started) {
 			create_freeform_annotation(&scene->annotation_set, scene->mouse);
+			last_click_time = get_clock();
+			last_click_pos = scene->mouse;
+			last_click_annotation = get_active_annotation(annotation_set, annotation_set->editing_annotation_index);
 		}
 	} else {
 		// Continue adding to an already-existing freeform
@@ -296,9 +374,11 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 		if (was_key_pressed(input, KEY_Escape)) {
 			// Abort
 			if (freeform) {
-				if (freeform->coordinate_count >= 3) {
-					// Abort method 1: finalize
+				if ((freeform->type == ANNOTATION_POLYGON || freeform->type == ANNOTATION_LINE) && freeform->coordinate_count >= 2) {
+					// Abort method 1: finalize open line/polyline
+					freeform->type = ANNOTATION_LINE;
 					freeform->is_open = false;
+					annotation_invalidate_derived_calculations_from_coordinates(freeform);
 					notify_annotation_set_modified(annotation_set);
 				} else {
 					// Abort method 2: delete (if not enough coordinates were already added)
@@ -306,7 +386,7 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 				}
 			}
 			viewer_switch_tool(app_state, TOOL_NONE);
-		} else if (freeform->type == ANNOTATION_POLYGON && freeform->coordinate_count > 0) {
+		} else if ((freeform->type == ANNOTATION_POLYGON || freeform->type == ANNOTATION_LINE) && freeform->coordinate_count > 0) {
 			// Add new points to 'in-progress' freeform annotation
 			v2f start = freeform->coordinates[0];
 			i32 last_coordinate_index = freeform->coordinate_count - 1;
@@ -330,20 +410,42 @@ void do_mouse_tool_create_freeform(app_state_t* app_state, input_t* input, scene
 			}
 
 			if (scene->drag_started) {
+				float seconds_since_last_click = get_seconds_elapsed(last_click_time, get_clock());
+				float distance_to_last_click = v2f_length(v2f_subtract(scene->mouse, last_click_pos)) / scene->zoom.screen_point_width;
+				bool is_double_click = (last_click_annotation == freeform &&
+				                        freeform->coordinate_count >= 2 &&
+				                        seconds_since_last_click < 0.35f &&
+				                        distance_to_last_click < VIEWER_CLICK_DRAG_TOLERANCE);
 				if (distance_to_start_point < annotation_hover_distance && freeform->coordinate_count >= 3) {
 					// finalize the annotation
+					if (freeform->type == ANNOTATION_LINE) {
+						convert_polyline_to_polygon(annotation_set, freeform);
+					} else {
+						freeform->is_open = false;
+						annotation_invalidate_derived_calculations_from_coordinates(freeform);
+						notify_annotation_set_modified(annotation_set);
+					}
+					viewer_switch_tool(app_state, TOOL_NONE);
+					scene->drag_started = false;
+					scene->is_dragging = false;
+					// Prevent click being registered next frame (annotation might get deselected otherwise).
+					scene->suppress_next_click = true;
+				} else if (is_double_click) {
+					freeform->type = ANNOTATION_LINE;
 					freeform->is_open = false;
 					annotation_invalidate_derived_calculations_from_coordinates(freeform);
 					notify_annotation_set_modified(annotation_set);
 					viewer_switch_tool(app_state, TOOL_NONE);
 					scene->drag_started = false;
 					scene->is_dragging = false;
-					// Prevent click being registered next frame (annotation might get deselected otherwise).
 					scene->suppress_next_click = true;
 				} else {
 					// add a point
 					arrput(freeform->coordinates, scene->mouse);
 					++freeform->coordinate_count;
+					last_click_time = get_clock();
+					last_click_pos = scene->mouse;
+					last_click_annotation = freeform;
 				}
 			} else if (scene->is_dragging) {
 				// drop points along the way
@@ -543,8 +645,18 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 					if (insert_at_index >= 0) {
 						float pixel_distance_to_edge = distance_to_edge / scene->zoom.screen_point_width;
 						if (pixel_distance_to_edge < annotation_insert_hover_distance) {
+							v2f inserted_coordinate = projected_point;
+							if (hit_annotation->type == ANNOTATION_LINE) {
+								if (insert_at_index == 1 && t_clamped <= 0.0f) {
+									insert_at_index = 0;
+									inserted_coordinate = app_state->scene.mouse;
+								} else if (insert_at_index == hit_annotation->coordinate_count - 1 && t_clamped >= 1.0f) {
+									insert_at_index = hit_annotation->coordinate_count;
+									inserted_coordinate = app_state->scene.mouse;
+								}
+							}
 							// try to insert a new coordinate, and start dragging that
-							insert_coordinate(app_state, annotation_set, hit_annotation, insert_at_index, projected_point);
+							insert_coordinate(app_state, annotation_set, hit_annotation, insert_at_index, inserted_coordinate);
 							// update state so we can immediately interact with the newly created coordinate
 							annotation_set->is_insert_coordinate_mode = false;
 							annotation_set->force_insert_mode = false;
@@ -553,7 +665,7 @@ void interact_with_annotations(app_state_t* app_state, scene_t* scene, input_t* 
 							hit_result.line_segment_coordinate_index = insert_at_index;
 							hit_result.line_segment_distance = distance_to_edge;
 							hit_result.line_segment_t_clamped = t_clamped;
-							hit_result.line_segment_projected_point = projected_point;
+							hit_result.line_segment_projected_point = inserted_coordinate;
 							hit_coordinate = hit_annotation->coordinates + hit_result.coordinate_index;
 							annotation_set->hovered_coordinate = hit_result.coordinate_index;
 							annotation_set->hovered_coordinate_pixel_distance = coordinate_pixel_distance;
@@ -945,7 +1057,7 @@ void annotation_invalidate_derived_calculations_from_features(annotation_t* anno
 
 bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annotation) {
 	bool changed = false;
-	ASSERT(annotation->coordinate_count >= 1);
+	if (annotation->coordinate_count <= 0) return false;
 	if (annotation->type == ANNOTATION_RECTANGLE) {
 		if (annotation->coordinate_count != 4) {
 			annotation->type = ANNOTATION_POLYGON;
@@ -962,12 +1074,8 @@ bool maybe_change_annotation_type_based_on_coordinate_count(annotation_t* annota
 			changed = true;
 		}
 	} else if (annotation->type == ANNOTATION_LINE) {
-		if (annotation->coordinate_count != 2) {
-			if (annotation->coordinate_count == 1) {
-				annotation->type = ANNOTATION_POINT;
-			} else if (annotation->coordinate_count > 2) {
-				annotation->type = ANNOTATION_POLYGON;
-			}
+		if (annotation->coordinate_count == 1) {
+			annotation->type = ANNOTATION_POINT;
 			changed = true;
 		}
 	} else if (annotation->type == ANNOTATION_POLYGON || annotation->type == ANNOTATION_SPLINE) {
@@ -1672,6 +1780,29 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 							annotation_set->is_split_mode = true;
 							annotation_set->is_insert_coordinate_mode = false;
 							annotation_set->force_insert_mode = false;
+						}
+						if (annotation->type == ANNOTATION_LINE &&
+						    annotation->coordinate_count >= 3 &&
+						    annotation_is_endpoint_close_to_endpoint(annotation, scene))
+						{
+							if (ImGui::MenuItem("Close polyline into polygon")) {
+								convert_polyline_to_polygon(annotation_set, annotation);
+							}
+						}
+						if (annotation->type == ANNOTATION_LINE &&
+						    annotation->coordinate_count >= 2 &&
+						    (annotation_set->hovered_coordinate == 0 || annotation_set->hovered_coordinate == annotation->coordinate_count - 1))
+						{
+							if (ImGui::MenuItem("Continue polyline from here")) {
+								continue_polyline_from_endpoint(app_state, annotation_set, annotation_index, annotation_set->hovered_coordinate);
+							}
+						} else if (annotation->type != ANNOTATION_LINE &&
+						           annotation->type != ANNOTATION_POINT &&
+						           annotation->coordinate_count >= 3)
+						{
+							if (ImGui::MenuItem("Cut polygon open here")) {
+								convert_polygon_to_polyline_at_coordinate(annotation_set, annotation, annotation_set->hovered_coordinate);
+							}
 						}
 						ImGui::Separator();
 						if (gui_draw_selected_annotation_submenu_section(app_state, scene, annotation_set)) {
@@ -2696,8 +2827,12 @@ annotation_t duplicate_annotation(annotation_t* annotation) {
 
 	// Transfer coordinates
 	result.coordinates = NULL;
-	arrsetlen(result.coordinates, annotation->coordinate_count);
-	memcpy(result.coordinates, annotation->coordinates, annotation->coordinate_count * sizeof(v2f));
+	if (annotation->coordinate_count > 0 && annotation->coordinates != NULL) {
+		arrsetlen(result.coordinates, annotation->coordinate_count);
+		memcpy(result.coordinates, annotation->coordinates, annotation->coordinate_count * sizeof(v2f));
+	} else {
+		result.coordinate_count = 0;
+	}
 
 	// Invalidate derived calculations
 	result.valid_flags = 0;
@@ -2711,6 +2846,12 @@ void destroy_annotation(annotation_t* annotation) {
 	if (annotation) {
 		arrfree(annotation->coordinates);
 		arrfree(annotation->tesselated_trianges);
+		annotation->coordinates = NULL;
+		annotation->tesselated_trianges = NULL;
+		annotation->coordinate_count = 0;
+		annotation->type = ANNOTATION_UNKNOWN_TYPE;
+		annotation->valid_flags = 0;
+		annotation->fallback_valid_flags = 0;
 	}
 }
 
