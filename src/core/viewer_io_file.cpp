@@ -360,7 +360,7 @@ image_t* load_image_from_file(app_state_t* app_state, file_info_t* file, directo
 	image_load_options_t options = {};
 	options.is_overlay = (filetype_hint == FILETYPE_HINT_OVERLAY);
 	options.use_builtin_tiff_backend = app_state->use_builtin_tiff_backend;
-	options.use_native_mrxs_backend = debug_use_native_mrxs_backend;
+	options.use_native_mrxs_backend = global_use_native_mrxs_backend;
 	options.openslide_available = is_openslide_available;
 	options.openslide_loading_done = is_openslide_loading_done;
 	options.resource_id = global_next_resource_id++;

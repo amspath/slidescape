@@ -649,6 +649,7 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 	image->backend = IMAGE_BACKEND_MRXS;
 	image->mrxs = *mrxs;
 	mrxs = &image->mrxs;
+	mrxs_init_runtime_cache(mrxs);
 	image->is_freshly_loaded = true;
 
 	image->mpp_x = mrxs->mpp_x;

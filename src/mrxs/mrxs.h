@@ -177,6 +177,14 @@ typedef struct mrxs_camera_t {
     i32 y;
 } mrxs_camera_t;
 
+typedef struct mrxs_decoded_tile_cache_entry_t {
+    i32 level;
+    i32 stored_tile_index;
+    u8* pixels;
+    i32 refcount;
+    u64 last_used;
+} mrxs_decoded_tile_cache_entry_t;
+
 typedef struct mrxs_t {
     memrw_t string_pool; // NOTE: need destroy
     const char* index_dat_filename;
@@ -210,6 +218,12 @@ typedef struct mrxs_t {
     mrxs_simple_image_t stageposmap_image;
     mrxs_simple_image_t thumbnail_image;
     mrxs_simple_image_t barcode_image;
+    platform_mutex_t decoded_tile_cache_mutex;
+    bool decoded_tile_cache_mutex_initialized;
+    mrxs_decoded_tile_cache_entry_t* decoded_tile_cache_entries;
+    i32 decoded_tile_cache_count;
+    i32 decoded_tile_cache_capacity;
+    u64 decoded_tile_cache_tick;
 	i32 level_count;
 	mrxs_level_t levels[16];
 	i32 tile_width;
@@ -228,6 +242,7 @@ typedef struct file_info_t file_info_t;
 typedef struct directory_info_t directory_info_t;
 
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory);
+void mrxs_init_runtime_cache(mrxs_t* mrxs);
 u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index);
 void mrxs_set_thread_pool(mrxs_t* mrxs, thread_pool_t* thread_pool);
 void mrxs_destroy(mrxs_t* mrxs);

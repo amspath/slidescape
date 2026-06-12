@@ -891,6 +891,125 @@ static u8* mrxs_decode_stored_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 stored_t
     return result;
 }
 
+void mrxs_init_runtime_cache(mrxs_t* mrxs) {
+    if (!mrxs->decoded_tile_cache_mutex_initialized) {
+        platform_mutex_init(&mrxs->decoded_tile_cache_mutex);
+        mrxs->decoded_tile_cache_mutex_initialized = true;
+    }
+}
+
+static void mrxs_decoded_tile_cache_evict_one(mrxs_t* mrxs) {
+    i32 oldest_index = -1;
+    u64 oldest_tick = UINT64_MAX;
+    for (i32 i = 0; i < mrxs->decoded_tile_cache_count; ++i) {
+        mrxs_decoded_tile_cache_entry_t* entry = mrxs->decoded_tile_cache_entries + i;
+        if (entry->refcount == 0 && entry->last_used < oldest_tick) {
+            oldest_tick = entry->last_used;
+            oldest_index = i;
+        }
+    }
+    if (oldest_index >= 0) {
+        mrxs_decoded_tile_cache_entry_t* entry = mrxs->decoded_tile_cache_entries + oldest_index;
+        free(entry->pixels);
+        *entry = mrxs->decoded_tile_cache_entries[mrxs->decoded_tile_cache_count - 1];
+        --mrxs->decoded_tile_cache_count;
+    }
+}
+
+static u8* mrxs_acquire_cached_stored_tile(mrxs_t* mrxs, i32 level, i32 stored_tile_index) {
+    if (!mrxs->decoded_tile_cache_mutex_initialized) {
+        return mrxs_decode_stored_tile_to_bgra(mrxs, level, stored_tile_index);
+    }
+
+    platform_mutex_lock(&mrxs->decoded_tile_cache_mutex);
+    for (i32 i = 0; i < mrxs->decoded_tile_cache_count; ++i) {
+        mrxs_decoded_tile_cache_entry_t* entry = mrxs->decoded_tile_cache_entries + i;
+        if (entry->level == level && entry->stored_tile_index == stored_tile_index) {
+            ++entry->refcount;
+            entry->last_used = ++mrxs->decoded_tile_cache_tick;
+            u8* pixels = entry->pixels;
+            platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+            return pixels;
+        }
+    }
+    platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+
+    u8* pixels = mrxs_decode_stored_tile_to_bgra(mrxs, level, stored_tile_index);
+    if (!pixels) {
+        return NULL;
+    }
+
+    platform_mutex_lock(&mrxs->decoded_tile_cache_mutex);
+    for (i32 i = 0; i < mrxs->decoded_tile_cache_count; ++i) {
+        mrxs_decoded_tile_cache_entry_t* entry = mrxs->decoded_tile_cache_entries + i;
+        if (entry->level == level && entry->stored_tile_index == stored_tile_index) {
+            ++entry->refcount;
+            entry->last_used = ++mrxs->decoded_tile_cache_tick;
+            u8* cached_pixels = entry->pixels;
+            platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+            free(pixels);
+            return cached_pixels;
+        }
+    }
+
+    i32 max_entries = 256;
+    if (mrxs->decoded_tile_cache_count >= max_entries) {
+        mrxs_decoded_tile_cache_evict_one(mrxs);
+    }
+
+    if (mrxs->decoded_tile_cache_count >= mrxs->decoded_tile_cache_capacity) {
+        i32 new_capacity = mrxs->decoded_tile_cache_capacity > 0 ? mrxs->decoded_tile_cache_capacity * 2 : 64;
+        new_capacity = MIN(new_capacity, max_entries);
+        mrxs_decoded_tile_cache_entry_t* new_entries = realloc(mrxs->decoded_tile_cache_entries,
+                                                               new_capacity * sizeof(*new_entries));
+        if (!new_entries) {
+            platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+            free(pixels);
+            return NULL;
+        }
+        mrxs->decoded_tile_cache_entries = new_entries;
+        mrxs->decoded_tile_cache_capacity = new_capacity;
+    }
+
+    if (mrxs->decoded_tile_cache_count < mrxs->decoded_tile_cache_capacity) {
+        mrxs_decoded_tile_cache_entry_t* entry = mrxs->decoded_tile_cache_entries + mrxs->decoded_tile_cache_count++;
+        entry->level = level;
+        entry->stored_tile_index = stored_tile_index;
+        entry->pixels = pixels;
+        entry->refcount = 1;
+        entry->last_used = ++mrxs->decoded_tile_cache_tick;
+        platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+        return pixels;
+    }
+
+    platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+    return pixels;
+}
+
+static void mrxs_release_cached_stored_tile(mrxs_t* mrxs, i32 level, i32 stored_tile_index, u8* pixels) {
+    if (!pixels) {
+        return;
+    }
+    if (!mrxs->decoded_tile_cache_mutex_initialized) {
+        free(pixels);
+        return;
+    }
+
+    platform_mutex_lock(&mrxs->decoded_tile_cache_mutex);
+    for (i32 i = 0; i < mrxs->decoded_tile_cache_count; ++i) {
+        mrxs_decoded_tile_cache_entry_t* entry = mrxs->decoded_tile_cache_entries + i;
+        if (entry->level == level && entry->stored_tile_index == stored_tile_index && entry->pixels == pixels) {
+            ASSERT(entry->refcount > 0);
+            --entry->refcount;
+            entry->last_used = ++mrxs->decoded_tile_cache_tick;
+            platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+            return;
+        }
+    }
+    platform_mutex_unlock(&mrxs->decoded_tile_cache_mutex);
+    free(pixels);
+}
+
 static void mrxs_copy_patch_to_output(u8* output, i32 output_width, u8* patch, i32 patch_width, i32 patch_height,
                                       i32 dst_x, i32 dst_y) {
     for (i32 y = 0; y < patch_height; ++y) {
@@ -1039,6 +1158,59 @@ static void mrxs_composite_decoded_region(u8* output, i32 output_width, i32 outp
     }
 }
 
+typedef struct mrxs_decode_cache_entry_t {
+    i32 level;
+    i32 stored_tile_index;
+    u8* pixels;
+} mrxs_decode_cache_entry_t;
+
+typedef struct mrxs_decode_cache_t {
+    mrxs_decode_cache_entry_t* entries;
+    i32 count;
+    i32 capacity;
+} mrxs_decode_cache_t;
+
+static u8* mrxs_decode_cache_get(mrxs_decode_cache_t* cache, mrxs_t* mrxs, i32 level, i32 stored_tile_index) {
+    for (i32 i = 0; i < cache->count; ++i) {
+        mrxs_decode_cache_entry_t* entry = cache->entries + i;
+        if (entry->level == level && entry->stored_tile_index == stored_tile_index) {
+            return entry->pixels;
+        }
+    }
+
+    u8* pixels = mrxs_acquire_cached_stored_tile(mrxs, level, stored_tile_index);
+    if (!pixels) {
+        return NULL;
+    }
+
+    if (cache->count >= cache->capacity) {
+        i32 new_capacity = cache->capacity > 0 ? cache->capacity * 2 : 32;
+        mrxs_decode_cache_entry_t* new_entries = realloc(cache->entries, new_capacity * sizeof(*new_entries));
+        if (!new_entries) {
+            mrxs_release_cached_stored_tile(mrxs, level, stored_tile_index, pixels);
+            return NULL;
+        }
+        cache->entries = new_entries;
+        cache->capacity = new_capacity;
+    }
+
+    mrxs_decode_cache_entry_t* entry = cache->entries + cache->count++;
+    entry->level = level;
+    entry->stored_tile_index = stored_tile_index;
+    entry->pixels = pixels;
+    return pixels;
+}
+
+static void mrxs_decode_cache_destroy(mrxs_decode_cache_t* cache, mrxs_t* mrxs) {
+    for (i32 i = 0; i < cache->count; ++i) {
+        mrxs_release_cached_stored_tile(mrxs, cache->entries[i].level,
+                                        cache->entries[i].stored_tile_index,
+                                        cache->entries[i].pixels);
+    }
+    free(cache->entries);
+    memset(cache, 0, sizeof(*cache));
+}
+
 static u8* mrxs_decode_aligned_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 logical_tile_index) {
     mrxs_level_t* mrxs_level = mrxs->levels + level;
     i32 logical_width_in_tiles = mrxs_ceil_div_i32(mrxs_ceil_div_i32(mrxs->base_width_in_pixels, 1 << level),
@@ -1142,6 +1314,7 @@ static u8* mrxs_decode_fractional_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, 
     float out_bottom = out_global_y + (float)mrxs_level->tile_height;
     float camera_width_at_level = (float)mrxs->camera_width / scale;
     float camera_height_at_level = (float)mrxs->camera_height / scale;
+    mrxs_decode_cache_t decode_cache = {0};
 
     for (i32 camera_y = 0; camera_y < mrxs->camera_grid_height; ++camera_y) {
         for (i32 camera_x = 0; camera_x < mrxs->camera_grid_width; ++camera_x) {
@@ -1195,7 +1368,7 @@ static u8* mrxs_decode_fractional_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, 
                     }
 
                     i32 stored_tile_index = stored_tile_y * mrxs_level->width_in_tiles + stored_tile_x;
-                    u8* decoded_tile = mrxs_decode_stored_tile_to_bgra(mrxs, level, stored_tile_index);
+                    u8* decoded_tile = mrxs_decode_cache_get(&decode_cache, mrxs, level, stored_tile_index);
                     if (decoded_tile) {
                         float src_box_x = fragment_nominal_left - stored_left;
                         float src_box_y = fragment_nominal_top - stored_top;
@@ -1203,13 +1376,13 @@ static u8* mrxs_decode_fractional_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, 
                                                       decoded_tile, mrxs_level->tile_width, mrxs_level->tile_height,
                                                       src_box_x, src_box_y, fragment_w, fragment_h,
                                                       dst_global_x, dst_global_y, out_global_x, out_global_y);
-                        free(decoded_tile);
                     }
                 }
             }
         }
     }
 
+    mrxs_decode_cache_destroy(&decode_cache, mrxs);
     return result;
 }
 
@@ -1275,6 +1448,15 @@ void mrxs_destroy(mrxs_t* mrxs) {
     }
     if (mrxs->cameras) {
         free(mrxs->cameras);
+    }
+    if (mrxs->decoded_tile_cache_entries) {
+        for (i32 i = 0; i < mrxs->decoded_tile_cache_count; ++i) {
+            free(mrxs->decoded_tile_cache_entries[i].pixels);
+        }
+        free(mrxs->decoded_tile_cache_entries);
+    }
+    if (mrxs->decoded_tile_cache_mutex_initialized) {
+        platform_mutex_destroy(&mrxs->decoded_tile_cache_mutex);
     }
 	memset(mrxs, 0, sizeof(mrxs_t));
 }
