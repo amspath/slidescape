@@ -31,9 +31,10 @@ typedef struct image_buffer_t {
     i32 width;
     i32 height;
     i32 stride_in_pixels;
-    i32 stride_in_bytes;
-    pixel_format_enum pixel_format;
-    bool is_valid;
+	i32 stride_in_bytes;
+	pixel_format_enum pixel_format;
+	bool is_valid;
+	bool owns_pixels;
 } image_buffer_t;
 
 typedef struct filter_t {

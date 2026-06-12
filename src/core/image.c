@@ -655,6 +655,7 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 	image->mpp_x = mrxs->mpp_x;
 	image->mpp_y = mrxs->mpp_y;
 	image->is_mpp_known = mrxs->is_mpp_known;
+	image->is_background_black = mrxs->is_fluorescence;
 	if (image->mpp_x <= 0.0f || image->mpp_y <= 0.0f) {
 		image->is_mpp_known = false;
 		image->mpp_x = 1.0f;
@@ -667,6 +668,10 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 	image->width_in_um = image->width_in_pixels * image->mpp_x;
 	image->height_in_pixels = mrxs->base_height_in_pixels;
 	image->height_in_um = image->height_in_pixels * image->mpp_y;
+	if (mrxs->has_overlapping_tiles) {
+		image->origin_offset = V2F((float)mrxs->camera_origin_x * image->mpp_x,
+		                           (float)mrxs->camera_origin_y * image->mpp_y);
+	}
 	// TODO: fix code duplication with tiff_deserialize()
 	if (mrxs->level_count > 0 && image->tile_width) {
 
@@ -734,6 +739,29 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 			}
 			DUMMY_STATEMENT;
 		}
+	}
+
+	u8* thumbnail_pixels = mrxs_decode_simple_image_to_rgba(mrxs, &mrxs->thumbnail_image);
+	if (thumbnail_pixels) {
+		image->macro_image.pixels = thumbnail_pixels;
+		image->macro_image.width = mrxs->thumbnail_image.width;
+		image->macro_image.height = mrxs->thumbnail_image.height;
+		image->macro_image.mpp = image->width_in_um / (float)MAX(1, image->macro_image.width);
+		image->macro_image.world_pos = V2F(0, 0);
+		image->macro_image.is_valid = true;
+	}
+
+	u8* barcode_pixels = mrxs_decode_simple_image_to_rgba(mrxs, &mrxs->barcode_image);
+	if (barcode_pixels) {
+		image->label_image.pixels = barcode_pixels;
+		image->label_image.width = mrxs->barcode_image.width;
+		image->label_image.height = mrxs->barcode_image.height;
+		image->label_image.mpp = image->macro_image.is_valid ? image->macro_image.mpp : image->mpp_x;
+		if (image->macro_image.is_valid) {
+			image->label_image.world_pos.x = image->macro_image.width * image->macro_image.mpp;
+			image->label_image.world_pos.y = 0.0f;
+		}
+		image->label_image.is_valid = true;
 	}
 
 	/*isyntax_image_t* macro_image = isyntax->images + isyntax->macro_image_index;
@@ -1059,9 +1087,10 @@ bool image_read_region(image_t* image, i32 level, i32 x, i32 y, i32 w, i32 h, vo
                 pixels[i] = p ? p : image_background_color;
             }
         } break;
-		case IMAGE_BACKEND_TIFF:
-		case IMAGE_BACKEND_DICOM:
-		case IMAGE_BACKEND_STBI:{
+        case IMAGE_BACKEND_TIFF:
+        case IMAGE_BACKEND_DICOM:
+        case IMAGE_BACKEND_MRXS:
+        case IMAGE_BACKEND_STBI: {
 			level_image_t* level_image = image->level_images + level;
 			ASSERT(level_image->exists);
 

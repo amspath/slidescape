@@ -231,10 +231,11 @@ typedef struct mrxs_t {
 	float mpp_x;
 	float mpp_y;
 	bool is_mpp_known;
-    bool has_overlapping_tiles;
+	bool has_overlapping_tiles;
+	bool is_fluorescence;
 	thread_pool_t* work_submission_pool;
 	volatile i32 refcount;
-    bool is_valid;
+	bool is_valid;
 } mrxs_t;
 
 // forward declarations so we don't need to include viewer.h
@@ -243,6 +244,7 @@ typedef struct directory_info_t directory_info_t;
 
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory);
 void mrxs_init_runtime_cache(mrxs_t* mrxs);
+u8* mrxs_decode_simple_image_to_rgba(mrxs_t* mrxs, mrxs_simple_image_t* image);
 u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index);
 void mrxs_set_thread_pool(mrxs_t* mrxs, thread_pool_t* thread_pool);
 void mrxs_destroy(mrxs_t* mrxs);

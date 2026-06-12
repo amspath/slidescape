@@ -295,6 +295,24 @@ directory_info_t viewer_get_directory_info(const char* path) {
 	return directory;
 }
 
+static bool image_try_load_with_openslide(image_t* image, const char* filename, image_load_options_t* options, bool is_overlay) {
+	if (!options->openslide_available) {
+		console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
+		image->is_valid = false;
+		return false;
+	}
+
+	image->type = IMAGE_TYPE_WSI;
+	image->backend = IMAGE_BACKEND_OPENSLIDE;
+	wsi_t wsi = {0};
+	load_openslide_wsi(&wsi, filename, options->openslide_loading_done, options->thread_pool);
+	if (wsi.osr) {
+		init_image_from_openslide(image, &wsi, is_overlay);
+		return image->is_valid;
+	}
+	return false;
+}
+
 image_t* image_load_from_file(file_info_t* file, directory_info_t* directory, image_load_options_t* options) {
 	image_load_options_t default_options = {0};
 	default_options.use_builtin_tiff_backend = true;
@@ -392,23 +410,11 @@ image_t* image_load_from_file(file_info_t* file, directory_info_t* directory, im
 			init_image_from_mrxs(image, &mrxs, is_overlay);
 		} else {
 			mrxs_destroy(&mrxs);
+			image_try_load_with_openslide(image, filename, options, is_overlay);
 		}
 	} else {
 		// Try to load the file using OpenSlide
-		if (!options->openslide_available) {
-			console_print("Can't try to load %s using OpenSlide, because OpenSlide is not available\n", filename);
-			image->is_valid = false;
-			return image;
-		}
-
-		// TODO: fix code duplication from init_image_from_tiff()
-		image->type = IMAGE_TYPE_WSI;
-		image->backend = IMAGE_BACKEND_OPENSLIDE;
-		wsi_t wsi = {0};
-		load_openslide_wsi(&wsi, filename, options->openslide_loading_done, options->thread_pool);
-		if (wsi.osr) {
-			init_image_from_openslide(image, &wsi, is_overlay);
-		}
+		image_try_load_with_openslide(image, filename, options, is_overlay);
 	}
 
 	if (image->is_valid) {

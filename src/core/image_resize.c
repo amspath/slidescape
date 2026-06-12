@@ -66,10 +66,11 @@ image_buffer_t create_bgra_image_buffer(i32 width, i32 height) {
     result.channels = 4;
     result.stride_in_pixels = width;
     result.stride_in_bytes = width * 4;
-    result.pixel_format = PIXEL_FORMAT_U8_BGRA;
-    result.pixels = calloc(1, width * height * 4);
-    result.is_valid = true;
-    return result;
+	result.pixel_format = PIXEL_FORMAT_U8_BGRA;
+	result.pixels = calloc(1, width * height * 4);
+	result.is_valid = true;
+	result.owns_pixels = true;
+	return result;
 }
 
 image_buffer_t create_bgra_image_buffer_using_arena(arena_t* arena, i32 width, i32 height) {
@@ -81,19 +82,21 @@ image_buffer_t create_bgra_image_buffer_using_arena(arena_t* arena, i32 width, i
     result.stride_in_bytes = width * 4;
     result.pixel_format = PIXEL_FORMAT_U8_BGRA;
     size_t size = width * height * 4;
-    if ((arena->used + size) <= arena->size) {
-        result.pixels = arena_push_size(arena, width * height * 4);
-        result.is_valid = true;
-    }
-    return result;
+	if ((arena->used + size) <= arena->size) {
+		result.pixels = arena_push_size(arena, width * height * 4);
+		result.is_valid = true;
+		result.owns_pixels = false;
+	}
+	return result;
 }
 
 void destroy_image_buffer(image_buffer_t* image_buffer) {
-    if (image_buffer->pixels) {
-        free(image_buffer->pixels);
-        image_buffer->pixels = NULL;
-        image_buffer->is_valid = false;
-    }
+	if (image_buffer->pixels && image_buffer->owns_pixels) {
+		free(image_buffer->pixels);
+	}
+	image_buffer->pixels = NULL;
+	image_buffer->is_valid = false;
+	image_buffer->owns_pixels = false;
 }
 
 

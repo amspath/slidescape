@@ -696,6 +696,9 @@ void draw_export_region_dialog(app_state_t* app_state) {
 						}
 						scene->selection_description = "selected area (modified)";
 						scene->selection_box = pixel_rect_to_world_rect(export_rect, image->mpp_x, image->mpp_y);
+						// TODO: MRXS backend: don't rely on origin_offset, pad the image with empty tiles instead
+						scene->selection_box.x += image->origin_offset.x;
+						scene->selection_box.y += image->origin_offset.y;
 						scene->selection_pixel_bounds = BOUNDS2I(export_rect.x, export_rect.y, export_rect.x + export_rect.w, export_rect.y + export_rect.h);
 //						pixel_bounds = scene->selection_pixel_bounds;
 					}
@@ -884,6 +887,7 @@ void draw_export_region_dialog(app_state_t* app_state) {
 					case IMAGE_BACKEND_OPENSLIDE:
 					case IMAGE_BACKEND_DICOM:
 					case IMAGE_BACKEND_ISYNTAX:
+					case IMAGE_BACKEND_MRXS:
 					case IMAGE_BACKEND_TIFF: {
 						u32 export_flags = 0;
 						if (display_export_annotations_checkbox) {
@@ -894,21 +898,15 @@ void draw_export_region_dialog(app_state_t* app_state) {
 								export_flags |= EXPORT_FLAGS_PUSH_ANNOTATION_COORDINATES_INWARD;
 							}
 						}
-						// TODO: remove this limitation
-						if (image->tile_width == image->tile_height) {
-                            // New code path: export TIFF by resampling level 0 and reconstructing the pyramid
-                            begin_export_cropped_bigtiff_with_resample(app_state, image, scene->crop_bounds,
-                                                                       scene->selection_pixel_bounds,
-                                                                       filename_buffer, image->tile_width,
-                                                                       tiff_export_desired_color_space,
-                                                                       tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
-                                                                       V2F(tiff_export_mpp, tiff_export_mpp));
-							gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
-						} else {
-							gui_add_modal_message_popup("Error##draw_export_region_dialog",
-							                            "Error: source image tile width and height must be equal for exporting.\n");
-							console_print_error("Error: source image tile width and height must be equal for exporting\n");
-						}
+						u32 export_tile_width = (image->tile_width == image->tile_height) ? image->tile_width : WSI_TILE_DIM;
+						// Export TIFF by resampling level 0 and reconstructing the pyramid.
+						begin_export_cropped_bigtiff_with_resample(app_state, image, scene->crop_bounds,
+						                                           scene->selection_pixel_bounds,
+						                                           filename_buffer, export_tile_width,
+						                                           tiff_export_desired_color_space,
+						                                           tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
+						                                           V2F(tiff_export_mpp, tiff_export_mpp));
+						gui_add_modal_progress_bar_popup("Exporting region...", &global_tiff_export_progress, false);
 					} break;
 					default: {
 						gui_add_modal_message_popup("Error##draw_export_region_dialog",

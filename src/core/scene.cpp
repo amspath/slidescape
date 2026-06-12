@@ -233,16 +233,24 @@ void scene_determine_if_export_is_possible(scene_t* scene, image_t* image) {
 		// Determine whether exporting a region is possible, and precalculate the (level 0) pixel bounds for exporting.
 		ASSERT(image->mpp_x > 0.0f && image->mpp_y > 0.0f);
 		// TODO: add image backend structs
-		if (image->backend == IMAGE_BACKEND_TIFF || image->backend == IMAGE_BACKEND_OPENSLIDE || image->backend == IMAGE_BACKEND_DICOM || image->backend == IMAGE_BACKEND_ISYNTAX) {
+		if (image->backend == IMAGE_BACKEND_TIFF || image->backend == IMAGE_BACKEND_OPENSLIDE || image->backend == IMAGE_BACKEND_DICOM || image->backend == IMAGE_BACKEND_ISYNTAX || image->backend == IMAGE_BACKEND_MRXS) {
 			if (scene->has_selection_box) {
 				rect2f recanonicalized_selection_box = rect2f_recanonicalize(&scene->selection_box);
 				bounds2f selection_bounds = rect2f_to_bounds(recanonicalized_selection_box);
 				scene->crop_bounds = selection_bounds;
-				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&selection_bounds, image->mpp_x, image->mpp_y);
+				// TODO: MRXS backend: don't rely on origin_offset, pad the image with empty tiles instead
+				bounds2f source_bounds = selection_bounds;
+				source_bounds.min = v2f_subtract(source_bounds.min, image->origin_offset);
+				source_bounds.max = v2f_subtract(source_bounds.max, image->origin_offset);
+				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&source_bounds, image->mpp_x, image->mpp_y);
 				scene->selection_description = "selected area";
 				scene->can_export_region = true;
 			} else if (scene->is_cropped) {
-				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&scene->crop_bounds, image->mpp_x, image->mpp_y);
+				// TODO: MRXS backend: don't rely on origin_offset, pad the image with empty tiles instead
+				bounds2f source_bounds = scene->crop_bounds;
+				source_bounds.min = v2f_subtract(source_bounds.min, image->origin_offset);
+				source_bounds.max = v2f_subtract(source_bounds.max, image->origin_offset);
+				scene->selection_pixel_bounds = world_bounds_to_pixel_bounds(&source_bounds, image->mpp_x, image->mpp_y);
 				scene->selection_description = "cropped region";
 				scene->can_export_region = true;
 			} else {
@@ -256,4 +264,3 @@ void scene_determine_if_export_is_possible(scene_t* scene, image_t* image) {
 		}
 	}
 }
-

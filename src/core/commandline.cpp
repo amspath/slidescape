@@ -230,11 +230,8 @@ int app_command_execute(app_state_t* app_state) {
 							want_roi = false;
 						}
 						if (want_roi && annotation_set->active_annotation_count > 0) {
-
-							// Search for the ROI
-
 							bool found_roi = false;
-							annotation_t* roi_annotation;
+							annotation_t* roi_annotation = NULL;
 							for (i32 i = 0; i < annotation_set->active_annotation_count; ++i) {
 								annotation_t* annotation = get_active_annotation(&app_state->scene.annotation_set, i);
 								if (command->export_command.use_first_roi || strncmp(annotation->name, command->export_command.roi, COUNT(annotation->name)-1) == 0) {
@@ -250,15 +247,19 @@ int app_command_execute(app_state_t* app_state) {
 
 							if (found_roi) {
 								bounds2f world_bounds = bounds_for_annotation(roi_annotation);
-								bounds2i pixel_bounds = world_bounds_to_pixel_bounds(&world_bounds, image->mpp_x, image->mpp_y);
+								// TODO: MRXS backend: don't rely on origin_offset, pad the image with empty tiles instead
+								bounds2f source_bounds = world_bounds;
+								source_bounds.min = v2f_subtract(source_bounds.min, image->origin_offset);
+								source_bounds.max = v2f_subtract(source_bounds.max, image->origin_offset);
+								bounds2i pixel_bounds = world_bounds_to_pixel_bounds(&source_bounds, image->mpp_x, image->mpp_y);
 
 								char filename_hint[512];
 								export_region_get_name_hint(app_state, filename_hint, sizeof(filename_hint));
-                                export_cropped_bigtiff_with_resample(app_state, image, world_bounds,pixel_bounds,
-                                                                     filename_hint, tiff_export_tile_width,
-                                                                     tiff_export_desired_color_space,
-                                                                     tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
-                                                                     V2F(tiff_export_mpp, tiff_export_mpp));
+								export_cropped_bigtiff_with_resample(app_state, image, world_bounds, pixel_bounds,
+								                                     filename_hint, tiff_export_tile_width,
+								                                     tiff_export_desired_color_space,
+								                                     tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
+								                                     V2F(tiff_export_mpp, tiff_export_mpp));
 							} else {
 								if (command->export_command.use_first_roi) {
 									console_print_error("ROI export failed: could not find an annotation to use as ROI\n");
@@ -266,17 +267,20 @@ int app_command_execute(app_state_t* app_state) {
 									console_print_error("ROI export failed: could not find an annotation with name \'%s\'\n", command->export_command.roi);
 								}
 							}
-
 						} else if (!want_roi) {
 							console_print("No ROI provided, using whole slide for export\n");
 							bounds2i pixel_bounds = BOUNDS2I(0, 0, image->width_in_pixels, image->height_in_pixels);
 							bounds2f world_bounds = pixel_bounds_to_world_bounds(pixel_bounds, image->mpp_x, image->mpp_y);
 
+							// TODO: MRXS backend: don't rely on origin_offset, pad the image with empty tiles instead
+							world_bounds.min = v2f_add(world_bounds.min, image->origin_offset);
+							world_bounds.max = v2f_add(world_bounds.max, image->origin_offset);
+
 							char filename_hint[512];
 							export_region_get_name_hint(app_state, filename_hint, sizeof(filename_hint));
-							export_cropped_bigtiff_with_resample(app_state, image, world_bounds,pixel_bounds,
+							export_cropped_bigtiff_with_resample(app_state, image, world_bounds, pixel_bounds,
 							                                     filename_hint, tiff_export_tile_width,
-																 tiff_export_desired_color_space,
+							                                     tiff_export_desired_color_space,
 							                                     tiff_export_jpeg_quality, export_flags, !tiff_export_match_input_resolution,
 							                                     V2F(tiff_export_mpp, tiff_export_mpp));
 						}

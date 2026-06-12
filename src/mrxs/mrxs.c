@@ -187,6 +187,8 @@ bool mrxs_parse_slidedat_ini(mrxs_t* mrxs, mem_t* slidedat_ini) {
                             }
                         } else if (strcmp(key, "CameraImageDivisionsPerSide") == 0) {
                             mrxs->camera_image_divisions_per_slide = atoi(value);
+                        } else if (strcmp(key, "SLIDE_TYPE") == 0) {
+                            mrxs->is_fluorescence = (strcmp(value, "SLIDE_TYPE_FLUORESCENCE") == 0);
                         }
                     } break;
                     case MRXS_SECTION_HIERARCHICAL: {
@@ -517,6 +519,25 @@ bool mrxs_read_stitching_intensity_level(mrxs_t* mrxs, mem_t* index_dat, mrxs_no
     return false;
 }
 
+bool mrxs_read_nonhier_first_entry(mem_t* index_dat, mrxs_nonhier_entry_t* out_entry) {
+    for (;;) {
+        u32 entry_count = 0;
+        u32 next_ptr = 0;
+        mem_read(&entry_count, index_dat, 4);
+        mem_read(&next_ptr, index_dat, 4);
+        if (entry_count > 0) {
+            mem_read(out_entry, index_dat, sizeof(*out_entry));
+            return true;
+        }
+        if (next_ptr != 0 && next_ptr < index_dat->len) {
+            mem_seek(index_dat, next_ptr);
+        } else {
+            break;
+        }
+    }
+    return false;
+}
+
 bool mrxs_load_slide_position_file(mrxs_t* mrxs) {
     mrxs_nonhier_entry_t entry = mrxs->stitching_intensity_layer_entry;
     bool success = false;
@@ -753,6 +774,20 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
                                 if (!mrxs_read_stitching_intensity_level(mrxs, index_dat, nonhier_val)) {
                                     goto label_failed;
                                 }
+                            } else if (nonhier->name == MRXS_NONHIER_SCAN_DATA_LAYER) {
+                                mrxs_simple_image_t* image = NULL;
+                                if (nonhier_val->type == MRXS_NONHIER_VAL_SCANDATALAYER_SCANMAP) {
+                                    image = &mrxs->scanmap_image;
+                                } else if (nonhier_val->type == MRXS_NONHIER_VAL_SCANDATALAYER_STAGEPOSITIONMAP) {
+                                    image = &mrxs->stageposmap_image;
+                                } else if (nonhier_val->type == MRXS_NONHIER_VAL_SCANDATALAYER_SLIDETHUMBNAIL) {
+                                    image = &mrxs->thumbnail_image;
+                                } else if (nonhier_val->type == MRXS_NONHIER_VAL_SCANDATALAYER_SLIDEBARCODE) {
+                                    image = &mrxs->barcode_image;
+                                }
+                                if (image) {
+                                    mrxs_read_nonhier_first_entry(index_dat, &image->entry);
+                                }
                             }
 
                         }
@@ -861,6 +896,35 @@ u8* mrxs_decode_image_to_bgra(u8* compressed_data, size_t compressed_length, enu
         }
     } else {
         console_print_error("mrxs_decode_image_to_bgra(): unknown or unsupported image format: %d\n", image_format);
+    }
+    return result;
+}
+
+u8* mrxs_decode_simple_image_to_rgba(mrxs_t* mrxs, mrxs_simple_image_t* image) {
+    if (!mrxs || !image || image->entry.length == 0 || !mrxs->dat_file_handles || image->entry.file >= mrxs->dat_count ||
+        image->width <= 0 || image->height <= 0) {
+        return NULL;
+    }
+
+    u8* result = NULL;
+    file_handle_t file_handle = mrxs->dat_file_handles[image->entry.file];
+    if (file_handle) {
+        temp_memory_t temp = begin_temp_memory_on_local_thread();
+        u8* compressed_data = (u8*)arena_push_size(temp.arena, image->entry.length);
+        size_t bytes_read = file_handle_read_at_offset(compressed_data, file_handle, image->entry.offset, image->entry.length);
+        if (bytes_read == image->entry.length) {
+            i32 width = 0;
+            i32 height = 0;
+            i32 channels_in_file = 0;
+            result = stbi_load_from_memory(compressed_data, image->entry.length, &width, &height, &channels_in_file, 4);
+            if (!result || width != image->width || height != image->height) {
+                if (result) {
+                    stbi_image_free(result);
+                    result = NULL;
+                }
+            }
+        }
+        release_temp_memory(&temp);
     }
     return result;
 }
@@ -1225,7 +1289,8 @@ static u8* mrxs_decode_aligned_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, i32
     if (!result) {
         return NULL;
     }
-    mrxs_fill_bgra(result, mrxs_level->tile_width, mrxs_level->tile_height, mrxs_level->image_fill_color_bgr);
+    mrxs_fill_bgra(result, mrxs_level->tile_width, mrxs_level->tile_height,
+                   mrxs->is_fluorescence ? 0 : mrxs_level->image_fill_color_bgr);
 
     i32 logical_tile_x = logical_tile_index % logical_width_in_tiles;
     i32 logical_tile_y = logical_tile_index / logical_width_in_tiles;
@@ -1303,7 +1368,8 @@ static u8* mrxs_decode_fractional_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, 
     if (!result) {
         return NULL;
     }
-    mrxs_fill_bgra(result, mrxs_level->tile_width, mrxs_level->tile_height, mrxs_level->image_fill_color_bgr);
+    mrxs_fill_bgra(result, mrxs_level->tile_width, mrxs_level->tile_height,
+                   mrxs->is_fluorescence ? 0 : mrxs_level->image_fill_color_bgr);
 
     i32 logical_tile_x = logical_tile_index % logical_width_in_tiles;
     i32 logical_tile_y = logical_tile_index / logical_width_in_tiles;

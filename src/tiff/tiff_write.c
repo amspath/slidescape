@@ -872,10 +872,10 @@ void export_cropped_bigtiff_with_resample_func(i32 logical_thread_index, void* u
                                           task->filename, task->export_tile_width,
                                           task->desired_photometric_interpretation, task->quality, task->export_flags,
                                           task->need_resize, task->target_mpp);
-    global_tiff_export_progress = 1.0f;
-    task->app_state->is_export_in_progress = false;
+	global_tiff_export_progress = 1.0f;
+	task->app_state->is_export_in_progress = false;
 
-//	atomic_decrement(&task->isyntax->refcount); // TODO: release
+	atomic_decrement(&task->image->refcount);
 }
 
 void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t* image, bounds2f world_bounds, bounds2i level0_bounds, const char* filename,
@@ -894,13 +894,13 @@ void begin_export_cropped_bigtiff_with_resample(app_state_t* app_state, image_t*
     task.need_resize = need_resize;
     task.target_mpp = target_mpp;
 
-    global_tiff_export_progress = 0.0f;
+	global_tiff_export_progress = 0.0f;
 	global_tiff_export_progress_console_dots_written = 0;
-    app_state->is_export_in_progress = true;
+	app_state->is_export_in_progress = true;
 
-    //	atomic_increment(&isyntax->refcount); // TODO: retain; don't destroy  while busy
-    if (!thread_pool_submit_task(&global_thread_pool, export_cropped_bigtiff_with_resample_func, &task, sizeof(task))) {
-//		atomic_decrement(&isyntax->refcount);
-        app_state->is_export_in_progress = false;
-    };
+	atomic_increment(&image->refcount);
+	if (!thread_pool_submit_task(&global_thread_pool, export_cropped_bigtiff_with_resample_func, &task, sizeof(task))) {
+		atomic_decrement(&image->refcount);
+		app_state->is_export_in_progress = false;
+	};
 }
