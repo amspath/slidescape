@@ -662,9 +662,9 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 
 	image->tile_width = mrxs->tile_width;
 	image->tile_height = mrxs->tile_height;
-	image->width_in_pixels = mrxs->tile_width * mrxs->base_width_in_tiles;
+	image->width_in_pixels = mrxs->base_width_in_pixels;
 	image->width_in_um = image->width_in_pixels * image->mpp_x;
-	image->height_in_pixels = mrxs->tile_height * mrxs->base_height_in_tiles;
+	image->height_in_pixels = mrxs->base_height_in_pixels;
 	image->height_in_um = image->height_in_pixels * image->mpp_y;
 	// TODO: fix code duplication with tiff_deserialize()
 	if (mrxs->level_count > 0 && image->tile_width) {
@@ -684,8 +684,8 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 			level_image->needs_indexing = false;
 			level_image->pyramid_image_index = level_index; // not used
 			level_image->downsample_factor = exp2f((float)level_index);
-			level_image->width_in_pixels = mrxs_level->width_in_tiles * mrxs->tile_width; // TODO: check that this is right
-			level_image->height_in_pixels = mrxs_level->height_in_tiles * mrxs->tile_height; // TODO: check that this is right
+			level_image->width_in_pixels = ceil_div_f64(image->width_in_pixels, level_image->downsample_factor);
+			level_image->height_in_pixels = ceil_div_f64(image->height_in_pixels, level_image->downsample_factor);
 			level_image->width_in_tiles = mrxs_level->width_in_tiles;
 			ASSERT(level_image->width_in_tiles > 0);
 			level_image->height_in_tiles = mrxs_level->height_in_tiles;
@@ -704,7 +704,7 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 			level_image->um_per_pixel_x = level_image->downsample_factor * mrxs->mpp_x;
 			level_image->um_per_pixel_y = level_image->downsample_factor * mrxs->mpp_y;
 			level_image->x_tile_side_in_um = level_image->um_per_pixel_x * mrxs_level->tile_width;
-			level_image->y_tile_side_in_um = level_image->um_per_pixel_x * mrxs_level->tile_width;
+			level_image->y_tile_side_in_um = level_image->um_per_pixel_y * mrxs_level->tile_height;
 			ASSERT(level_image->x_tile_side_in_um > 0);
 			ASSERT(level_image->y_tile_side_in_um > 0);
 			level_image->origin_offset = V2F(0,0); //mrxs_level->origin_offset;
