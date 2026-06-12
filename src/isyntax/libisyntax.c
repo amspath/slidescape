@@ -223,6 +223,14 @@ const char* libisyntax_get_lossy_image_compression_method(const isyntax_t* isynt
     return isyntax->dicom_lossy_image_compression_method;
 }
 
+int32_t libisyntax_get_data_model_major_version(const isyntax_t* isyntax) {
+	return isyntax->data_model_major_version;
+}
+
+int32_t libisyntax_get_data_model_minor_version(const isyntax_t* isyntax) {
+	return isyntax->data_model_minor_version;
+}
+
 int32_t libisyntax_image_get_level_count(const isyntax_image_t* image) {
     return image->level_count;
 }

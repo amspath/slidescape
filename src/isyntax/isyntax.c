@@ -53,25 +53,7 @@
 
 #include "isyntax.h"
 
-static inline isyntax_dicom_tag_header_t isyntax_read_dicom_tag_header(const void* src) {
-	const u8* data = (const u8*)src;
-	isyntax_dicom_tag_header_t result = {};
-	result.group = read_u16_le(data + 0);
-	result.element = read_u16_le(data + 2);
-	result.size = read_u32_le(data + 4);
-	return result;
-}
-
-static inline u32 isyntax_read_u32_le(const void* src) {
-	return read_u32_le(src);
-}
-
-static inline u64 isyntax_read_u64_le(const void* src) {
-	return read_u64_le(src);
-}
-
 // XML library for parsing the header
-#include "stringutils.h"
 #include "yxml.h"
 
 // JPEG decoding library for macro/label images
@@ -96,6 +78,45 @@ static inline u64 isyntax_read_u64_le(const void* src) {
 
 #include "isyntax_dwt.c"
 
+static inline isyntax_dicom_tag_header_t isyntax_read_dicom_tag_header(const void* src) {
+	const u8* data = (const u8*)src;
+	isyntax_dicom_tag_header_t result = {};
+	result.group = read_u16_le(data + 0);
+	result.element = read_u16_le(data + 2);
+	result.size = read_u32_le(data + 4);
+	return result;
+}
+
+static inline u32 isyntax_read_u32_le(const void* src) {
+	return read_u32_le(src);
+}
+
+static inline u64 isyntax_read_u64_le(const void* src) {
+	return read_u64_le(src);
+}
+
+// NOTE: this serves as an alternative to strncpy: copies up to dest_size-1 and always null-terminates
+static size_t isyntax_copy_cstring(char* dest, const char* src, size_t dest_size) {
+	size_t len = 0;
+
+	if (!src) {
+		if (dest_size > 0) dest[0] = '\0';
+		return 0;
+	}
+
+	if (dest_size > 0) {
+		for (; len + 1 < dest_size && src[len]; ++len) {
+			dest[len] = src[len];
+		}
+		dest[len] = '\0';
+	}
+
+	while (src[len]) {
+		++len;
+	}
+
+	return len; // source length; truncation if return >= dest_size
+}
 
 // Base64 decoder by Jouni Malinen, original:
 // http://web.mit.edu/freebsd/head/contrib/wpa/src/utils/base64.c
@@ -367,13 +388,13 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
 				case 0x002A: /*DICOM_ACQUISITION_DATETIME*/     { // "20210101103030.000000"
-					copy_cstring(isyntax->dicom_acquisition_datetime, value, MIN(value_len, sizeof(isyntax->dicom_acquisition_datetime)));
+					isyntax_copy_cstring(isyntax->dicom_acquisition_datetime, value, MIN(value_len, sizeof(isyntax->dicom_acquisition_datetime)));
 				} break;
 				case 0x0070: /*DICOM_MANUFACTURER*/             { // "PHILIPS"
-					copy_cstring(isyntax->dicom_manufacturer, value, MIN(value_len, sizeof(isyntax->dicom_manufacturer)));
+					isyntax_copy_cstring(isyntax->dicom_manufacturer, value, MIN(value_len, sizeof(isyntax->dicom_manufacturer)));
 				} break;
 				case 0x1090: /*DICOM_MANUFACTURERS_MODEL_NAME*/ { // "UFS Scanner"
-					copy_cstring(isyntax->dicom_manufacturers_model_name, value, MIN(value_len, sizeof(isyntax->dicom_manufacturers_model_name)));
+					isyntax_copy_cstring(isyntax->dicom_manufacturers_model_name, value, MIN(value_len, sizeof(isyntax->dicom_manufacturers_model_name)));
 				} break;
 			}
 		}; break;
@@ -383,7 +404,7 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
 				case 0x1000: /*DICOM_DEVICE_SERIAL_NUMBER*/     { // "FMT<4-digit number>"
-					copy_cstring(isyntax->dicom_device_serial_number, value, MIN(value_len, sizeof(isyntax->dicom_device_serial_number)));
+					isyntax_copy_cstring(isyntax->dicom_device_serial_number, value, MIN(value_len, sizeof(isyntax->dicom_device_serial_number)));
 				} break;
 				case 0x1020: /*DICOM_SOFTWARE_VERSIONS*/        {  // "<versionnumber>" "<versionnumber>"
 					if (value_len < 2) {
@@ -413,7 +434,7 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 						// Check if either '" "' or '"' at end of string
 						if (value[i] == '"' && ((i + 2 < value_len && value[i + 1] == ' ' && value[i + 2] == '"') || i + 1 == value_len)) {
 							size_t version_len = value + i - version_start;
-							copy_cstring(isyntax->dicom_software_versions[version_index], version_start, MIN(version_len, sizeof(isyntax->dicom_software_versions[version_index])));
+							isyntax_copy_cstring(isyntax->dicom_software_versions[version_index], version_start, MIN(version_len, sizeof(isyntax->dicom_software_versions[version_index])));
 							version_index++;
 							version_start = value + i + 3;
 						}
@@ -434,7 +455,7 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 						break;
 					};
 					for (i32 i = 0; i < number_of_values; ++i) {
-						copy_cstring(isyntax->dicom_date_of_last_calibration[i], value + 1 + i * 11, MIN(8, sizeof(isyntax->dicom_date_of_last_calibration[i])));
+						isyntax_copy_cstring(isyntax->dicom_date_of_last_calibration[i], value + 1 + i * 11, MIN(8, sizeof(isyntax->dicom_date_of_last_calibration[i])));
 					}
 					isyntax->dicom_date_of_last_calibration_count = number_of_values;
 
@@ -453,7 +474,7 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 						break;
 					};
 					for (i32 i = 0; i < number_of_values; ++i) {
-						copy_cstring(isyntax->dicom_time_of_last_calibration[i], value + 1 + i * 9, MIN(6, sizeof(isyntax->dicom_time_of_last_calibration[i])));
+						isyntax_copy_cstring(isyntax->dicom_time_of_last_calibration[i], value + 1 + i * 9, MIN(6, sizeof(isyntax->dicom_time_of_last_calibration[i])));
 					}
 					isyntax->dicom_time_of_last_calibration_count = number_of_values;
 
@@ -479,7 +500,8 @@ static void isyntax_parse_ufsimport_child_node(isyntax_t* isyntax, u32 group, u3
 				} break;
 				case 0x1001: /*PIM_DP_UFS_INTERFACE_VERSION*/          {
 					// Value will likely be "5.0" for v1 iSyntax files, "100.5" for v2 iSyntax files
-					isyntax->data_model_major_version = atoi(value);
+					if (sscanf(value, "%" SCNd32 ".%" SCNd32, &isyntax->data_model_major_version, &isyntax->data_model_minor_version) != 2)
+						isyntax->data_model_minor_version = 0;
 				} break;
 				case 0x1002: /*PIM_DP_UFS_BARCODE*/ {
 					// "<base64-encoded barcode value>"
@@ -522,7 +544,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					console_print_verbose("Unknown element (0x%04x, 0x%04x)\n", group, element);
 				} break;
 				case 0x2111: /*DICOM_DERIVATION_DESCRIPTION*/   {         // "PHILIPS UFS V%s | Quality=%d | DWT=%d | Compressor=%d"
-					copy_cstring(isyntax->dicom_derivation_description, value, MIN(value_len, sizeof(isyntax->dicom_derivation_description)));
+					isyntax_copy_cstring(isyntax->dicom_derivation_description, value, MIN(value_len, sizeof(isyntax->dicom_derivation_description)));
 				} break;
 			}
 		}; break;
@@ -564,7 +586,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 						end--;
 					}
 					size_t copy_len = MIN(end - start, sizeof(isyntax->dicom_lossy_image_compression_method) - 1);
-					copy_cstring(isyntax->dicom_lossy_image_compression_method, value + start, copy_len);
+					isyntax_copy_cstring(isyntax->dicom_lossy_image_compression_method, value + start, copy_len);
 				} break;
 			}
 		} break;
@@ -619,16 +641,18 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 				case 0x2004: /*UFS_IMAGE_DIMENSION_NAME*/                   {} break;
 				case 0x2005: /*UFS_IMAGE_DIMENSION_TYPE*/                   {} break;
 				case 0x2006: /*UFS_IMAGE_DIMENSION_UNIT*/                   {
-					copy_cstring(isyntax->image_dimension_unit, value, MIN(value_len, sizeof(isyntax->image_dimension_unit)));
+					isyntax_copy_cstring(isyntax->image_dimension_unit, value, MIN(value_len, sizeof(isyntax->image_dimension_unit)));
 				} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {
-					float mpp = atof(value);
-					if (isyntax->parser.dimension_index == 0 /*x*/) {
-						isyntax->mpp_x = mpp;
-						isyntax->is_mpp_known = true;
-					} else if (isyntax->parser.dimension_index == 1 /*y*/) {
-						isyntax->mpp_y = mpp;
-						isyntax->is_mpp_known = true;
+					if (isyntax->parser.current_image_type == ISYNTAX_IMAGE_TYPE_WSI) {
+						float mpp = atof(value);
+						if (isyntax->parser.dimension_index == 0 /*x*/) {
+							isyntax->mpp_x = mpp;
+							isyntax->is_mpp_known = true;
+						} else if (isyntax->parser.dimension_index == 1 /*y*/) {
+							isyntax->mpp_y = mpp;
+							isyntax->is_mpp_known = true;
+						}
 					}
 				} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;

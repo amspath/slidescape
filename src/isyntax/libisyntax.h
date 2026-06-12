@@ -78,6 +78,8 @@ const char*            libisyntax_get_time_of_last_calibration(const isyntax_t* 
 bool                   libisyntax_is_lossy_image_compression(const isyntax_t* isyntax);
 double                 libisyntax_get_lossy_image_compression_ratio(const isyntax_t* isyntax);
 const char*            libisyntax_get_lossy_image_compression_method(const isyntax_t* isyntax);
+int32_t                libisyntax_get_data_model_major_version(const isyntax_t* isyntax);
+int32_t                libisyntax_get_data_model_minor_version(const isyntax_t* isyntax);
 const char*            libisyntax_scale_unit(const isyntax_t* isyntax);
 
 int32_t                libisyntax_image_get_level_count(const isyntax_image_t* image);

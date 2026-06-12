@@ -400,6 +400,7 @@ typedef struct isyntax_t {
 	float loading_time;
 	float total_rgb_transform_time;
 	i32 data_model_major_version; // <100 (usually 5) for iSyntax format v1, >= 100 for iSyntax format v2
+	i32 data_model_minor_version;
 	char barcode[64];
 	bool is_barcode_read;
 	isyntax_cache_t* cache;
