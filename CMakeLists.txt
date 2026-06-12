@@ -500,6 +500,7 @@ add_executable(dicom_dict_gen
         ${BASE_FILES}
         src/dicom/dicom_dict_gen.c
         src/utils/memrw.c
+        src/utils/stringutils.c
         src/third_party/yxml.c
         src/third_party/lz4.c
         src/third_party/ltalloc.cc
