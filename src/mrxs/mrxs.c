@@ -967,6 +967,78 @@ static void mrxs_composite_decoded_tile(u8* output, i32 output_width, i32 output
     }
 }
 
+static void mrxs_composite_decoded_region(u8* output, i32 output_width, i32 output_height,
+                                          u8* decoded_tile, i32 src_width, i32 src_height,
+                                          float src_box_x, float src_box_y, float src_box_w, float src_box_h,
+                                          float dst_global_x, float dst_global_y,
+                                          float out_global_x, float out_global_y) {
+    float dst_left = dst_global_x;
+    float dst_top = dst_global_y;
+    float dst_right = dst_global_x + src_box_w;
+    float dst_bottom = dst_global_y + src_box_h;
+    float out_left = out_global_x;
+    float out_top = out_global_y;
+    float out_right = out_global_x + (float)output_width;
+    float out_bottom = out_global_y + (float)output_height;
+
+    if (!mrxs_rects_overlap_f32(dst_left, dst_top, dst_right, dst_bottom, out_left, out_top, out_right, out_bottom)) {
+        return;
+    }
+
+    i32 dst_global_left = MAX((i32)floorf(MAX(dst_left, out_left)), (i32)out_global_x);
+    i32 dst_global_top = MAX((i32)floorf(MAX(dst_top, out_top)), (i32)out_global_y);
+    i32 dst_global_right = MIN((i32)ceilf(MIN(dst_right, out_right)), (i32)(out_global_x + output_width));
+    i32 dst_global_bottom = MIN((i32)ceilf(MIN(dst_bottom, out_bottom)), (i32)(out_global_y + output_height));
+    i32 dst_w = dst_global_right - dst_global_left;
+    i32 dst_h = dst_global_bottom - dst_global_top;
+    if (dst_w <= 0 || dst_h <= 0) {
+        return;
+    }
+
+    float src_clip_x = src_box_x + ((float)dst_global_left - dst_global_x);
+    float src_clip_y = src_box_y + ((float)dst_global_top - dst_global_y);
+    i32 dst_x = dst_global_left - (i32)out_global_x;
+    i32 dst_y = dst_global_top - (i32)out_global_y;
+
+    bool integral_copy = fabsf(src_clip_x - roundf(src_clip_x)) < 0.001f &&
+                         fabsf(src_clip_y - roundf(src_clip_y)) < 0.001f &&
+                         fabsf(src_box_w - roundf(src_box_w)) < 0.001f &&
+                         fabsf(src_box_h - roundf(src_box_h)) < 0.001f &&
+                         fabsf(dst_global_x - roundf(dst_global_x)) < 0.001f &&
+                         fabsf(dst_global_y - roundf(dst_global_y)) < 0.001f;
+    if (integral_copy) {
+        i32 src_x = (i32)roundf(src_clip_x);
+        i32 src_y = (i32)roundf(src_clip_y);
+        if (src_x >= 0 && src_y >= 0 && src_x + dst_w <= src_width && src_y + dst_h <= src_height) {
+            for (i32 y = 0; y < dst_h; ++y) {
+                u8* dst = output + ((dst_y + y) * output_width + dst_x) * 4;
+                u8* src = decoded_tile + ((src_y + y) * src_width + src_x) * 4;
+                memcpy(dst, src, dst_w * 4);
+            }
+            return;
+        }
+    }
+
+    image_buffer_t src = {
+        .pixels = decoded_tile,
+        .channels = 4,
+        .width = src_width,
+        .height = src_height,
+        .stride_in_pixels = src_width,
+        .stride_in_bytes = src_width * 4,
+        .pixel_format = PIXEL_FORMAT_U8_BGRA,
+        .is_valid = true,
+    };
+    image_buffer_t patch = create_bgra_image_buffer(dst_w, dst_h);
+    if (patch.is_valid) {
+        rect2f box = RECT2F(src_clip_x, src_clip_y, (float)dst_w, (float)dst_h);
+        if (image_resample_lanczos3(&src, &patch, box)) {
+            mrxs_copy_patch_to_output(output, output_width, patch.pixels, patch.width, patch.height, dst_x, dst_y);
+        }
+        destroy_image_buffer(&patch);
+    }
+}
+
 static u8* mrxs_decode_aligned_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 logical_tile_index) {
     mrxs_level_t* mrxs_level = mrxs->levels + level;
     i32 logical_width_in_tiles = mrxs_ceil_div_i32(mrxs_ceil_div_i32(mrxs->base_width_in_pixels, 1 << level),
@@ -1045,6 +1117,102 @@ static u8* mrxs_decode_aligned_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, i32
     return result;
 }
 
+static u8* mrxs_decode_fractional_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 logical_tile_index) {
+    mrxs_level_t* mrxs_level = mrxs->levels + level;
+    i32 logical_width_in_tiles = mrxs_ceil_div_i32(mrxs_ceil_div_i32(mrxs->base_width_in_pixels, 1 << level),
+                                                   mrxs_level->tile_width);
+    i32 logical_height_in_tiles = mrxs_ceil_div_i32(mrxs_ceil_div_i32(mrxs->base_height_in_pixels, 1 << level),
+                                                    mrxs_level->tile_height);
+    if (!(logical_tile_index >= 0 && logical_tile_index < logical_width_in_tiles * logical_height_in_tiles)) {
+        return NULL;
+    }
+
+    u8* result = malloc(mrxs_level->tile_width * mrxs_level->tile_height * 4);
+    if (!result) {
+        return NULL;
+    }
+    mrxs_fill_bgra(result, mrxs_level->tile_width, mrxs_level->tile_height, mrxs_level->image_fill_color_bgr);
+
+    i32 logical_tile_x = logical_tile_index % logical_width_in_tiles;
+    i32 logical_tile_y = logical_tile_index / logical_width_in_tiles;
+    float scale = (float)(1 << level);
+    float out_global_x = (float)(logical_tile_x * mrxs_level->tile_width);
+    float out_global_y = (float)(logical_tile_y * mrxs_level->tile_height);
+    float out_right = out_global_x + (float)mrxs_level->tile_width;
+    float out_bottom = out_global_y + (float)mrxs_level->tile_height;
+    float camera_width_at_level = (float)mrxs->camera_width / scale;
+    float camera_height_at_level = (float)mrxs->camera_height / scale;
+
+    for (i32 camera_y = 0; camera_y < mrxs->camera_grid_height; ++camera_y) {
+        for (i32 camera_x = 0; camera_x < mrxs->camera_grid_width; ++camera_x) {
+            i32 camera_index = camera_y * mrxs->camera_grid_width + camera_x;
+            mrxs_camera_t* camera = mrxs->cameras + camera_index;
+            if (!camera->present) {
+                continue;
+            }
+
+            float nominal_camera_x = ((float)(camera_x * mrxs->camera_width)) / scale;
+            float nominal_camera_y = ((float)(camera_y * mrxs->camera_height)) / scale;
+            float actual_camera_x = (float)camera->x / scale;
+            float actual_camera_y = (float)camera->y / scale;
+            float actual_camera_right = actual_camera_x + camera_width_at_level;
+            float actual_camera_bottom = actual_camera_y + camera_height_at_level;
+
+            if (!mrxs_rects_overlap_f32(actual_camera_x, actual_camera_y, actual_camera_right, actual_camera_bottom,
+                                        out_global_x, out_global_y, out_right, out_bottom)) {
+                continue;
+            }
+
+            float nominal_camera_right = nominal_camera_x + camera_width_at_level;
+            float nominal_camera_bottom = nominal_camera_y + camera_height_at_level;
+            i32 stored_tile_min_x = MAX(0, (i32)floorf(nominal_camera_x / (float)mrxs_level->tile_width));
+            i32 stored_tile_min_y = MAX(0, (i32)floorf(nominal_camera_y / (float)mrxs_level->tile_height));
+            i32 stored_tile_max_x = MIN(mrxs_level->width_in_tiles, (i32)ceilf(nominal_camera_right / (float)mrxs_level->tile_width));
+            i32 stored_tile_max_y = MIN(mrxs_level->height_in_tiles, (i32)ceilf(nominal_camera_bottom / (float)mrxs_level->tile_height));
+
+            for (i32 stored_tile_y = stored_tile_min_y; stored_tile_y < stored_tile_max_y; ++stored_tile_y) {
+                for (i32 stored_tile_x = stored_tile_min_x; stored_tile_x < stored_tile_max_x; ++stored_tile_x) {
+                    float stored_left = (float)(stored_tile_x * mrxs_level->tile_width);
+                    float stored_top = (float)(stored_tile_y * mrxs_level->tile_height);
+                    float stored_right = stored_left + (float)mrxs_level->tile_width;
+                    float stored_bottom = stored_top + (float)mrxs_level->tile_height;
+
+                    float fragment_nominal_left = MAX(nominal_camera_x, stored_left);
+                    float fragment_nominal_top = MAX(nominal_camera_y, stored_top);
+                    float fragment_nominal_right = MIN(nominal_camera_right, stored_right);
+                    float fragment_nominal_bottom = MIN(nominal_camera_bottom, stored_bottom);
+                    float fragment_w = fragment_nominal_right - fragment_nominal_left;
+                    float fragment_h = fragment_nominal_bottom - fragment_nominal_top;
+                    if (fragment_w <= 0.0f || fragment_h <= 0.0f) {
+                        continue;
+                    }
+
+                    float dst_global_x = actual_camera_x + (fragment_nominal_left - nominal_camera_x);
+                    float dst_global_y = actual_camera_y + (fragment_nominal_top - nominal_camera_y);
+                    if (!mrxs_rects_overlap_f32(dst_global_x, dst_global_y, dst_global_x + fragment_w, dst_global_y + fragment_h,
+                                                out_global_x, out_global_y, out_right, out_bottom)) {
+                        continue;
+                    }
+
+                    i32 stored_tile_index = stored_tile_y * mrxs_level->width_in_tiles + stored_tile_x;
+                    u8* decoded_tile = mrxs_decode_stored_tile_to_bgra(mrxs, level, stored_tile_index);
+                    if (decoded_tile) {
+                        float src_box_x = fragment_nominal_left - stored_left;
+                        float src_box_y = fragment_nominal_top - stored_top;
+                        mrxs_composite_decoded_region(result, mrxs_level->tile_width, mrxs_level->tile_height,
+                                                      decoded_tile, mrxs_level->tile_width, mrxs_level->tile_height,
+                                                      src_box_x, src_box_y, fragment_w, fragment_h,
+                                                      dst_global_x, dst_global_y, out_global_x, out_global_y);
+                        free(decoded_tile);
+                    }
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
 	u8* result = NULL;
 	if (level >= 0 && level < mrxs->level_count) {
@@ -1054,6 +1222,8 @@ u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
         } else {
             if (mrxs->cameras && level <= mrxs->max_aligned_overlap_level) {
                 result = mrxs_decode_aligned_overlap_tile_to_bgra(mrxs, level, tile_index);
+            } else if (mrxs->cameras) {
+                result = mrxs_decode_fractional_overlap_tile_to_bgra(mrxs, level, tile_index);
             } else {
                 result = mrxs_decode_stored_tile_to_bgra(mrxs, level, tile_index);
             }
