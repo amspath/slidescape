@@ -22,11 +22,13 @@
 #include "stringutils.h"
 #include "listing.h"
 #include "image_loader.h"
+#include "image_resize.h"
 #include "jpeg_decoder.h"
 #include "stb_image.h"
 #include "miniz.h"
 
 #include <ctype.h> // for isspace()
+#include <math.h>
 
 
 
@@ -552,6 +554,100 @@ bool mrxs_load_slide_position_file(mrxs_t* mrxs) {
     return success;
 }
 
+static inline i32 mrxs_ceil_div_i32(i32 a, i32 b) {
+    return (a + b - 1) / b;
+}
+
+static inline bool mrxs_rects_overlap_f32(float a_left, float a_top, float a_right, float a_bottom,
+                                          float b_left, float b_top, float b_right, float b_bottom) {
+    return a_left < b_right && a_right > b_left && a_top < b_bottom && a_bottom > b_top;
+}
+
+static void mrxs_fill_bgra(u8* pixels, i32 width, i32 height, u32 fill_color_bgr) {
+    u8 b = (u8)(fill_color_bgr & 0xff);
+    u8 g = (u8)((fill_color_bgr >> 8) & 0xff);
+    u8 r = (u8)((fill_color_bgr >> 16) & 0xff);
+    for (i32 i = 0; i < width * height; ++i) {
+        pixels[i * 4 + 0] = b;
+        pixels[i * 4 + 1] = g;
+        pixels[i * 4 + 2] = r;
+        pixels[i * 4 + 3] = 255;
+    }
+}
+
+static bool mrxs_prepare_overlap_geometry(mrxs_t* mrxs) {
+    if (!mrxs->has_overlapping_tiles || !mrxs->camera_positions || mrxs->camera_position_count <= 0) {
+        return false;
+    }
+    i32 divisions = mrxs->camera_image_divisions_per_slide;
+    mrxs_level_t* base_level = mrxs->levels + 0;
+    if (divisions <= 0 || base_level->tile_width <= 0 || base_level->tile_height <= 0) {
+        return false;
+    }
+
+    mrxs->camera_grid_width = mrxs_ceil_div_i32(mrxs->base_width_in_tiles, divisions);
+    mrxs->camera_grid_height = mrxs_ceil_div_i32(mrxs->base_height_in_tiles, divisions);
+    i32 camera_count = mrxs->camera_grid_width * mrxs->camera_grid_height;
+    if (camera_count <= 0 || mrxs->camera_position_count < camera_count) {
+        return false;
+    }
+
+    mrxs->camera_width = divisions * base_level->tile_width;
+    mrxs->camera_height = divisions * base_level->tile_height;
+    mrxs->cameras = calloc(camera_count, sizeof(mrxs_camera_t));
+    if (!mrxs->cameras) {
+        return false;
+    }
+
+    bool version_has_presence_flag = (mrxs->slide_version_major > 1 ||
+                                      (mrxs->slide_version_major == 1 && mrxs->slide_version_minor >= 9));
+    i32 min_x = INT32_MAX;
+    i32 min_y = INT32_MAX;
+    i32 max_x = INT32_MIN;
+    i32 max_y = INT32_MIN;
+    i32 present_count = 0;
+    for (i32 i = 0; i < camera_count; ++i) {
+        mrxs_slide_position_t position = mrxs->camera_positions[i];
+        bool present = version_has_presence_flag ? (position.flag != 0) : true;
+        mrxs_camera_t* camera = mrxs->cameras + i;
+        camera->present = present;
+        camera->raw_x = position.x;
+        camera->raw_y = position.y;
+        if (present) {
+            min_x = MIN(min_x, position.x);
+            min_y = MIN(min_y, position.y);
+            max_x = MAX(max_x, position.x + mrxs->camera_width);
+            max_y = MAX(max_y, position.y + mrxs->camera_height);
+            ++present_count;
+        }
+    }
+
+    if (present_count == 0) {
+        return false;
+    }
+
+    mrxs->camera_origin_x = min_x;
+    mrxs->camera_origin_y = min_y;
+    for (i32 i = 0; i < camera_count; ++i) {
+        mrxs_camera_t* camera = mrxs->cameras + i;
+        camera->x = camera->raw_x - min_x;
+        camera->y = camera->raw_y - min_y;
+    }
+
+    mrxs->base_width_in_pixels = max_x - min_x;
+    mrxs->base_height_in_pixels = max_y - min_y;
+    mrxs->max_aligned_overlap_level = 0;
+    while (((1 << (mrxs->max_aligned_overlap_level + 1)) <= divisions) &&
+           ((divisions % (1 << (mrxs->max_aligned_overlap_level + 1))) == 0)) {
+        ++mrxs->max_aligned_overlap_level;
+    }
+
+    console_print_verbose("MRXS overlap geometry: %d/%d camera positions present, logical size %dx%d px, aligned through level %d\n",
+                          present_count, camera_count, mrxs->base_width_in_pixels, mrxs->base_height_in_pixels,
+                          mrxs->max_aligned_overlap_level);
+    return true;
+}
+
 bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t* directory) {
     bool success = false;
 
@@ -700,7 +796,9 @@ bool mrxs_open_from_directory(mrxs_t* mrxs, file_info_t* file, directory_info_t*
 
         if (mrxs->has_overlapping_tiles) {
             // Load the slide position file
-            mrxs_load_slide_position_file(mrxs);
+            if (mrxs_load_slide_position_file(mrxs)) {
+                mrxs_prepare_overlap_geometry(mrxs);
+            }
         }
 
 
@@ -767,32 +865,198 @@ u8* mrxs_decode_image_to_bgra(u8* compressed_data, size_t compressed_length, enu
     return result;
 }
 
-u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
-	u8* result = NULL;
-	if (level >= 0 && level < mrxs->level_count) {
-		mrxs_level_t* mrxs_level = mrxs->levels + level;
-        if (!mrxs->has_overlapping_tiles) {
-            // No overlapping tiles -> relatively straightforward
-            if (tile_index >= 0 && tile_index < mrxs_level->width_in_tiles * mrxs_level->height_in_tiles) {
-                mrxs_tile_t* tile = mrxs_level->tiles + tile_index;
-                mrxs_hier_entry_t hier_entry = tile->hier_entry;
-                if (mrxs->dat_file_handles && hier_entry.file < mrxs->dat_count) {
-                    file_handle_t file_handle = mrxs->dat_file_handles[hier_entry.file];
-                    if (file_handle) {
-                        temp_memory_t temp = begin_temp_memory_on_local_thread();
-                        u8* compressed_tile_data = (u8*)arena_push_size(temp.arena, hier_entry.length);
-                        size_t bytes_read = file_handle_read_at_offset(compressed_tile_data, file_handle, hier_entry.offset, hier_entry.length);
-                        if (bytes_read == hier_entry.length) {
-                            result = mrxs_decode_image_to_bgra(compressed_tile_data, hier_entry.length, mrxs_level->image_format, mrxs->tile_width, mrxs->tile_height);
-                        }
-                        release_temp_memory(&temp);
+static u8* mrxs_decode_stored_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 stored_tile_index) {
+    u8* result = NULL;
+    if (!(level >= 0 && level < mrxs->level_count)) {
+        return NULL;
+    }
+    mrxs_level_t* mrxs_level = mrxs->levels + level;
+    if (stored_tile_index >= 0 && stored_tile_index < mrxs_level->width_in_tiles * mrxs_level->height_in_tiles) {
+        mrxs_tile_t* tile = mrxs_level->tiles + stored_tile_index;
+        mrxs_hier_entry_t hier_entry = tile->hier_entry;
+        if (mrxs->dat_file_handles && hier_entry.length > 0 && hier_entry.file < mrxs->dat_count) {
+            file_handle_t file_handle = mrxs->dat_file_handles[hier_entry.file];
+            if (file_handle) {
+                temp_memory_t temp = begin_temp_memory_on_local_thread();
+                u8* compressed_tile_data = (u8*)arena_push_size(temp.arena, hier_entry.length);
+                size_t bytes_read = file_handle_read_at_offset(compressed_tile_data, file_handle, hier_entry.offset, hier_entry.length);
+                if (bytes_read == hier_entry.length) {
+                    result = mrxs_decode_image_to_bgra(compressed_tile_data, hier_entry.length, mrxs_level->image_format,
+                                                       mrxs_level->tile_width, mrxs_level->tile_height);
+                }
+                release_temp_memory(&temp);
+            }
+        }
+    }
+    return result;
+}
+
+static void mrxs_copy_patch_to_output(u8* output, i32 output_width, u8* patch, i32 patch_width, i32 patch_height,
+                                      i32 dst_x, i32 dst_y) {
+    for (i32 y = 0; y < patch_height; ++y) {
+        u8* dst = output + ((dst_y + y) * output_width + dst_x) * 4;
+        u8* src = patch + y * patch_width * 4;
+        memcpy(dst, src, patch_width * 4);
+    }
+}
+
+static void mrxs_composite_decoded_tile(u8* output, i32 output_width, i32 output_height,
+                                        u8* decoded_tile, i32 src_width, i32 src_height,
+                                        float src_global_x, float src_global_y,
+                                        float out_global_x, float out_global_y) {
+    float src_left = src_global_x;
+    float src_top = src_global_y;
+    float src_right = src_global_x + (float)src_width;
+    float src_bottom = src_global_y + (float)src_height;
+    float out_left = out_global_x;
+    float out_top = out_global_y;
+    float out_right = out_global_x + (float)output_width;
+    float out_bottom = out_global_y + (float)output_height;
+
+    if (!mrxs_rects_overlap_f32(src_left, src_top, src_right, src_bottom, out_left, out_top, out_right, out_bottom)) {
+        return;
+    }
+
+    i32 dst_global_left = MAX((i32)floorf(MAX(src_left, out_left)), (i32)out_global_x);
+    i32 dst_global_top = MAX((i32)floorf(MAX(src_top, out_top)), (i32)out_global_y);
+    i32 dst_global_right = MIN((i32)ceilf(MIN(src_right, out_right)), (i32)(out_global_x + output_width));
+    i32 dst_global_bottom = MIN((i32)ceilf(MIN(src_bottom, out_bottom)), (i32)(out_global_y + output_height));
+    i32 dst_w = dst_global_right - dst_global_left;
+    i32 dst_h = dst_global_bottom - dst_global_top;
+    if (dst_w <= 0 || dst_h <= 0) {
+        return;
+    }
+
+    i32 dst_x = dst_global_left - (i32)out_global_x;
+    i32 dst_y = dst_global_top - (i32)out_global_y;
+    float src_box_x = (float)dst_global_left - src_global_x;
+    float src_box_y = (float)dst_global_top - src_global_y;
+
+    bool integral_copy = fabsf(src_box_x - roundf(src_box_x)) < 0.001f &&
+                         fabsf(src_box_y - roundf(src_box_y)) < 0.001f;
+    if (integral_copy) {
+        i32 src_x = (i32)roundf(src_box_x);
+        i32 src_y = (i32)roundf(src_box_y);
+        if (src_x >= 0 && src_y >= 0 && src_x + dst_w <= src_width && src_y + dst_h <= src_height) {
+            for (i32 y = 0; y < dst_h; ++y) {
+                u8* dst = output + ((dst_y + y) * output_width + dst_x) * 4;
+                u8* src = decoded_tile + ((src_y + y) * src_width + src_x) * 4;
+                memcpy(dst, src, dst_w * 4);
+            }
+            return;
+        }
+    }
+
+    image_buffer_t src = {
+        .pixels = decoded_tile,
+        .channels = 4,
+        .width = src_width,
+        .height = src_height,
+        .stride_in_pixels = src_width,
+        .stride_in_bytes = src_width * 4,
+        .pixel_format = PIXEL_FORMAT_U8_BGRA,
+        .is_valid = true,
+    };
+    image_buffer_t patch = create_bgra_image_buffer(dst_w, dst_h);
+    if (patch.is_valid) {
+        rect2f box = RECT2F(src_box_x, src_box_y, (float)dst_w, (float)dst_h);
+        if (image_resample_lanczos3(&src, &patch, box)) {
+            mrxs_copy_patch_to_output(output, output_width, patch.pixels, patch.width, patch.height, dst_x, dst_y);
+        }
+        destroy_image_buffer(&patch);
+    }
+}
+
+static u8* mrxs_decode_aligned_overlap_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 logical_tile_index) {
+    mrxs_level_t* mrxs_level = mrxs->levels + level;
+    i32 logical_width_in_tiles = mrxs_ceil_div_i32(mrxs_ceil_div_i32(mrxs->base_width_in_pixels, 1 << level),
+                                                   mrxs_level->tile_width);
+    i32 logical_height_in_tiles = mrxs_ceil_div_i32(mrxs_ceil_div_i32(mrxs->base_height_in_pixels, 1 << level),
+                                                    mrxs_level->tile_height);
+    if (!(logical_tile_index >= 0 && logical_tile_index < logical_width_in_tiles * logical_height_in_tiles)) {
+        return NULL;
+    }
+
+    u8* result = malloc(mrxs_level->tile_width * mrxs_level->tile_height * 4);
+    if (!result) {
+        return NULL;
+    }
+    mrxs_fill_bgra(result, mrxs_level->tile_width, mrxs_level->tile_height, mrxs_level->image_fill_color_bgr);
+
+    i32 logical_tile_x = logical_tile_index % logical_width_in_tiles;
+    i32 logical_tile_y = logical_tile_index / logical_width_in_tiles;
+    float scale = (float)(1 << level);
+    float out_global_x = (float)(logical_tile_x * mrxs_level->tile_width);
+    float out_global_y = (float)(logical_tile_y * mrxs_level->tile_height);
+    float out_right = out_global_x + (float)mrxs_level->tile_width;
+    float out_bottom = out_global_y + (float)mrxs_level->tile_height;
+    i32 divisions_at_level = mrxs->camera_image_divisions_per_slide >> level;
+    if (divisions_at_level <= 0) {
+        free(result);
+        return NULL;
+    }
+
+    for (i32 camera_y = 0; camera_y < mrxs->camera_grid_height; ++camera_y) {
+        for (i32 camera_x = 0; camera_x < mrxs->camera_grid_width; ++camera_x) {
+            i32 camera_index = camera_y * mrxs->camera_grid_width + camera_x;
+            mrxs_camera_t* camera = mrxs->cameras + camera_index;
+            if (!camera->present) {
+                continue;
+            }
+
+            float camera_level_x = (float)camera->x / scale;
+            float camera_level_y = (float)camera->y / scale;
+            float camera_level_right = camera_level_x + (float)(divisions_at_level * mrxs_level->tile_width);
+            float camera_level_bottom = camera_level_y + (float)(divisions_at_level * mrxs_level->tile_height);
+            if (!mrxs_rects_overlap_f32(camera_level_x, camera_level_y, camera_level_right, camera_level_bottom,
+                                        out_global_x, out_global_y, out_right, out_bottom)) {
+                continue;
+            }
+
+            for (i32 local_tile_y = 0; local_tile_y < divisions_at_level; ++local_tile_y) {
+                for (i32 local_tile_x = 0; local_tile_x < divisions_at_level; ++local_tile_x) {
+                    i32 stored_tile_x = camera_x * divisions_at_level + local_tile_x;
+                    i32 stored_tile_y = camera_y * divisions_at_level + local_tile_y;
+                    if (stored_tile_x >= mrxs_level->width_in_tiles || stored_tile_y >= mrxs_level->height_in_tiles) {
+                        continue;
+                    }
+                    float src_global_x = camera_level_x + (float)(local_tile_x * mrxs_level->tile_width);
+                    float src_global_y = camera_level_y + (float)(local_tile_y * mrxs_level->tile_height);
+                    if (!mrxs_rects_overlap_f32(src_global_x, src_global_y,
+                                                src_global_x + (float)mrxs_level->tile_width,
+                                                src_global_y + (float)mrxs_level->tile_height,
+                                                out_global_x, out_global_y, out_right, out_bottom)) {
+                        continue;
+                    }
+
+                    i32 stored_tile_index = stored_tile_y * mrxs_level->width_in_tiles + stored_tile_x;
+                    u8* decoded_tile = mrxs_decode_stored_tile_to_bgra(mrxs, level, stored_tile_index);
+                    if (decoded_tile) {
+                        mrxs_composite_decoded_tile(result, mrxs_level->tile_width, mrxs_level->tile_height,
+                                                    decoded_tile, mrxs_level->tile_width, mrxs_level->tile_height,
+                                                    src_global_x, src_global_y, out_global_x, out_global_y);
+                        free(decoded_tile);
                     }
                 }
             }
-        } else {
-            // Overlapping tiles -> more complicated situation
-            // TODO: implement this code path
+        }
+    }
 
+    return result;
+}
+
+u8* mrxs_decode_tile_to_bgra(mrxs_t* mrxs, i32 level, i32 tile_index) {
+	u8* result = NULL;
+	if (level >= 0 && level < mrxs->level_count) {
+        if (!mrxs->has_overlapping_tiles) {
+            // No overlapping tiles -> relatively straightforward
+            result = mrxs_decode_stored_tile_to_bgra(mrxs, level, tile_index);
+        } else {
+            if (mrxs->cameras && level <= mrxs->max_aligned_overlap_level) {
+                result = mrxs_decode_aligned_overlap_tile_to_bgra(mrxs, level, tile_index);
+            } else {
+                result = mrxs_decode_stored_tile_to_bgra(mrxs, level, tile_index);
+            }
         }
 	}
 	return result;
@@ -838,6 +1102,9 @@ void mrxs_destroy(mrxs_t* mrxs) {
 	}
     if (mrxs->camera_positions) {
         libc_free(mrxs->camera_positions);
+    }
+    if (mrxs->cameras) {
+        free(mrxs->cameras);
     }
 	memset(mrxs, 0, sizeof(mrxs_t));
 }

@@ -293,6 +293,7 @@ set(SLIDESCAPE_NONGUI_BASE_FILES
         src/utils/timerutils.c
         src/platform/platform_mutex.c
         src/core/image.c
+        src/core/image_resize.c
         src/core/image_loader.c
         src/core/tile_cache.c
         src/core/tile_loader.c
@@ -350,7 +351,6 @@ set(VIEWER_SOURCE_FILES
         core/remote.c
         core/slide_score.c
         core/image_registration.c
-        core/image_resize.c
         imgui/imgui.cpp
         imgui/imgui_demo.cpp
         imgui/imgui_draw.cpp

@@ -169,6 +169,14 @@ typedef struct mrxs_simple_image_t {
     mrxs_nonhier_entry_t entry;
 } mrxs_simple_image_t;
 
+typedef struct mrxs_camera_t {
+    bool present;
+    i32 raw_x;
+    i32 raw_y;
+    i32 x;
+    i32 y;
+} mrxs_camera_t;
+
 typedef struct mrxs_t {
     memrw_t string_pool; // NOTE: need destroy
     const char* index_dat_filename;
@@ -190,6 +198,14 @@ typedef struct mrxs_t {
     mrxs_nonhier_entry_t stitching_intensity_layer_entry;
     i32 camera_position_count;
     mrxs_slide_position_t* camera_positions;
+    i32 camera_grid_width;
+    i32 camera_grid_height;
+    i32 camera_width;
+    i32 camera_height;
+    i32 camera_origin_x;
+    i32 camera_origin_y;
+    i32 max_aligned_overlap_level;
+    mrxs_camera_t* cameras;
     mrxs_simple_image_t scanmap_image;
     mrxs_simple_image_t stageposmap_image;
     mrxs_simple_image_t thumbnail_image;

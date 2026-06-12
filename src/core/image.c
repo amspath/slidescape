@@ -686,11 +686,15 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 			level_image->downsample_factor = exp2f((float)level_index);
 			level_image->width_in_pixels = ceil_div_f64(image->width_in_pixels, level_image->downsample_factor);
 			level_image->height_in_pixels = ceil_div_f64(image->height_in_pixels, level_image->downsample_factor);
-			level_image->width_in_tiles = mrxs_level->width_in_tiles;
+			level_image->width_in_tiles = mrxs->has_overlapping_tiles
+			                              ? (u32)ceil_div_i64(level_image->width_in_pixels, mrxs_level->tile_width)
+			                              : mrxs_level->width_in_tiles;
 			ASSERT(level_image->width_in_tiles > 0);
-			level_image->height_in_tiles = mrxs_level->height_in_tiles;
+			level_image->height_in_tiles = mrxs->has_overlapping_tiles
+			                               ? (u32)ceil_div_i64(level_image->height_in_pixels, mrxs_level->tile_height)
+			                               : mrxs_level->height_in_tiles;
 			ASSERT(level_image->height_in_tiles > 0);
-			level_image->tile_count = mrxs_level->height_in_tiles * mrxs_level->width_in_tiles;
+			level_image->tile_count = level_image->height_in_tiles * level_image->width_in_tiles;
 			level_image->tile_width = mrxs_level->tile_width;
 			level_image->tile_height = mrxs_level->tile_height;
 			if (mrxs_level->tile_width != image->tile_width) {
@@ -720,9 +724,11 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 				tile->tile_x = tile_index % level_image->width_in_tiles;
 				tile->tile_y = tile_index / level_image->width_in_tiles;
 
-				mrxs_tile_t* mrxs_tile = mrxs_level->tiles + tile_index;
-				if (mrxs_tile->hier_entry.length == 0) {
-					tile->is_empty = true;
+				if (!mrxs->has_overlapping_tiles && tile_index < mrxs_level->height_in_tiles * mrxs_level->width_in_tiles) {
+					mrxs_tile_t* mrxs_tile = mrxs_level->tiles + tile_index;
+					if (mrxs_tile->hier_entry.length == 0) {
+						tile->is_empty = true;
+					}
 				}
 			}
 			DUMMY_STATEMENT;
