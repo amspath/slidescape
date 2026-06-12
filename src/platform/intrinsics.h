@@ -36,7 +36,7 @@
 #elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 /* GCC-compatible compiler, targeting x86/x86-64 */
 #include <x86intrin.h>
-#elif defined(__GNUC__) && defined(__ARM_NEON__)
+#elif defined(__GNUC__) && (defined(__ARM_NEON__) || defined(__ARM_NEON))
 /* GCC-compatible compiler, targeting ARM with NEON */
      #include <arm_neon.h>
 #elif defined(__GNUC__) && defined(__IWMMXT__)
@@ -146,7 +146,7 @@ static inline u32 atomic_or(volatile u32* x, u32 mask) {
 }
 
 static inline u32 bit_scan_forward(u32 x) {
-	return _bit_scan_forward(x);
+	return __builtin_ctz(x);
 }
 
 #endif
@@ -337,6 +337,6 @@ static inline i32 popcount(u32 x) {
 }
 #else
 static inline i32 popcount(u32 x) {
-    return _popcnt32(x);
+    return __builtin_popcount(x);
 }
 #endif
