@@ -243,7 +243,7 @@ u8* jpeg_decode_ndpi_image(u8* input_ptr, u32 input_length, i32 width, i32 heigh
 
 EMSCRIPTEN_KEEPALIVE
 uint8_t *create_buffer(int size) {
-	return libc_malloc(size * sizeof(uint8_t));
+	return malloc(size * sizeof(uint8_t));
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -362,4 +362,3 @@ void jpeg_encode_image(u8* pixels, i32 width, i32 height, i32 quality, u8** jpeg
 
 	jpeg_destroy_compress(&cinfo);
 }
-

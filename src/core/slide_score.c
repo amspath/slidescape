@@ -25,6 +25,10 @@
 
 #include "json.h"
 
+static void* slide_score_json_alloc(void* user_data, size_t size) {
+    (void)user_data;
+    return malloc(size);
+}
 
 web_api_binding_t slide_score_api_get_tile_server_bindings_template[] = {
         {"cookiePart", offsetof(slide_score_get_tile_server_result_t, cookie_part), FIELD_TYPE_STRING_256CHARS},
@@ -310,7 +314,7 @@ slide_score_api_result_t debug_slide_score_api_handle_response(const char* json,
     slide_score_api_result_t parsed_api_result = {};
     parsed_api_result.api = api;
 
-    struct json_value_s* root = json_parse(json, json_length);
+    struct json_value_s* root = json_parse_ex(json, json_length, json_parse_flags_default, slide_score_json_alloc, NULL, NULL);
     if (root) {
         if (root->type == json_type_object) {
             struct json_object_s* object = (struct json_object_s*)root->payload;

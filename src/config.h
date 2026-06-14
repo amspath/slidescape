@@ -14,7 +14,9 @@
 
 #define NO_TIMER_INITIALIZED_RUNTIME_CHECK
 
+#if !defined(__linux__)
 #define USE_LTALLOC_INSTEAD_OF_MALLOC
+#endif
 
 #define USE_OPENGL_DEBUG_CONTEXT DO_DEBUG
 

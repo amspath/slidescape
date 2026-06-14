@@ -25,6 +25,11 @@
 #define SHEREDOM_JSON_IMPLEMENTATION
 #include "json.h"
 
+static void* geojson_json_alloc(void* user_data, size_t size) {
+	(void)user_data;
+	return malloc(size);
+}
+
 static bool json_string_equals(json_string_s* string, const char* cstr) {
 	return string && strlen(cstr) == string->string_size && strncmp(string->string, cstr, string->string_size) == 0;
 }
@@ -287,7 +292,7 @@ bool load_geojson_annotations(app_state_t* app_state, const char* filename) {
 
 	bool success = false;
 	i64 start = get_clock();
-	json_value_s* root = json_parse((const char*)file->data, file->len);
+	json_value_s* root = json_parse_ex((const char*)file->data, file->len, json_parse_flags_default, geojson_json_alloc, NULL, NULL);
 	json_object_s* root_object = NULL;
 	json_string_s* root_type = NULL;
 	json_array_s* features = NULL;
