@@ -1629,6 +1629,13 @@ void draw_annotations(app_state_t* app_state, scene_t* scene, annotation_set_t* 
 		annotation_batch_count = MAX_EXTRA_DRAWLISTS;
 		global_active_extra_drawlists = MAX_EXTRA_DRAWLISTS;
 	}
+
+	// Ensure extra drawlists are created and registered with ImGui's font atlas on the main thread.
+	// Creating them from annotation worker threads would mutate atlas->DrawListSharedDatas concurrently.
+	for (i32 batch = 0; batch < annotation_batch_count; ++batch) {
+		gui_get_extra_drawlist(batch);
+	}
+
 	volatile i32 completion_counter = 0;
 	if (enable_multithreaded_annotation_drawing) {
 		for (i32 batch = 0; batch < annotation_batch_count; ++batch) {
