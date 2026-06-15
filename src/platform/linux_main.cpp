@@ -38,6 +38,7 @@
 
 #include "misc/freetype/imgui_freetype.h"
 
+#include <errno.h>
 #include <pthread.h>
 
 #if DO_DEBUG
@@ -305,6 +306,50 @@ void load_dicom_task(int logical_thread_index, void* userdata) {
 	is_dicom_loading_done = true;
 }
 
+static char settings_dir[512];
+
+static bool ensure_directory_exists(const char* path) {
+	if (is_directory(path)) {
+		return true;
+	}
+	if (mkdir(path, 0700) == 0) {
+		return true;
+	}
+	if (errno == EEXIST && is_directory(path)) {
+		return true;
+	}
+	console_print_error("Error: Could not create settings directory '%s': %s\n", path, strerror(errno));
+	return false;
+}
+
+static void setup_settings_dir() {
+	const char* home = getenv("HOME");
+	if (!home || !home[0]) {
+		return;
+	}
+
+	char config_root[512];
+#if APPLE
+	snprintf(config_root, sizeof(config_root), "%s/Library/Application Support", home);
+#else
+	const char* xdg_config_home = getenv("XDG_CONFIG_HOME");
+	if (xdg_config_home && xdg_config_home[0] == '/') {
+		snprintf(config_root, sizeof(config_root), "%s", xdg_config_home);
+	} else {
+		snprintf(config_root, sizeof(config_root), "%s/.config", home);
+	}
+#endif
+
+	if (!ensure_directory_exists(config_root)) {
+		return;
+	}
+
+	snprintf(settings_dir, sizeof(settings_dir), "%s/Slidescape", config_root);
+	if (ensure_directory_exists(settings_dir)) {
+		global_settings_dir = settings_dir;
+	}
+}
+
 extern SDL_Window* g_window;
 
 static i32 need_check_window_focus_gained_after_frames;
@@ -330,6 +375,7 @@ int main(int argc, const char** argv)
 
     if (verbose_console) console_print("Starting up...\n");
     init_global_system_info(verbose_console);
+	setup_settings_dir();
 
 	app_state_t* app_state = &global_app_state;
 	init_app_state(app_state, app_command);
