@@ -1041,6 +1041,7 @@ void deselect_annotation_coordinates(annotation_set_t* annotation_set) {
 void notify_annotation_set_modified(annotation_set_t* annotation_set) {
 	annotation_set->modified = true; // need to (auto-)save the changes
 	annotation_set->last_modification_time = get_clock();
+	atomic_increment(&annotation_set->save_generation);
 }
 
 void annotation_invalidate_derived_calculations_from_coordinates(annotation_t* annotation) {
@@ -2994,6 +2995,9 @@ typedef struct save_annotations_async_task_t {
 	annotation_set_t* annotation_set;
 	const char* filename_out;
 	volatile i32* in_progress_state;
+	volatile i32* source_generation;
+	bool* source_modified;
+	i32 snapshot_generation;
 } save_annotations_async_task_t;
 
 static void save_annotations_async_func(i32 logical_thread_id, void* userdata) {
@@ -3007,6 +3011,9 @@ static void save_annotations_async_func(i32 logical_thread_id, void* userdata) {
 //		console_print("threading test: proceeding with save\n");
 
 		save_annotations_with_backup(task->app_state, task->annotation_set, task->filename_out);
+		if (*task->source_generation == task->snapshot_generation) {
+			*task->source_modified = false;
+		}
 		*task->in_progress_state = 0;
 	}
 	// Destroy the deep copy of the annotation set we received
@@ -3054,6 +3061,9 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 					.annotation_set = copy,
 					.filename_out = annotation_set->annotation_filename,
 					.in_progress_state = &annotation_set->is_saving_in_progress,
+					.source_generation = &annotation_set->save_generation,
+					.source_modified = &annotation_set->modified,
+					.snapshot_generation = annotation_set->save_generation,
 				};
 				if (thread_pool_submit_task(&global_thread_pool, save_annotations_async_func, &task, sizeof(save_annotations_async_task_t))) {
 					// annotations will be saved on a worker thread
@@ -3065,11 +3075,9 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 			} else {
 				// Save annotations synchronously on the main thread
 				save_annotations_with_backup(app_state, annotation_set, annotation_set->annotation_filename);
+				annotation_set->modified = false;
 			}
 		}
-		annotation_set->modified = false;
-
-
 	}
 }
 

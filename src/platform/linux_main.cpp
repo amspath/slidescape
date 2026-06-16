@@ -752,7 +752,7 @@ int main(int argc, const char** argv)
     }
 
     autosave(app_state, true, false); // save any unsaved changes
-	viewer_save_options(app_state);
+	viewer_save_options_sync(app_state);
 
 	// Cleanup
 	gui_destroy_all_extra_drawlists();

@@ -152,6 +152,7 @@ typedef struct annotation_set_t {
 	annotation_file_format_enum preferred_output_format;
 	bool modified;
 	i64 last_modification_time;
+	volatile i32 save_generation;
 	i32 hovered_annotation;
 	i32 hovered_coordinate;
 	float hovered_coordinate_pixel_distance;

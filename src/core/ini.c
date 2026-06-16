@@ -20,8 +20,19 @@
 #include "platform.h"
 #include "stringutils.h"
 #include "memrw.h"
+#include "intrinsics.h"
 
 #include "ini.h"
+
+typedef struct ini_save_async_task_t {
+	char filename[1024];
+	u8* data;
+	u64 data_size;
+	i32 generation;
+} ini_save_async_task_t;
+
+static platform_mutex_t ini_save_mutex = PLATFORM_MUTEX_INITIALIZER;
+static volatile i32 ini_save_generation;
 
 i32 count_leading_whitespace(const char* str, size_t len) {
 	i32 count = 0;
@@ -380,9 +391,7 @@ static void ini_write_registered_options(memrw_t* out, ini_section_t* section, b
 	}
 }
 
-void ini_save(ini_t* ini, const char* filename) {
-	if (!ini) return;
-
+static memrw_t ini_build_save_buffer(ini_t* ini) {
 	memrw_t out = {0};
 	memrw_init(&out, KILOBYTES(32));
 
@@ -456,17 +465,69 @@ void ini_save(ini_t* ini, const char* filename) {
 		ini_write_registered_options(&out, section, written_options);
 	}
 
-	file_stream_t fp = file_stream_open_for_writing(filename);
-	if (fp) {
-		file_stream_write(out.data, out.used_size, fp);
-		file_stream_close(fp);
-	} else {
-		console_print_error("Error: Could not save settings to '%s'\n", filename);
-	}
-
 	for (i32 section_index = 0; section_index < arrlen(written_by_section); ++section_index) {
 		free(written_by_section[section_index]);
 	}
 	arrfree(written_by_section);
+
+	return out;
+}
+
+static void ini_write_buffer_to_file(const char* filename, u8* data, u64 data_size) {
+	file_stream_t fp = file_stream_open_for_writing(filename);
+	if (fp) {
+		file_stream_write(data, data_size, fp);
+		file_stream_close(fp);
+	} else {
+		console_print_error("Error: Could not save settings to '%s'\n", filename);
+	}
+}
+
+static void ini_save_async_func(i32 logical_thread_index, void* userdata) {
+	(void)logical_thread_index;
+	ini_save_async_task_t* task = (ini_save_async_task_t*)userdata;
+	platform_mutex_lock(&ini_save_mutex);
+	if (task->generation == ini_save_generation) {
+		ini_write_buffer_to_file(task->filename, task->data, task->data_size);
+	}
+	platform_mutex_unlock(&ini_save_mutex);
+	free(task->data);
+}
+
+void ini_save_sync(ini_t* ini, const char* filename) {
+	if (!ini) return;
+
+	i32 generation = atomic_increment(&ini_save_generation);
+	memrw_t out = ini_build_save_buffer(ini);
+	platform_mutex_lock(&ini_save_mutex);
+	if (generation == ini_save_generation) {
+		ini_write_buffer_to_file(filename, out.data, out.used_size);
+	}
+	platform_mutex_unlock(&ini_save_mutex);
+	memrw_destroy(&out);
+}
+
+void ini_save(ini_t* ini, const char* filename) {
+	if (!ini) return;
+
+	i32 generation = atomic_increment(&ini_save_generation);
+	memrw_t out = ini_build_save_buffer(ini);
+	ini_save_async_task_t task = {0};
+	copy_cstring(task.filename, filename, sizeof(task.filename));
+	task.data = out.data;
+	task.data_size = out.used_size;
+	task.generation = generation;
+
+	if (thread_pool_submit_task(&global_thread_pool, ini_save_async_func, &task, sizeof(task))) {
+		out.data = NULL;
+		out.used_size = 0;
+		out.capacity = 0;
+	} else {
+		platform_mutex_lock(&ini_save_mutex);
+		if (generation == ini_save_generation) {
+			ini_write_buffer_to_file(filename, out.data, out.used_size);
+		}
+		platform_mutex_unlock(&ini_save_mutex);
+	}
 	memrw_destroy(&out);
 }

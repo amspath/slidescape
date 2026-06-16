@@ -64,3 +64,11 @@ void viewer_save_options(app_state_t* app_state) {
 	}
 	ini_save(options_ini, options_ini_filename);
 }
+
+void viewer_save_options_sync(app_state_t* app_state) {
+	if (!options_ini) {
+		options_ini = ini_load_from_file(options_ini_filename);
+		viewer_register_options(options_ini, app_state);
+	}
+	ini_save_sync(options_ini, options_ini_filename);
+}
