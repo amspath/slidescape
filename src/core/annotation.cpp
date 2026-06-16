@@ -2901,6 +2901,8 @@ void unload_and_reinit_annotations(annotation_set_t* annotation_set) {
 annotation_set_t* duplicate_annotation_set(annotation_set_t* annotation_set) {
 	annotation_set_t* copy = (annotation_set_t*)malloc(sizeof(annotation_set_t));
 	*copy = *annotation_set;
+	copy->is_saving_in_progress = 0;
+	copy->selected_annotations = NULL;
 
 	copy->stored_annotations = NULL;
 	arrsetlen(copy->stored_annotations, copy->stored_annotation_count);
@@ -2993,7 +2995,7 @@ static void save_annotations_with_backup(app_state_t* app_state, annotation_set_
 typedef struct save_annotations_async_task_t {
 	app_state_t* app_state;
 	annotation_set_t* annotation_set;
-	const char* filename_out;
+	char filename_out[512];
 	volatile i32* in_progress_state;
 	volatile i32* source_generation;
 	bool* source_modified;
@@ -3059,12 +3061,12 @@ void save_annotations(app_state_t* app_state, annotation_set_t* annotation_set, 
 				save_annotations_async_task_t task = {
 					.app_state = app_state,
 					.annotation_set = copy,
-					.filename_out = annotation_set->annotation_filename,
 					.in_progress_state = &annotation_set->is_saving_in_progress,
 					.source_generation = &annotation_set->save_generation,
 					.source_modified = &annotation_set->modified,
 					.snapshot_generation = annotation_set->save_generation,
 				};
+				copy_cstring(task.filename_out, annotation_set->annotation_filename, sizeof(task.filename_out));
 				if (thread_pool_submit_task(&global_thread_pool, save_annotations_async_func, &task, sizeof(save_annotations_async_task_t))) {
 					// annotations will be saved on a worker thread
 					// The copy will be destroyed after saving is done
