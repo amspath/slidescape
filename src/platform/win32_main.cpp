@@ -1768,6 +1768,7 @@ int main() {
 	}
 
 	autosave(app_state, true, false); // save any unsaved changes
+	viewer_save_options(app_state);
 	gui_destroy_all_extra_drawlists();
 
 	return 0;

@@ -90,6 +90,7 @@ void ini_register_option(ini_t* ini, const char* name, u32 link_type, u32 link_s
 void ini_register_i32(ini_t* ini, const char* name, i32* link);
 void ini_register_bool(ini_t* ini, const char* name, bool* link);
 ini_t* ini_load_from_file(const char* filename);
+void ini_save(ini_t* ini, const char* filename);
 
 #ifdef __cplusplus
 }

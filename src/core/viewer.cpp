@@ -1730,11 +1730,13 @@ void do_after_scene_render(app_state_t* app_state, input_t* input) {
 	// TODO: fix 'sticky' Alt key after Alt+Enter
 	if (was_key_pressed(input, KEY_F12) && input->keyboard.key_alt.down) {
 		show_menu_bar = !show_menu_bar;
+		viewer_save_options(app_state);
 	}
 	if (was_key_pressed(input, KEY_F6)) {
 		// Load the next image dragged on top of the window as a new layer/overlay instead of a base image.
 		if (arrlen(app_state->loaded_images) >= 1) {
 			load_next_image_as_overlay = true;
+			viewer_save_options(app_state);
 		}
 	}
 	if (!gui_want_capture_keyboard) {

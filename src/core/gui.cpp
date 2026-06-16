@@ -305,6 +305,8 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 		bool prev_is_vsync_enabled = is_vsync_enabled;
 		bool prev_fullscreen = is_fullscreen;
+		bool prev_enable_autosave = app_state->enable_autosave;
+		bool prev_remember_annotation_groups_as_template = app_state->remember_annotation_groups_as_template;
 		bool has_image_loaded = (arrlen(app_state->loaded_images) > 0);
 		bool can_save = scene->annotation_set.modified;
 
@@ -439,6 +441,7 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 			}
 		} else if (prev_is_vsync_enabled != is_vsync_enabled) {
 			set_swap_interval(is_vsync_enabled ? 1 : 0);
+			viewer_save_options(app_state);
 		} else if (menu_items_clicked.export_region) {
 
 			if (scene->can_export_region) {
@@ -450,6 +453,12 @@ static void gui_draw_main_menu_bar(app_state_t* app_state) {
 
 		} else if (menu_items_clicked.reset_zoom) {
 			scene->need_zoom_reset = true;
+		}
+
+		if (prev_enable_autosave != app_state->enable_autosave ||
+		    prev_remember_annotation_groups_as_template != app_state->remember_annotation_groups_as_template
+        ) {
+			viewer_save_options(app_state);
 		}
 	}
 
@@ -1411,6 +1420,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 		ImGui::SetNextWindowSize(ImVec2(350, 250), ImGuiCond_FirstUseEver);
 
 		ImGui::Begin("General options", &show_general_options_window);
+		bool general_options_changed = false;
 		static ImGuiComboFlags combo_flags = 0;
 		ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_None;
 		if (ImGui::BeginTabBar("General options tab bar", tab_bar_flags)) {
@@ -1452,12 +1462,16 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 			if (ImGui::BeginTabItem("Controls")) {
 				ImGui::TextUnformatted("Panning speed");
-				ImGui::SliderInt("Mouse sensitivity", &app_state->mouse_sensitivity, 1, 50);
-				ImGui::SliderInt("Keyboard sensitivity", &app_state->keyboard_base_panning_speed, 1, 50);
+				general_options_changed |= ImGui::SliderInt("Mouse sensitivity", &app_state->mouse_sensitivity, 1, 50);
+				general_options_changed |= ImGui::SliderInt("Keyboard sensitivity", &app_state->keyboard_base_panning_speed, 1, 50);
 				ImGui::EndTabItem();
 			}
 
 			if (ImGui::BeginTabItem("Advanced")) {
+				bool prev_use_builtin_tiff_backend = app_state->use_builtin_tiff_backend;
+				bool prev_use_native_mrxs_backend = global_use_native_mrxs_backend;
+				bool prev_is_vsync_enabled = is_vsync_enabled;
+
 				ImGui::Text("\nTIFF backend");
 //		        ImGui::Checkbox("Prefer built-in TIFF backend over OpenSlide", &use_builtin_tiff_backend);
 				const char* tiff_backends[] = {"Built-in", "OpenSlide"};
@@ -1497,11 +1511,13 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 
 				ImGui::NewLine();
 
-				bool prev_is_vsync_enabled = is_vsync_enabled;
 				ImGui::Checkbox("Enable Vsync", &is_vsync_enabled);
 				if (prev_is_vsync_enabled != is_vsync_enabled) {
 					set_swap_interval(is_vsync_enabled ? 1 : 0);
 				}
+				general_options_changed |= (prev_use_builtin_tiff_backend != app_state->use_builtin_tiff_backend);
+				general_options_changed |= (prev_use_native_mrxs_backend != global_use_native_mrxs_backend);
+				general_options_changed |= (prev_is_vsync_enabled != is_vsync_enabled);
 				ImGui::EndTabItem();
 			}
 
@@ -1509,17 +1525,11 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 			ImGui::EndTabBar();
 		}
 
-
-
-
-
-
-
 		ImGui::End();
+		if (general_options_changed) {
+			viewer_save_options(app_state);
+		}
 	}
-
-
-
 
 	if (show_annotations_window || show_annotation_group_assignment_window) {
 		draw_annotations_window(app_state, input);

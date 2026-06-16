@@ -301,6 +301,7 @@ void tiff_load_tile_batch_func(i32 logical_thread_index, void* userdata);
 
 // viewer_options.cpp
 void viewer_init_options(app_state_t* app_state);
+void viewer_save_options(app_state_t* app_state);
 
 // viewer_commandline.cpp
 app_command_t app_parse_commandline(int argc, const char** argv);

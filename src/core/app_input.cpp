@@ -64,17 +64,9 @@ static bool app_make_executable_relative_filename(const char* leaf_filename, cha
 
 bool app_get_slide_score_api_key_filename(char* buffer, size_t buffer_size) {
 	static const char leaf_filename[] = "api_key.txt";
-	if (file_exists(leaf_filename)) {
-		snprintf(buffer, buffer_size, "%s", leaf_filename);
+	if (global_settings_dir) {
+		snprintf(buffer, buffer_size, "%s" PATH_SEP "%s", global_settings_dir, leaf_filename);
 		return true;
-	}
-
-	char executable_relative[1024];
-	if (app_make_executable_relative_filename(leaf_filename, executable_relative, sizeof(executable_relative))) {
-		if (file_exists(executable_relative)) {
-			snprintf(buffer, buffer_size, "%s", executable_relative);
-			return true;
-		}
 	}
 
 	if (app_make_executable_relative_filename(leaf_filename, buffer, buffer_size)) {
@@ -84,16 +76,34 @@ bool app_get_slide_score_api_key_filename(char* buffer, size_t buffer_size) {
 	return true;
 }
 
-void app_read_slide_score_api_key(char* buffer, size_t buffer_size) {
-	buffer[0] = 0;
-	char key_filename[1024];
-	app_get_slide_score_api_key_filename(key_filename, sizeof(key_filename));
-	mem_t* key_file = platform_read_entire_file(key_filename);
+static bool app_read_slide_score_api_key_from_file(const char* filename, char* buffer, size_t buffer_size) {
+	mem_t* key_file = platform_read_entire_file(filename);
 	if (key_file) {
 		size_t key_len = ATMOST(key_file->len, buffer_size - 1);
 		memcpy(buffer, key_file->data, key_len);
 		buffer[key_len] = 0;
 		free(key_file);
+		return true;
+	}
+	return false;
+}
+
+void app_read_slide_score_api_key(char* buffer, size_t buffer_size) {
+	static const char leaf_filename[] = "api_key.txt";
+	buffer[0] = 0;
+	char key_filename[1024];
+	app_get_slide_score_api_key_filename(key_filename, sizeof(key_filename));
+	if (app_read_slide_score_api_key_from_file(key_filename, buffer, buffer_size)) {
+		return;
+	}
+
+	if (file_exists(leaf_filename) && app_read_slide_score_api_key_from_file(leaf_filename, buffer, buffer_size)) {
+		return;
+	}
+
+	char executable_relative[1024];
+	if (app_make_executable_relative_filename(leaf_filename, executable_relative, sizeof(executable_relative))) {
+		app_read_slide_score_api_key_from_file(executable_relative, buffer, buffer_size);
 	}
 }
 

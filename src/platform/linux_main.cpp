@@ -344,7 +344,11 @@ static void setup_settings_dir() {
 		return;
 	}
 
+#if APPLE
 	snprintf(settings_dir, sizeof(settings_dir), "%s/Slidescape", config_root);
+#else
+	snprintf(settings_dir, sizeof(settings_dir), "%s/slidescape", config_root);
+#endif
 	if (ensure_directory_exists(settings_dir)) {
 		global_settings_dir = settings_dir;
 	}
@@ -748,6 +752,7 @@ int main(int argc, const char** argv)
     }
 
     autosave(app_state, true, false); // save any unsaved changes
+	viewer_save_options(app_state);
 
 	// Cleanup
 	gui_destroy_all_extra_drawlists();

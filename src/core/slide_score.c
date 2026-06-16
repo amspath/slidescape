@@ -454,15 +454,31 @@ char* slide_score_build_qupath_tile_path(char* buffer, size_t buffer_size, slide
     return buffer;
 }
 
-static void read_slide_score_api_key(char* buffer, size_t buffer_size) {
-    buffer[0] = 0;
-    mem_t* key_file = platform_read_entire_file("api_key.txt");
+static bool slide_score_read_api_key_file(const char* filename, char* buffer, size_t buffer_size) {
+    mem_t* key_file = platform_read_entire_file(filename);
     if (key_file) {
         size_t key_len = ATMOST(key_file->len, buffer_size - 1);
         memcpy(buffer, key_file->data, key_len);
         buffer[key_len] = 0;
         free(key_file);
+        return true;
     }
+    return false;
+}
+
+static void slide_score_read_api_key(char* buffer, size_t buffer_size) {
+    static const char leaf_filename[] = "api_key.txt";
+    buffer[0] = 0;
+#ifndef SLIDESCAPE_TEST_FIXTURE_MANIFEST
+    if (global_settings_dir) {
+        char key_filename[1024];
+        snprintf(key_filename, sizeof(key_filename), "%s" PATH_SEP "%s", global_settings_dir, leaf_filename);
+        if (slide_score_read_api_key_file(key_filename, buffer, buffer_size)) {
+            return;
+        }
+    }
+#endif
+    slide_score_read_api_key_file(leaf_filename, buffer, buffer_size);
 }
 
 bool slide_score_open_remote_image(app_state_t* app_state, const char* server_url_or_hostname, const char* api_token, i32 image_id) {
@@ -470,7 +486,7 @@ bool slide_score_open_remote_image(app_state_t* app_state, const char* server_ur
     if (api_token == NULL) {
         char* api_key = (char*)alloca(4096);
         api_key[0] = '\0';
-        read_slide_score_api_key(api_key, 4096);
+        slide_score_read_api_key(api_key, 4096);
         api_token = api_key;
     }
 
