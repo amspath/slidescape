@@ -43,6 +43,22 @@ static void    imgui_free_wrapper(void* ptr, void* user_data)        { IM_UNUSED
 
 static char imgui_ini_filename[512];
 
+static void gui_sync_extra_drawlist_shared_data(ImDrawListSharedData* shared_data) {
+	ImDrawListSharedData* imgui_shared_data = ImGui::GetDrawListSharedData();
+	shared_data->TexUvWhitePixel = imgui_shared_data->TexUvWhitePixel;
+	shared_data->TexUvLines = imgui_shared_data->TexUvLines;
+	shared_data->FontAtlas = imgui_shared_data->FontAtlas;
+	shared_data->Font = imgui_shared_data->Font;
+	shared_data->FontSize = imgui_shared_data->FontSize;
+	shared_data->FontScale = imgui_shared_data->FontScale;
+	shared_data->CurveTessellationTol = imgui_shared_data->CurveTessellationTol;
+	shared_data->SetCircleTessellationMaxError(imgui_shared_data->CircleSegmentMaxError);
+	shared_data->InitialFringeScale = imgui_shared_data->InitialFringeScale;
+	shared_data->InitialFlags = imgui_shared_data->InitialFlags;
+	shared_data->ClipRectFullscreen = imgui_shared_data->ClipRectFullscreen;
+	shared_data->Context = imgui_shared_data->Context;
+}
+
 void imgui_create_context() {
 	// Setup Dear ImGui context
 	IMGUI_CHECKVERSION();
@@ -60,6 +76,7 @@ void imgui_create_context() {
 void gui_drawlist_reset_for_new_frame(ImDrawList* drawlist) {
 	// (no need to PopTexture()/PopClipRect()) since we reset every frame
 	// see: https://github.com/ocornut/imgui/issues/6406#issuecomment-1632826410
+	gui_sync_extra_drawlist_shared_data(drawlist->_Data);
 	drawlist->_ResetForNewFrame();
 	drawlist->PushTexture(ImGui::GetIO().Fonts->TexRef);
 	drawlist->PushClipRectFullScreen();
@@ -95,8 +112,7 @@ ImDrawList* gui_get_extra_drawlist(i32 drawlist_index) {
 	ImDrawList* drawlist = global_extra_drawlists[drawlist_index];
 	if (!drawlist) {
 		ImDrawListSharedData* shared_data = global_extra_drawlist_shared_datas + drawlist_index;
-		*shared_data = *ImGui::GetDrawListSharedData();
-		shared_data->DrawLists.resize(0);
+		gui_sync_extra_drawlist_shared_data(shared_data);
 		ImFontAtlasAddDrawListSharedData(shared_data->FontAtlas, shared_data);
 		global_extra_drawlists[drawlist_index] = drawlist = new ImDrawList(global_extra_drawlist_shared_datas + drawlist_index);
 		gui_drawlist_reset_for_new_frame(drawlist);

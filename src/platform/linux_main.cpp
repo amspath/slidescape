@@ -691,10 +691,10 @@ int main(int argc, const char** argv)
         }
 
         // Start the Dear ImGui frame
-	    gui_reset_all_extra_drawlists();
 		presenter_imgui_new_frame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
+	    gui_reset_all_extra_drawlists();
 
         // Update and render our application
         viewer_update_and_render(app_state, curr_input, display_w, display_h, delta_t);

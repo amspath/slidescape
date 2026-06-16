@@ -35,10 +35,10 @@ static float win32_current_gui_dpi_scale;
 
 void win32_gui_new_frame(app_state_t* app_state) {
 	// Init for the frame
-	gui_reset_all_extra_drawlists();
 	presenter_imgui_new_frame();
 	ImGui_ImplWin32_NewFrame();
 	ImGui::NewFrame();
+	gui_reset_all_extra_drawlists();
 }
 
 static void win32_load_imgui_fonts() {
