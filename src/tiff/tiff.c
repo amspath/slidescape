@@ -1885,8 +1885,16 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 				u64 pixel_count = level_ifd->tile_width * decompressed_height;
 				i32 source_pos = 0;
 				if (level_ifd->samples_per_pixel == 4) {
-					console_print_error("LZW decompression: RGBA to BGRA conversion not implemented, assuming already in BGRA\n");
-					memcpy(pixel_memory_dest, uncompressed, pixel_count * compressed_stream_size);
+					u32* pixels = (u32*)pixel_memory_dest;
+					for (u64 i = 0; i < pixel_count; ++i) {
+						u8 r = uncompressed[source_pos];
+						u8 g = uncompressed[source_pos+1];
+						u8 b = uncompressed[source_pos+2];
+						u8 a = uncompressed[source_pos+3];
+						pixels[i] = MAKE_BGRA(r, g, b, a);
+						source_pos+=4;
+					}
+					// memcpy(pixel_memory_dest, uncompressed, pixel_count * 4);
 				} else if (level_ifd->samples_per_pixel == 3) {
 					u32* pixels = (u32*)pixel_memory_dest;
 					for (u64 i = 0; i < pixel_count; ++i) {
@@ -1898,6 +1906,7 @@ u8* tiff_decode_tile(i32 logical_thread_index, tiff_t* tiff, tiff_ifd_t* level_i
 					}
 					continue;
 				} else {
+					console_print_error("Uncompressed TIFF: unexpected number of samples per pixel (%d)\n", level_ifd->samples_per_pixel);
 					goto decompression_failed;
 				}
 			} else {
