@@ -28,6 +28,7 @@
 #include "gui.h" // TODO: move
 #include "dicom.h"
 #include "presenter.h"
+#include "stringutils.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl2.h"
@@ -40,6 +41,11 @@
 
 #include <errno.h>
 #include <pthread.h>
+
+#if LINUX
+#include <sys/socket.h>
+#include <sys/un.h>
+#endif
 
 #if DO_DEBUG
 void stringify_icon_image() {
@@ -358,6 +364,240 @@ extern SDL_Window* g_window;
 
 static i32 need_check_window_focus_gained_after_frames;
 
+#if LINUX
+// Single-instance file opening: new launches with file args forward argv to the already-running GUI and exit.
+// The existing process polls the socket in the SDL loop, parses the received argv with the normaal command-line path,
+// loads the file, and raises the window.
+
+static int linux_single_instance_socket = -1;
+static char linux_single_instance_socket_path[sizeof(((struct sockaddr_un*)0)->sun_path)];
+
+enum {
+	LINUX_SINGLE_INSTANCE_MAGIC = 0x53435631, // "SCV1"
+	LINUX_SINGLE_INSTANCE_MAX_ARGS = 32,
+	LINUX_SINGLE_INSTANCE_MAX_ARG_SIZE = 4096,
+};
+
+static bool linux_get_single_instance_socket_path(char* buffer, size_t buffer_size) {
+	const char* runtime_dir = getenv("XDG_RUNTIME_DIR");
+	if (!runtime_dir || runtime_dir[0] == '\0') {
+		runtime_dir = "/tmp";
+	}
+
+	int chars_written = snprintf(buffer, buffer_size, "%s/slidescape-%u.sock", runtime_dir, (u32)getuid());
+	if (chars_written < 0 || (size_t)chars_written >= buffer_size) {
+		if (strcmp(runtime_dir, "/tmp") == 0) {
+			return false;
+		}
+		chars_written = snprintf(buffer, buffer_size, "/tmp/slidescape-%u.sock", (u32)getuid());
+		if (chars_written < 0 || (size_t)chars_written >= buffer_size) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool linux_socket_write_all(int fd, const void* data, size_t size) {
+	const u8* cursor = (const u8*)data;
+	while (size > 0) {
+		ssize_t bytes_written = send(fd, cursor, size, MSG_NOSIGNAL);
+		if (bytes_written < 0) {
+			if (errno == EINTR) continue;
+			return false;
+		}
+		if (bytes_written == 0) return false;
+		cursor += bytes_written;
+		size -= (size_t)bytes_written;
+	}
+	return true;
+}
+
+static bool linux_socket_read_all(int fd, void* data, size_t size) {
+	u8* cursor = (u8*)data;
+	while (size > 0) {
+		ssize_t bytes_read = recv(fd, cursor, size, 0);
+		if (bytes_read < 0) {
+			if (errno == EINTR) continue;
+			return false;
+		}
+		if (bytes_read == 0) return false;
+		cursor += bytes_read;
+		size -= (size_t)bytes_read;
+	}
+	return true;
+}
+
+static bool linux_connect_single_instance_socket(int* socket_out) {
+	char socket_path[sizeof(((struct sockaddr_un*)0)->sun_path)];
+	if (!linux_get_single_instance_socket_path(socket_path, sizeof(socket_path))) {
+		return false;
+	}
+
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) {
+		return false;
+	}
+
+	struct sockaddr_un address = {};
+	address.sun_family = AF_UNIX;
+	copy_cstring(address.sun_path, socket_path, sizeof(address.sun_path));
+	if (connect(fd, (struct sockaddr*)&address, sizeof(address)) != 0) {
+		close(fd);
+		return false;
+	}
+
+	*socket_out = fd;
+	return true;
+}
+
+static bool linux_send_commandline_to_socket(int fd, int argc, const char** argv) {
+	u32 magic = LINUX_SINGLE_INSTANCE_MAGIC;
+	u32 argc_to_send = (u32)MIN(argc, LINUX_SINGLE_INSTANCE_MAX_ARGS);
+	if (!linux_socket_write_all(fd, &magic, sizeof(magic))) return false;
+	if (!linux_socket_write_all(fd, &argc_to_send, sizeof(argc_to_send))) return false;
+	for (u32 arg_index = 0; arg_index < argc_to_send; ++arg_index) {
+		const char* arg = argv[arg_index];
+		u32 arg_size = (u32)MIN(strlen(arg) + 1, (size_t)LINUX_SINGLE_INSTANCE_MAX_ARG_SIZE);
+		if (!linux_socket_write_all(fd, &arg_size, sizeof(arg_size))) return false;
+		if (!linux_socket_write_all(fd, arg, arg_size)) return false;
+	}
+	return true;
+}
+
+static bool linux_forward_commandline_to_existing_instance(int argc, const char** argv) {
+	int fd = -1;
+	if (!linux_connect_single_instance_socket(&fd)) {
+		return false;
+	}
+	bool success = linux_send_commandline_to_socket(fd, argc, argv);
+	close(fd);
+	return success;
+}
+
+static bool linux_create_single_instance_socket(void) {
+	if (!linux_get_single_instance_socket_path(linux_single_instance_socket_path, sizeof(linux_single_instance_socket_path))) {
+		return false;
+	}
+
+	int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) {
+		return false;
+	}
+
+	int flags = fcntl(fd, F_GETFD, 0);
+	if (flags >= 0) {
+		fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+	}
+
+	struct sockaddr_un address = {};
+	address.sun_family = AF_UNIX;
+	copy_cstring(address.sun_path, linux_single_instance_socket_path, sizeof(address.sun_path));
+
+	if (bind(fd, (struct sockaddr*)&address, sizeof(address)) != 0) {
+		if (errno == EADDRINUSE) {
+			int existing_fd = -1;
+			if (linux_connect_single_instance_socket(&existing_fd)) {
+				close(existing_fd);
+				close(fd);
+				return false;
+			}
+			unlink(linux_single_instance_socket_path);
+			if (bind(fd, (struct sockaddr*)&address, sizeof(address)) != 0) {
+				close(fd);
+				return false;
+			}
+		} else {
+			close(fd);
+			return false;
+		}
+	}
+
+	chmod(linux_single_instance_socket_path, S_IRUSR | S_IWUSR);
+
+	if (listen(fd, 8) != 0) {
+		close(fd);
+		unlink(linux_single_instance_socket_path);
+		return false;
+	}
+
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0) {
+		fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+	}
+
+	linux_single_instance_socket = fd;
+	return true;
+}
+
+static void linux_destroy_single_instance_socket(void) {
+	if (linux_single_instance_socket >= 0) {
+		close(linux_single_instance_socket);
+		linux_single_instance_socket = -1;
+		unlink(linux_single_instance_socket_path);
+	}
+}
+
+static bool linux_receive_commandline_from_socket(int fd, int* argc_out, char argv_storage[LINUX_SINGLE_INSTANCE_MAX_ARGS][LINUX_SINGLE_INSTANCE_MAX_ARG_SIZE], const char* argv[LINUX_SINGLE_INSTANCE_MAX_ARGS]) {
+	u32 magic = 0;
+	u32 argc = 0;
+	if (!linux_socket_read_all(fd, &magic, sizeof(magic))) return false;
+	if (magic != LINUX_SINGLE_INSTANCE_MAGIC) return false;
+	if (!linux_socket_read_all(fd, &argc, sizeof(argc))) return false;
+	if (argc == 0 || argc > LINUX_SINGLE_INSTANCE_MAX_ARGS) return false;
+
+	for (u32 arg_index = 0; arg_index < argc; ++arg_index) {
+		u32 arg_size = 0;
+		if (!linux_socket_read_all(fd, &arg_size, sizeof(arg_size))) return false;
+		if (arg_size == 0 || arg_size > LINUX_SINGLE_INSTANCE_MAX_ARG_SIZE) return false;
+		if (!linux_socket_read_all(fd, argv_storage[arg_index], arg_size)) return false;
+		argv_storage[arg_index][LINUX_SINGLE_INSTANCE_MAX_ARG_SIZE - 1] = '\0';
+		argv_storage[arg_index][arg_size - 1] = '\0';
+		argv[arg_index] = argv_storage[arg_index];
+	}
+
+	*argc_out = (int)argc;
+	return true;
+}
+
+static bool linux_load_pending_single_instance_commandline(app_state_t* app_state) {
+	if (linux_single_instance_socket < 0) {
+		return false;
+	}
+
+	bool loaded_anything = false;
+	for (;;) {
+		int client_fd = accept(linux_single_instance_socket, NULL, NULL);
+		if (client_fd < 0) {
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+				console_print_error("single-instance accept() failed: %s\n", strerror(errno));
+			}
+			break;
+		}
+
+		struct timeval timeout = {};
+		timeout.tv_usec = 20000;
+		setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+		int argc = 0;
+		char argv_storage[LINUX_SINGLE_INSTANCE_MAX_ARGS][LINUX_SINGLE_INSTANCE_MAX_ARG_SIZE] = {};
+		const char* argv[LINUX_SINGLE_INSTANCE_MAX_ARGS] = {};
+		if (linux_receive_commandline_from_socket(client_fd, &argc, argv_storage, argv)) {
+			app_command_t old_command = app_state->command;
+			app_state->command = app_parse_commandline(argc, argv);
+			if (app_load_commandline_inputs(app_state)) {
+				loaded_anything = true;
+			}
+			arrfree(app_state->command.inputs);
+			arrfree(app_state->command.overlay_inputs);
+			app_state->command = old_command;
+		}
+		close(client_fd);
+	}
+
+	return loaded_anything;
+}
+#endif
+
 #if APPLE
 extern "C" void macos_register_url_handler(void);
 extern "C" char* macos_copy_next_open_url(void);
@@ -378,6 +618,15 @@ int main(int argc, const char** argv)
     bool verbose_console = true;//!app_command.headless;
 
     if (verbose_console) console_print("Starting up...\n");
+
+#if LINUX
+	if (argc > 1 && !app_command.headless) {
+		if (linux_forward_commandline_to_existing_instance(argc, argv)) {
+			return 0;
+		}
+	}
+#endif
+
     init_global_system_info(verbose_console);
 	setup_settings_dir();
 
@@ -437,6 +686,10 @@ int main(int argc, const char** argv)
     SDL_Window* window = presenter_get_window();
     g_window = window;
 	app_state->main_window = window;
+
+#if LINUX
+	linux_create_single_instance_socket();
+#endif
 
 	{
 		i32 gl_w, gl_h;
@@ -646,6 +899,13 @@ int main(int argc, const char** argv)
             }
         }
 
+#if LINUX
+	    if (linux_load_pending_single_instance_commandline(app_state)) {
+		    SDL_RaiseWindow(window);
+		    need_check_window_focus_gained_after_frames = 10;
+	    }
+#endif
+
 #if APPLE
 	    for (;;) {
 		    char* open_url = macos_copy_next_open_url();
@@ -760,6 +1020,9 @@ int main(int argc, const char** argv)
 	presenter_shutdown();
     ImGui::DestroyContext();
     SDL_Quit();
+#if LINUX
+	linux_destroy_single_instance_socket();
+#endif
 
     return 0;
 }
