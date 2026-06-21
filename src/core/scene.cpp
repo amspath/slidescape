@@ -71,6 +71,8 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
 	scene->use_transparent_filter = false;
     scene->draw_outlines = false;
 	scene->draw_envelopes = false;
+	scene->draw_macro_image = true;
+	scene->draw_label_image = true;
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1
 	scene->camera = V2F(0.0f, 0.0f); // center camera at origin
 	init_zoom_state(&scene->zoom, 0.0f, 1.0f, 1.0f, 1.0f);

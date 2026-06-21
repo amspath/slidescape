@@ -264,6 +264,8 @@ typedef struct scene_t {
 	bool use_transparent_filter;
     bool draw_outlines;
     bool draw_envelopes;
+	bool draw_macro_image;
+	bool draw_label_image;
 	scale_bar_t scale_bar;
 	bool is_mpp_known;
 	bool enable_grid;
@@ -463,11 +465,9 @@ extern bool use_fast_rendering INIT(= false); // optimize for performance for e.
 extern i32 global_lowest_scale_to_render INIT(= 0);
 extern i32 global_highest_scale_to_render INIT(= 16);
 
-extern bool window_start_maximized INIT(= true);
+extern bool window_start_maximized INIT(= false);
 extern i32 desired_window_width INIT(= 1280);
 extern i32 desired_window_height INIT(= 720);
-extern bool draw_macro_image_in_background INIT(= false);
-extern bool draw_label_image_in_background INIT(= false);
 
 extern i32 global_next_resource_id INIT(= 1000);
 

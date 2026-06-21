@@ -215,6 +215,13 @@ typedef struct isyntax_valid_data_envelope_t {
 	i32 vertex_count;
 } isyntax_valid_data_envelope_t;
 
+typedef struct isyntax_valid_data_envelope_rectangle_t {
+	v2i topleft;
+	v2i topright;
+	v2i bottomleft;
+	v2i bottomright;
+} isyntax_valid_data_envelope_rectangle_t;
+
 typedef struct isyntax_codeblock_t {
 	u32 x_coordinate;
 	u32 y_coordinate;
@@ -381,6 +388,8 @@ typedef struct isyntax_t {
 	i32 cluster_header_template_count;
 	isyntax_valid_data_envelope_t valid_data_envelopes[16];
 	i32 valid_data_envelope_count;
+	isyntax_valid_data_envelope_rectangle_t valid_data_envelopes_rectangles[128];
+	i32 valid_data_envelope_rectangle_count;
 	i32 macro_image_index;
 	i32 label_image_index;
 	i32 wsi_image_index;
@@ -438,7 +447,7 @@ i32 isyntax_get_chunk_codeblocks_per_color_for_level(i32 level, bool has_ll);
 u8* isyntax_get_associated_image_pixels(isyntax_t* isyntax, isyntax_image_t* image, enum isyntax_pixel_format_t pixel_format);
 u8* isyntax_get_associated_image_jpeg(isyntax_t* isyntax, isyntax_image_t* image, u32* jpeg_size);
 u8* isyntax_get_icc_profile(isyntax_t* isyntax, isyntax_image_t* image, u32* icc_profile_size);
-void isyntax_parse_envelopes(isyntax_t* isyntax);
+void isyntax_envelopes_to_rectangles(isyntax_t* isyntax);
 
 
 #ifdef __cplusplus

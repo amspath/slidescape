@@ -3796,7 +3796,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 		}
 
 		if (success) {
-			isyntax_parse_envelopes(isyntax);
+			isyntax_envelopes_to_rectangles(isyntax);
 		}
 	}
 	return success;
@@ -3887,250 +3887,133 @@ void isyntax_destroy(isyntax_t* isyntax) {
 	file_handle_close(isyntax->file_handle);
 }
 
-void isyntax_parse_envelopes(isyntax_t* isyntax) {
-	// this script purely uses the data available in the envelope vertices; 
-	// it does a good job, but openings within an envelope can in certain cases cause
-	// some intersecting edges
-	// alternatively you could check the image data at each vertex, but that comes with
-	// the downside that the image data must be available before being able to parse
+// for qsort
+static int compare_vector_y (const void* a, const void* b) {
+	return (int)( ((v2i*)a)->y - ((v2i*)b)->y );
+}
+
+void isyntax_envelopes_to_rectangles(isyntax_t* isyntax){
+	// converts the valid data envelopes into an array of simple polygons
 
 	// iSyntax v1 does not contain envelopes, early return
 	if(isyntax->valid_data_envelope_count == 0){return;}
 
-	i32 envelope_count = MIN(isyntax->valid_data_envelope_count, COUNT(isyntax->valid_data_envelopes));
-		
-	// a single envelope can contains multiple non-continuous polygons, split and give them their own entree
-	isyntax_valid_data_envelope_t temp_envelopes[COUNT(isyntax->valid_data_envelopes)];
-	i32 temp_envelopes_count = 0;
-
 	bool error = false;
-	for (i32 i=0; i < envelope_count; ++i){
-		// check for valid vertex
+	for (i32 i=0; i < isyntax->valid_data_envelope_count; ++i) {
 		isyntax_valid_data_envelope_t* envelope = isyntax->valid_data_envelopes + i;
+		// invalid/empty envelope
 		if(envelope->vertex_count <= 1){continue;};
-		
-		// check for space in the envelope array
-		if(temp_envelopes_count >= COUNT(temp_envelopes)){
-			console_print("iSyntax: too many envelopes.");
-			error=true;
-			break;
-		}
 
-		// get envelope
-		temp_envelopes_count += 1;
-		isyntax_valid_data_envelope_t* temp_envelope = temp_envelopes + temp_envelopes_count -1;
-		i32 temp_envelope_index = 0;
+		// a rectangle contains 4 vertices, so worst case scenario you need 4x as much memory as rectangles.
+		// I think this is so unlikely we can reasonably keep a smaller footprint
+		v2i previous_vertices[COUNT(isyntax->valid_data_envelopes_rectangles)]; 
+		v2i next_vertices[COUNT(isyntax->valid_data_envelopes_rectangles)];
+		i32 previous_vertices_count = 0;
+		i32 next_vertices_count = 0;
 
-		// maintain list of vertices already used
-		u8 parsed[COUNT(temp_envelopes[0].vertices)] = {0};
-		
-		i32 start_index = 0;
-		
-		// current vector
-		i32 current_index = start_index;
-		v2i current_vector = envelope->vertices[current_index];
-		
-		// push first vertex
-		temp_envelope->vertices[temp_envelope_index] = current_vector;
-		//console_print("%d:%d,%d S", start_index, current_vector.x, current_vector.y);
+		i32 current_x = envelope->vertices[0].x;
+		i32 next_x = 0;
+		i32 iter_v = 0;
+		bool last_vertex = false;
 
-		i32 previous_movement = 3; // to_right = 1, to_left = 2, to_top = 3, to_bottom = 4
-		while(true){
-			i32 i_right = -1;
-			i32 i_left = -1;
-			i32 i_top = -1;
-			i32 i_bottom = -1;
-			i32 i_index = -1;
-			i32 to_right = 0x7ffffff;
-			i32 to_left = 0x7ffffff;
-			i32 to_top = 0x7ffffff;
-			i32 to_bottom = 0x7fffffff;
+		while (true) {
+			// get all vectors at specific x coordinate
+			next_vertices_count = 0;
+			while (true) {
+				if (iter_v >= envelope->vertex_count){
+					last_vertex = true;
+					break;
+				} else if (envelope->vertices[iter_v].x == current_x){
+					if (next_vertices_count >= COUNT(next_vertices)){
+						console_print("iSyntax: insufficient memory space to store all vertices of the valid data envelopes.");
+						error=true;
+						break;
+					}
+					next_vertices[next_vertices_count] = envelope->vertices[iter_v];
+					next_vertices_count += 1;
+					iter_v += 1;
+				} else {
+					next_x = envelope->vertices[iter_v].x;
+					break;
+				}
+			}
 
-			// out of bounds checking for safety
-			if(temp_envelope_index >= COUNT(parsed)){
-				console_print("iSyntax: infinite loop in envelope parsing.");
-				error = true;
+			
+			// no vertices to combine
+			if (previous_vertices_count == 0){
+				memcpy(previous_vertices, next_vertices, sizeof(previous_vertices));
+				previous_vertices_count = next_vertices_count;
+				current_x = next_x;
+				continue;
+			}
+
+			// build rectangles
+			if (previous_vertices_count % 2 != 0){
+				console_print("iSyntax: uneven vertices in envelope. Is this even possible?");
+				error=true;
 				break;
 			}
 
-			//find nearest neighbours
-			for(i32 j=0; j < envelope->vertex_count; ++j){
-				if(parsed[j] == 0){
-					v2i test_vector = envelope->vertices[j];
-					//console_print("t: %d:%d , %d:%d", current_vector.x, current_vector.y, test_vector.x, test_vector.y);
-					
-					if(current_vector.x == test_vector.x){
-						i32 y_diff = current_vector.y - test_vector.y;
-						if(y_diff > 0 && abs(y_diff) < to_top){
-							i_top = j;
-							to_top = abs(y_diff);
-						}else if(y_diff < 0 && abs(y_diff) < to_bottom){
-							i_bottom = j;
-							to_bottom = abs(y_diff);
-						}
-					}else if(current_vector.y == test_vector.y){
-						i32 x_diff = current_vector.x - test_vector.x;
-						if(x_diff > 0 && abs(x_diff) < to_left){
-							i_left = j;
-							to_left = abs(x_diff);
-						}else if(x_diff < 0 && abs(x_diff) < to_right){
-							i_right = j;
-							to_right = abs(x_diff);
-						}
-					}
-				}
-			}
-			// select best fitting neighbour, in principal nearest orthogonal neighbour
-			// if not available pick best alternative option
-			if(previous_movement == 1){ // to_right
-				if(i_top > -1 && i_bottom > -1){
-					if(to_top < to_bottom){
-						previous_movement = 3;
-						i_index = i_top;
-					}else if (to_bottom < to_top){
-						previous_movement = 4;
-						i_index = i_bottom;
-					}else{
-						previous_movement = 3;
-						i_index = i_top;
-					}
-				}else if(i_top > -1){
-					previous_movement = 3;
-					i_index = i_top;
-				}else if(i_bottom > -1){
-					previous_movement = 4;
-					i_index = i_bottom;
-				}else if(i_right > -1){
-					previous_movement = 1;
-					i_index = i_right;
-				}
-			}else if(previous_movement == 2){ // to_left
-				if(i_top > -1 && i_bottom > -1){
-					if(to_top < to_bottom){
-						previous_movement = 3;
-						i_index = i_top;
-					}else if (to_bottom < to_top){
-						previous_movement = 4;
-						i_index = i_bottom;
-					}else{
-						previous_movement = 3;
-						i_index = i_top;
-					}
-				}else if(i_top > -1){
-					previous_movement = 3;
-					i_index = i_top;
-				}else if(i_bottom > -1){
-					previous_movement = 4;
-					i_index = i_bottom;
-				}else if(i_left > -1){
-					previous_movement = 2;
-					i_index = i_left;
-				}
-			}else if(previous_movement == 3){ // to_top
-				if(i_left > -1 && i_right > -1){
-					if(i_left < i_right){
-						previous_movement = 2;
-						i_index = i_left;
-					}else if (i_left > i_right){
-						previous_movement = 1;
-						i_index = i_right;
-					}else{
-						previous_movement = 2;
-						i_index = i_left;
-					}
-				}else if(i_left > -1){
-					previous_movement = 2;
-					i_index = i_left;
-				}else if(i_right > -1){
-					previous_movement = 1;
-					i_index = i_right;
-				}else if(i_top > -1){
-					previous_movement = 3;
-					i_index = i_top;
-				}
-			}else if(previous_movement == 4){ // to_bottom
-				if(i_left > -1 && i_right > -1){
-					if (i_left > i_right){
-						previous_movement = 1;
-						i_index = i_right;
-					}else if(i_left < i_right){
-						previous_movement = 2;
-						i_index = i_left;
-					}else{
-						previous_movement = 1;
-						i_index = i_right;
-					}
-				}else if(i_right > -1){
-					previous_movement = 1;
-					i_index = i_right;
-				}else if(i_left > -1){
-					previous_movement = 2;
-					i_index = i_left;
-				}else if(i_bottom > -1){
-					previous_movement = 4;
-					i_index = i_bottom;
-				}
-			}
-
-			if(i_index == -1){
-				// cannot find neigbour; force envelope to close.
-				console_print("iSyntax: unclosable envelope.");
-				i_index = start_index;
-				error=true;
-			}
-
-			current_vector = envelope->vertices[i_index];
-			temp_envelope->vertices[temp_envelope_index+1] = current_vector;
-			temp_envelope_index += 1;
-			parsed[i_index] = 1; //
-			//console_print("%d:%d,%d", i_index, current_vector.x, current_vector.y);
-			
-			// check if previously added was the start vertex -> envelope done
-			if((current_vector.x == temp_envelope->vertices[0].x) && (current_vector.y == temp_envelope->vertices[0].y)){
-				// envelope done
-				temp_envelope->vertex_count = temp_envelope_index;
-				
-				// finalize reading mask
-				parsed[start_index] = 1;
-				
-				i32 counter = 0;
-				for (i32 j=0; j < COUNT(parsed); ++j){
-					counter += parsed[j];
-				}
-				
-				//console_print("Parsing done: %d [%d], vectors %d/%d", temp_envelopes_count -1, temp_envelope_index, counter, envelope->vertex_count);
-
-				// Find next start vertex
-				start_index = -1;
-				for (i32 j=0; j < envelope->vertex_count; ++j){
-					if (parsed[j] == 0){
-						start_index = j;
-						break;
-					}
-				}
-				// no vectors left, done with parsing
-				if(start_index == -1){
+			for (i32 j=0; j < previous_vertices_count; j += 2) {
+				if (isyntax->valid_data_envelope_rectangle_count >= COUNT(isyntax->valid_data_envelopes_rectangles)){
+					console_print("iSyntax: insufficient memory space to store all necessary rectangles of the valid data envelopes.");
+					error=true;
 					break;
 				}
 
-				current_index = start_index;
-				current_vector = envelope->vertices[current_index];
-				
-				// reset index first vertex
-				temp_envelopes_count += 1;
-				temp_envelope = temp_envelopes + temp_envelopes_count - 1;
-				temp_envelope_index = 0;
-				temp_envelope->vertices[temp_envelope_index] = current_vector;
-				previous_movement = 3;
-
-				//console_print("%d:%d,%d S", start_index, current_vector.x, current_vector.y);
+				isyntax_valid_data_envelope_rectangle_t rectangle;
+				rectangle.topleft = previous_vertices[j];
+				rectangle.bottomleft = previous_vertices[j+1];
+				rectangle.topright.x = current_x;
+				rectangle.topright.y = rectangle.topleft.y;
+				rectangle.bottomright.x = current_x;
+				rectangle.bottomright.y = rectangle.bottomleft.y;
+				isyntax->valid_data_envelopes_rectangles[isyntax->valid_data_envelope_rectangle_count] = rectangle;
+				isyntax->valid_data_envelope_rectangle_count += 1;
 			}
+
+			// identify and remove the overlapping vertexes, effectively: previous_vertices XOR next_vertices. 
+			// note: repeating vertices are theorically possible and shoulnt be removed for just being a duplicate
+			v2i temp_vertices[COUNT(isyntax->valid_data_envelopes_rectangles)];
+			i32 temp_vertices_count = 0;
+			bool passed_vertices[COUNT(isyntax->valid_data_envelopes_rectangles)] = {false};
+			for (i32 j=0; j < next_vertices_count; ++j) {
+				bool identified = false;
+				for (i32 k=0; k < previous_vertices_count; ++k) {
+					if ((previous_vertices[k].y == next_vertices[j].y) && (!passed_vertices[k])){
+						identified = true;
+						passed_vertices[k] = true;
+						break;
+					}
+				}
+				if (!identified){
+					temp_vertices[temp_vertices_count] = next_vertices[j];
+					temp_vertices_count += 1;
+				}
+			}
+			for (i32 j=0; j < previous_vertices_count; ++j) {
+				if(!passed_vertices[j]){
+					v2i temp_vertex;
+					temp_vertex.x = current_x;
+					temp_vertex.y = previous_vertices[j].y;
+					temp_vertices[temp_vertices_count] = temp_vertex;
+					temp_vertices_count += 1;
+				}
+			}
+			
+			// sort from low-to-highest y value
+			// when sorted two sequential vertices will form one edge of a rectangle
+			qsort(temp_vertices, temp_vertices_count, sizeof(temp_vertices[0]), compare_vector_y);
+			memcpy(previous_vertices, temp_vertices, sizeof(previous_vertices));
+			previous_vertices_count = temp_vertices_count;
+
+			// nothing left to parse
+			if (last_vertex || error) {
+				break;
+			}
+
+			// instantiate next step
+			current_x = next_x;
 		}
-	}
-	// copy the temporary over the old data
-	if(!error){
-		ASSERT(sizeof(temp_envelopes) == sizeof(isyntax->valid_data_envelopes));
-		memcpy(isyntax->valid_data_envelopes, temp_envelopes, sizeof(isyntax->valid_data_envelopes));
-		isyntax->valid_data_envelope_count = temp_envelopes_count;
 	}
 }

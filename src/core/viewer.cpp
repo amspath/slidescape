@@ -663,8 +663,8 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 //		last_section = profiler_end_section(last_section, "viewer_update_and_render: render (1)", 5.0f);
 
-		// Render label and macro images
-		if (draw_macro_image_in_background) {
+		// Render label and macro images // TZwi
+		if (scene->draw_macro_image) {
 			glDisable(GL_STENCIL_TEST);
 			if (macro_image->is_valid && macro_image->texture != 0) {
 				v2f pmax = {};
@@ -683,7 +683,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			}
 		}
 
-		if (draw_label_image_in_background) {
+		if (scene->draw_label_image) {
 			glDisable(GL_STENCIL_TEST);
 			if (label_image->is_valid && label_image->texture != 0 && macro_image->is_valid) {
 				v2f pmax = {};
@@ -692,12 +692,12 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 				mat4x4 model_matrix;
 				mat4x4_translate(model_matrix,
-				                 image->origin_offset.x + label_image->world_pos.x,
+				                 image->origin_offset.x + label_image->world_pos.x - (label_image->width * label_image->mpp),
 				                 image->origin_offset.y + label_image->world_pos.y,
 				                 10.0f);
 				mat4x4_scale_aniso(model_matrix, model_matrix, pmax.x, pmax.y, 1.0f);
 				mat4x4 model_matrix_rot;
-				mat4x4_rotate_Z(model_matrix_rot, model_matrix, 0.5f * M_PI);
+				mat4x4_rotate_Z(model_matrix_rot, model_matrix, 0.0f * M_PI);
 				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix_rot[0][0]);
 
 				draw_rect(label_image->texture);
@@ -742,7 +742,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		// If a background image has already been rendered, we need to blend the tiles on top
 		// while taking into account transparency.
-		if (draw_macro_image_in_background) {
+		if (scene->draw_macro_image) {
 			glEnable(GL_BLEND);
 			glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
 			glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
@@ -1756,7 +1756,7 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		}
 
 		// Visualize the 'valid data envelopes' encoded in iSyntax images (for debugging)
-		if (scene->draw_envelopes) {
+		if (scene->draw_envelopes && false) {
 			image_t* image = app_state->loaded_images[0];
 			if (image->backend == IMAGE_BACKEND_ISYNTAX) {
 				isyntax_t* isyntax = &image->isyntax;
@@ -1773,6 +1773,26 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 						gui_draw_polygon_outline_in_scene(points, envelope->vertex_count, RGBA(255, 0, 0, 255), true, 3.0f, scene, NULL);
 						release_temp_memory(&temp_memory);
 					}
+				}
+			}
+		}
+		
+		// Visualize the rectangles retreived from the 'valid data envelopes' (for debugging)
+		if (scene->draw_envelopes) {
+			image_t* image = app_state->loaded_images[0];
+			if (image->backend == IMAGE_BACKEND_ISYNTAX) {
+				isyntax_t* isyntax = &image->isyntax;
+				i32 rectangle_count = MIN(isyntax->valid_data_envelope_rectangle_count, COUNT(isyntax->valid_data_envelopes_rectangles));
+				for (i32 i = 0; i < rectangle_count; ++i) {
+					isyntax_valid_data_envelope_rectangle_t* rectangle = isyntax->valid_data_envelopes_rectangles + i;
+					temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
+					v2f* points = arena_push_array(temp_memory.arena, 4, v2f);
+					points[0] = V2F(rectangle->topleft.x * isyntax->mpp_x, rectangle->topleft.y * isyntax->mpp_y);
+					points[1] = V2F(rectangle->topright.x * isyntax->mpp_x, rectangle->topright.y * isyntax->mpp_y);
+					points[2] = V2F(rectangle->bottomright.x * isyntax->mpp_x, rectangle->bottomright.y * isyntax->mpp_y);
+					points[3] = V2F(rectangle->bottomleft.x * isyntax->mpp_x, rectangle->bottomleft.y * isyntax->mpp_y);
+					gui_draw_polygon_outline_in_scene(points, 4, RGBA(255, 0, 0, 255), true, 3.0f, scene, NULL);
+					release_temp_memory(&temp_memory);
 				}
 			}
 		}

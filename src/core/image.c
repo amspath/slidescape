@@ -392,6 +392,7 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
             image->macro_image.pixels = pixels;
             image->macro_image.width = macro_image->width;
             image->macro_image.height = macro_image->height;
+            console_print("%d", image->macro_image.mpp);
             image->macro_image.mpp = 0.0315f * 1000.0f; // apparently, always this value
             image->macro_image.world_pos.x = -((float)(wsi_image->offset_x + wsi_image->level0_padding) * isyntax->mpp_x);
             image->macro_image.world_pos.y = -((float)(wsi_image->offset_y + wsi_image->level0_padding) * isyntax->mpp_y);
