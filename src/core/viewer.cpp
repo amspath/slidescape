@@ -692,7 +692,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 				mat4x4 model_matrix;
 				mat4x4_translate(model_matrix,
-				                 image->origin_offset.x + label_image->world_pos.x - (label_image->width * label_image->mpp),
+				                 image->origin_offset.x + label_image->world_pos.x,
 				                 image->origin_offset.y + label_image->world_pos.y,
 				                 10.0f);
 				mat4x4_scale_aniso(model_matrix, model_matrix, pmax.x, pmax.y, 1.0f);
@@ -792,7 +792,9 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 						                   drawn_level->y_tile_side_in_um, 1.0f);
 						glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
-						draw_rect(texture);
+						if (scene->draw_wsi_image) {
+							draw_rect(texture);
+						}
 					} else {
 						++missing_tiles_on_this_level;
 					}

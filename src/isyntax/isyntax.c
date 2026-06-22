@@ -613,13 +613,14 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					strncpy(isyntax->image_dimension_unit, value, MIN(value_len, sizeof(isyntax->image_dimension_unit) - 1));
 					isyntax->image_dimension_unit[MIN(value_len, sizeof(isyntax->image_dimension_unit) - 1)] = '\0';				} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {
+					// TZwi: in data model >= 100 the macro and label images have their own scaling factor
 					float mpp = atof(value);
 					if (isyntax->parser.dimension_index == 0 /*x*/) {
-						isyntax->mpp_x = mpp;
-						isyntax->is_mpp_known = true;
+						image->mpp_x = mpp;
+						image->is_mpp_known = true;
 					} else if (isyntax->parser.dimension_index == 1 /*y*/) {
-						isyntax->mpp_y = mpp;
-						isyntax->is_mpp_known = true;
+						image->mpp_y = mpp;
+						image->is_mpp_known = true;
 					}
 				} break;
 				case 0x2008: /*UFS_IMAGE_DIMENSION_DISCRETE_VALUES_STRING*/ {} break;
@@ -991,7 +992,15 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					}
 				} break; // data model >= 100
 				case 0x2026: /*UFS_IMAGE_VALID_ENVELOPE_DIMENSIONS*/ {} break; // data model >= 100
-				case 0x2027: /*UFS_IMAGE_DIMENSION_ORIGIN*/ {} break; // data model >= 100
+				case 0x2027: /*UFS_IMAGE_DIMENSION_ORIGIN*/ {  // data model >= 100
+					int origin = atoi(value);
+					if (isyntax->parser.dimension_index == 0 /*x*/) {
+						image->origin_x = origin;
+					} else if (isyntax->parser.dimension_index == 1 /*y*/) {
+						image->origin_y = origin;
+					}
+				} break;
+
 				case 0x2029: /*UFS_IMAGE_PIXEL_TRANSFORM_METHOD*/ {} break; // data model >= 100
 			}
 		} break;
@@ -3414,11 +3423,16 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 					}
 				}
 			}
-
-			if (isyntax->mpp_x <= 0.0f || isyntax->mpp_y <= 0.0f) {
+			
+			isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+			if (wsi_image->mpp_x <= 0.0f || wsi_image->mpp_y <= 0.0f) {
 				isyntax->mpp_x = 1.0f; // should usually be 0.25; zero or below can never be right
 				isyntax->mpp_y = 1.0f;
 				isyntax->is_mpp_known = false;
+			}else{
+				isyntax->mpp_x = wsi_image->mpp_x;
+				isyntax->mpp_y = wsi_image->mpp_y;
+				isyntax->is_mpp_known = true;
 			}
 
 			isyntax->block_width = isyntax->block_header_templates[0].block_width;
@@ -3426,7 +3440,6 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 			isyntax->tile_width = isyntax->block_width * 2; // tile dimension AFTER inverse wavelet transform
 			isyntax->tile_height = isyntax->block_height * 2;
 
-			isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
 			if (wsi_image->image_type == ISYNTAX_IMAGE_TYPE_WSI) {
 
 				i32 block_width = isyntax->block_width;

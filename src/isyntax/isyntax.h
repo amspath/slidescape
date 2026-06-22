@@ -312,6 +312,11 @@ typedef struct isyntax_image_t {
 	i32 width;
 	i32 height;
 	i32 level0_padding;
+	float mpp_x;
+	float mpp_y;
+	bool is_mpp_known;
+	i32 origin_x;
+	i32 origin_y;
 	i32 offset_x;
 	i32 offset_y;
 	i32 level_count;

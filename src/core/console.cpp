@@ -146,6 +146,13 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 			}
 		} else if (strcmp(cmd, "clear") == 0) {
 			console_clear_log();
+		} else if (strcmp(cmd, "wsi") == 0) {
+			app_state->scene.draw_wsi_image = !app_state->scene.draw_wsi_image;
+			if (app_state->scene.draw_wsi_image) {
+				console_print("Enabled wsi image display");
+			} else {
+				console_print("Disabled wsi image display");
+			}
 		} else if (strcmp(cmd, "macro") == 0) {
 			app_state->scene.draw_macro_image = !app_state->scene.draw_macro_image;
 			if (app_state->scene.draw_macro_image) {

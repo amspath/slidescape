@@ -264,6 +264,7 @@ typedef struct scene_t {
 	bool use_transparent_filter;
     bool draw_outlines;
     bool draw_envelopes;
+	bool draw_wsi_image;
 	bool draw_macro_image;
 	bool draw_label_image;
 	scale_bar_t scale_bar;

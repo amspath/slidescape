@@ -1203,6 +1203,7 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				app_state->scene.sin_rotation = 0.0f;
 				app_state->scene.cos_rotation = 1.0f;
 			}
+            ImGui::Checkbox("Draw WSI image", &app_state->scene.draw_wsi_image);
             ImGui::Checkbox("Draw label image", &app_state->scene.draw_label_image);
             ImGui::Checkbox("Draw macro image", &app_state->scene.draw_macro_image);
             ImGui::Checkbox("Draw tile outlines", &app_state->scene.draw_outlines);
