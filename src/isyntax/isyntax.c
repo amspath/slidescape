@@ -613,7 +613,7 @@ static bool isyntax_parse_scannedimage_child_node(isyntax_t* isyntax, u32 group,
 					strncpy(isyntax->image_dimension_unit, value, MIN(value_len, sizeof(isyntax->image_dimension_unit) - 1));
 					isyntax->image_dimension_unit[MIN(value_len, sizeof(isyntax->image_dimension_unit) - 1)] = '\0';				} break;
 				case 0x2007: /*UFS_IMAGE_DIMENSION_SCALE_FACTOR*/           {
-					// TZwi: in data model >= 100 the macro and label images have their own scaling factor
+					// in data model >= 100 the macro and label images have their own scaling factor
 					float mpp = atof(value);
 					if (isyntax->parser.dimension_index == 0 /*x*/) {
 						image->mpp_x = mpp;
