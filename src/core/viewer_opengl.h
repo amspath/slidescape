@@ -91,6 +91,7 @@ extern basic_shader_t basic_shader;
 extern finalblit_shader_t finalblit_shader;
 
 extern u32 dummy_texture;
+extern u32 transparent_texture;
 
 extern bool finalize_textures_immediately INIT(= true);
 

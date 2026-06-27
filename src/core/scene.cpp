@@ -72,6 +72,7 @@ void init_scene(app_state_t *app_state, scene_t *scene) {
     scene->draw_outlines = false;
 	scene->draw_envelopes = false;
 	scene->draw_wsi_image = true;
+	scene->draw_wsi_background = true;
 	scene->draw_macro_image = true;
 	scene->draw_label_image = true;
 	scene->entity_count = 1; // NOTE: entity 0 = null entity, so start from 1

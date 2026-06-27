@@ -265,6 +265,7 @@ typedef struct scene_t {
     bool draw_outlines;
     bool draw_envelopes;
 	bool draw_wsi_image;
+	bool draw_wsi_background;
 	bool draw_macro_image;
 	bool draw_label_image;
 	scale_bar_t scale_bar;

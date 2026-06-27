@@ -672,6 +672,7 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 				pmax.y = macro_image->height * macro_image->mpp;
 
 				mat4x4 model_matrix;
+
 				mat4x4_translate(model_matrix,
 				                 image->origin_offset.x + macro_image->world_pos.x,
 				                 image->origin_offset.y + macro_image->world_pos.y,
@@ -704,38 +705,78 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 			}
 		}
 
-		{
-			// Set up the stencil buffer to prevent rendering outside the image area
+		if (scene->draw_wsi_background && image->clip_rect_count > 1){
+
+			// ToDo: de image width and height are not sufficient to contain all data both in iSyntax v1 and v2
+			// why are the width and heights this way / incorrect?
 			bounds2f stencil_bounds = {0, 0, image->width_in_um, image->height_in_um};
 			if (scene->is_cropped) {
 				stencil_bounds = clip_bounds2f(stencil_bounds, scene->crop_bounds);
 			}
 
-			// Take a small bit off the right and bottom edges to prevent rendering black lines at the edge of the image
-			stencil_bounds.right -= 0.1f / image->mpp_x;
-			stencil_bounds.bottom -= 0.1f / image->mpp_y;
-
-			glEnable(GL_STENCIL_TEST);
-			glStencilFunc(GL_ALWAYS, 1, 0xFF);
-			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-//			glStencilMask(0xFF);
-			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
-			glDepthMask(GL_FALSE); // don't write to depth buffer
 			{
 				mat4x4 model_matrix;
-				mat4x4_translate(model_matrix, stencil_bounds.left, stencil_bounds.top, 0.0f);
+				mat4x4_translate(model_matrix, stencil_bounds.left, stencil_bounds.top, 5.0f);
 				mat4x4_scale_aniso(model_matrix, model_matrix,
 				                   stencil_bounds.right - stencil_bounds.left,
 				                   stencil_bounds.bottom - stencil_bounds.top,
 				                   1.0f);
 				glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
-				draw_rect(dummy_texture);
+				draw_rect(transparent_texture);
+			}
+		}
+
+		if (scene->draw_wsi_image){
+			// Set up the stencil buffer to prevent rendering outside the image area
+			glEnable(GL_STENCIL_TEST);
+			glStencilFunc(GL_ALWAYS, 1, 0xFF);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+//			glStencilMask(0xFF);
+			glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE); // don't actually draw the stencil rectangle
+			glDepthMask(GL_FALSE); // don't write to depth buffer
+
+			for(i32 i=0; i<image->clip_rect_count; ++i){
+				// Remove 1 pixel of the outline to prevent rendering invalid areas / black outlines,
+				// cause the stencil buffer isnt perfect (likely due to rounding errors)
+				// Due to the rectangle being a continuum of eachother, you cannot simply make each individual rectangle smaller
+				// Instead we only want to remove the 'outline' of the rectangles, 
+				// for that purpose we draw one slightly bigger and one slightly smaller rectangle
+				// When a particular pixel is on the outline it will be covered by at most one rectangle
+				// Every other pixel is covered at least two rectangles 
+				// (the pixels on the border between two adjecent rectangles, are covered by the bigger rectangle of the two adjecent rectangles)
+				// (x and y need to be scaled independently, otherwise inner corners are not removed)
+
+				float overlap_x = image->level_images[lowest_visible_scale].um_per_pixel_x * 1.0;
+				float overlap_y = image->level_images[lowest_visible_scale].um_per_pixel_y * 1.0;
+
+				rect2f* clip_rect = &image->clip_rects[i];
+				{
+					mat4x4 model_matrix;
+					mat4x4_translate(model_matrix, clip_rect->x - overlap_x, clip_rect->y + overlap_y, 0.0f);
+					mat4x4_scale_aniso(model_matrix, model_matrix,
+									   clip_rect->w + (2 * overlap_x),
+									   clip_rect->h - (2 * overlap_y),
+									   1.0f);
+					glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+					draw_rect(dummy_texture);
+				}
+				{
+					mat4x4 model_matrix;
+					mat4x4_translate(model_matrix, clip_rect->x + overlap_x, clip_rect->y - overlap_y, 0.0f);
+					mat4x4_scale_aniso(model_matrix, model_matrix,
+									   clip_rect->w - (2 * overlap_x),
+									   clip_rect->h + (2 * overlap_y),
+									   1.0f);
+					glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+					draw_rect(dummy_texture);
+				}
 			}
 
 			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 			glDepthMask(GL_TRUE);
+			glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 //			glStencilMask(0xFF);
-			glStencilFunc(GL_EQUAL, 1, 0xFF);
+			glStencilFunc(GL_LEQUAL, 2, 0xFF);
 //			glDisable(GL_STENCIL_TEST);
 
 		}
@@ -752,59 +793,60 @@ void update_and_render_image(app_state_t* app_state, image_t* image) {
 
 		// Draw tiles
 		// Draw all levels within the viewport, up to the current zoom factor
-		i32 lowest_level_to_draw = ATLEAST(lowest_visible_scale, global_lowest_scale_to_render);
-		i32 highest_level_to_draw = ATMOST(highest_visible_scale, global_highest_scale_to_render);
-		for (i32 level = lowest_level_to_draw; level <= highest_level_to_draw; ++level) {
-			level_image_t *drawn_level = image->level_images + level;
-			if (!drawn_level->exists) {
-				continue;
-			}
+		if (scene->draw_wsi_image){
+			i32 lowest_level_to_draw = ATLEAST(lowest_visible_scale, global_lowest_scale_to_render);
+			i32 highest_level_to_draw = ATMOST(highest_visible_scale, global_highest_scale_to_render);
+			for (i32 level = lowest_level_to_draw; level <= highest_level_to_draw; ++level) {
+				level_image_t *drawn_level = image->level_images + level;
+				if (!drawn_level->exists) {
+					continue;
+				}
 
-			bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles);
+				bounds2i level_tiles_bounds = BOUNDS2I(0, 0, (i32)drawn_level->width_in_tiles, (i32)drawn_level->height_in_tiles);
 
-			bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
-			                                                     drawn_level->y_tile_side_in_um, image->origin_offset);
-			visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
+				bounds2i visible_tiles = world_bounds_to_tile_bounds(&scene->camera_bounds, drawn_level->x_tile_side_in_um,
+																	drawn_level->y_tile_side_in_um, image->origin_offset);
+				visible_tiles = clip_bounds2i(visible_tiles, level_tiles_bounds);
 
-			if (scene->is_cropped) {
-				bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
-				                                                        drawn_level->x_tile_side_in_um,
-				                                                        drawn_level->y_tile_side_in_um, image->origin_offset);
-				visible_tiles = clip_bounds2i(visible_tiles, crop_tile_bounds);
-			}
+				if (scene->is_cropped) {
+					bounds2i crop_tile_bounds = world_bounds_to_tile_bounds(&scene->crop_bounds,
+																			drawn_level->x_tile_side_in_um,
+																			drawn_level->y_tile_side_in_um, image->origin_offset);
+					visible_tiles = clip_bounds2i(visible_tiles, crop_tile_bounds);
+				}
 
-			i32 missing_tiles_on_this_level = 0;
-			for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
-				for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
+				i32 missing_tiles_on_this_level = 0;
+				for (i32 tile_y = visible_tiles.min.y; tile_y < visible_tiles.max.y; ++tile_y) {
+					for (i32 tile_x = visible_tiles.min.x; tile_x < visible_tiles.max.x; ++tile_x) {
 
-					tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
-					if (tile->texture) {
-						tile->time_last_drawn = app_state->frame_counter;
-						u32 texture = get_texture_for_tile(image, level, tile_x, tile_y);
+						tile_t *tile = get_tile(drawn_level, tile_x, tile_y);
+						if (tile->texture) {
+							tile->time_last_drawn = app_state->frame_counter;
+							u32 texture = get_texture_for_tile(image, level, tile_x, tile_y);
 
-						float tile_pos_x = drawn_level->origin_offset.x + drawn_level->x_tile_side_in_um * tile_x;
-						float tile_pos_y = drawn_level->origin_offset.y + drawn_level->y_tile_side_in_um * tile_y;
+							float tile_pos_x = drawn_level->origin_offset.x + drawn_level->x_tile_side_in_um * tile_x;
+							float tile_pos_y = drawn_level->origin_offset.y + drawn_level->y_tile_side_in_um * tile_y;
 
-						// define model matrix
-						mat4x4 model_matrix;
-						mat4x4_translate(model_matrix, tile_pos_x, tile_pos_y, 0.0f);
-						mat4x4_scale_aniso(model_matrix, model_matrix, drawn_level->x_tile_side_in_um,
-						                   drawn_level->y_tile_side_in_um, 1.0f);
-						glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
+							// define model matrix
+							mat4x4 model_matrix;
+							mat4x4_translate(model_matrix, tile_pos_x, tile_pos_y, 0.0f);
+							mat4x4_scale_aniso(model_matrix, model_matrix, drawn_level->x_tile_side_in_um,
+											drawn_level->y_tile_side_in_um, 1.0f);
+							glUniformMatrix4fv(basic_shader.u_model_matrix, 1, GL_FALSE, &model_matrix[0][0]);
 
-						if (scene->draw_wsi_image) {
 							draw_rect(texture);
+
+						} else {
+							++missing_tiles_on_this_level;
 						}
-					} else {
-						++missing_tiles_on_this_level;
 					}
 				}
-			}
 
-			if (missing_tiles_on_this_level == 0) {
-				break; // don't need to bother drawing the next level, there are no gaps left to fill in!
-			}
+				if (missing_tiles_on_this_level == 0) {
+					break; // don't need to bother drawing the next level, there are no gaps left to fill in!
+				}
 
+			}
 		}
 
 		// restore OpenGL state
@@ -1782,20 +1824,16 @@ void viewer_update_and_render(app_state_t *app_state, input_t *input, i32 client
 		// Visualize the rectangles retreived from the 'valid data envelopes' (for debugging)
 		if (scene->draw_envelopes) {
 			image_t* image = app_state->loaded_images[0];
-			if (image->backend == IMAGE_BACKEND_ISYNTAX) {
-				isyntax_t* isyntax = &image->isyntax;
-				i32 rectangle_count = MIN(isyntax->valid_data_envelope_rectangle_count, COUNT(isyntax->valid_data_envelopes_rectangles));
-				for (i32 i = 0; i < rectangle_count; ++i) {
-					isyntax_valid_data_envelope_rectangle_t* rectangle = isyntax->valid_data_envelopes_rectangles + i;
-					temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
-					v2f* points = arena_push_array(temp_memory.arena, 4, v2f);
-					points[0] = V2F(rectangle->topleft.x * isyntax->mpp_x, rectangle->topleft.y * isyntax->mpp_y);
-					points[1] = V2F(rectangle->topright.x * isyntax->mpp_x, rectangle->topright.y * isyntax->mpp_y);
-					points[2] = V2F(rectangle->bottomright.x * isyntax->mpp_x, rectangle->bottomright.y * isyntax->mpp_y);
-					points[3] = V2F(rectangle->bottomleft.x * isyntax->mpp_x, rectangle->bottomleft.y * isyntax->mpp_y);
-					gui_draw_polygon_outline_in_scene(points, 4, RGBA(255, 0, 0, 255), true, 3.0f, scene, NULL);
-					release_temp_memory(&temp_memory);
-				}
+			for (i32 i = 0; i < image->clip_rect_count; ++i) {
+				rect2f* rectangle = &image->clip_rects[i];
+				temp_memory_t temp_memory = begin_temp_memory_on_local_thread();
+				v2f* points = arena_push_array(temp_memory.arena, 4, v2f);
+				points[0] = V2F(rectangle->x, rectangle->y);
+				points[1] = V2F(rectangle->x + rectangle->w, rectangle->y);
+				points[2] = V2F(rectangle->x + rectangle->w, rectangle->y + rectangle->h);
+				points[3] = V2F(rectangle->x, rectangle->y + rectangle->h);
+				gui_draw_polygon_outline_in_scene(points, 4, RGBA(255, 0, 0, 255), true, 3.0f, scene, NULL);
+				release_temp_memory(&temp_memory);
 			}
 		}
 

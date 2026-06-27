@@ -3809,7 +3809,7 @@ bool isyntax_open(isyntax_t* isyntax, const char* filename, enum libisyntax_open
 		}
 
 		if (success) {
-			isyntax_envelopes_to_rectangles(isyntax);
+			isyntax_envelopes_to_rect(isyntax);
 		}
 	}
 	return success;
@@ -3905,11 +3905,24 @@ static int compare_vector_y (const void* a, const void* b) {
 	return (int)( ((v2i*)a)->y - ((v2i*)b)->y );
 }
 
-void isyntax_envelopes_to_rectangles(isyntax_t* isyntax){
+void isyntax_envelopes_to_rect(isyntax_t* isyntax){
 	// converts the valid data envelopes into an array of simple polygons
 
-	// iSyntax v1 does not contain envelopes, early return
-	if(isyntax->valid_data_envelope_count == 0){return;}
+	// iSyntax v1 does not contain envelopes, construct dummy envelope
+	if(isyntax->valid_data_envelope_count == 0 && isyntax->image_count > 0){
+		// Can i assume a WSI image exists? Even if not, I think it defaults iniatializes to 0...
+		isyntax_image_t* wsi_image = isyntax->images + isyntax->wsi_image_index;
+
+		rect2i rectangle;
+		rectangle.x = 0;
+		rectangle.y = 0;
+		rectangle.h = wsi_image->height;
+		rectangle.w = wsi_image->width;
+		
+		isyntax->valid_data_envelopes_rectangles[isyntax->valid_data_envelope_rectangle_count] = rectangle;
+		isyntax->valid_data_envelope_rectangle_count += 1;
+		return;
+	}
 
 	bool error = false;
 	for (i32 i=0; i < isyntax->valid_data_envelope_count; ++i) {
@@ -3974,13 +3987,12 @@ void isyntax_envelopes_to_rectangles(isyntax_t* isyntax){
 					break;
 				}
 
-				isyntax_valid_data_envelope_rectangle_t rectangle;
-				rectangle.topleft = previous_vertices[j];
-				rectangle.bottomleft = previous_vertices[j+1];
-				rectangle.topright.x = current_x;
-				rectangle.topright.y = rectangle.topleft.y;
-				rectangle.bottomright.x = current_x;
-				rectangle.bottomright.y = rectangle.bottomleft.y;
+				rect2i rectangle;
+				rectangle.x = previous_vertices[j].x;
+				rectangle.y = previous_vertices[j].y;
+				rectangle.h = previous_vertices[j+1].y - previous_vertices[j].y;
+				rectangle.w = current_x - previous_vertices[j].x;
+
 				isyntax->valid_data_envelopes_rectangles[isyntax->valid_data_envelope_rectangle_count] = rectangle;
 				isyntax->valid_data_envelope_rectangle_count += 1;
 			}

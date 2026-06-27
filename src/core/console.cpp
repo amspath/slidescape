@@ -153,6 +153,13 @@ void console_execute_command(app_state_t* app_state, const char* command) {
 			} else {
 				console_print("Disabled wsi image display");
 			}
+		} else if (strcmp(cmd, "wsi-background") == 0) {
+			app_state->scene.draw_wsi_background = !app_state->scene.draw_wsi_background;
+			if (app_state->scene.draw_wsi_background) {
+				console_print("Enabled wsi background display");
+			} else {
+				console_print("Disabled wsi background display");
+			}
 		} else if (strcmp(cmd, "macro") == 0) {
 			app_state->scene.draw_macro_image = !app_state->scene.draw_macro_image;
 			if (app_state->scene.draw_macro_image) {

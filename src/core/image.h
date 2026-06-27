@@ -159,6 +159,8 @@ typedef struct image_t {
     char directory[512];
     image_type_enum type;
     image_backend_enum backend;
+    rect2f clip_rects[64];
+    i32 clip_rect_count;
     bool is_freshly_loaded; // TODO: remove or refactor, is this still needed?
     bool is_local; // i.e. not remote (accessed over network using client/server interface)
     bool is_valid;

@@ -1204,10 +1204,11 @@ void gui_draw(app_state_t* app_state, input_t* input, i32 client_width, i32 clie
 				app_state->scene.cos_rotation = 1.0f;
 			}
             ImGui::Checkbox("Draw WSI image", &app_state->scene.draw_wsi_image);
+            ImGui::Checkbox("Draw WSI background", &app_state->scene.draw_wsi_background);
             ImGui::Checkbox("Draw label image", &app_state->scene.draw_label_image);
             ImGui::Checkbox("Draw macro image", &app_state->scene.draw_macro_image);
             ImGui::Checkbox("Draw tile outlines", &app_state->scene.draw_outlines);
-            ImGui::Checkbox("Draw envelopes (iSyntax v2)", &app_state->scene.draw_envelopes);
+            ImGui::Checkbox("Draw clip rectangles", &app_state->scene.draw_envelopes);
 
             // Options for adjusting level offsets
             if (arrlen(app_state->loaded_images) > 0) {

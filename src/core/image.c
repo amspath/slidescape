@@ -156,6 +156,12 @@ bool init_image_from_tiff(image_t* image, tiff_t tiff, bool is_overlay, image_t*
     image->width_in_um = tiff.main_image_ifd->image_width * tiff.mpp_x;
     image->height_in_pixels = tiff.main_image_ifd->image_height;
     image->height_in_um = tiff.main_image_ifd->image_height * tiff.mpp_y;
+
+    image->clip_rects[image->clip_rect_count] = RECT2F(
+        0.0, 0.0, image->width_in_um, image->height_in_um
+    );
+    image->clip_rect_count +=1;
+
     // TODO: fix code duplication with tiff_deserialize()
     if (tiff.level_image_ifd_count > 0 && tiff.main_image_ifd->tile_width) {
 
@@ -331,6 +337,26 @@ bool init_image_from_isyntax(image_t* image, isyntax_t* isyntax, bool is_overlay
     image->width_in_um = wsi_image->width * isyntax->mpp_x;
     image->height_in_pixels = wsi_image->height;
     image->height_in_um = wsi_image->height * isyntax->mpp_y;
+
+    // Construct clipping rectangles from valid data envelopes 
+    if(isyntax->valid_data_envelope_rectangle_count == 0){ // iSyntax v1
+        image->clip_rects[image->clip_rect_count] = RECT2F(
+            0.0, 0.0, image->width_in_um, image->height_in_um
+        );
+        image->clip_rect_count +=1;
+    } else { // iSyntax v2
+        for (i32 i = 0; i < isyntax->valid_data_envelope_rectangle_count; ++i){
+            rect2i* rectangle = &isyntax->valid_data_envelopes_rectangles[i];
+            image->clip_rects[image->clip_rect_count] = RECT2F(
+                rectangle->x * image->mpp_x,
+                rectangle->y * image->mpp_y,
+                rectangle->w * image->mpp_x,
+                rectangle->h * image->mpp_y
+            );
+            image->clip_rect_count +=1;
+        }
+    }
+
     // TODO: fix code duplication with tiff_deserialize()
     if (wsi_image->level_count > 0 && isyntax->tile_width) {
 
@@ -460,6 +486,12 @@ bool init_image_from_dicom(image_t* image, dicom_series_t* dicom, bool is_overla
     image->width_in_um = base_level_instance->total_pixel_matrix_columns * image->mpp_x;
     image->height_in_pixels = base_level_instance->total_pixel_matrix_rows;
     image->height_in_um = base_level_instance->total_pixel_matrix_rows * image->mpp_y;
+
+    image->clip_rects[image->clip_rect_count] = RECT2F(
+        0.0, 0.0, image->width_in_um, image->height_in_um
+    );
+    image->clip_rect_count +=1;
+
     // TODO: fix code duplication with tiff_deserialize()
     if (dicom->wsi.instance_count > 0 && image->tile_width) {
 
@@ -608,6 +640,12 @@ bool init_image_from_mrxs(image_t* image, mrxs_t* mrxs, bool is_overlay) {
 	image->width_in_um = image->width_in_pixels * image->mpp_x;
 	image->height_in_pixels = mrxs->tile_height * mrxs->base_height_in_tiles;
 	image->height_in_um = image->height_in_pixels * image->mpp_y;
+
+    image->clip_rects[image->clip_rect_count] = RECT2F(
+        0.0, 0.0, image->width_in_um, image->height_in_um
+    );
+    image->clip_rect_count +=1;
+
 	// TODO: fix code duplication with tiff_deserialize()
 	if (mrxs->level_count > 0 && image->tile_width) {
 
@@ -721,6 +759,11 @@ bool init_image_from_stbi(image_t* image, simple_image_t* simple, bool is_overla
     image->height_in_pixels = simple->height;
     image->height_in_um = (float)simple->height * image->mpp_y;
 
+    image->clip_rects[image->clip_rect_count] = RECT2F(
+        0.0, 0.0, image->width_in_um, image->height_in_um
+    );
+    image->clip_rect_count +=1;
+
     image->level_count = 1;
     level_image_t* level_image = image->level_images + 0;
     memset(level_image, 0, sizeof(*level_image));
@@ -777,6 +820,12 @@ void init_image_from_openslide(image_t* image, wsi_t* wsi, bool is_overlay) {
     image->width_in_um = (float)wsi->width * wsi->mpp_x;
     image->height_in_pixels = wsi->height;
     image->height_in_um = (float)wsi->height * wsi->mpp_y;
+
+    image->clip_rects[image->clip_rect_count] = RECT2F(
+        0.0, 0.0, image->width_in_um, image->height_in_um
+    );
+    image->clip_rect_count +=1;
+
     ASSERT(wsi->levels[0].x_tile_side_in_um > 0);
     if (wsi->level_count > 0 && wsi->levels[0].x_tile_side_in_um > 0) {
         ASSERT(wsi->max_downsample_level >= 0);
